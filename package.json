@@ -1,0 +1,51 @@
+{
+  "name": "kingdom",
+  "version": "0.1.0",
+  "description": "Agentic OS: a kingdom of AI peasants, a jester, and a king.",
+  "type": "module",
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "electron .",
+    "doctor": "node src/doctor.js",
+    "token": "node src/set-token.js",
+    "cli": "node src/cli.js",
+    "test": "node test/run-all.js",
+    "dist": "electron-builder --win --publish never",
+    "ctx": "node src/ctx.js",
+    "replay": "node src/replay.js"
+  },
+  "build": {
+    "appId": "dev.kingdom.app",
+    "productName": "Kingdom",
+    "asar": false,
+    "files": [
+      "electron/**",
+      "src/**",
+      "ui/**",
+      "kingdom.config.json",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createStartMenuShortcut": true
+    }
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^26.15.3"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "allowScripts": {
+    "electron@33.4.11": true,
+    "electron-winstaller@5.4.0": true
+  }
+}

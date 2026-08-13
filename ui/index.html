@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kingdom</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <header>
+    <span class="mark" id="mark"></span>
+    <span id="repo">—</span>
+    <span id="spend" class="num"></span>
+    <nav class="mode" id="mode"></nav>
+    <button class="goalbar" id="goalbar" hidden></button>
+    <span class="grow"></span>
+    <nav class="tools" id="tools"></nav>
+    <span class="conn" id="conn" title="stream"></span>
+    <div class="menu" id="menu" hidden></div>
+  </header>
+
+  <main>
+    <aside class="rail" id="rail">
+      <div class="rail-head">
+        <span>Court</span>
+        <button class="chip" id="rail-collapse" title="Collapse">‹</button>
+      </div>
+      <div class="rail-list" id="rail-list"></div>
+      <div class="rail-pet" id="rail-pet"></div>
+    </aside>
+
+    <div id="stage">
+      <div id="bg"></div>
+      <div id="surface"></div>
+      <div id="windows"></div>
+      <div id="approvals"></div>
+      <div id="toast"></div>
+    </div>
+
+    <aside class="who" id="who">
+      <div class="who-head">
+        <span>Member</span>
+        <button class="chip" id="who-collapse" title="Hide">›</button>
+      </div>
+      <div class="who-body" id="who-body"></div>
+    </aside>
+  </main>
+
+  <footer>
+    <input id="cmd" placeholder="Speak to the king…" autocomplete="off">
+    <button class="mic" id="cmd-mic"></button>
+  </footer>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

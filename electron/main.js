@@ -1,0 +1,329 @@
+// Thin shell. All the real work happens in the daemon (own Node 24 process,
+// because Electron's bundled Node has no node:sqlite).
+//
+// The daemon is DETACHED on purpose: an agentic court runs for hours, and
+// closing a window must not kill work in progress. This window is a viewer.
+// Launching again re-attaches to the court that is already running; to end it
+// for real, use "end court" in the throne room.
+import { app, BrowserWindow, dialog, session, ipcMain, screen } from 'electron';
+import { spawn } from 'node:child_process';
+import { openSync, existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { join, dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const PORT = Number(process.env.KINGDOM_PORT ?? 7777);
+const ORIGIN = `http://127.0.0.1:${PORT}`;
+
+/** Who, if anyone, is already holding the port. */
+async function courtOnPort() {
+  try {
+    const r = await fetch(`${ORIGIN}/api/ping`, { signal: AbortSignal.timeout(1200) });
+    return r.ok ? await r.json() : null;
+  } catch {
+    return null;
+  }
+}
+
+async function pickRepo() {
+  const fromArgv = process.argv.slice(app.isPackaged ? 1 : 2).find((a) => !a.startsWith('-'));
+  if (fromArgv && existsSync(join(fromArgv, '.git'))) return resolve(fromArgv);
+
+  const { canceled, filePaths } = await dialog.showOpenDialog({
+    title: 'Choose the repository your kingdom will work on',
+    properties: ['openDirectory'],
+  });
+  if (canceled || !filePaths[0]) return null;
+  if (!existsSync(join(filePaths[0], '.git'))) {
+    dialog.showErrorBox('Not a repository', `${filePaths[0]} is not a git repository.`);
+    return pickRepo();
+  }
+  return resolve(filePaths[0]);
+}
+
+/** Last words from a daemon that failed to come up — the whole point of the log. */
+function logTail(path, n = 1200) {
+  try {
+    const size = statSync(path).size;
+    return readFileSync(path, 'utf8').slice(Math.max(0, size - n)).trim();
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Start the court and leave it running. Readiness is decided by asking the
+ * port, not by parsing stdout — a detached child's output belongs in the log,
+ * and this works whatever the daemon chooses to print.
+ */
+async function startDaemon(repo, logPath) {
+  const node = process.env.KINGDOM_NODE ?? 'node';
+  const out = openSync(logPath, 'a');
+  const child = spawn(node, [join(HERE, '..', 'src', 'daemon.js'), repo, '--port', String(PORT)], {
+    detached: true,
+    stdio: ['ignore', out, out],
+  });
+  let spawnError = null;
+  let childExit = null;
+  child.on('error', (e) => { spawnError = e; });
+  child.on('exit', (code, signal) => { childExit = { code, signal }; });
+  child.unref();
+
+  const deadline = Date.now() + 90_000;
+  while (Date.now() < deadline) {
+    if (spawnError) {
+      throw new Error(`Could not start Node ("${node}"): ${spawnError.message}. `
+        + 'Node 24+ must be on PATH.');
+    }
+    if (childExit) {
+      throw new Error(`The court daemon exited before it became ready `
+        + `(code ${childExit.code ?? 'unknown'}, signal ${childExit.signal ?? 'none'}).\n\n`
+        + logTail(logPath));
+    }
+    const ping = await courtOnPort();
+    if (ping) return ping;
+    await new Promise((r) => setTimeout(r, 400));
+  }
+  throw new Error(`The court did not answer on ${ORIGIN} within 90s.\n\n${logTail(logPath)}`);
+}
+
+function openWindow() {
+  const win = new BrowserWindow({
+    width: 1500,
+    height: 950,
+    backgroundColor: '#0a0c0f',
+    title: 'Kingdom',
+    webPreferences: { nodeIntegration: false, contextIsolation: true },
+  });
+  win.setMenuBarVisibility(false);
+  win.loadURL(`${ORIGIN}/`);
+}
+
+/* ---------- the floating dog ----------
+ * A second window that is not a viewer of the court so much as a readout of
+ * it: frameless, transparent, always on top, and draggable anywhere on the
+ * desktop. He follows the court over HTTP like any other page; the main
+ * process is involved only in moving the window, which a page cannot do.
+ */
+// The sprite box at scale 1, plus the transparent margin the drop shadow needs
+// and a strip under him for the size slider.
+const PET_ART = { w: 132, h: 143 };
+const PET_PAD = 12, PET_STRIP = 16;
+const petBox = (s) => ({
+  width: Math.round(PET_ART.w * s) + PET_PAD,
+  height: Math.round(PET_ART.h * s) + PET_PAD + PET_STRIP,
+});
+const clampScale = (s) => Math.min(1.6, Math.max(0.45, Number(s) || 1));
+
+let petWin = null;
+let petDrag = null;
+// The authoritative size. Reading it back off the window instead lets rounding
+// accumulate: getBounds() returns whole DIPs, the physical box rounds up a
+// little, and each drag re-freezes the larger reading — measured creeping
+// 114 -> 118 -> 119 -> 120 over four drags. Computed from the scale, it is the
+// same number forever.
+let petScale = 1;
+const petStatePath = () => join(app.getPath('userData'), 'pet.json');
+
+const readPetState = () => {
+  try {
+    return JSON.parse(readFileSync(petStatePath(), 'utf8'));
+  } catch {
+    return {};
+  }
+};
+const writePetState = (patch) => {
+  try {
+    writeFileSync(petStatePath(), JSON.stringify({ ...readPetState(), ...patch }));
+  } catch { /* a forgotten corner is not worth failing a launch over */ }
+};
+
+/** Bottom-right of the work area, clear of the taskbar, on first run. */
+function petSpot(box) {
+  const { x, y, width, height } = screen.getPrimaryDisplay().workArea;
+  const home = { x: x + width - box.width - 24, y: y + height - box.height - 24 };
+  const saved = readPetState();
+  if (!Number.isFinite(saved.x) || !Number.isFinite(saved.y)) return home;
+  // A monitor unplugged since last launch — or a drag that ended somewhere
+  // absurd — would otherwise put him at coordinates no display covers.
+  const onScreen = screen.getAllDisplays().some((d) =>
+    saved.x + box.width > d.workArea.x && saved.x < d.workArea.x + d.workArea.width
+    && saved.y + box.height > d.workArea.y && saved.y < d.workArea.y + d.workArea.height);
+  return onScreen ? { x: saved.x, y: saved.y } : home;
+}
+
+function openPet() {
+  if (petWin && !petWin.isDestroyed()) return petWin.show();
+  petScale = clampScale(readPetState().scale ?? 1);
+  const box = petBox(petScale);
+  const { x, y } = petSpot(box);
+  petWin = new BrowserWindow({
+    x, y, ...box,
+    frame: false, transparent: true, hasShadow: false, resizable: false,
+    skipTaskbar: true, alwaysOnTop: true, fullscreenable: false, focusable: true,
+    // Not shown until the page has painted: a transparent window that appears
+    // before its first frame flashes as a white square.
+    show: false,
+    title: 'HappyDog',
+    webPreferences: {
+      preload: join(HERE, 'pet-preload.cjs'),
+      nodeIntegration: false,
+      contextIsolation: true,
+    },
+  });
+  // 'screen-saver' is the level that also floats above full-screen apps, which
+  // is what "always on top" is actually expected to mean.
+  petWin.setAlwaysOnTop(true, 'screen-saver');
+  petWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  petWin.loadURL(`${ORIGIN}/pet.html`);
+  petWin.once('ready-to-show', () => petWin.show());
+  petWin.on('closed', () => { stopPetDrag(); petWin = null; });
+}
+
+const petAlive = () => Boolean(petWin) && !petWin.isDestroyed();
+
+ipcMain.handle('pet:state', () => ({ scale: clampScale(readPetState().scale ?? 1) }));
+
+/* ---------- dragging ----------
+ * Driven from the OS cursor in the main process, NOT from pointer coordinates
+ * in the page.
+ *
+ * The renderer version of this drifted: Chromium derives `screenX` as
+ * clientX + the window's cached screen origin, and that cache updates a beat
+ * after setPosition moves the window. So every frame the delta was computed
+ * against a stale origin, fed back into the next move, and the dog took off
+ * across the desktop while the pointer sat still. getCursorScreenPoint has no
+ * such feedback path: it is the truth, from outside the window being moved.
+ */
+ipcMain.on('pet:dragStart', () => {
+  stopPetDrag();
+  if (!petAlive()) return;
+  const c = screen.getCursorScreenPoint();
+  const b = petWin.getBounds();
+  petDrag = {
+    ox: c.x - b.x, oy: c.y - b.y, sx: c.x, sy: c.y,
+    moved: false, started: Date.now(),
+    timer: setInterval(followCursor, 16),
+  };
+});
+
+function followCursor() {
+  if (!petDrag || !petAlive()) return stopPetDrag();
+  // A drag can only outlive its pointerup if the renderer lost the release
+  // (window dragged out from under a failed pointer capture, an alt-tab). A
+  // dog that silently follows the cursor forever is the worst failure here.
+  if (Date.now() - petDrag.started > 30_000) return stopPetDrag();
+
+  const c = screen.getCursorScreenPoint();
+  // A few pixels of slop so a click that wobbles is still a click.
+  if (!petDrag.moved && Math.abs(c.x - petDrag.sx) + Math.abs(c.y - petDrag.sy) < 4) return;
+  petDrag.moved = true;
+
+  // setBounds with an EXPLICIT computed size, never setPosition.
+  //
+  // setPosition is implemented as "keep the current size, change the origin",
+  // and on a display at 125% that round trip re-applies the scale factor: the
+  // window grew 144 -> 180 -> 267 -> 344 -> 432 across one drag, compounding
+  // by ~1.25 every few frames. The position was always right; the box around
+  // it ballooned, which is what threw the × and the slider off into space.
+  // Restating the size every frame leaves nothing to compound.
+  petWin.setBounds({ x: c.x - petDrag.ox, y: c.y - petDrag.oy, ...petBox(petScale) });
+}
+
+function stopPetDrag() {
+  if (petDrag) clearInterval(petDrag.timer);
+  petDrag = null;
+}
+
+ipcMain.handle('pet:dragEnd', () => {
+  const moved = petDrag?.moved ?? false;
+  stopPetDrag();
+  if (moved && petAlive()) {
+    const [x, y] = petWin.getPosition();
+    writePetState({ x, y });
+  }
+  return moved;
+});
+
+ipcMain.on('pet:scale', (_e, raw) => {
+  if (!petAlive()) return;
+  const scale = clampScale(raw);
+  const box = petBox(scale);
+  // Grow and shrink from the BOTTOM edge: his feet stay put, so resizing does
+  // not walk him up the screen. The OLD height comes from the scale we last
+  // set, for the same reason followCursor does not read it back.
+  const [x, y] = petWin.getPosition();
+  const h = petBox(petScale).height;
+  petScale = scale;
+
+  // resizable:false pins the window's min and max size to what it was created
+  // at, and Windows then CLAMPS setBounds back — silently. The sprite scaled
+  // with CSS while the window did not, so the slider and the × drifted further
+  // from the dog at every step. It has to be lifted for the one call, then put
+  // straight back so the frameless window keeps no invisible drag borders.
+  petWin.setResizable(true);
+  petWin.setBounds({ x, y: y + h - box.height, ...box });
+  petWin.setResizable(false);
+
+  const [nx, ny] = petWin.getPosition();
+  writePetState({ scale, x: nx, y: ny });
+});
+
+// For this session only. His own tooltip promises he comes back next launch,
+// so persisting the dismissal would make that a lie — and there is no way to
+// summon him back from the throne room, which has no IPC bridge.
+ipcMain.on('pet:hide', () => petWin?.destroy());
+
+app.whenReady().then(async () => {
+  const repo = await pickRepo();
+  if (!repo) return app.quit();
+
+  const logPath = join(app.getPath('userData'), 'daemon.log');
+
+  // Someone may already be holding the port — usually this court, re-opened.
+  let running = await courtOnPort();
+  if (running && resolve(running.repo) !== repo) {
+    const { response } = await dialog.showMessageBox({
+      type: 'warning',
+      title: 'A court is already running',
+      message: `Port ${PORT} is serving a different repository:\n\n${running.repo}`,
+      detail: 'Two courts cannot share a port. Open the running one, or end it from '
+        + 'its own window and launch again.',
+      buttons: ['Open the running court', 'Quit'],
+      defaultId: 0,
+      cancelId: 1,
+    });
+    if (response === 1) return app.quit();
+  } else if (!running) {
+    try {
+      running = await startDaemon(repo, logPath);
+    } catch (e) {
+      dialog.showErrorBox('The kingdom could not rise', e.message);
+      return app.quit();
+    }
+  }
+
+  // Dictation needs the microphone. Grant it only to the throne room itself —
+  // Electron denies every media request by default.
+  const mine = (wc) => (wc?.getURL() ?? '').startsWith(ORIGIN);
+  session.defaultSession.setPermissionRequestHandler((wc, perm, cb) =>
+    cb(perm === 'media' && mine(wc)));
+  session.defaultSession.setPermissionCheckHandler((wc, perm) => perm === 'media' && mine(wc));
+
+  openWindow();
+  openPet();
+});
+
+app.on('activate', () => { if (!BrowserWindow.getAllWindows().length) openWindow(); });
+
+// Closing the window closes the VIEWER. The court keeps working; "end court"
+// in the throne room is what stops it.
+//
+// The dog does not count as a window worth staying alive for: he has no menu
+// and no way to reopen the throne room, so an app that lived on as nothing but
+// a floating dog would be unclosable except from Task Manager.
+app.on('window-all-closed', () => app.quit());
+app.on('browser-window-closed', (_e, closed) => {
+  if (closed === petWin) return;
+  if (BrowserWindow.getAllWindows().every((w) => w === petWin)) app.quit();
+});

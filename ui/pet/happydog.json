@@ -1,0 +1,7 @@
+{
+  "id": "happydog",
+  "displayName": "HappyDog",
+  "description": "A cheerful cream chibi puppy with floppy ears, tiny black smile, rosy cheeks, and a red collar.",
+  "spritesheetPath": "spritesheet.webp",
+  "kind": "object"
+}

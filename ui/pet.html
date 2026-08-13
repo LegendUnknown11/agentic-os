@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>HappyDog</title>
+<style>
+  /* A transparent Electron window: nothing may paint a background, or the dog
+     arrives sitting on a grey card. */
+  html,body{margin:0;height:100%;background:transparent;overflow:hidden;
+    user-select:none;-webkit-user-select:none}
+  body{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;
+    padding:6px;--s:1}
+  body.dragging{cursor:grabbing}
+
+  /* initPet appends the dog, so in DOM order he comes after the slider. He
+     belongs above it — `order` fixes that without fighting the lifecycle. */
+  #pet{order:1;position:relative;z-index:1;flex:none;cursor:grab;
+    width:calc(132px * var(--s));height:calc(143px * var(--s));
+    padding:0;border:0;background-color:transparent;background-repeat:no-repeat;
+    image-rendering:pixelated;
+    /* No box-shadow: the window is transparent, so the shadow must follow the
+       dog's own alpha or it draws a rectangle in mid-air. */
+    filter:drop-shadow(0 5px 7px rgba(0,0,0,.45))}
+  body.dragging #pet{cursor:grabbing}
+  #pet[data-clip="sleep"]{opacity:.9}
+
+  /* Dismiss, on hover only. A floating always-on-top window with no visible
+     way to close it is the kind of thing people end up killing from Task
+     Manager.
+
+     z-index matters here: #pet is APPENDED after this button, and both were
+     auto-stacked, so the dog painted straight over the × and swallowed every
+     click on it. */
+  #shoo{position:absolute;top:0;right:0;z-index:3;width:20px;height:20px;
+    padding:0;border:0;border-radius:50%;background:rgba(10,13,18,.9);color:#cfd8e3;
+    font:600 12px/20px system-ui,sans-serif;cursor:pointer;opacity:0;transition:opacity .14s}
+  #shoo:hover{background:rgba(255,133,133,.92);color:#1a0707}
+
+  /* Size. Its own strip under him, so it never overlaps the dog and never
+     competes with the drag. */
+  #size{order:2;position:relative;z-index:2;width:82%;height:12px;margin-top:2px;
+    opacity:0;transition:opacity .14s;accent-color:#45ecc6;cursor:pointer}
+
+  body:hover #shoo,body:hover #size{opacity:1}
+  body.dragging #shoo,body.dragging #size{opacity:0}
+  /* No Electron window to move, resize or dismiss — so no controls claiming
+     you can. See pet-window.js. */
+  body.no-bridge #shoo,body.no-bridge #size{display:none}
+  body.no-bridge #pet{cursor:pointer}
+
+  /* Offline: the court is gone, so he sleeps rather than lying about it. */
+  body.offline #pet{filter:drop-shadow(0 5px 7px rgba(0,0,0,.45)) grayscale(.55)}
+</style>
+</head>
+<body>
+  <button id="shoo" title="Send HappyDog away (he comes back next launch)">×</button>
+  <input id="size" type="range" min="0.45" max="1.6" step="0.05" value="1"
+         title="How big HappyDog is">
+  <script type="module" src="pet-window.js"></script>
+</body>
+</html>

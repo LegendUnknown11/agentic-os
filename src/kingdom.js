@@ -1,0 +1,1936 @@
+// The kingdom: king (decides), jester (watches everything, briefs the king),
+// peasants (do the work in isolated worktrees).
+//
+// The jester exists so the king's context survives a long session. The king
+// never drinks the firehose; it reads briefings.
+import { EventEmitter } from 'node:events';
+import { readFileSync, existsSync, writeFileSync, mkdirSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { homedir } from 'node:os';
+import { fileURLToPath } from 'node:url';
+import { Agent, MUTES_KINGDOM_TOOLS } from './agent.js';
+import { brainBlock, brainFingerprint } from './memory.js';
+import { skillsBlock, expandSkillCommand, listSkills } from './skills.js';
+import { engineerPrompt, pickModels } from './advisor.js';
+import { summarize, settingsOf as summarizerSettings } from './summarize.js';
+import { Bus } from './bus.js';
+import { inputTokens } from './usage.js';
+import { parseWindow, autoWindow, fmtTokens } from './compact.js';
+import { argue, pickPanel, verdictNote } from './argue.js';
+import {
+  ensureRepo, behindBase, commitAll, createWorktree, dbPath, diffOf, statOf, kingdomDir,
+  globalTokenStore, mergeWorktree, removeWorktree, runTests, worktreePath,
+} from './worktree.js';
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const MCP_PATH = join(HERE, 'mcp.js');
+const POLL_MS = 300;
+// Every delivered message costs the recipient a FULL context replay, so the
+// cost of a session is driven by TURN COUNT, not message size. These three
+// constants exist to collapse many messages into few turns.
+// This is the BACKSTOP for a member that will not go idle, not a second
+// window. It MUST stay comfortably above settleMs(): the ripeness test is
+// `(idle && quiet for settleMs) || older than BATCH_MAX_WAIT_MS`, so a cap
+// below the window silently clamps it — raising the window would do nothing
+// and nothing would report the conflict. `settleFloor` below pins the gap.
+const BATCH_MAX_WAIT_MS = 180_000;  // hold a batch this long waiting for idle
+// Pure FYI never wakes an agent on its own. Deliberately EQUAL to the backstop
+// above: a held notice then never extends the tail beyond what an ordinary
+// batch already costs, so routing something through `notice` is free in
+// latency terms rather than a hidden delay. Swept against the real log at
+// 60/120/180/300/600/900s — past 180s it saves at most 3 more turns while the
+// worst wait tracks the hold all the way to 15 minutes. If BATCH_MAX_WAIT_MS
+// is ever lowered, lower this with it or notices become the tail.
+const NOTICE_HOLD_MS = 180_000;
+// Even an idle member is worth a pause: two messages seconds apart would
+// otherwise cost two full context replays instead of one. Measured on a real
+// run, the king took six separate 70k-context turns inside 2.5 minutes because
+// each peasant reply landed just after the previous batch was acked — 420k
+// tokens where one turn would have done. 4s was far too eager; the cost of
+// waiting is latency, the cost of not waiting is a whole replay.
+//
+// 90s, and both numbers come from a search rather than a guess. Run
+// `npm run replay -- <repo> <settleMs> <backstopMs>` to reproduce: it replays a
+// real message log through THIS ripeness rule and reports turns saved against
+// the waiting it costs.
+//
+// Against 272 real messages, versus the old 15s/45s:
+//
+//     settle  backstop   turns saved   mean wait   worst wait
+//        45s      150s     16 ( 7.6%)         49s         180s
+//        60s      180s     27 (12.8%)         62s         180s
+//     >  90s      180s     41 (19.4%)         82s         180s
+//        90s      240s     44 (20.9%)         90s         240s
+//
+// 90s/180s is picked because it is 2.6x the saving of 45s for an IDENTICAL
+// worst case — the backstop, not the window, sets the tail. Widening the
+// backstop to 240s buys three more turns for another minute of tail: declined.
+// Past 90s the marginal return halves (8.5 turns per extra 15s up to 90s, 4.0
+// beyond it), so this is the knee and not an arbitrary stopping point.
+//
+// Two earlier numbers here were wrong and are worth remembering: 15s was far
+// too narrow (member-to-king gaps are p25 10.4s, median 40.6s), and the "a
+// third of turns" figure that first justified widening came from clustering
+// timestamps, which overstates by ~4x because it ignores that the sovereign
+// bypasses the window entirely and a busy member's queue already drains as one
+// batch.
+//
+// The sovereign is exempt (see `urgent` below), so no human ever waits for
+// this; only agents talking to each other do.
+// Read lazily, not at import: it must be tunable at runtime (and by tests).
+const settleMs = () => Number(process.env.KINGDOM_SETTLE_MS ?? 90_000);
+// Models that take no effort flag at all (per the sovereign's Model Guidance).
+const NO_EFFORT_MODELS = ['haiku'];
+// A member awake but unaddressed still holds context you will pay to replay.
+// Sleeping is free and revival is transparent, so sleep early.
+const IDLE_SLEEP_MS = Number(process.env.KINGDOM_IDLE_SLEEP_MS ?? 300_000); // 0 disables
+const DIGEST_DIFF_LIMIT = 12_000; // the jester is cheap, but this is per-done
+// Recycle thresholds now come from #recycleThreshold (per member, configurable).
+
+/**
+ * How the court BUILDS, as opposed to how it talks to itself.
+ *
+ * One block on the shared peasant prompt rather than a line in each of the 16
+ * role prompts: a rule copied sixteen times is a rule that drifts, and every
+ * role added later would start out exempt from it.
+ *
+ * The doctrine is recorded in the sovereign's vault under
+ * Kingdom/Kingdom Engineering Doctrine — this is the enforcement copy, and the
+ * two are meant to say the same thing.
+ */
+const DOCTRINE =
+  `--- HOW THIS COURT BUILDS (applies to every task) ---\n` +
+  `TESTS ARE PART OF THE WORK, NOT A SEPARATE TASK. Any change to behaviour ` +
+  `ships with a check that FAILS if that behaviour breaks. Write it in the ` +
+  `project's existing test framework and directory, run it, and report the real ` +
+  `output. If you cannot run it, say so plainly rather than claiming it passes. ` +
+  `A trivial rename or a comment needs no test; a branch, a loop, a parser, a ` +
+  `calculation, a permission check or a money path always does. "The tester ` +
+  `will cover it later" is not acceptable — later is where coverage goes to die.\n` +
+  `SMALL, INDEPENDENT MODULES. Prefer several focused files over one large one, ` +
+  `and keep each one's job describable in a sentence. Business logic lives ` +
+  `outside UI components; a module should be testable without standing up the ` +
+  `whole application. This is not decoration: a file another member can read in ` +
+  `one go is a file they can review, test and change without loading the rest ` +
+  `of the system into their context — which is the court's scarcest resource.\n` +
+  `SHIP THE SMALLEST THING THAT WORKS, THEN EXTEND. Get one slice working ` +
+  `end to end and verified before broadening it. Do not build the general case ` +
+  `first, do not add configuration for a value that never changes, and do not ` +
+  `scaffold for a requirement nobody has asked for. If a task is too big for ` +
+  `one pass, declare_done on the working slice and name what is still open — a ` +
+  `reviewed small change beats an unreviewed large one every time.\n` +
+  `REUSE WHAT IS THERE. Before writing a helper, search the project for one. ` +
+  `Match the surrounding code's conventions rather than importing your own.\n` +
+  `NO FAKE COMPLETION. Never describe something as done when it is mocked, ` +
+  `hard-coded, stubbed, or unverified. Label prototypes as prototypes.\n\n`;
+
+export class Kingdom extends EventEmitter {
+  constructor(repo, configPath) {
+    super();
+    this.repo = repo;
+    this.configPath = configPath;
+    this.config = JSON.parse(readFileSync(configPath, 'utf8'));
+    this.#seedRoles();
+    this.bus = new Bus(dbPath(repo));
+    this.agents = new Map(); // name -> Agent (awake, has a live process)
+    this.summoned = new Set(); // members in service; may be idle-slept and revived
+    this.lastActive = new Map(); // name -> ts, for idle sleep
+    this.approvals = new Map(); // id -> payload
+    this.turnBuf = new Map();   // name -> events of the turn in flight, for the summariser
+    this.lastBatch = new Map(); // name -> {from,to}, so a dead turn can be redelivered
+    this.turnsSinceSpawn = new Map(); // name -> turns, so nobody recycles on turn one
+    this.base = null;
+    this.timer = null;
+  }
+
+  /**
+   * Copy the standing court (roles.json) into this kingdom's config, ONCE.
+   *
+   * A seed, not a live merge: after this the config is the single source of
+   * truth, so a role the sovereign edits stays edited and a role they delete
+   * stays deleted. Without the marker, deleting a role would silently
+   * resurrect it on the next launch.
+   */
+  #seedRoles() {
+    if (this.config.rolesSeeded) return;
+    let library = [];
+    try {
+      library = JSON.parse(readFileSync(join(HERE, '..', 'roles.json'), 'utf8')).peasants ?? [];
+    } catch {
+      return; // no library shipped; the config stands on its own
+    }
+    const defaults = this.config.peasantDefaults ?? {};
+    const have = new Set((this.config.peasants ?? []).map((p) => p.name));
+    this.config.peasants = [
+      ...(this.config.peasants ?? []),
+      // cli/model/effort come from peasantDefaults unless the role names its own,
+      // so the sovereign sets the whole court's model in one place.
+      ...library.filter((r) => !have.has(r.name)).map((r) => ({ ...defaults, ...r })),
+    ];
+    this.config.rolesSeeded = true;
+    writeFileSync(this.configPath, JSON.stringify(this.config, null, 2));
+  }
+
+  roleOf(name) {
+    return name === this.config.king.name ? 'king'
+      : name === this.config.jester.name ? 'jester'
+      : 'peasant';
+  }
+
+  specOf(name) {
+    if (name === this.config.king.name) return this.config.king;
+    if (name === this.config.jester.name) return this.config.jester;
+    return this.config.peasants.find((p) => p.name === name);
+  }
+
+  #publishRoster() {
+    if (this.stopping) return [];
+    const roster = [this.config.king, this.config.jester, ...this.config.peasants].map((s) => ({
+      name: s.name,
+      role: this.roleOf(s.name),
+      title: s.title ?? '',
+      description: s.description ?? '',
+      cli: s.cli ?? 'claude',
+      model: s.model ?? null,
+      effort: s.effort ?? null,
+      auto: s.auto === true,
+      takesEffort: !NO_EFFORT_MODELS.some((m) => (s.model ?? '').includes(m)),
+      awake: this.agents.has(s.name),
+      // In the crew but idle-slept is NOT the same as never summoned: one wakes
+      // on its next message with its memory intact, the other is not in the
+      // court at all. Showing both as "asleep" made a working court look dead.
+      summoned: this.summoned.has(s.name),
+    }));
+    this.bus.set('roster', JSON.stringify(roster));
+    this.emit('roster', { roster, models: this.models(), efforts: this.efforts() });
+    return roster;
+  }
+
+  /**
+   * Pool of claude auth tokens, so five agents don't fight over one rate limit.
+   * Sources, first non-empty wins:
+   *   1. KINGDOM_CLAUDE_TOKENS  (comma-separated)
+   *   2. <kingdomDir>/tokens.json      -> this repo only
+   *   3. ~/.kingdom/tokens.json        -> every repo (the usual case)
+   *   4. nothing — every agent just inherits the ambient environment
+   *
+   * tokens.json lives OUTSIDE the target repo (same place as the database), so
+   * it cannot be committed by accident. Values are never logged or sent to the
+   * UI; only the count is.
+   */
+  #loadTokens() {
+    const fromEnv = (process.env.KINGDOM_CLAUDE_TOKENS ?? '')
+      .split(',').map((s) => s.trim()).filter(Boolean);
+    if (fromEnv.length) return fromEnv;
+    for (const p of [join(kingdomDir(this.repo), 'tokens.json'), globalTokenStore()]) {
+      try {
+        const f = (JSON.parse(readFileSync(p, 'utf8')).claude ?? []).filter(Boolean);
+        if (f.length) return f;
+      } catch {}
+    }
+    return [];
+  }
+
+  tokenCount() {
+    return this.#loadTokens().length;
+  }
+
+  /**
+   * Stable per member, so a resumed agent keeps the token it started on.
+   * `offset` (bumped by quota failover) shifts it onto a sibling token.
+   */
+  authEnvFor(name) {
+    const pool = this.#loadTokens();
+    if (!pool.length) return null;
+    const order = [this.config.king, this.config.jester, ...this.config.peasants]
+      .findIndex((s) => s.name === name);
+    const offset = Number(this.bus.get(`tokenshift:${name}`) ?? 0);
+    return { CLAUDE_CODE_OAUTH_TOKEN: pool[(Math.max(order, 0) + offset) % pool.length] };
+  }
+
+  /**
+   * A rate-limited agent used to just stall. If the pool has a spare token,
+   * move this member onto the next one and restart it — its session resumes,
+   * so no work is lost. Gives up after trying every token so a globally
+   * exhausted account doesn't spin.
+   */
+  async #failoverToken(name) {
+    const pool = this.#loadTokens();
+    if (pool.length < 2) return false;
+    const tried = Number(this.bus.get(`tokentries:${name}`) ?? 0);
+    if (tried >= pool.length - 1) return false;
+
+    this.bus.set(`tokenshift:${name}`, String(Number(this.bus.get(`tokenshift:${name}`) ?? 0) + 1));
+    this.bus.set(`tokentries:${name}`, String(tried + 1));
+
+    if (this.agents.has(name)) {
+      this.agents.get(name).stop();
+      this.agents.delete(name);
+      await this.#spawn(name);
+    }
+    this.emit('failover', { name, attempt: tried + 1, poolSize: pool.length });
+    return true;
+  }
+
+  /**
+   * Which members make up a domain, so a whole side of the stack can be moved
+   * onto one model in a single choice ("GPT on the frontend, Claude on the
+   * backend") instead of setting six dropdowns by hand.
+   *
+   * Overridable per kingdom with `"domains"` in the config. Cross-cutting roles
+   * — tester, reviewer, mason, physician, scout, scribe — are in NEITHER by
+   * default: they follow the work rather than a layer, and sweeping them with a
+   * layer choice is how a reviewer ends up on a model nobody chose for it.
+   * A member listed in both domains simply takes whichever was applied last.
+   */
+  /**
+   * The `/` menu: every skill's name, trigger and parts — never a body.
+   *
+   * Read off disk each call rather than cached, so a skill the sovereign has
+   * just written in Obsidian appears in the menu without a restart. It is a
+   * couple of dozen small files; caching it would be work to save nothing.
+   */
+  skills() {
+    return listSkills(this.config.vault, this.config.vaultWriteDir ?? 'Kingdom')
+      .map(({ name, description, combo, source }) => ({ name, description, combo, source }));
+  }
+
+  domains() {
+    return this.config.domains ?? { frontend: ['designer', 'coder'],
+      backend: ['architect', 'steward', 'sentry', 'quartermaster'] };
+  }
+
+  /** Put every member of one domain on the same model. */
+  async setDomainModel(domain, patch) {
+    const names = this.domains()[domain];
+    if (!names) throw new Error(`No such domain: ${domain}`);
+    const applied = [];
+    for (const n of names) {
+      if (!this.specOf(n)) continue;   // a role the sovereign deleted
+      try {
+        await this.setModel(n, patch);
+        applied.push(n);
+      } catch { /* one bad member must not abandon the rest of the sweep */ }
+    }
+    this.emit('domain', { domain, applied, ...patch });
+    return { domain, applied };
+  }
+
+  /** Model choices offered in the UI. Editable in kingdom.config.json. */
+  models() {
+    return this.config.models ?? { claude: ['opus', 'sonnet', 'haiku', 'fable'], codex: [] };
+  }
+
+  /**
+   * Effort choices per CLI. Different flags entirely: claude takes `--effort`,
+   * codex takes a `model_reasoning_effort` config override, and they do not
+   * accept the same words.
+   */
+  efforts() {
+    return this.config.efforts
+      ?? { claude: ['low', 'medium', 'high'], codex: ['low', 'medium', 'high', 'xhigh', 'max'] };
+  }
+
+  /**
+   * Effort levels a SPECIFIC model accepts. codex publishes a different ladder
+   * per model — luna tops out at "max", sol and terra go on to "ultra" — so a
+   * single per-CLI list offers levels that the chosen model silently ignores.
+   */
+  effortsFor(model) {
+    const e = this.efforts();
+    return e.byModel?.[model] ?? e.codex ?? [];
+  }
+
+  /** The advisor's own settings, as shown and edited from the throne room. */
+  advisor() {
+    const a = this.config.advisor ?? {};
+    return {
+      cli: a.cli ?? 'codex',
+      model: a.model ?? 'gpt-5.6-luna',
+      effort: a.effort ?? 'max',
+      promptEngineer: a.promptEngineer !== false,
+      autoModel: a.autoModel !== false,
+      allow: a.allow ?? [],
+      guidance: a.guidance ?? null,
+    };
+  }
+
+  #persistConfig() {
+    writeFileSync(this.configPath, JSON.stringify(this.config, null, 2));
+  }
+
+  /**
+   * Write the kingdom's MCP server into a member's workspace for `agy`.
+   *
+   * Workspace-scoped rather than global (`~/.gemini/config/mcp_config.json`)
+   * on purpose: the env carries KINGDOM_AGENT, so a global file would give
+   * every member the same identity and their messages would all come from
+   * whoever was configured last.
+   */
+  #writeAgyMcp(name, cwd, role) {
+    // Identity, per member, in the member's own workspace.
+    //
+    // The GLOBAL config is the only one headless agy reads, so every member
+    // shares one server declaration and its env cannot name any of them. What
+    // saves it: the MCP server inherits the agy process's cwd, which IS the
+    // member's worktree. So identity travels by directory instead of by env,
+    // and mcp.js reads this file when KINGDOM_AGENT is unset.
+    try {
+      mkdirSync(join(cwd, '.agents'), { recursive: true });
+      writeFileSync(join(cwd, '.agents', 'kingdom-id.json'), JSON.stringify({
+        agent: name,
+        role,
+        db: dbPath(this.repo),
+        repo: this.repo,
+        ...(this.config.vault
+          ? { vault: this.config.vault, vaultDir: this.config.vaultWriteDir ?? 'Kingdom' }
+          : {}),
+      }, null, 2));
+    } catch (e) {
+      this.#warn(`Could not write .agents/kingdom-id.json for "${name}": ${e.message}. `
+        + 'It will run without the kingdom tools.');
+    }
+  }
+
+  /**
+   * Declare the kingdom's MCP server in agy's GLOBAL config.
+   *
+   * Measured on agy 1.1.10: a workspace `.agents/mcp_config.json` is IGNORED in
+   * headless (`-p`) mode, and `~/.gemini/config/mcp_config.json` is honoured.
+   * There is no flag and no config-dir env var, so this is the only route.
+   *
+   * Merged, never overwritten: this file belongs to the user's Antigravity
+   * install, not to the kingdom, and it may hold servers we know nothing about.
+   * Only the "kingdom" key is ours to write.
+   */
+  /**
+   * Keep the kingdom's own droppings out of the sovereign's repository.
+   *
+   * An agy member needs `.agents/kingdom-id.json` in its cwd — that is how the
+   * MCP server works out who it is talking to. For the king and jester that
+   * cwd IS the repo root, so the court leaves an untracked directory in a repo
+   * it does not own, where it shows up in every `git status` and rides along
+   * with anyone's `git add -A`.
+   *
+   * `.git/info/exclude` is the right place for it: it is per-clone, never
+   * committed, and worktrees share the common dir so one write covers every
+   * peasant too. Appending to a file the sovereign may also use, so it reads
+   * first and only adds the line if it is missing.
+   */
+  #excludeAgentsDir() {
+    const file = join(this.repo, '.git', 'info', 'exclude');
+    try {
+      let text = '';
+      try { text = readFileSync(file, 'utf8'); } catch { /* no exclude file yet */ }
+      if (/^\.agents\/?$/m.test(text)) return;
+      mkdirSync(dirname(file), { recursive: true });
+      writeFileSync(file,
+        `${text}${text && !text.endsWith('\n') ? '\n' : ''}`
+        + `# written by the kingdom: an agy member's identity file, not project source\n.agents/\n`);
+    } catch (e) {
+      this.#warn(`Could not exclude .agents/ from git in ${this.repo}: ${e.message}. `
+        + 'It will show up as untracked.');
+    }
+  }
+
+  #installAgyMcp() {
+    const path = join(homedir(), '.gemini', 'config', 'mcp_config.json');
+    try {
+      let cfg = {};
+      try {
+        const raw = readFileSync(path, 'utf8').trim();
+        if (raw) cfg = JSON.parse(raw);
+      } catch { /* absent or unreadable: start clean */ }
+
+      cfg.mcpServers ??= {};
+      cfg.mcpServers.kingdom = {
+        command: process.execPath,
+        args: [MCP_PATH],
+        // No cwd key on purpose — omitting it is what makes the server inherit
+        // the member's worktree, which is the only thing carrying identity.
+        env: { KINGDOM_FROM_CWD: '1' },
+      };
+      mkdirSync(dirname(path), { recursive: true });
+      writeFileSync(path, JSON.stringify(cfg, null, 2));
+      return true;
+    } catch (e) {
+      this.#warn(`Could not write agy's global MCP config (${path}): ${e.message}. `
+        + 'Antigravity members will have no kingdom tools.');
+      return false;
+    }
+  }
+
+  /**
+   * Report a non-fatal problem.
+   *
+   * NOT this.emit('error', ...): EventEmitter throws that at the process when
+   * nothing is listening, so an advisory failure would kill the court in any
+   * embedding that did not happen to attach a handler. A warning must never be
+   * more destructive than the thing it is warning about.
+   */
+  #warn(message) {
+    if (this.listenerCount('error')) this.emit('error', new Error(message));
+    else console.warn(`[kingdom] ${message}`);
+  }
+
+  /** Sovereign edits the advisor: which model runs it, and what it may pick. */
+  setAdvisor(patch = {}) {
+    const a = { ...this.advisor(), ...patch };
+    this.config.advisor = a;
+    this.#persistConfig();
+    this.emit('advisor', a);
+    return a;
+  }
+
+  async start() {
+    // Creates the repository if the folder is not one yet — you point the
+    // kingdom at a folder, not at a checkout you prepared first.
+    this.base = await ensureRepo(this.repo, {
+      onInit: (what) => this.emit('started', { init: what, dir: kingdomDir(this.repo) }),
+    });
+    this.bus.set('base', this.base);
+    this.bus.prune();
+    // Restore the crew BEFORE the delivery loop starts. #tick only iterates
+    // `summoned`, so a peasant woken before a restart would otherwise never be
+    // handed its mail again — a silent stall, the worst failure mode there is.
+    // They are left asleep; the first message addressed to one revives it with
+    // its session intact.
+    for (const n of JSON.parse(this.bus.get('summoned') ?? '[]')) {
+      if (this.specOf(n)) this.summoned.add(n);
+    }
+    // Restored crew is INHERITED, not approved. It costs money the moment
+    // anyone messages it — a peasant approved weeks ago woke, took a turn and
+    // was billed this session without an approval card ever appearing. Say who
+    // is already in service so it is a choice, not a surprise.
+    const inherited = [...this.summoned].filter((n) => this.roleOf(n) === 'peasant');
+    if (inherited.length) {
+      this.emit('inherited', { names: inherited });
+      this.bus.post('orchestrator', this.config.king.name,
+        `AWARENESS ONLY — TAKE NO ACTION. Still in service from a previous session: `
+        + `${inherited.join(', ')}. They were approved then, not now, and they cost money the `
+        + `moment anyone messages them. Do not use one unless this session's work needs it.`,
+        'notice');
+    }
+    this.#publishRoster();
+    this.#reloadApprovals();
+    await this.#spawn(this.config.king.name);
+    await this.#spawn(this.config.jester.name);
+    this.timer = setInterval(() => this.#tick().catch((e) => this.emit('error', e)), POLL_MS);
+    // agy reads only the GLOBAL mcp_config.json, so the declaration has to be
+    // installed before any Antigravity member is spawned.
+    const usesAgy = [this.config.king, this.config.jester, ...this.config.peasants]
+      .some((s) => (s?.cli ?? 'claude') === 'agy')
+      || (this.config.advisor?.cli === 'agy') || (this.config.summarizer?.cli === 'agy');
+    if (usesAgy) { this.#installAgyMcp(); this.#excludeAgentsDir(); }
+    // The goal lives in the config; the bus copy is what the MCP tools read,
+    // and it must be refreshed on every start or a restarted court forgets.
+    this.bus.set('goal', JSON.stringify(this.goal() ?? ''));
+
+    this.emit('started', { base: this.base, dir: kingdomDir(this.repo) });
+  }
+
+  /** A proposal the sovereign never answered must survive an app restart. */
+  #reloadApprovals() {
+    for (const m of this.bus.history({ limit: 1000 })) {
+      if (m.kind !== 'approval' || this.bus.get(`resolved:${m.id}`)) continue;
+      const p = JSON.parse(m.body);
+      this.approvals.set(m.id, p);
+      this.emit('approval', { id: m.id, ...p });
+    }
+  }
+
+  async stop() {
+    this.stopping = true;
+    clearInterval(this.timer);
+    // Detach BEFORE killing: a child's 'exit' fires asynchronously, and its
+    // handler writes to the bus. Closing the db first made shutdown throw
+    // "database is not open" every time a member was running.
+    for (const a of this.agents.values()) {
+      a.removeAllListeners();
+      a.stop();
+    }
+    this.agents.clear();
+    this.bus.close();
+  }
+
+  // --- spawning -------------------------------------------------------
+
+  async #spawn(name, seedPrompt = null) {
+    if (this.agents.has(name)) return this.agents.get(name);
+    const spec = this.specOf(name);
+    if (!spec) throw new Error(`No such member of the court: ${name}`);
+    const role = this.roleOf(name);
+
+    // Peasants work in isolation; king and jester observe from the repo root.
+    const cwd = role === 'peasant'
+      ? await createWorktree(this.repo, name, this.base)
+      : this.repo;
+
+    // A reused branch that still holds unmerged work cannot be caught up
+    // safely, so the member must be TOLD it is looking at old code rather than
+    // reporting on it as if it were current. Posted to the bus rather than
+    // baked into the prompt: a RESUMED member is never re-sent its prompt, and
+    // that is exactly the member whose worktree is stale.
+    if (role === 'peasant') {
+      const behind = await behindBase(this.repo, name, this.base);
+      if (behind) {
+        this.bus.post('orchestrator', name,
+          `Your worktree is ${behind} commit(s) behind "${this.base}" and still holds your `
+          + `own unmerged work, so the crown did not move it for you. Anything you read here `
+          + `may be out of date — say so in what you report, and ask before rebasing.`,
+          'notice');
+        this.emit('stale', { name, behind });
+      }
+    }
+
+    // `|| null`, not `??`: recycling and CLI switches blank this to '', and an
+    // empty string would sail past `??=` and become a literal --session-id ''.
+    const saved = this.bus.get(`session:${name}`) || null;
+    const agent = new Agent(
+      {
+        ...spec,
+        // A fresh session (restart, recycle, CLI switch) gets the state of the
+        // kingdom so it can continue rather than interrogate the sovereign.
+        prompt: this.#promptFor(name, role, spec, seedPrompt, saved ? null : this.#orientation()),
+        resume: Boolean(saved),
+        // Per-member cap, else the kingdom-wide default. A looping peasant
+        // stops costing money on its own instead of running until noticed.
+        maxBudgetUsd: spec.maxBudgetUsd ?? this.config.maxBudgetUsd ?? null,
+      },
+      {
+        cwd,
+        sessionId: saved ?? null,
+        // A resumed thread keeps its history, so the estimate must not restart
+        // at zero — a restarted member would look freshly empty and never recycle.
+        ctxSeed: saved ? Number(this.bus.get(`ctx:${name}`) ?? 0) : 0,
+        // peasants read each other's worktrees to review; everyone reaches the vault
+        addDirs: [
+          ...(role === 'peasant' ? [join(kingdomDir(this.repo), 'wt')] : []),
+          ...(this.config.vault && existsSync(this.config.vault) ? [this.config.vault] : []),
+        ],
+        env: (spec.cli ?? 'claude') === 'claude' ? this.authEnvFor(name) : null,
+        mcp: {
+          command: process.execPath,
+          args: [MCP_PATH],
+          env: {
+            KINGDOM_AGENT: name,
+            KINGDOM_ROLE: role,
+            KINGDOM_DB: dbPath(this.repo),
+            KINGDOM_REPO: this.repo, // read_diff needs the repo, not the worktree
+            ...(this.config.vault ? {
+              KINGDOM_VAULT: this.config.vault,
+              KINGDOM_VAULT_DIR: this.config.vaultWriteDir ?? 'Kingdom',
+            } : {}),
+          },
+        },
+      }
+    );
+
+    // agy takes no MCP flags at all: it reads `.agents/mcp_config.json` from
+    // the workspace. Without this file an Antigravity member has no
+    // send_message and no declare_done, which is not a court member — the same
+    // failure codex had for weeks, arrived at by a different route.
+    if ((spec.cli ?? 'claude') === 'agy') this.#writeAgyMcp(name, cwd, role);
+
+    agent.on('ready', (sid) => {
+      this.bus.set(`session:${name}`, sid);
+      this.emit('agent', { name, state: 'ready', sessionId: sid });
+    });
+    agent.on('text', (t) => this.#record(name, 'text', { text: t }));
+    agent.on('tool', (t) => this.#record(name, 'tool', t));
+    agent.on('error', async (e) => {
+      const msg = String(e);
+      this.#record(name, 'error', { message: msg });
+      this.#rewindForRetry(name, msg);
+      // A session limit is not a fault — it is a wait. Surface the reset time
+      // instead of reporting the member as broken.
+      const reset = msg.match(/resets?\s+([^·)\n]+)/i)?.[1]?.trim();
+      if (/session limit/i.test(msg)) {
+        if (await this.#failoverToken(name)) return;
+        this.emit('limited', { name, resetsAt: reset ?? 'unknown' });
+        this.bus.post('orchestrator', this.config.king.name,
+          `"${name}" has hit the account's session limit${reset ? `, which resets ${reset}` : ''}. ` +
+          `This is not a fault and retrying will not help. Do not wait on it.`, 'notice');
+        return;
+      }
+      if (/usage limit|rate limit|quota|429|too many requests/i.test(msg)) {
+        if (await this.#failoverToken(name)) return; // moved to a spare token; not a failure yet
+      }
+      this.#escalateFailure(name, msg);
+    });
+    agent.on('stderr', (d) => this.emit('stderr', { name, data: d }));
+    agent.on('turn_end', (u) => {
+      this.#record(name, 'turn_end', u);
+      this.#summarizeTurn(name);   // async, deliberately not awaited
+      this.lastActive.set(name, Date.now());
+      const spent = Number(this.bus.get('spentUsd') ?? 0) + (u.costUsd ?? 0);
+      this.bus.set('spentUsd', String(spent));
+      const mine = Number(this.bus.get(`spent:${name}`) ?? 0) + (u.costUsd ?? 0);
+      this.bus.set(`spent:${name}`, String(mine));
+
+      // TOKENS, not dollars, are the only spend signal a codex court actually
+      // has: codex reports no total_cost_usd at all, so `spentUsd` sat frozen
+      // at 44.18 through three runs while the court burned 42M tokens. A
+      // permanently-$0 readout is worse than no readout.
+      const spentTok = (u.usage?.input_tokens ?? 0) + (u.usage?.output_tokens ?? 0);
+      const tokens = Number(this.bus.get('tokens') ?? 0) + spentTok;
+      this.bus.set('tokens', String(tokens));
+      this.bus.set(`tokens:${name}`, String(Number(this.bus.get(`tokens:${name}`) ?? 0) + spentTok));
+
+      const ctx = u.ctx ?? this.#contextTokens(u.usage);
+      this.bus.set(`ctx:${name}`, String(ctx));
+      this.emit('spend',
+        { total: spent, tokens, turns: this.#countTurns(), name, ctx, spentByAgent: mine });
+
+      // Any member whose context has grown expensive gets recycled — not just
+      // the jester. The king is usually the worst offender.
+      //
+      // But NEVER on a member's first turn. A single file-reading turn blows
+      // past any threshold on its own: measured, the architect ended one turn
+      // at 105,968, was recycled, and its successor ended ITS first turn at
+      // 76,121 and was recycled again — two handover turns bought for three
+      // productive ones, and no session ever lived long enough to be worth
+      // inheriting. Requiring a second turn bounds that without depending on
+      // the context estimate being well calibrated, which for codex it is not.
+      const turns = (this.turnsSinceSpawn.get(name) ?? 0) + 1;
+      this.turnsSinceSpawn.set(name, turns);
+      if (ctx > this.#recycleThreshold(name) && turns >= 2) {
+        this.recycleAgent(name).catch((e) => this.emit('error', e));
+        return;
+      }
+      this.#enforceBudget(name, mine, spent);
+    });
+    agent.on('exit', (code) => {
+      this.emit('agent', { name, state: 'exited', code });
+      this.#publishRoster();
+    });
+
+    // A confined codex member has no send_message, no declare_done, no vault —
+    // and says nothing about it. Every one of its tool calls comes back
+    // "user cancelled". Never let that be discovered by watching it fail.
+    if ((spec.cli ?? 'claude') === 'codex' && MUTES_KINGDOM_TOOLS.has(spec.sandbox)) {
+      const msg = `"${name}" runs codex under sandbox "${spec.sandbox}", which makes codex `
+        + 'DENY every kingdom tool call. It cannot message anyone, declare_done, or reach '
+        + 'the vault. Remove "sandbox" from its config to restore them.';
+      this.emit('failure', { name, message: msg });
+      this.bus.post('orchestrator', this.config.king.name,
+        `AWARENESS ONLY — TAKE NO ACTION. ${msg}`, 'notice');
+    }
+
+    agent.start();
+    this.#refreshBrain(name, Boolean(saved));
+    this.turnsSinceSpawn.set(name, 0);
+    this.agents.set(name, agent);
+    this.summoned.add(name);
+    this.bus.set('summoned', JSON.stringify([...this.summoned]));
+    this.lastActive.set(name, Date.now());
+    this.#publishRoster();
+    this.emit('agent', { name, state: 'awake', role, cwd });
+    return agent;
+  }
+
+  /**
+   * Put a batch back in the member's inbox when its turn died without running.
+   *
+   * ONE retry per batch, recorded on the bus: a permanently broken CLI would
+   * otherwise redeliver, fail and redeliver forever. After that the order is
+   * genuinely gone and #escalateFailure says so — which is still better than
+   * losing it in silence, but the retry catches the whole transient class
+   * (a spawn that could not start, a turn that emitted nothing, a rate limit).
+   */
+  #rewindForRetry(name, message) {
+    if (!/no output|could not be started|turn exceeded|session limit|usage limit|rate limit|quota|429/i
+      .test(message)) return;
+    const b = this.lastBatch.get(name);
+    if (!b) return;
+    this.lastBatch.delete(name);
+    if (this.bus.get(`retried:${b.to}`)) return;
+    this.bus.set(`retried:${b.to}`, '1');
+    this.bus.set(`cursor:${name}`, String(b.from));
+    this.emit('redelivered', { name, through: b.to });
+  }
+
+  /**
+   * Keep a RESUMED member's brain current.
+   *
+   * The system prompt is only sent when a session is created. A resumed member
+   * keeps the prompt it was born with, so an edit to Court Instructions or a
+   * newly recorded memory would reach nobody until they happened to recycle —
+   * observed: a resumed king answered from the CLI's own private memory store
+   * because the court's had never been put in front of it.
+   *
+   * Sent as a notice, so it rides along with the member's next real message
+   * instead of buying a turn of its own. A fresh session already has it in the
+   * prompt, so that case only records the fingerprint.
+   */
+  #refreshBrain(name, resumed) {
+    const dir = this.config.vaultWriteDir ?? 'Kingdom';
+    const now = brainFingerprint(this.config.vault, dir);
+    if (!now) return;                                  // no vault, nothing to keep current
+    const key = `brain:${name}`;
+    if (this.bus.get(key) === now) return;
+    if (resumed) {
+      const block = brainBlock(this.config.vault, dir);
+      if (block.trim()) {
+        this.bus.post('orchestrator', name,
+          `AWARENESS ONLY — TAKE NO ACTION. The sovereign's standing instructions or the `
+          + `court's memory have changed since your session began. This replaces what you `
+          + `were told at your accession:\n${block}`, 'notice');
+        this.emit('brain', { name, refreshed: true });
+      }
+    }
+    this.bus.set(key, now);
+  }
+
+  /**
+   * A silently stalled kingdom is the worst failure mode: quota exhaustion or a
+   * dead CLI looks exactly like "still thinking". Tell the king (so it can
+   * re-plan) and the sovereign (so they can act), throttled so an error storm
+   * cannot flood either.
+   */
+  #escalateFailure(name, message) {
+    const now = Date.now();
+    if (now - Number(this.bus.get(`failnotify:${name}`) ?? 0) < 60_000) return;
+    this.bus.set(`failnotify:${name}`, String(now));
+    if (name !== this.config.king.name) {
+      // A notice, not a message. This is awareness, and the king cannot act on
+      // it faster than a notice arrives anyway: notices ride along with the
+      // next real traffic, or buy their own turn after NOTICE_HOLD_MS. So the
+      // worst case is unchanged and the common case is free — against a king
+      // whose turns are 61% of the court's output and whose context reaches
+      // 70k+, a full replay to be told "someone died, carry on" is not worth it.
+      this.bus.post('orchestrator', this.config.king.name,
+        `AWARENESS: "${name}" has failed and may be unable to continue. ` +
+        `Do not wait on them indefinitely. Error: ${message.slice(0, 300)}`, 'notice');
+    }
+    this.emit('failure', { name, message });
+  }
+
+  /**
+   * A REAL ceiling, enforced by the orchestrator across restarts.
+   *
+   * `--max-budget-usd` alone is not one: the CLI counts per process, so every
+   * restart, model change, failover and daemon relaunch resets it to zero. A
+   * $5 cap let a run reach $41. This tracks cumulative spend in the bus, which
+   * survives all of that, and stops the member for real.
+   */
+  #enforceBudget(name, spentByAgent, spentTotal) {
+    const perMember = this.specOf(name)?.maxBudgetUsd ?? this.config.maxBudgetUsd ?? 0;
+    const kingdomCap = this.config.maxKingdomUsd ?? 0;
+
+    if (kingdomCap && spentTotal >= kingdomCap) {
+      this.emit('budget', { scope: 'kingdom', spent: spentTotal, cap: kingdomCap });
+      for (const n of [...this.agents.keys()]) this.sleep(n);
+      return;
+    }
+    if (perMember && spentByAgent >= perMember) {
+      this.emit('budget', { scope: 'member', name, spent: spentByAgent, cap: perMember });
+      this.sleep(name);
+      this.bus.post('orchestrator', this.config.king.name,
+        `"${name}" reached its spend ceiling ($${spentByAgent.toFixed(2)} of ` +
+        `$${perMember}) and has been stopped. Do not wait on it. The sovereign ` +
+        `must raise its budget or reassign the work.`);
+    }
+  }
+
+  /** Reset a member's cumulative spend — the sovereign lifting a ceiling. */
+  clearSpend(name) {
+    if (name) this.bus.set(`spent:${name}`, '0');
+    else {
+      this.bus.set('spentUsd', '0');
+      for (const m of [this.config.king, this.config.jester, ...this.config.peasants]) {
+        this.bus.set(`spent:${m.name}`, '0');
+      }
+    }
+    this.#publishRoster();
+  }
+
+  /** Turns, not messages, are what a session costs. Worth watching. */
+  #countTurns() {
+    const n = Number(this.bus.get('turns') ?? 0) + 1;
+    this.bus.set('turns', String(n));
+    return n;
+  }
+
+  #record(name, type, payload) {
+    this.bus.logEvent(name, type, payload);
+    // `kind`, not `type`: consumers wrap this in an envelope that has its own
+    // `type`, and a collision there silently swallowed every agent event.
+    this.emit('event', { name, kind: type, payload });
+
+    // Buffer the turn so the summariser has something to condense. Every agent
+    // event passes through here, so this is the one place it can be collected
+    // without threading a second listener through the spawn path.
+    if (type === 'text' || type === 'tool') {
+      const buf = this.turnBuf.get(name) ?? [];
+      buf.push({ kind: type, payload });
+      // A pathological turn must not grow without bound; the tail is what a
+      // summary is about anyway.
+      if (buf.length > 400) buf.splice(0, buf.length - 400);
+      this.turnBuf.set(name, buf);
+    }
+  }
+
+  /**
+   * Condense the turn that just ended into one line.
+   *
+   * Fire-and-forget on purpose: it takes seconds, and nothing in the court may
+   * wait on it. The raw lines are already on the stream; the summary lands
+   * afterwards and the UI slots it in.
+   */
+  async #summarizeTurn(name) {
+    const events = this.turnBuf.get(name) ?? [];
+    this.turnBuf.set(name, []);
+    const s = summarizerSettings(this.config);
+    if (!s.enabled || !events.length) return;
+
+    try {
+      const line = await summarize(s, { name, role: this.roleOf(name), events }, { cwd: this.repo });
+      if (!line) return;
+      // Recorded as an event, not just emitted: a summary that vanished on
+      // reload would be worth less than the raw text it replaces.
+      this.bus.logEvent(name, 'summary', { text: line });
+      this.emit('event', { name, kind: 'summary', payload: { text: line } });
+    } catch { /* cosmetic; never surfaces as a failure */ }
+  }
+
+  /** The summariser's settings, as shown and edited from the throne room. */
+  summarizer() {
+    return summarizerSettings(this.config);
+  }
+
+  setSummarizer(patch = {}) {
+    const s = { ...this.summarizer(), ...patch };
+    this.config.summarizer = s;
+    this.#persistConfig();
+    this.emit('summarizer', s);
+    return s;
+  }
+
+  /** The system prompt a member would be spawned with. Handy when a member is
+   *  behaving oddly and you want to see what it was actually told. */
+  briefFor(name) {
+    const spec = this.specOf(name);
+    return spec ? this.#promptFor(name, this.roleOf(name), spec, null) : null;
+  }
+
+  /**
+   * The court's standing goal: what all of this is FOR.
+   *
+   * Everything else the court knows is either a single message or a transcript
+   * that gets recycled away. A goal survives both, and every member is told it
+   * on every spawn — which is the difference between a court that is working
+   * towards something and one that is answering the last thing it was asked.
+   */
+  goal() {
+    const g = this.config.goal;
+    if (!g?.text) return null;
+    return {
+      text: g.text,
+      setAt: g.setAt ?? null,
+      milestones: (g.milestones ?? []).map((m) =>
+        (typeof m === 'string' ? { text: m, done: false } : m)),
+    };
+  }
+
+  setGoal(patch = {}) {
+    if (patch.text === null || patch.text === '') {
+      delete this.config.goal;
+      this.#persistConfig();
+      this.bus.set('goal', '');
+      this.emit('goal', null);
+      this.bus.post('orchestrator', this.config.king.name,
+        'AWARENESS ONLY — TAKE NO ACTION. The sovereign has cleared the standing goal. '
+        + 'Finish what is in flight; do not start anything new towards it.', 'notice');
+      return null;
+    }
+    const g = { ...(this.config.goal ?? {}), ...patch };
+    g.setAt ??= Date.now();
+    g.milestones = (g.milestones ?? []).map((m) =>
+      (typeof m === 'string' ? { text: m, done: false } : m));
+    this.config.goal = g;
+    this.#persistConfig();
+
+    const out = this.goal();
+    this.bus.set('goal', JSON.stringify(out));
+    this.emit('goal', out);
+    // Told through the BUS, not injected: a goal the court never saw recorded
+    // is a goal a successor cannot discover.
+    if (patch.text) {
+      this.bus.post('sovereign', this.config.king.name,
+        `STANDING GOAL — this is what the court is working towards until I say otherwise:\n\n`
+        + `${g.text}\n\n`
+        + (out.milestones.length
+          ? `Milestones:\n${out.milestones.map((m) => `  [${m.done ? 'x' : ' '}] ${m.text}`).join('\n')}\n\n`
+          : '')
+        + `Judge every piece of work against this. If a request conflicts with it, say so.`,
+        'assignment');
+    }
+    return out;
+  }
+
+  /** Mark a milestone done or undone by index. */
+  setMilestone(index, done) {
+    const g = this.config.goal;
+    if (!g?.milestones?.[index]) return this.goal();
+    const m = g.milestones[index];
+    g.milestones[index] = typeof m === 'string' ? { text: m, done } : { ...m, done };
+    this.#persistConfig();
+    const out = this.goal();
+    this.bus.set('goal', JSON.stringify(out));
+    this.emit('goal', out);
+    return out;
+  }
+
+  /** The goal as a block of prompt, or '' when there is none. */
+  #goalBlock() {
+    const g = this.goal();
+    if (!g) return '';
+    const open = g.milestones.filter((m) => !m.done);
+    const done = g.milestones.filter((m) => m.done);
+    return `\n\nSTANDING GOAL — what this court exists to achieve right now:\n${g.text}\n`
+      + (open.length ? `Still open:\n${open.map((m) => `  - ${m.text}`).join('\n')}\n` : '')
+      + (done.length ? `Already done: ${done.map((m) => m.text).join('; ')}\n` : '')
+      + `Everything you do should serve this. If an instruction conflicts with it, say so `
+      + `rather than quietly doing both.\n`;
+  }
+
+  #promptFor(name, role, spec, seedPrompt, orientation = null) {
+    const names = this.config.peasants.map((p) => p.name).join(', ');
+    // The king chooses the crew, so it needs to know what each specialist is
+    // FOR. Names alone and it summons the coder for everything.
+    const bench = this.config.peasants
+      .map((p) => `  ${p.name}${p.title ? ` (${p.title})` : ''} — ${p.description ?? ''}`)
+      .join('\n');
+    const common =
+      `You are "${name}" in an agentic kingdom. The king is "${this.config.king.name}", ` +
+      `the jester is "${this.config.jester.name}", and the peasants are: ${names}.\n` +
+      `You have kingdom tools. Talk to other members DIRECTLY with send_message ` +
+      `rather than routing everything through the king — that is the point of this court.\n` +
+      `Messages from others arrive in your session prefixed with [MESSAGE FROM ...], ` +
+      `sometimes several at once. Answer them.\n` +
+      `Keep messages short: they are replayed into the recipient's context and ` +
+      `are capped at 4000 characters. To share anything large, write it to a ` +
+      `file and send the path — others can read your worktree.\n` +
+      (this.config.vault
+        ? `The sovereign keeps an Obsidian vault of their own notes — model ` +
+          `choices, pricing, conventions, decisions. BEFORE picking a model, a ` +
+          `library or an approach, vault_search it: they have usually already ` +
+          `written down what they want, and guessing spends their money. Record ` +
+          `durable findings with vault_write (decisions, gotchas, conventions — ` +
+          `never progress updates).\n`
+        : '') + '\n';
+
+    const byRole = {
+      king:
+        `EVERY message you send costs the recipient a full replay of their ` +
+        `context, and every peasant you wake costs money for as long as it ` +
+        `lives. Summon the SMALLEST crew that can do the job — a design task ` +
+        `does not need a tester; a one-line fix does not need an architect. ` +
+        `Prefer one message containing everything over three messages. Never ` +
+        `broadcast what one member needs to hear.\n\n` +
+        `YOUR STANDING COURT — summon by name, and pick the SPECIALIST, not the ` +
+        `generalist. A refactor is the mason's, not the coder's; a mystery bug ` +
+        `is the physician's; research outside the repo is the scout's:\n${bench}\n\n` +
+        `If a STATE OF THE KINGDOM or HANDOVER section appears below, you are a ` +
+        `successor: continue that work. NEVER ask the sovereign to re-explain ` +
+        `what was happening — read_bus, read_diff and vault_search will tell ` +
+        `you, and asking wastes their time and money.\n` +
+        `You rule. Decompose the sovereign's goal, propose a crew with summon (the ` +
+        `sovereign must approve), then assign work. Do NOT read the raw bus by ` +
+        `default — the jester briefs you, which is what keeps your context alive. ` +
+        `When specialists are needed, call the summon tool immediately; never ask ` +
+        `for approval only in prose, because prose does not create an approval card. ` +
+        `Do not assign work to a proposed member until the summon tool returns approval. ` +
+        `When a peasant's work is digested for you, review it and either ` +
+        `request_merge or send_back with notes. If the digest is vague or ` +
+        `something looks off, use read_diff to check the real changes before ` +
+        `approving — never merge on a summary you doubt.\n\n` +
+        `YOU ENFORCE THE COURT'S BUILD STANDARD. Every peasant is told: changes ` +
+        `to behaviour ship with a test that fails if the behaviour breaks, in ` +
+        `small independent modules, smallest working slice first, and nothing ` +
+        `called done while it is mocked or unverified. Judge their work against ` +
+        `that. A done-report whose tests did not run is UNVERIFIED — send_back ` +
+        `and ask for the test, do not request_merge on it. Prefer merging a ` +
+        `small verified slice now over waiting for a large unverified one.\n\n`,
+      jester:
+        `You watch everything and you are the king's eyes. Use read_events and ` +
+        `read_bus freely — you are cheap and the king is not. Use brief_king to ` +
+        `report what the peasants are actually doing, in detail and in plain ` +
+        `language: progress, disagreements, anything blocked or looping. When asked ` +
+        `to digest a diff, summarise what changed, why, the test result, and ` +
+        `anything suspicious. You never assign work.\n\n`,
+      peasant:
+        `You work in your own git worktree at the current directory — you cannot ` +
+        `collide with other peasants, so work freely.\n` +
+        `DO NOT RUN git add, git commit, git push, or anything that writes .git. ` +
+        `The crown commits your files when you call declare_done and then runs ` +
+        `the tests; committing yourself skips that verification, and your ` +
+        `worktree's .git is shared with every other peasant's branch.\n` +
+        `Leave your work as EDITED FILES and call declare_done. If a git command ` +
+        `ever fails with a permission error on .git/index.lock, that is expected ` +
+        `— it is not a blocker, do not report it, and NEVER withhold declare_done ` +
+        `because of it. Withholding it strands your work where nobody sees it.\n` +
+        `The other peasants' worktrees are SIBLINGS of yours: "../<name>/". To ` +
+        `review or build on someone's work, READ their worktree directly (e.g. ` +
+        `"../coder/src/thing.js") — do not ask them to paste files at you. Never ` +
+        `write into another peasant's worktree.\n` +
+        `If you are blocked or need something from another peasant, send_message ` +
+        `them directly.\n\n` +
+        DOCTRINE,
+    };
+
+    // The brain — the sovereign's standing instructions and the index of what
+    // the court already knows — comes from the vault on every spawn, so
+    // editing one note in Obsidian changes the whole court's behaviour without
+    // touching config or code. Before the goal, because the goal must still be
+    // the last thing read.
+    return common + byRole[role] + (spec.prompt ?? '') +
+      (seedPrompt ? `\n\n--- HANDOVER FROM YOUR PREDECESSOR ---\n${seedPrompt}` : '') +
+      (orientation ? `\n\n--- STATE OF THE KINGDOM AT YOUR ACCESSION ---\n${orientation}` : '') +
+      brainBlock(this.config.vault, this.config.vaultWriteDir ?? 'Kingdom') +
+      skillsBlock(this.config.vault, this.config.vaultWriteDir ?? 'Kingdom') +
+      this.#goalBlock();
+  }
+
+  // --- the loop -------------------------------------------------------
+
+  async #tick() {
+    // setInterval does NOT wait for an async callback, so a tick that awaits
+    // (spawning a slept member, running tests) will overlap the next one. Two
+    // ticks then both see a member as "not awake" and both spawn it — which
+    // showed up as `git worktree add: already exists` and a spawn cascade.
+    if (this.ticking) return;
+    this.ticking = true;
+    try {
+      await this.#deliver();
+    } finally {
+      this.ticking = false;
+    }
+  }
+
+  async #deliver() {
+    const now = Date.now();
+    // Approval visibility must not depend on a member delivery succeeding.
+    // A failed worktree/agent can otherwise abort this method before the
+    // sovereign's approval request is surfaced.
+    this.#applyMilestones();
+    this.#surfaceApprovals();
+
+    // THE KING FIRST, then the jester, then everyone else.
+    //
+    // This loop awaits each member's spawn inline, and waking a peasant means
+    // validating its worktree — several git subprocesses, ~100ms each on
+    // Windows. `summoned` is restored in whatever order it was saved, which put
+    // the king fifth behind three peasants: measured 3.6s from the sovereign
+    // pressing enter to the king being handed the text, of which 3.3s was
+    // waiting for peasants nobody was waiting on. Nothing else in the court has
+    // a human sitting in front of it.
+    const rank = (n) => (n === this.config.king.name ? 0 : n === this.config.jester.name ? 1 : 2);
+    for (const name of [...this.summoned].sort((a, b) => rank(a) - rank(b))) {
+      const pending = this.bus.pending(name);
+      if (!pending.length) {
+        this.#maybeIdleSleep(name, now);
+        continue;
+      }
+
+      const highest = pending[pending.length - 1].id;
+
+      // Approvals belong to the sovereign; `done` starts verify -> digest.
+      const deliverable = [];
+      for (const msg of pending) {
+        if (msg.kind === 'approval') continue;
+        if (msg.kind === 'done' && name === this.config.king.name) {
+          // ONCE per declaration. This loop runs before the ripeness gate and
+          // before the ack, so a `done` that arrives alongside any other message
+          // is re-seen on every 300ms tick until the whole batch ripens.
+          // Measured on a real run: one declare_done from the designer ran
+          // commitAll + the test suite + two diffs 131 times, and queued 131
+          // digest turns onto the jester. Recorded on the bus, not in memory,
+          // so a restart between the fire and the ack cannot replay it either.
+          if (!this.bus.get(`done:${msg.id}`)) {
+            this.bus.set(`done:${msg.id}`, '1');
+            this.#onDone(msg).catch((e) => this.emit('error', e));
+          }
+          continue;
+        }
+        deliverable.push(msg);
+      }
+      if (!deliverable.length) {
+        this.bus.ack(name, highest);
+        continue;
+      }
+
+      // Re-typing the same order means "this still has not happened", not "do
+      // it again". When the court stalls the sovereign repeats themselves —
+      // observed seven identical "Resume" messages and two "Merge" — and every
+      // one of them was then delivered in a single batch, so the king was told
+      // to resume seven times and duly acted on it. Keep the last of any
+      // identical run from the same sender; the earlier copies are noise that
+      // costs a replay each.
+      const seen = new Set();
+      for (let i = deliverable.length - 1; i >= 0; i--) {
+        const key = JSON.stringify([deliverable[i].sender, deliverable[i].body]);
+        if (seen.has(key)) deliverable.splice(i, 1);
+        else seen.add(key);
+      }
+
+      // Interrupting a busy agent wastes a whole replay on a partial thought,
+      // so wait for it to finish — but never forever.
+      const agent = this.agents.get(name);
+      const oldest = deliverable[0].ts;
+      const allNotices = deliverable.every((m) => m.kind === 'notice');
+      const newest = deliverable[deliverable.length - 1].ts;
+      // The settle window exists to coalesce AGENTS talking to each other, where
+      // two replies seconds apart would otherwise cost two full context replays.
+      // A human typing is not that: they are sitting there watching, and making
+      // them wait 15s buys nothing, because they are not about to generate the
+      // burst the window is there to absorb. The sovereign's own messages go on
+      // the next idle tick.
+      const urgent = deliverable.some((m) => m.sender === 'sovereign');
+      // The backstop must never be tighter than the window it backs up, or the
+      // window is silently capped at the backstop and tuning it does nothing.
+      // Cheap to check here, and it fires the moment somebody edits either.
+      if (BATCH_MAX_WAIT_MS <= settleMs()) {
+        this.emit('error', new Error(
+          `BATCH_MAX_WAIT_MS (${BATCH_MAX_WAIT_MS}) must exceed the settle window `
+          + `(${settleMs()}) — batches are being cut short by the backstop.`));
+      }
+      const ripe = allNotices
+        ? now - oldest > NOTICE_HOLD_MS
+        : (!agent?.busy && (urgent || now - newest >= settleMs()))
+          || now - oldest > BATCH_MAX_WAIT_MS;
+      if (!ripe) continue;
+
+      // An idle-slept member is revived on demand; its session resumes.
+      const live = agent ?? (await this.#spawn(name));
+
+      // ONE turn for the whole batch instead of one turn per message.
+      live.send(deliverable.length === 1
+        ? this.#envelope(deliverable[0])
+        : `You have ${deliverable.length} new messages.\n\n` +
+          deliverable.map((m) => this.#envelope(m)).join('\n\n---\n\n'));
+
+      this.bus.ack(name, highest);
+      // Remember where this batch started. The ack happens BEFORE the turn is
+      // known to have worked, so a turn that dies outright takes the sovereign's
+      // order with it — that is how a 53k-char brief vanished with the court
+      // reporting nothing at all.
+      this.lastBatch.set(name, { from: deliverable[0].id - 1, to: highest });
+      this.lastActive.set(name, now);
+      for (const m of deliverable) this.emit('delivered', { to: name, msg: m });
+    }
+
+  }
+
+  /**
+   * Apply milestone claims the king has posted.
+   *
+   * They are addressed to "orchestrator", which is nobody's inbox — no member
+   * would ever be delivered them — so they need their own sweep. And the
+   * ORCHESTRATOR applies them rather than the MCP server, because it owns
+   * kingdom.config.json; a second writer would lose updates.
+   */
+  #applyMilestones() {
+    const seen = Number(this.bus.get('milestone:cursor') ?? 0);
+    for (const m of this.bus.history({ since: seen, limit: 50 })) {
+      this.bus.set('milestone:cursor', String(m.id));
+      if (m.kind !== 'milestone') continue;
+      let claim;
+      try { claim = JSON.parse(m.body); } catch { continue; }
+      const g = this.setMilestone(claim.index, true);
+      const hit = g?.milestones?.[claim.index];
+      if (!hit) continue;
+      this.emit('milestone', { index: claim.index, text: hit.text, by: m.sender, evidence: claim.evidence });
+      const left = g.milestones.filter((x) => !x.done).length;
+      this.bus.post('orchestrator', null,
+        `AWARENESS ONLY — TAKE NO ACTION. Milestone reached: "${hit.text}". `
+        + (left ? `${left} still open.` : 'That was the last one; the goal is complete.'),
+        'notice');
+    }
+  }
+
+  /** Surface approval requests to the sovereign exactly once. */
+  #surfaceApprovals() {
+    const seen = Number(this.bus.get('approvals:cursor') ?? 0);
+    for (const m of this.bus.history({ since: seen, limit: 50 })) {
+      this.bus.set('approvals:cursor', String(m.id));
+      if (m.kind !== 'approval') continue;
+      if (this.bus.get(`resolved:${m.id}`)) continue;
+      let payload;
+      try { payload = JSON.parse(m.body); } catch { continue; }
+      this.approvals.set(m.id, payload);
+      this.emit('approval', { id: m.id, ...payload });
+    }
+  }
+
+  /**
+   * A member nobody has spoken to in a while is stopped. Stopped members cost
+   * nothing and revive with their memory intact on the next message — the
+   * Habitable run kept seven agents alive while two did the work.
+   */
+  #maybeIdleSleep(name, now) {
+    if (!IDLE_SLEEP_MS) return;
+    if (name === this.config.king.name) return; // the king is the entry point
+    const agent = this.agents.get(name);
+    if (!agent || agent.busy) return;
+    const since = this.lastActive.get(name) ?? now;
+    if (now - since < IDLE_SLEEP_MS) return;
+    agent.stop();
+    this.agents.delete(name);
+    this.#publishRoster();
+    this.emit('agent', { name, state: 'idle-slept' });
+    this.#rescueWork(name).catch((e) => this.emit('error', e));
+  }
+
+  /**
+   * A peasant cannot commit — its .git is outside the sandbox — so the ONLY way
+   * its work becomes visible is the crown committing it. If a peasant goes quiet
+   * without calling declare_done (it hit the git error and reported a blocker
+   * instead, or was rate limited, or simply stopped), its edits sit in the
+   * worktree where nothing will ever look at them.
+   *
+   * So: never let a peasant fall asleep on top of uncommitted work. Commit it as
+   * WIP on its own branch — cheap, reversible, and the difference between work
+   * that can be recovered and work that is silently lost.
+   */
+  async #rescueWork(name) {
+    if (this.roleOf(name) !== 'peasant') return;
+    if (!(await commitAll(this.repo, name, `WIP: ${name} slept with uncommitted work`))) return;
+    this.bus.post('orchestrator', this.config.king.name,
+      `AWARENESS ONLY — TAKE NO ACTION. "${name}" went idle with uncommitted edits, ` +
+      `so the crown committed them as WIP on its branch. Nothing is lost; the work ` +
+      `was never declared done, so it has NOT been tested or reviewed.`, 'notice');
+    this.emit('rescued', { peasant: name });
+  }
+
+  #envelope(msg) {
+    const tag = msg.kind === 'assignment' ? 'ORDER FROM'
+      : msg.kind === 'notice' ? 'FYI — NO ACTION REQUIRED, FROM'
+      : 'MESSAGE FROM';
+    const control = msg.recipient === this.config.king.name && msg.kind === 'assignment'
+      ? '\n\n[COURT CONTROL] If specialist help is needed, call the summon MCP tool now. '
+        + 'Do not ask for approval only in prose; prose does not create an approval card.'
+      : '';
+    return `[${tag} ${msg.sender}]\n${msg.body}${control}`;
+  }
+
+  /** peasant done -> run its tests -> hand the diff to the jester to digest. */
+  async #onDone(msg) {
+    const peasant = msg.sender;
+    const wt = worktreePath(this.repo, peasant);
+    this.emit('agent', { name: peasant, state: 'verifying' });
+
+    await commitAll(this.repo, peasant, `kingdom(${peasant}): ${msg.body.split('\n')[0].slice(0, 90)}`);
+    const tests = await runTests(wt);
+    const [diff, stat] = await Promise.all([
+      diffOf(this.repo, peasant, this.base),
+      statOf(this.repo, peasant, this.base),
+    ]);
+    this.bus.set(`tests:${peasant}`, JSON.stringify(tests));
+    this.emit('verified', { peasant, tests, stat });
+
+    const verdict = `TESTS: ${tests.ran ? (tests.ok ? 'PASSED' : 'FAILED') : 'NONE FOUND (treat as unverified)'}`;
+
+    // The digest costs two turns — one for the jester to read, one to brief.
+    // Worth it when several peasants are in flight and the king needs a
+    // filtered view. Pure overhead when one peasant did one thing: the king
+    // can read_diff itself if the summary looks off.
+    // AWAKE peasants, not summoned ones. `summoned` carries every peasant
+    // inherited from previous sessions — measured: seven of them, all asleep,
+    // none doing anything. Counting those made a court where ONE peasant did
+    // ONE thing take the two-turn jester digest anyway, and a jester turn
+    // averaged 1M input tokens. "In flight" means holding a live process.
+    const workers = [...this.agents.keys()].filter((n) => this.roleOf(n) === 'peasant').length;
+    const useJester = this.config.jesterDigestAbove ?? 1;
+    if (workers <= useJester) {
+      this.bus.post('orchestrator', this.config.king.name,
+        `"${peasant}" declared done.\n${msg.body}\n\n${verdict}\n${tests.output.slice(-1200)}\n\n` +
+        `CHANGED:\n${stat}\n\nUse read_diff("${peasant}") if you need the actual changes, ` +
+        `then request_merge or send_back.`, 'done-report');
+      return;
+    }
+
+    const truncated = diff.length > DIGEST_DIFF_LIMIT;
+    const jester = this.agents.get(this.config.jester.name);
+    jester?.send(
+      `[ORCHESTRATOR] "${peasant}" declared done. Digest this for the king, then ` +
+      `call brief_king with your digest.\n\n` +
+      `THEIR SUMMARY:\n${msg.body}\n\n` +
+      `TESTS: ${tests.ran ? (tests.ok ? 'PASSED' : 'FAILED') : 'NONE FOUND (treat as unverified)'}\n` +
+      `${tests.output}\n\n` +
+      `DIFFSTAT:\n${stat}\n\n` +
+      `DIFF${truncated ? ' (truncated)' : ''}:\n${diff.slice(0, DIGEST_DIFF_LIMIT)}`
+    );
+  }
+
+  recycleJester() {
+    return this.recycleAgent(this.config.jester.name);
+  }
+
+  /**
+   * Retire a member whose context has grown too expensive and replace it with a
+   * successor carrying a handover note.
+   *
+   * Originally jester-only. That was a mistake: the KING accumulates the most
+   * context of anyone (observed at 227k tokens, replayed on every single turn)
+   * and had no recycle at all. Whoever talks most needs this most.
+   */
+  async recycleAgent(name) {
+    const jester = this.agents.get(name);
+    if (!jester || jester.recycling) return;
+    jester.recycling = true;
+
+    const note = await this.#captureHandover(jester);
+
+    jester.stop();
+    this.agents.delete(name);
+    this.bus.set(`session:${name}`, ''); // fresh session, seeded by the note
+    this.bus.set(`ctx:${name}`, '0');
+    // A masked tool result says "you already have this". The successor does
+    // not — it is a fresh context holding only a handover note — so the ledger
+    // has to die with the session that earned it.
+    this.bus.set(`served:${name}`, '');
+    await this.#spawn(name, note);
+    this.emit('recycled', { name, note });
+  }
+
+  /**
+   * What a member waking into a FRESH session needs to know so it never has to
+   * ask the sovereign "what were we doing?". Built from the bus, so it works
+   * after a restart, a recycle, or a CLI switch alike.
+   */
+  #orientation() {
+    const recent = this.bus.history({ limit: 500 }).slice(-25);
+    if (!recent.length) return null;
+
+    const goal = [...recent].reverse().find((m) => m.sender === 'sovereign');
+    const crew = [...this.summoned]
+      .map((n) => (this.agents.has(n) ? n : `${n} (asleep)`)).join(', ');
+    const waiting = [...this.approvals].map(([id, p]) => `#${id} ${p.kind}`).join(', ');
+    const log = recent.map((m) =>
+      `#${m.id} ${m.sender}->${m.recipient ?? '*'} [${m.kind}] ` +
+      m.body.replace(/\s+/g, ' ').slice(0, 160)).join('\n');
+
+    return [
+      goal && `THE SOVEREIGN'S STANDING GOAL:\n${goal.body.slice(0, 700)}`,
+      `IN SERVICE: ${crew || 'nobody yet'}`,
+      waiting && `AWAITING THE SOVEREIGN'S APPROVAL: ${waiting}`,
+      `RECENT COURT TRAFFIC (oldest first):\n${log}`,
+      `You have inherited work in progress. Do NOT ask the sovereign to ` +
+      `re-explain it — continue from the above, and use read_bus, read_diff or ` +
+      `vault_search if you need more.`,
+    ].filter(Boolean).join('\n\n');
+  }
+
+  /** Ask a member for a handover note before its session is discarded. */
+  #captureHandover(agent) {
+    return new Promise((res) => {
+      let last = '';
+      let timer;
+      const grab = (t) => (last += t);
+      const done = () => {
+        clearTimeout(timer);
+        agent.off('text', grab);
+        res(last.trim());
+      };
+      agent.on('text', grab);
+      agent.once('turn_end', done);
+      agent.send(
+        '[ORCHESTRATOR] Your session is about to be replaced by a successor who ' +
+        'will inherit ONLY what you write now. Reply with a compact handover: ' +
+        'the goal you are pursuing, what has been decided and merged, the state ' +
+        'of everyone you are working with, open threads, and what happens next. ' +
+        'Facts and decisions, not narrative.'
+      );
+      timer = setTimeout(done, 120_000); // a wedged member must not block this
+    });
+  }
+
+  /**
+   * Fallback only — the agent measures its own context now (Agent#ctxTokens).
+   * Kept for turn_end events that predate that, e.g. replayed from the bus.
+   */
+  #contextTokens(usage = {}) {
+    // Shared with ctx.js via usage.js. This logic used to live in both files
+    // and they drifted: ctx.js kept counting Anthropic's alongside-cache
+    // against an input_tokens-only denominator and reported replay at 107.6%
+    // of input, with negative "genuinely new" tokens.
+    return inputTokens(usage);
+  }
+
+  /**
+   * `/autocompact 300k` — the compaction window, changed from the throne room
+   * instead of by editing kingdom.config.json and restarting.
+   *
+   * Typed at the king it sets the court-wide default; typed into a member's own
+   * pane it sets that member's, which is how the jester came to sit at 20k
+   * while everyone else runs at 80k. Returns the line to show the sovereign, so
+   * a mistyped window answers in the throne room rather than being posted to
+   * the king as if it were work.
+   */
+  #compactCommand(text, name = null) {
+    // Whole word only — see #argueCommand: \b matches before a hyphen, so
+    // "/compact-the-log" was being parsed as the command plus an argument.
+    const m = /^\/(?:autocompact|compact)(?:\s+([\s\S]*))?$/i.exec(String(text ?? '').trim());
+    if (!m) return null;
+
+    const who = name ?? 'the court';
+    const current = this.#recycleThreshold(name ?? this.config.king.name);
+    const arg = (m[1] ?? '').trim();
+    // A bare `/autocompact` asks rather than sets — the same shape as every
+    // other read-only status command, and it costs nothing to get wrong.
+    if (!arg) return this.#compactSay(`Compaction window for ${who}: ${fmtTokens(current)} tokens.`);
+
+    const want = parseWindow(arg);
+    if (want.error) return this.#compactSay(want.error);
+
+    let tokens = want.tokens;
+    if (want.auto) {
+      tokens = autoWindow(this.#contextHistory(name), current);
+      if (tokens === null) {
+        return this.#compactSay(
+          `Not enough uncensored context history to re-derive a window for ${who} — `
+          + `keeping ${fmtTokens(current)}. (Compaction truncates the tail it would `
+          + `be measured from, so a p90 sitting near the current window proves nothing.)`);
+      }
+    }
+
+    this.setCompactWindow(name, tokens);
+    return this.#compactSay(
+      `Compaction window for ${who}: ${fmtTokens(current)} → ${fmtTokens(tokens)} tokens`
+      + `${want.auto ? ' (p90 of measured contexts)' : ''}.`);
+  }
+
+  /**
+   * `/argue should we drop the settle window?` — two models argue it, a third
+   * judges, and the verdict lands in the vault.
+   *
+   * Fire and report, never awaited: this is three to five model calls and
+   * holding the throne room open for it would look like a hang. The sovereign
+   * gets an acknowledgement now and the verdict when it exists — the same
+   * shape the advisor's rewrite already uses.
+   */
+  #argueCommand(text) {
+    // NOT \b after the name: a word boundary sits between "argue" and the
+    // hyphen in "/argue-with-me", so \b matched it and swallowed an ordinary
+    // message as a command. The name must be the WHOLE word.
+    const m = /^\/(?:argue|debate)(?:\s+([\s\S]*))?$/i.exec(String(text ?? '').trim());
+    if (!m) return null;
+
+    const question = (m[1] ?? '').trim();
+    if (!question) {
+      return this.#compactSay('Nothing to argue. Try: /argue should the settle window be longer?');
+    }
+
+    const panel = pickPanel(this.config);
+    if (!panel) {
+      return this.#compactSay(
+        'The argument court needs two different models to argue and a third to judge, '
+        + 'and this kingdom has only one configured. Add models to kingdom.config.json.');
+    }
+
+    const who = (s) => `${s.cli}/${s.model}`;
+    this.#runArgument(question, panel).catch((e) =>
+      this.emit('argued', { question, error: e.message }));
+
+    return this.#compactSay(
+      `Arguing: "${question.slice(0, 90)}${question.length > 90 ? '…' : ''}"\n`
+      + `${panel.arguers.map(who).join(' vs ')}, judged by ${who(panel.judge)} (${panel.quality}). `
+      + `The verdict goes to the vault.`);
+  }
+
+  async #runArgument(question, panel) {
+    this.emit('argued', { question, stage: 'start', panel });
+    // Seam: a test must be able to exercise the vault write and the king's
+    // notice without spawning three real CLIs and spending real money.
+    const result = await (this.argueImpl ?? argue)(question, {
+      panel,
+      cwd: this.repo,
+      onProgress: (p) => this.emit('argued', { question, ...p }),
+    });
+
+    // The vault, not the bus: a verdict is a decision worth having in six
+    // months, and the bus is pruned. Written before the king is told, so the
+    // note it is pointed at always exists.
+    let path = null;
+    if (this.config.vault) {
+      const dir = join(this.config.vault, this.config.vaultWriteDir ?? 'Kingdom', 'Decisions');
+      mkdirSync(dir, { recursive: true });
+      const name = question.replace(/[\\/:*?"<>|]/g, '-').replace(/\s+/g, ' ').trim().slice(0, 80);
+      path = join(dir, `${name || 'argument'}.md`);
+      writeFileSync(path, verdictNote(result, new Date().toISOString().slice(0, 10)));
+    }
+
+    // A NOTICE, not a message: the king did not ask for this and does not have
+    // to act on it, so it rides along with real traffic instead of buying a
+    // full context replay of its own.
+    this.bus.post('orchestrator', this.config.king.name,
+      `AWARENESS ONLY — the argument court settled a question for the sovereign.\n`
+      + `Q: ${question}\n${result.verdict}\n`
+      + (path ? `Full argument: ${path}` : ''),
+      'notice');
+
+    this.emit('argued', { question, stage: 'done', verdict: result.verdict, path });
+    return result;
+  }
+
+  #compactSay(message) {
+    this.emit('compact', { message });
+    return message;
+  }
+
+  /** Every context size this member's turns have actually reported. */
+  #contextHistory(name) {
+    return this.bus.events({ agent: name ?? undefined, limit: 100_000 })
+      .filter((e) => e.type === 'turn_end')
+      .map((e) => e.payload?.ctx ?? 0);
+  }
+
+  /** Persisted, so the window survives the restart it was set to avoid. */
+  setCompactWindow(name, tokens) {
+    const target = name ? this.specOf(name) : this.config;
+    if (!target) throw new Error(`No such member of the court: ${name}`);
+    target.recycleAtTokens = tokens;
+    this.#persistConfig();
+    return tokens;
+  }
+
+  #recycleThreshold(name) {
+    const spec = this.specOf(name) ?? {};
+    // Cost per turn scales with context, so recycling EARLY is cheaper than
+    // letting a member coast to the model's limit. The observed king reached
+    // 227k and replayed it every turn; at 70k the average replay is a third of
+    // that, and one handover turn per cycle is far cheaper than the difference.
+    return spec.recycleAtTokens
+      ?? this.config.recycleAtTokens
+      ?? (name === this.config.jester.name ? 50_000 : 70_000);
+  }
+
+  // --- sovereign actions ----------------------------------------------
+
+  /**
+   * Change a court member's CLI and/or model from the throne room, persisting
+   * it to kingdom.config.json. An awake member is restarted; it resumes its
+   * session (and its memory) on the new model, unless the CLI changed — a codex
+   * thread id is meaningless to claude, so that starts a fresh session.
+   */
+  async setModel(name, { cli, model, effort, auto, byAdvisor }) {
+    const spec = this.specOf(name);
+    if (!spec) throw new Error(`No such member of the court: ${name}`);
+
+    // "Auto" hands this member's model AND effort to the advisor, which picks
+    // them together for each task — the sovereign's own Model Guidance couples
+    // them (Luna wants max, Terra wants high), so choosing one by hand and the
+    // other automatically would be picking along the wrong axis. Selecting Auto
+    // in EITHER dropdown therefore sets both. Picking a concrete model clears it.
+    if (auto !== undefined) {
+      if (auto) spec.auto = true;
+      else delete spec.auto;
+      this.#persistConfig();
+      this.#publishRoster();
+      // Turning Auto OFF without naming a replacement must only clear the flag.
+      // Falling through would reach `else delete spec.model` below and silently
+      // wipe the member's model, restarting it on the CLI default — a config
+      // this method persists, so the loss would survive the session.
+      if (auto || (!cli && !model)) return { name, auto: Boolean(auto) };
+    } else if ((cli || model) && !byAdvisor) {
+      // The SOVEREIGN naming a model means "stop choosing for me". The ADVISOR
+      // naming one is Auto doing its job, and must not switch itself off —
+      // without this distinction Auto worked exactly once, then silently
+      // pinned the member to whatever the first task happened to want.
+      delete spec.auto;
+    }
+
+    const prevCli = spec.cli ?? 'claude';
+    if (cli) spec.cli = cli;
+    if (model) spec.model = model;
+    else delete spec.model; // fall back to that CLI's own default
+
+    // undefined = leave alone (a model-only change); '' = back to the CLI default.
+    if (effort !== undefined) {
+      if (effort) spec.effort = effort;
+      else delete spec.effort;
+    }
+
+    // Haiku has no effort levels, so an effort left over from the previous
+    // model is meaningless. Switching models via the dropdown used to strand
+    // one here — see the sovereign's own Model Guidance.
+    if (NO_EFFORT_MODELS.some((m) => (spec.model ?? '').includes(m))) delete spec.effort;
+    writeFileSync(this.configPath, JSON.stringify(this.config, null, 2));
+
+    const cliChanged = (spec.cli ?? 'claude') !== prevCli;
+
+    if (this.agents.has(name)) {
+      const old = this.agents.get(name);
+      // A CLI switch throws the session away. Take a handover first — losing a
+      // member's memory silently is how a king ended up asking the sovereign
+      // what it had been working on.
+      const note = cliChanged ? await this.#captureHandover(old) : null;
+      old.stop();
+      this.agents.delete(name);
+      if (cliChanged) this.bus.set(`session:${name}`, '');
+      await this.#spawn(name, note || null);
+      this.bus.post('orchestrator', name,
+        `AWARENESS ONLY — TAKE NO ACTION. The sovereign changed your model to ` +
+        `${spec.cli ?? 'claude'}${spec.model ? ' / ' + spec.model : ' (default)'}` +
+        `${spec.effort ? ' at ' + spec.effort + ' effort' : ''}. ` +
+        (cliChanged
+          ? 'Your session did not carry over; your predecessor left you a handover.'
+          : 'Your memory is intact.'),
+        'notice');
+    } else if (cliChanged) {
+      // Asleep, but its stored session belongs to the OLD cli and would be
+      // meaningless (or invalid) to the new one.
+      this.bus.set(`session:${name}`, '');
+    }
+    this.#publishRoster();
+    return { name, cli: spec.cli ?? 'claude', model: spec.model ?? null,
+      effort: spec.effort ?? null, cliChanged };
+  }
+
+  /** Wake a peasant directly, without waiting for the king to propose it. */
+  async wake(name) {
+    return this.#spawn(name);
+  }
+
+  /** Explicit stop: leaves service entirely, unlike an idle sleep. */
+  sleep(name) {
+    this.agents.get(name)?.stop();
+    this.agents.delete(name);
+    this.summoned.delete(name);
+    this.bus.set('summoned', JSON.stringify([...this.summoned]));
+    this.emit('agent', { name, state: 'exited' });
+    this.#publishRoster();
+  }
+
+  /**
+   * You speak to the king. Routed through the BUS, not straight into the
+   * process: a goal sent directly leaves no record, so a successor king had no
+   * way to discover what it was supposed to be doing and asked the sovereign
+   * to re-explain. Everything the court is told must be reconstructable.
+   */
+  async command(text) {
+    // Settings are not work. This must precede the advisor: a prompt engineer
+    // handed `/autocompact 300k` would rewrite it into a paragraph asking the
+    // court to please consider compacting, and bill a turn for it.
+    const local = this.#compactCommand(text) ?? this.#argueCommand(text);
+    if (local) return { text: local, local: true };
+
+    text = this.#skillCommand(text);
+    const a = this.advisor();
+
+    // Model selection NEVER delays the order. It only changes members that are
+    // asleep — they pick it up when they next wake — so there is nothing to
+    // wait for, and the advisor is allowed up to 90 seconds to answer. Awaiting
+    // it put a minute and a half between the sovereign pressing enter and the
+    // king hearing anything, which is the single worst thing this system can do.
+    if (a.autoModel) this.#autoModelInBackground(a, text);
+
+    if (!a.promptEngineer) {
+      this.bus.post('sovereign', this.config.king.name, text, 'assignment');
+      return { text };
+    }
+
+    // The rewrite DOES have to block: it changes the words the court acts on,
+    // so posting first would race the court against its own brief.
+    this.emit('advising', { stage: 'start', text });
+    const why = [];
+    const opts = (job) => ({ cwd: this.repo, onFail: (m) => why.push(`${job}: ${m}`) });
+    const rewritten = await engineerPrompt(a, text, opts('prompt engineer')).catch(() => null);
+    if (why.length) {
+      this.#warn(`Advisor (${a.model}) gave no advice — ${why.join('; ')}. `
+        + 'Your message went through unchanged.');
+    }
+
+    const applied = [];
+    const final = rewritten ?? text;
+    this.emit('advising', {
+      stage: 'done', text, rewritten: rewritten ?? null, models: applied,
+    });
+
+    // The original is recorded even when it was rewritten: the court acts on
+    // the brief, but a successor reading the bus must be able to see what the
+    // sovereign actually said, not only the advisor's paraphrase of it.
+    if (rewritten && rewritten !== text) {
+      this.bus.post('sovereign', this.config.king.name,
+        `${final}\n\n---\nSovereign's original wording (for reference; the brief above is authoritative):\n${text}`,
+        'assignment');
+    } else {
+      this.bus.post('sovereign', this.config.king.name, final, 'assignment');
+    }
+    return { text: final, rewritten: rewritten ?? null, models: applied };
+  }
+
+  /**
+   * Pick models for this task without anyone waiting on it.
+   *
+   * Only SLEEPING members are changed: setModel restarts an awake one, and
+   * restarting six members every time the sovereign types costs more than a
+   * better model choice saves — and it interrupts work already in flight.
+   * A sleeping member picks the choice up when it next wakes, which is the
+   * only moment the choice actually matters.
+   */
+  #autoModelInBackground(a, text) {
+    const why = [];
+    // Kept on the instance so a caller that genuinely needs to know when the
+    // picks have landed can await it — chiefly tests, which would otherwise
+    // have to poll and race. Nothing in the delivery path waits on this.
+    this.autoModelPending = this.#autoModel(a, text, { cwd: this.repo, onFail: (m) => why.push(m) })
+      .then(async (picks) => {
+        const applied = [];
+        for (const [name, m] of Object.entries(picks ?? {})) {
+          const spec = this.specOf(name);
+          if (!spec || this.agents.has(name)) continue;
+          if (spec.cli === m.cli && spec.model === m.model && spec.effort === m.effort) continue;
+          try {
+            await this.setModel(name, { ...m, byAdvisor: true });
+            applied.push(`${name} -> ${m.model}${m.effort ? '/' + m.effort : ''}`);
+          } catch { /* an advisory pick must never break the court */ }
+        }
+        if (applied.length) this.emit('advising', { stage: 'models', models: applied });
+        else if (why.length) {
+          this.#warn(`Auto model selection gave no advice — ${why.join('; ')}.`);
+        }
+      })
+      .catch(() => { /* advisory: a failure here changes nothing */ });
+  }
+
+  /** Ask the advisor which model each member should run for THIS task. */
+  /** Members that have handed their model choice to the advisor. */
+  #autoMembers() {
+    return this.config.peasants.filter((p) => p.auto === true);
+  }
+
+  #autoModel(a, goal, opts) {
+    const allowAll = [
+      ...(this.models().codex ?? []).map((m) => `codex/${m}`),
+      ...(this.models().claude ?? []).map((m) => `claude/${m}`),
+    ];
+    const allowed = a.allow?.length ? a.allow.filter((x) => allowAll.includes(x)) : allowAll;
+    // Only members set to Auto. A member the sovereign pinned to a model chose
+    // it deliberately, and quietly moving it would make the dropdown a lie.
+    // No Auto members means no advisor call at all — the pick would be discarded.
+    const members = this.#autoMembers();
+    if (!members.length) return Promise.resolve({});
+    return pickModels(a, {
+      goal,
+      // The king and jester are the sovereign's own choice of instrument; the
+      // selector tunes the workers.
+      members: members.map((p) => ({
+        name: p.name, title: p.title, description: p.description,
+      })),
+      allowed,
+      efforts: this.efforts().byModel ?? {},
+      guidance: a.guidance,   // undefined falls back to the vault's policy
+    }, opts);
+  }
+
+  /**
+   * `/design-site fix the settings page` → an order that NAMES the skill.
+   *
+   * The body is deliberately not inlined: a pasted procedure sits in the
+   * member's context for every remaining turn of its life, while a named one
+   * is fetched on the turn it is needed and never replayed by the orchestrator.
+   * An unrecognised /word is returned untouched — the sovereign is more often
+   * typing a path or a flag than a skill.
+   */
+  #skillCommand(text) {
+    const hit = expandSkillCommand(this.config.vault, text, this.config.vaultWriteDir ?? 'Kingdom');
+    if (hit) this.emit('skill', { name: hit.name });
+    return hit?.text ?? text;
+  }
+
+  /** You type into a peasant's pane directly; the king is told so it stays coherent. */
+  speakTo(name, text) {
+    // Before the king delegation: `/autocompact` in a pane is about THAT
+    // member's window, and routing the king's pane to command() would quietly
+    // turn it into the court-wide default.
+    const local = this.#compactCommand(text, name) ?? this.#argueCommand(text);
+    if (local) return { text: local, local: true };
+    text = this.#skillCommand(text);
+    if (name === this.config.king.name) return this.command(text);
+    this.bus.post('sovereign', name, text, 'assignment'); // recorded, like command()
+    if (name !== this.config.king.name) {
+      // Framing matters: an earlier version phrased this as a plain report and
+      // the king obediently carried out the peasant's instruction itself.
+      this.bus.post('orchestrator', this.config.king.name,
+        `AWARENESS ONLY — THIS IS NOT AN ORDER TO YOU. TAKE NO ACTION.\n` +
+        `The sovereign has spoken directly to "${name}". What they said to ${name} ` +
+        `was: "${text}"\nYou are told only so you are not surprised by what ` +
+        `${name} does next. Do not perform this task yourself and do not reply.`,
+        'notice'); // FYI: rides along with real traffic instead of costing its own turn
+    }
+  }
+
+  async approve(id) {
+    const p = this.approvals.get(id);
+    if (!p) throw new Error(`No pending approval ${id}`);
+    if (p.kind !== 'summon') {
+      this.approvals.delete(id);
+      this.bus.set(`resolved:${id}`, 'approved');
+    }
+
+    if (p.kind === 'summon') {
+      for (const n of p.names) await this.#spawn(n);
+      this.approvals.delete(id);
+      this.bus.set(`resolved:${id}`, 'approved');
+      this.bus.post('orchestrator', this.config.king.name,
+        `The sovereign approved your summons: ${p.names.join(', ')} are awake. Assign their work.`);
+    } else if (p.kind === 'role') {
+      this.config.peasants.push({
+        name: p.name, cli: p.cli, model: p.model, prompt: p.prompt, description: p.reason,
+      });
+      writeFileSync(this.configPath, JSON.stringify(this.config, null, 2));
+      this.#publishRoster();
+      this.bus.post('orchestrator', this.config.king.name,
+        `The sovereign approved the new role "${p.name}". It is in the roster permanently.`);
+    } else if (p.kind === 'merge') {
+      await this.merge(p.peasant);
+    }
+    this.emit('resolved', { id, approved: true });
+  }
+
+  reject(id, why = '') {
+    const p = this.approvals.get(id);
+    if (!p) return;
+    this.approvals.delete(id);
+    this.bus.set(`resolved:${id}`, 'rejected');
+    this.bus.post('orchestrator', this.config.king.name,
+      `The sovereign REJECTED your ${p.kind} proposal. ${why}`);
+    this.emit('resolved', { id, approved: false });
+  }
+
+  async merge(peasant) {
+    let out;
+    try {
+      out = await mergeWorktree(this.repo, peasant, this.base);
+    } catch (e) {
+      // Conflicts and dirty trees are expected outcomes, not crashes: tell the
+      // king so it can send the work back, and leave the repo untouched.
+      this.bus.post('orchestrator', this.config.king.name,
+        `The merge of "${peasant}" did NOT happen and nothing was changed.\n${e.message}`);
+      this.emit('mergeFailed', { peasant, message: e.message });
+      throw e;
+    }
+
+    // Confirmation of something the king itself asked for, so it rides along
+    // rather than buying a turn. The FAILURE path above stays a message on
+    // purpose: that one needs a decision (send the work back), this one does not.
+    this.bus.post('orchestrator', this.config.king.name,
+      `"${peasant}"'s work is merged into ${this.base}.`, 'notice');
+    this.emit('merged', { peasant, output: out });
+
+    // Merged work needs no worktree; the branch stays for history.
+    this.sleep(peasant);
+    await removeWorktree(this.repo, peasant).catch(() => {});
+    this.bus.set(`session:${peasant}`, ''); // its next task starts clean
+    this.#publishRoster();
+    return out;
+  }
+}
+
+export function defaultConfigPath(repo) {
+  const local = join(kingdomDir(repo), 'kingdom.config.json');
+  return existsSync(local) ? local : join(HERE, '..', 'kingdom.config.json');
+}

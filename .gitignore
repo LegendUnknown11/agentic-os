@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.kingdom/
+
+# Never commit credentials. The real token store lives outside the repo
+# (<repoParent>/.kingdom/<repoName>/tokens.json), but guard these too in case
+# someone puts one here.
+tokens.json
+.env
+.env.*
+*.credentials.json

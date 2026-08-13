@@ -1,0 +1,232 @@
+// The three panels that report on the court: metrics, diff/merge, vault.
+//
+// The one with teeth is metrics. Codex reports `usage` CUMULATIVELY PER THREAD
+// in turn.completed, so a naive sum counts every earlier turn again — on a real
+// run that turned 65M input tokens into an apparent 420M, and every cost
+// decision made from that number was wrong. This pins the delta arithmetic,
+// including the session restart that makes the counter drop.
+//
+//   node test/t-panels.js
+import { strict as a } from 'node:assert';
+import { execFileSync, spawn } from 'node:child_process';
+import { mkdtempSync, writeFileSync, rmSync, mkdirSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { Bus } from '../src/bus.js';
+import { dbPath, kingdomDir, createWorktree, worktreePath } from '../src/worktree.js';
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+const repo = mkdtempSync(join(tmpdir(), 'kingdom-panels-'));
+const git = (...x) => execFileSync('git', x, { cwd: repo, stdio: 'pipe' });
+git('init', '-q');
+git('config', 'user.email', 'k@kingdom');
+git('config', 'user.name', 'kingdom');
+writeFileSync(join(repo, 'README.md'), '# t\n');
+writeFileSync(join(repo, 'app.js'), 'const a = 1;\nconst b = 2;\n');
+git('add', '-A');
+git('commit', '-qm', 'init');
+// git init's default branch is master here and main elsewhere; ask, do not assume.
+const BASE = execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim();
+
+// A vault to browse, with a note that only matches by filename.
+const vault = mkdtempSync(join(tmpdir(), 'kingdom-panelvault-'));
+mkdirSync(join(vault, 'References'), { recursive: true });
+mkdirSync(join(vault, '.obsidian'), { recursive: true });
+writeFileSync(join(vault, 'References', 'Effort Levels.md'), '# Effort\nluna goes to max\n');
+writeFileSync(join(vault, 'Roster.md'), '# Roster\nthe coder runs on luna\n');
+writeFileSync(join(vault, '.obsidian', 'workspace.md'), 'luna luna luna\n');
+
+const cfg = join(repo, 'kingdom.config.json');
+writeFileSync(cfg, JSON.stringify({
+  vault,
+  maxKingdomUsd: 75,
+  maxBudgetUsd: 5,
+  king: { name: 'king', cli: 'codex' },
+  jester: { name: 'jester', cli: 'codex' },
+  peasants: [{ name: 'coder', cli: 'codex' }],
+  rolesSeeded: true,
+  advisor: { promptEngineer: false, autoModel: false },
+}));
+
+/* ---------- seed turn_end events BEFORE the daemon opens the bus ---------- */
+// Two threads' worth for the king: the counter climbs, then DROPS when the
+// session restarts. A sum would report 30+60+90+25+50 = 255k. The truth is
+// 90k from the first thread plus 50k from the second = 140k.
+{
+  const bus = new Bus(dbPath(repo));
+  const turn = (agent, input, ctx) => bus.logEvent(agent, 'turn_end',
+    { usage: { input_tokens: input, output_tokens: Math.round(input / 100), cached_input_tokens: 0 }, ctx });
+  turn('king', 30_000, 10_000);
+  turn('king', 60_000, 20_000);
+  turn('king', 90_000, 30_000);
+  turn('king', 25_000, 8_000);     // <- recycled: a fresh thread, counter resets
+  turn('king', 50_000, 14_000);
+  turn('coder', 40_000, 12_000);
+  bus.set('spentUsd', '3.50');
+  bus.set('spent:king', '2.00');
+  bus.close();
+}
+
+const PORT = 7960 + (process.pid % 30);
+const base = `http://127.0.0.1:${PORT}`;
+process.env.KINGDOM_CODEX_BIN = process.execPath;
+
+const daemon = spawn(process.execPath,
+  [join(HERE, '..', 'src', 'daemon.js'), repo, '--port', String(PORT), '--config', cfg],
+  { stdio: 'ignore', env: process.env });
+
+const up = async () => {
+  for (let i = 0; i < 60; i++) {
+    try { if ((await fetch(`${base}/api/ping`)).ok) return true; } catch {}
+    await wait(250);
+  }
+  return false;
+};
+a.ok(await up(), 'the daemon must come up');
+const get = (p) => fetch(base + p).then((r) => r.json());
+
+try {
+  /* ---------- 1. metrics: deltas, not sums ---------- */
+  {
+    const m = await get('/api/metrics');
+    a.ok(m.ok);
+    const king = m.members.find((x) => x.name === 'king');
+
+    a.equal(king.turns, 5, 'every turn is counted');
+    a.equal(king.in, 140_000,
+      'input must be the sum of DELTAS (90k first thread + 50k after the restart), not 255k');
+    a.notEqual(king.in, 255_000, 'the naive sum is the bug this test exists for');
+    a.equal(king.ctx, 14_000, 'context is the LATEST reading, never a total');
+    a.equal(king.perTurn, 28_000, '140k over 5 turns');
+    a.equal(king.role, 'king');
+    a.equal(king.spent, 2);
+
+    a.equal(m.total.turns, 6, 'king 5 + coder 1');
+    a.equal(m.total.in, 180_000, '140k + 40k');
+    a.equal(m.spent, 3.5);
+    a.equal(m.cap, 75);
+    a.equal(m.perMemberCap, 5);
+    console.log(`  metrics: king 5 turns -> ${king.in} in (a sum would have said 255000)`);
+  }
+
+  /* ---------- 2. diff of real work ---------- */
+  {
+    // A peasant with no worktree is a normal state, not an error.
+    let d = await get('/api/diff?peasant=coder');
+    a.equal(d.ok, true);
+    a.equal(d.none, true, 'no worktree yet is reported, not thrown');
+
+    await createWorktree(repo, 'coder', BASE);
+    const wt = worktreePath(repo, 'coder');
+    writeFileSync(join(wt, 'app.js'), 'const a = 1;\nconst b = 22;\nconst c = 3;\n');
+    writeFileSync(join(wt, 'new.js'), 'export const hi = 1;\n');
+    execFileSync('git', ['add', '-A'], { cwd: wt, stdio: 'pipe' });
+    execFileSync('git', ['commit', '-qm', 'work'], { cwd: wt, stdio: 'pipe' });
+
+    d = await get('/api/diff?peasant=coder');
+    a.equal(d.ok, true);
+    a.equal(d.base, BASE);
+    a.match(d.stat, /app\.js/, 'the stat must name the changed file');
+    a.match(d.stat, /new\.js/, 'and the added one');
+    a.match(d.diff, /^\+const c = 3;$/m, 'the diff must carry the added line');
+    a.match(d.diff, /^-const b = 2;$/m, 'and the removed one');
+    a.equal(d.truncated, false);
+
+    // One file at a time, for when the whole diff is too big to read.
+    const one = await get('/api/diff?peasant=coder&file=new.js');
+    a.match(one.diff, /new\.js/);
+    a.ok(!one.diff.includes('const c = 3'), 'a single-file diff must not carry other files');
+
+    // Only peasants have worktrees; the king must not be diffable.
+    const k = await get('/api/diff?peasant=king');
+    a.equal(k.ok, false);
+    const ghost = await get('/api/diff?peasant=nobody');
+    a.equal(ghost.ok, false);
+    console.log('  diff: stat + patch, per-file view, king and unknowns refused');
+  }
+
+  /* ---------- 2b. the chronicle ---------- */
+  {
+    // Seed a mixed history: summaries and errors are EVENTS, messages are
+    // messages, and the chronicle has to merge two tables into one timeline.
+    const { Bus: B } = await import('../src/bus.js');
+    const bus = new B(dbPath(repo));
+    bus.logEvent('coder', 'summary', { text: 'Fixed the webhook idempotency key.' });
+    bus.logEvent('tester', 'summary', { text: 'Ran the suite; two gates still red.' });
+    bus.logEvent('coder', 'error', { message: 'ENOENT reading fixtures.json' });
+    bus.post('coder', 'tester', 'Try the suite again now.');
+    bus.post('coder', 'king', 'Webhook work is finished.', 'done');
+    bus.post('king', null, 'ignore me', 'notice');        // machinery, not narrative
+    bus.post('king', null, '{"kind":"summon"}', 'approval');
+    bus.close();
+
+    const all = await get('/api/chronicle');
+    a.ok(all.ok);
+    const kinds = new Set(all.rows.map((r) => r.kind));
+    a.ok(!kinds.has('notice') && !kinds.has('approval'),
+      'notices and approvals are machinery and must not pollute the narrative');
+    a.ok(kinds.has('summary') && kinds.has('message') && kinds.has('done') && kinds.has('error'),
+      'events and messages must be merged into one timeline');
+
+    // Newest first, always — a chronicle that reads oldest-first is a log file.
+    for (let i = 1; i < all.rows.length; i++) {
+      a.ok(all.rows[i - 1].ts >= all.rows[i].ts, 'rows must be newest first');
+    }
+
+    const hit = await get('/api/chronicle?q=webhook');
+    a.equal(hit.total, 2, 'search spans both tables: one summary and one done');
+    a.ok(hit.rows.every((r) => /webhook/i.test(r.text)));
+
+    // A term nobody said must return NOTHING. The UI bug this pairs with was a
+    // stale response repainting 78 rows over an empty result.
+    const none = await get('/api/chronicle?q=zzzznope');
+    a.equal(none.total, 0);
+    a.deepEqual(none.rows, []);
+
+    const byWho = await get('/api/chronicle?q=tester');
+    a.ok(byWho.total >= 2, 'searching a member name finds what they said and what was said to them');
+
+    const only = await get('/api/chronicle?kinds=summary');
+    a.ok(only.rows.every((r) => r.kind === 'summary'), 'the kind filter is honoured');
+    a.equal(only.total, 2);
+    console.log('  chronicle: two tables merged, newest first, filtered and searchable');
+  }
+
+  /* ---------- 3. vault ---------- */
+  {
+    const recent = await get('/api/vault');
+    a.equal(recent.configured, true);
+    a.equal(recent.notes.length, 2, 'two notes — .obsidian must not be walked');
+    a.ok(!recent.notes.some((n) => n.path.includes('.obsidian')));
+
+    const hits = await get('/api/vault?q=luna');
+    a.equal(hits.notes.length, 2);
+    a.ok(hits.notes.every((n) => !n.path.startsWith('.')), 'dot-directories stay excluded from search');
+
+    // A filename match counts even when the body never says the word.
+    const byName = await get('/api/vault?q=Effort');
+    a.equal(byName.notes[0].path, 'References/Effort Levels.md');
+    a.equal(byName.notes[0].inName, true);
+
+    const note = await get('/api/vault?path=References/Effort Levels.md');
+    a.match(note.body, /luna goes to max/);
+
+    // The containment rule is the same one the agents get, from vault.js.
+    for (const bad of ['../../../etc/passwd', '..\\..\\secret.md', '/etc/hosts', '../kingdom.config.json']) {
+      const r = await get(`/api/vault?path=${encodeURIComponent(bad)}`);
+      a.equal(r.ok, false, `${bad} must not be readable`);
+    }
+    console.log('  vault: recent, search, filename matches, traversal refused');
+  }
+
+  console.log('t-panels.js OK — metrics take deltas, diffs are real, the vault stays contained');
+} finally {
+  daemon.kill();
+  await wait(300);
+  for (const d of [repo, vault, kingdomDir(repo)]) {
+    try { rmSync(d, { recursive: true, force: true, maxRetries: 10, retryDelay: 150 }); } catch {}
+  }
+}
