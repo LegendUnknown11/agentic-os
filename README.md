@@ -329,7 +329,7 @@ node test/dump.js <repo>   # peek at a kingdom's bus
 
 `t-agent.js` and `t-comms.js` spend real quota, so `npm test` leaves them out.
 
-`npm test` runs four suites at a time (185s → 74s here). A suite that fails is
+`npm test` runs four suites at a time (185s → 59s here). A suite that fails is
 re-run alone before it is reported, because several of them use real resources —
 the live tick loop, git, ports, a Whisper model — and lose races for them under
 load; a failure that passes on the retry is printed as `flaky`, not as a pass.
