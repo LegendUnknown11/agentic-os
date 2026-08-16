@@ -103,13 +103,25 @@ export class Bus {
       .run(Date.now(), agent, type, JSON.stringify(payload ?? {}));
   }
 
-  events({ since = 0, agent = null, limit = 500 } = {}) {
-    const rows = agent
-      ? this.db
-          .prepare('select * from events where id > ? and agent = ? order by id limit ?')
-          .all(since, agent, limit)
-      : this.db.prepare('select * from events where id > ? order by id limit ?').all(since, limit);
+  // `type` filters in SQL rather than after the fact, because every row this
+  // returns is JSON.parsed: /api/metrics wants only the turn_ends, and pulling
+  // all 20,000 retained events to keep a handful of them parsed the whole log
+  // every 5 seconds.
+  events({ since = 0, agent = null, type = null, limit = 500 } = {}) {
+    const where = ['id > ?'];
+    const args = [since];
+    if (agent) { where.push('agent = ?'); args.push(agent); }
+    if (type) { where.push('type = ?'); args.push(type); }
+    args.push(limit);
+    const rows = this.db
+      .prepare(`select * from events where ${where.join(' and ')} order by id limit ?`)
+      .all(...args);
     return rows.map((r) => ({ ...r, payload: JSON.parse(r.payload) }));
+  }
+
+  /** How many messages there are. Counting them by loading every body is not that. */
+  countMessages() {
+    return this.db.prepare('select count(*) as n from messages').get().n;
   }
 
   // --- kv state (session ids, roster, cursors) ------------------------
@@ -182,6 +194,19 @@ if (process.argv[1]?.endsWith('bus.js')) {
 
   b.logEvent('coder', 'tool', { name: 'Edit' });
   a.equal(b.events({ agent: 'coder' })[0].payload.name, 'Edit');
+
+  // Filtering by type happens in SQL, so the rows never returned are never parsed.
+  b.logEvent('coder', 'turn_end', { usage: { input_tokens: 1 } });
+  b.logEvent('reviewer', 'turn_end', { usage: { input_tokens: 2 } });
+  a.equal(b.events({ type: 'turn_end' }).length, 2, 'type filters across agents');
+  a.equal(b.events({ type: 'tool' }).length, 1);
+  a.equal(b.events({ agent: 'coder', type: 'turn_end' }).length, 1, 'agent and type compose');
+  a.equal(b.events({ type: 'nothing-logs-this' }).length, 0);
+  a.equal(b.events({ agent: 'coder' }).length, 2, 'no type means every type, as before');
+
+  // Counting messages must not mean loading every body.
+  a.equal(b.countMessages(), b.history({ limit: 100_000 }).length,
+    'count(*) must agree with the old load-and-measure it replaces');
 
   b.set('session:coder', 'abc');
   a.equal(b.get('session:coder'), 'abc');

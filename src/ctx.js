@@ -13,37 +13,64 @@
 import { DatabaseSync } from 'node:sqlite';
 import { resolve } from 'node:path';
 import { dbPath } from './worktree.js';
-import { inputTokens, cachedTokens } from './usage.js';
+import { totalsOf, deltaOf, ZERO } from './usage.js';
+import { costOf, tableFrom } from './price.js';
 
 const M = (n) => (n / 1e6).toFixed(2) + 'M';
 const pct = (a, b) => (b ? ((a / b) * 100).toFixed(1) + '%' : '—');
+const $ = (n) => (n === null ? '  —  ' : '$' + n.toFixed(3));
 
-export function audit(db, since = 0) {
+export function audit(db, since = 0, { config = null } = {}) {
   const ev = db.prepare('select id,agent,type,payload from events where id > ? order by id').all(since);
   const msgs = db.prepare('select recipient,kind,length(body) len from messages').all();
 
+  const rates = tableFrom(config);
+  const specs = specsOf(config);
+
   const per = {};
   const seq = {};
-  let inTok = 0, cached = 0, outTok = 0, turns = 0;
+  const prev = new Map();
+  let inTok = 0, cached = 0, outTok = 0, turns = 0, usd = 0, unpriced = 0;
+  const split = { cached: 0, fresh: 0, out: 0 };
 
   for (const e of ev) {
     if (e.type !== 'turn_end') continue;
     const p = JSON.parse(e.payload);
     const u = p.usage ?? {};
-    // Both from usage.js, so this and kingdom.js cannot drift apart again.
-    // They already had: counting Anthropic's alongside-cache against an
-    // input_tokens-only denominator reported "replay 107.6% of all input" and
-    // "genuinely new: -37.94M".
-    const i = inputTokens(u);
-    const c = cachedTokens(u);
-    const o = u.output_tokens ?? 0;
-    inTok += i; cached += c; outTok += o; turns++;
-    (per[e.agent] ??= { turns: 0, in: 0, cached: 0, out: 0 });
+    // All of this comes from usage.js, so this and kingdom.js and daemon.js
+    // cannot drift apart again. They already had: counting Anthropic's
+    // alongside-cache against an input_tokens-only denominator reported
+    // "replay 107.6% of all input" and "genuinely new: -37.94M".
+    //
+    // And DELTAS, because codex reports cumulatively per thread. Summing raw
+    // read this very database as 2.37M input when the truth is 1.89M.
+    const d = deltaOf(prev.get(e.agent), u);
+    prev.set(e.agent, totalsOf(u));
+
+    const spec = specs.get(e.agent);
+    // A member's cost is what the CLI charged, when it says so (only claude
+    // does), and otherwise what its rate card says. Null when unpriced — an
+    // invented number here would be worse than a blank.
+    const cost = p.costUsd || costOf(d, spec?.cli, spec?.model, rates);
+    if (cost === null) unpriced++; else usd += cost;
+
+    // Which KIND of token the money went on. This is the whole reason the
+    // report exists: a token count cannot tell you, because the three kinds
+    // differ by 12.5x, and the lever is different for each.
+    split.cached += costOf({ cached: d.cached }, spec?.cli, spec?.model, rates) ?? 0;
+    split.fresh += costOf({ in: d.in - d.cached - d.written, written: d.written },
+      spec?.cli, spec?.model, rates) ?? 0;
+    split.out += costOf({ out: d.out }, spec?.cli, spec?.model, rates) ?? 0;
+
+    inTok += d.in; cached += d.cached; outTok += d.out; turns++;
+    (per[e.agent] ??= { turns: 0, in: 0, cached: 0, out: 0, usd: 0, unpriced: 0 });
     Object.assign(per[e.agent], {
       turns: per[e.agent].turns + 1,
-      in: per[e.agent].in + i,
-      cached: per[e.agent].cached + c,
-      out: per[e.agent].out + o,
+      in: per[e.agent].in + d.in,
+      cached: per[e.agent].cached + d.cached,
+      out: per[e.agent].out + d.out,
+      usd: per[e.agent].usd + (cost ?? 0),
+      unpriced: per[e.agent].unpriced + (cost === null ? 1 : 0),
     });
     (seq[e.agent] ??= []).push(p.ctx ?? 0);
   }
@@ -63,27 +90,42 @@ export function audit(db, since = 0) {
     for (let i = 1; i < s.length; i++) if (s[i] < s[i - 1] / 2) handovers++;
   }
 
-  return { per, seq, mail, inTok, cached, outTok, turns, handovers };
+  return { per, seq, mail, inTok, cached, outTok, turns, handovers, usd, unpriced, split };
+}
+
+/** name -> {cli, model}, so a turn can be priced. Empty without a config. */
+function specsOf(config) {
+  const m = new Map();
+  if (!config) return m;
+  const def = config.peasantDefaults ?? {};
+  for (const s of [config.king, config.jester, ...(config.peasants ?? [])]) {
+    if (s?.name) m.set(s.name, { cli: s.cli ?? def.cli, model: s.model ?? def.model });
+  }
+  return m;
 }
 
 export function report(a) {
   const lines = [];
   const say = (s = '') => lines.push(s);
 
-  say(`${a.turns} turns · ${M(a.inTok)} in · ${M(a.outTok)} out`);
+  say(`${a.turns} turns · ${M(a.inTok)} in · ${M(a.outTok)} out`
+    + (a.unpriced === a.turns ? '' : ` · ${$(a.usd)}`)
+    + (a.unpriced ? `  (${a.unpriced} turn(s) unpriced)` : ''));
   say();
   say(`replayed context : ${M(a.cached).padStart(8)}  ${pct(a.cached, a.inTok)} of all input`);
   say(`genuinely new    : ${M(a.inTok - a.cached).padStart(8)}  ${pct(a.inTok - a.cached, a.inTok)}`);
   say(`output produced  : ${M(a.outTok).padStart(8)}  ${pct(a.outTok, a.inTok + a.outTok)} of all traffic`);
   say();
-  say('member        turns     input   replay    output   in/turn   msgs  fyi');
+  say('member        turns     input   replay    output   in/turn      cost   msgs  fyi');
   const rows = Object.entries(a.per).sort((x, y) => y[1].in - x[1].in);
   for (const [n, d] of rows) {
     const m = a.mail[n] ?? { n: 0, notices: 0 };
     say([
       n.padEnd(13), String(d.turns).padStart(5), M(d.in).padStart(10),
       pct(d.cached, d.in).padStart(8), M(d.out).padStart(9),
-      M(d.in / d.turns).padStart(9), String(m.n).padStart(6), String(m.notices).padStart(4),
+      M(d.in / d.turns).padStart(9),
+      (d.unpriced === d.turns ? '—' : $(d.usd)).padStart(10),
+      String(m.n).padStart(6), String(m.notices).padStart(4),
     ].join(''));
   }
   say();
@@ -94,13 +136,38 @@ export function report(a) {
   say();
   say(`handovers: ${a.handovers} of ${a.turns} turns (${pct(a.handovers, a.turns)})`);
 
-  // The one conclusion worth drawing automatically. Replay is what a long
-  // session costs; if it dominates, no amount of shorter messages will help.
-  if (a.inTok && a.cached / a.inTok > 0.8) {
+  // The one conclusion worth drawing automatically — and it must be drawn from
+  // the BILL, not the token count.
+  //
+  // This used to fire on `cached/inTok > 0.8` and say "recycle sooner". That
+  // was backwards twice over. A high cached SHARE is the cache working: those
+  // tokens are billed at a tenth of fresh ones, so a 95%-cached session is a
+  // cheap session, not a wasteful one. And recycling is the one action that
+  // destroys the cached prefix — it converts 0.1x tokens into 1.0x tokens and
+  // buys a handover turn at the member's maximum context to do it.
+  const s = a.split;
+  const bill = s.cached + s.fresh + s.out;
+  if (bill > 0) {
+    const share = (x) => pct(x, bill);
     say();
-    say(`Replay is ${pct(a.cached, a.inTok)} of input: this session is paying to re-read`);
-    say('itself, not to do work. The levers are FEWER TURNS (batch harder, fewer');
-    say('notices) and SMALLER CONTEXTS (recycle sooner) — not shorter messages.');
+    say(`the bill: ${share(s.cached)} replay · ${share(s.fresh)} new input · ${share(s.out)} output`);
+    if (s.cached >= s.fresh && s.cached >= s.out) {
+      say('Replay dominates the BILL, not just the token count: every turn re-reads');
+      say('the whole context at the cache rate. The lever is FEWER TURNS — batch');
+      say('harder, fewer notices, a smaller crew. Recycling makes this worse.');
+    } else if (s.fresh >= s.out) {
+      say('NEW input dominates: contexts are being rebuilt from scratch, so the');
+      say('cache is not being reused. Look at recycles and at anything that');
+      say('changes a system prompt mid-session — both discard the cached prefix.');
+    } else {
+      say('OUTPUT dominates: the court is thinking, not re-reading. The lever is');
+      say('`effort` per role, and a smaller crew — not batching or recycling.');
+    }
+    if (a.handovers) {
+      say(`${a.handovers} of ${a.turns} turns went on handovers. Each one is a full turn at`);
+      say('maximum context AND a cold cache on the successor. Raise recycleAtTokens');
+      say('if that share is climbing.');
+    }
   }
   return lines.join('\n');
 }
@@ -118,19 +185,42 @@ if (process.argv[1]?.endsWith('ctx.js') && !process.argv[2]) {
       ctx, usage: { input_tokens: input, cached_input_tokens: cachedTok, output_tokens: out },
     }));
 
+  // These are codex-shaped, so the readings are CUMULATIVE: three turns of
+  // 100/90/10 each arrive as 100, 200, 300. Written flat (100,100,100) — as
+  // they were before deltas — they would mean two turns that did nothing.
   turn('king', 100, 90, 10, 20_000);
-  turn('king', 100, 90, 10, 50_000);
-  turn('king', 100, 90, 10, 5_000);     // a drop by more than half = a recycle
+  turn('king', 200, 180, 20, 50_000);
+  turn('king', 300, 270, 30, 5_000);    // a drop by more than half = a recycle
   db.prepare('insert into messages (ts,sender,recipient,kind,body) values (?,?,?,?,?)')
     .run(0, 'orchestrator', 'king', 'notice', 'fyi');
 
   const r = audit(db);
   a.equal(r.turns, 3);
-  a.equal(r.inTok, 300);
+  a.equal(r.inTok, 300, 'a cumulative climb must total the last reading, not the sum of readings');
   a.equal(r.cached, 270, 'cached tokens must be counted, not double-counted with input');
+  a.equal(r.outTok, 30);
   a.equal(r.handovers, 1, 'a context that halves between turns is a recycle');
   a.equal(r.mail.king.notices, 1);
   a.equal(r.per.king.turns, 3);
+  // The bug this replaced: summing the readings raw reports 600, double the truth.
+  a.equal(100 + 200 + 300, 600, 'sanity: the raw sum this avoids');
+
+  // Priced, with a config that names the king's model.
+  const cfg = { king: { name: 'king', cli: 'codex', model: 'gpt-5.6-luna' }, peasants: [] };
+  const priced = audit(db, 0, { config: cfg });
+  a.equal(priced.unpriced, 0, 'a member whose model is in the table must be priced');
+  a.ok(priced.usd > 0, 'a priced session costs something');
+  // The headline the old report got backwards: 90% of the TOKENS were replay,
+  // but replay is not even the largest share of the BILL (270 cached at 0.02
+  // = $5.4e-6; 30 fresh at 0.20 = $6.0e-6). A share of tokens is not a share
+  // of money, and only one of them is worth tuning against.
+  a.ok(priced.cached / priced.inTok === 0.9, 'nine tenths of the tokens are replay');
+  a.ok(priced.split.cached < priced.split.fresh,
+    'yet replay is NOT the biggest line on the bill: '
+    + `${priced.split.cached} cached vs ${priced.split.fresh} fresh`);
+  // Without a config nothing can be priced, and that must be said, not guessed.
+  a.equal(r.unpriced, 3, 'no config means no prices, reported as unpriced');
+  a.equal(r.usd, 0);
 
   // Anthropic names the same field differently; both must land in `cached`.
   const db2 = new DatabaseSync(':memory:');
@@ -157,12 +247,28 @@ if (process.argv[1]?.endsWith('ctx.js') && !process.argv[2]) {
     'a nested cached count must never exceed input_tokens');
 
   a.match(report(r), /replayed context/);
-  console.log('ctx.js self-check OK — replay accounting and recycle detection');
+  // The conclusion must be drawn from the bill and must no longer tell the
+  // sovereign to recycle because the cache is working.
+  const said = report(priced);
+  a.match(said, /the bill:/, 'the report prices the three kinds of token');
+  a.doesNotMatch(said, /recycle sooner/,
+    'a high cached share must never be answered with "recycle sooner" — that is '
+    + 'the one action that discards the cached prefix');
+  console.log('ctx.js self-check OK — deltas, priced replay, and recycle detection');
 }
 
 if (process.argv[1]?.endsWith('ctx.js') && process.argv[2]) {
   const repo = resolve(process.argv[2]);
   const db = new DatabaseSync(dbPath(repo), { readOnly: true });
-  console.log(report(audit(db, Number(process.argv[3] ?? 0))));
+  // The config is what says which model each member runs, and therefore what a
+  // turn cost. Without it the audit still counts tokens, it just cannot price
+  // them — so a missing or unreadable config degrades the report, never fails it.
+  let config = null;
+  try {
+    const { defaultConfigPath } = await import('./kingdom.js');
+    const { readFileSync } = await import('node:fs');
+    config = JSON.parse(readFileSync(defaultConfigPath(repo), 'utf8'));
+  } catch { /* unpriced, and the report says so */ }
+  console.log(report(audit(db, Number(process.argv[3] ?? 0), { config })));
   db.close();
 }

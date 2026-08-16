@@ -16,8 +16,20 @@
 import { DatabaseSync } from 'node:sqlite';
 import { resolve } from 'node:path';
 import { dbPath } from './worktree.js';
+import { settleMs, BATCH_MAX_WAIT_MS, NOTICE_HOLD_MS } from './kingdom.js';
 
-export const DEFAULTS = { settle: 45_000, backstop: 150_000, noticeHold: 180_000, turnMs: 60_000 };
+// The RULE below is a deliberate mirror (see replay() ). The NUMBERS are not:
+// they are imported, because a hand-kept copy of them had already drifted —
+// this read `settle: 45_000, backstop: 150_000` while the court had been
+// running 90s/180s for some time, so the tool the windows are tuned with was
+// sweeping against a baseline that no longer existed. Defaults are read lazily
+// so KINGDOM_SETTLE_MS still works.
+export const DEFAULTS = {
+  get settle() { return settleMs(); },
+  get backstop() { return BATCH_MAX_WAIT_MS; },
+  get noticeHold() { return NOTICE_HOLD_MS; },
+  turnMs: 60_000,        // a modelling assumption, not a live constant
+};
 
 /**
  * Replay a message log through the ripeness rule in Kingdom#deliver.
@@ -131,6 +143,18 @@ export function report(msgs, a, b) {
 
 if (process.argv[1]?.endsWith('replay.js') && !process.argv[2]) {
   const { strict: a } = await import('node:assert');
+
+  // The drift guard. A sweep is only meaningful against what the court is
+  // actually running, and this file used to hard-code a baseline that had gone
+  // stale (45s/150s against a live 90s/180s) — silently, because nothing
+  // compared them. Now they are the same numbers by construction, and this
+  // fails loudly if that stops being true.
+  a.equal(DEFAULTS.settle, settleMs(), 'the replay baseline must be the live settle window');
+  a.equal(DEFAULTS.backstop, BATCH_MAX_WAIT_MS, 'and the live backstop');
+  a.equal(DEFAULTS.noticeHold, NOTICE_HOLD_MS, 'and the live notice hold');
+  a.ok(DEFAULTS.backstop > DEFAULTS.settle,
+    'a backstop at or below the window silently clamps it — the same invariant '
+    + 'kingdom.js asserts at delivery time');
 
   // A quiet log: messages far apart, so no window folds anything and both
   // settings cost one turn each.

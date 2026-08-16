@@ -113,11 +113,13 @@ bigTurn();
 await wait(600);
 a.equal(recycled.length, 0, 'a member must not be recycled after a single turn');
 
-// codex reports no cost at all, so tokens are the ONLY spend signal a codex
-// court has. spentUsd sat frozen at 44.18 across three real runs while the
-// court burned 42M tokens.
-a.equal(Number(k2.bus.get('tokens')) - tokensBefore, 12_000,
-  'a turn must add its tokens to the running total');
+// Tokens are tracked alongside dollars, and they must be ALL the tokens the
+// model read. This used to add `usage.input_tokens` raw, which for a claude
+// member means the cache read is left out entirely — 12,000 counted out of
+// 107,000 actually read. Same drift as everywhere else: the shape differs per
+// CLI, so it has to go through usage.js.
+a.equal(Number(k2.bus.get('tokens')) - tokensBefore, 107_000,
+  'a claude turn must count its cache read too, not just the uncached remainder');
 a.equal(Number(k2.bus.get('tokens:king')) > 0, true, 'and to the member who spent them');
 
 bigTurn();
@@ -135,5 +137,81 @@ a.match(successor.spec.prompt, /HANDOVER FROM YOUR PREDECESSOR/,
 a.match(successor.spec.prompt, /Coverage still pending/);
 
 await k2.stop();
-for (const d of [repo, kingdomDir(repo)]) { try { rmSync(d, { recursive: true, force: true }); } catch {} }
-console.log('t-budget.js OK — cumulative ceiling survives restarts, any member recycles on context');
+
+// --- a codex court can be capped at all --------------------------------
+//
+// The gap this closes: codex and agy hardcode `costUsd: 0`, and the whole live
+// court is codex. So `#enforceBudget` compared 0 against the cap on every turn
+// and neither maxBudgetUsd nor maxKingdomUsd could ever fire — the automatic
+// runaway protection did not exist for the configuration actually in use.
+// Now an unreported cost is priced from the rate card.
+const repo3 = mkdtempSync(join(tmpdir(), 'kingdom-priced-'));
+const git3 = (...x) => execFileSync('git', x, { cwd: repo3, stdio: 'pipe' });
+git3('init', '-q');
+git3('config', 'user.email', 'k@kingdom');
+git3('config', 'user.name', 'kingdom');
+writeFileSync(join(repo3, 'README.md'), '# t\n');
+git3('add', '-A');
+git3('commit', '-qm', 'init');
+
+const cfg3 = join(repo3, 'kingdom.config.json');
+writeFileSync(cfg3, JSON.stringify({
+  // $3, so all three turns land before the cap trips. At $1 it fired on turn
+  // one and the differencing below was never exercised.
+  maxBudgetUsd: 3,
+  recycleAtTokens: 10_000_000,          // not what is under test here
+  king: { name: 'king', cli: 'codex', model: 'gpt-5.6-luna' },
+  jester: { name: 'jester', cli: 'codex', model: 'gpt-5.6-luna' },
+  peasants: [
+    { name: 'coder', cli: 'codex', model: 'gpt-5.6-luna' },
+    { name: 'mason', cli: 'codex', model: 'gpt-9-unreleased' },
+  ],
+}));
+
+const k3 = new Kingdom(repo3, cfg3);
+await k3.start();
+await k3.wake('coder');
+const priced = neuter(k3.agents.get('coder'));
+const capped = [];
+k3.on('budget', (e) => capped.push(e));
+
+// codex-shaped, so CUMULATIVE: three readings climbing to 3M output. On luna
+// ($1.20/Mtok out) that is $3.60, past the $3 cap. Reported cost: $0.00.
+for (const out of [1e6, 2e6, 3e6]) {
+  priced.emit('turn_end', {
+    usage: { input_tokens: 10, cached_input_tokens: 0, output_tokens: out },
+    costUsd: 0,
+  });
+}
+await wait(300);
+
+a.ok(Number(k3.bus.get('spent:coder')) > 0,
+  'a codex member reporting $0 must still accrue spend from its rate card');
+a.equal(capped.length, 1, 'and must trip the cap — this could never fire before');
+a.equal(capped[0].name, 'coder');
+a.equal(priced.stopped, true, 'the over-budget codex member must actually be stopped');
+
+// Cumulative readings must not be summed: 1M+2M+3M reads as 3M of output, not 6M.
+a.equal(Number(k3.bus.get('tokens:coder')), 3e6 + 10,
+  'cumulative codex usage must be differenced, not added up');
+
+// A model with no published price spends nothing rather than an invented
+// amount — a cap enforced against a guess is worse than no cap.
+await k3.wake('mason');
+const unpriced = neuter(k3.agents.get('mason'));
+unpriced.emit('turn_end', {
+  usage: { input_tokens: 10, cached_input_tokens: 0, output_tokens: 9e6 },
+  costUsd: 0,
+});
+await wait(300);
+a.equal(Number(k3.bus.get('spent:mason') ?? 0), 0,
+  'an unpriced model must not have a price invented for it');
+a.equal(capped.length, 1, 'and must not be stopped on the strength of one');
+a.equal(unpriced.stopped, false);
+
+await k3.stop();
+
+for (const d of [repo, kingdomDir(repo), repo3, kingdomDir(repo3)]) {
+  try { rmSync(d, { recursive: true, force: true }); } catch {}
+}
+console.log('t-budget.js OK — cumulative ceiling survives restarts, codex courts can be capped, any member recycles');

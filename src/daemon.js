@@ -15,7 +15,7 @@ import { Kingdom, defaultConfigPath } from './kingdom.js';
 import { kingdomDir, worktreePath, diffOf, statOf } from './worktree.js';
 import { searchVault, recentNotes, readNote } from './vault.js';
 import { Speech } from './stt.js';
-import { inputTokens, cachedTokens } from './usage.js';
+import { deltaOf, totalsOf } from './usage.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PUBLIC = join(HERE, '..', 'ui');
@@ -112,7 +112,11 @@ const ACTIONS = {
  * into an apparent 420M. So take DELTAS, and treat a drop as a new thread.
  */
 function metrics() {
-  const rows = kingdom.bus.events({ limit: 100_000 }).filter((e) => e.type === 'turn_end');
+  // Filtered in SQL, not after the fact. `events()` JSON.parses every row it
+  // returns, so pulling all 20,000 retained events to keep the turn_ends meant
+  // parsing the whole log — on every /api/metrics, which the throne room polls
+  // every 5s while the cost panel is open (ui/panels.js).
+  const rows = kingdom.bus.events({ limit: 100_000, type: 'turn_end' });
   const prev = new Map();
   const by = new Map();
 
@@ -125,23 +129,20 @@ function metrics() {
     // knew codex's and Anthropic's names for the cache read but not agy's, so
     // the throne room's cost panel scored the king — the one member on agy —
     // as having replayed nothing at all.
-    const now = {
-      in: inputTokens(u),
-      out: u.output_tokens ?? 0,
-      cached: cachedTokens(u),
-    };
-    const was = prev.get(ev.agent) ?? { in: 0, out: 0, cached: 0 };
-    const d = (a, b) => (a >= b ? a - b : a);   // a drop means the session restarted
+    // The delta rule now lives in usage.js beside the cache rule, because this
+    // was the ONLY copy of it: ctx.js and kingdom.js summed raw and reported a
+    // 25% overcount on real data. Same class of drift as the cache-field names.
+    const d = deltaOf(prev.get(ev.agent), u);
+    prev.set(ev.agent, totalsOf(u));
 
     const m = by.get(ev.agent) ?? { name: ev.agent, turns: 0, in: 0, out: 0, cached: 0, ctx: 0, first: ev.ts };
     m.turns++;
-    m.in += d(now.in, was.in);
-    m.out += d(now.out, was.out);
-    m.cached += d(now.cached, was.cached);
+    m.in += d.in;
+    m.out += d.out;
+    m.cached += d.cached;
     m.ctx = p?.ctx ?? m.ctx;                     // latest, not a sum
     m.last = ev.ts;
     by.set(ev.agent, m);
-    prev.set(ev.agent, now);
   }
 
   const members = [...by.values()].map((m) => ({
@@ -162,7 +163,7 @@ function metrics() {
     spent: Number(kingdom.bus.get('spentUsd') ?? 0),
     cap: kingdom.config.maxKingdomUsd ?? 0,
     perMemberCap: kingdom.config.maxBudgetUsd ?? 0,
-    messages: kingdom.bus.history({ limit: 100_000 }).length,
+    messages: kingdom.bus.countMessages(),   // count(*), not "load every body and take .length"
   };
 }
 

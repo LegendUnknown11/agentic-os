@@ -7,7 +7,7 @@
 //                 every spawn. This is the one file to change to change how
 //                 the whole court behaves.
 //
-//   MEMORY        Kingdom/Memory/*.md — one durable fact per note, written by
+//   MEMORY        Kingdom/Memories/*.md — one durable fact per note, written by
 //                 the court through the `remember` tool. Members are given the
 //                 INDEX (title + hook) at spawn, never the bodies: an index of
 //                 forty memories costs a few hundred tokens, the bodies would
@@ -22,7 +22,12 @@ import { readFileSync, writeFileSync, mkdirSync, readdirSync, existsSync, statSy
 import { join, resolve, relative } from 'node:path';
 import { insideVault } from './vault.js';
 
-export const MEMORY_DIR = 'Memory';
+// 'Memories', not 'Memory': that is the folder the vault actually has, and
+// the mismatch meant the memory half of every system prompt was silently
+// empty while `remember` filed notes into a sibling folder nothing ever read.
+// Nothing errored — an absent directory reads as "no memories yet", which is
+// indistinguishable from a court that has simply not learned anything.
+export const MEMORY_DIR = 'Memories';
 export const INSTRUCTIONS_NOTE = 'Court Instructions.md';
 
 /** Filenames are titles; keep them safe on Windows and readable in Obsidian. */
@@ -197,7 +202,7 @@ if (process.argv[1]?.endsWith('memory.js')) {
   a.match(courtInstructions(v), /Always run the tests/);
 
   const p = remember(v, { title: 'Flutter tests need flutter test', body: '`dart test` cannot load the bindings.', tags: ['flutter'], by: 'tester' });
-  a.equal(p, 'Kingdom/Memory/Flutter tests need flutter test.md');
+  a.equal(p, 'Kingdom/Memories/Flutter tests need flutter test.md');
   const idx = memoryIndex(v);
   a.equal(idx.length, 1);
   a.equal(idx[0], '- Flutter tests need flutter test',

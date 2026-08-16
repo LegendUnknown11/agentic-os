@@ -12,7 +12,8 @@
     "test": "node test/run-all.js",
     "dist": "electron-builder --win --publish never",
     "ctx": "node src/ctx.js",
-    "replay": "node src/replay.js"
+    "replay": "node src/replay.js",
+    "recycle": "node src/recycle.js"
   },
   "build": {
     "appId": "dev.kingdom.app",

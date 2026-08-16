@@ -2,6 +2,11 @@ node_modules/
 dist/
 .kingdom/
 
+# Scratch databases from probing a CLI or the MCP server by hand. SQLite leaves
+# -shm/-wal siblings behind, and a pair of them sat in this repo untracked for
+# twelve days before anyone noticed.
+.tmp-*
+
 # Never commit credentials. The real token store lives outside the repo
 # (<repoParent>/.kingdom/<repoName>/tokens.json), but guard these too in case
 # someone puts one here.

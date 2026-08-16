@@ -161,6 +161,16 @@ accumulated context, so a session's cost tracks *turn count*. A real run —
 "design my app" — spent 34 turns, 21 of them the king's, and 18 of those were
 retries against a bug. Measure with `node test/dump.js <repo> events`.
 
+**Tokens are not the bill.** Replayed context is billed at a *tenth* of fresh
+input, so the share of tokens that are replay says almost nothing about what a
+session cost. Three tools, all read-only and safe to run mid-session:
+
+| | |
+|---|---|
+| `node src/ctx.js <repo>` | Where the money went: tokens **and** dollars, split replay / new input / output. |
+| `node src/replay.js <repo> [settle] [backstop]` | What a different delivery window would have cost, replayed through the real ripeness rule. |
+| `node src/recycle.js <repo>` | What `recycleAtTokens` should be, and whether it is ever reached at all. |
+
 The kingdom is built around that fact:
 
 | Lever | Effect |
@@ -172,7 +182,7 @@ The kingdom is built around that fact:
 | **Idle sleep** | Untouched members stop after 15 min (`KINGDOM_IDLE_SLEEP_MS`, 0 disables) and revive with memory on the next message. |
 | **`effort` per role** | `"effort": "low"` for mechanical roles. |
 | **Live spend** | The header shows `$0.000 · N turns` as it happens. |
-| **`maxBudgetUsd`** | Per member, default $5. |
+| **`maxBudgetUsd`** | Per member. **Off unless you set it** — there is no default. |
 
 **The biggest lever is the roster.** That run woke seven agents; a tester doing
 42 tool calls on a design task is pure cost. The king is now told to summon the
@@ -195,8 +205,18 @@ peasants are *mitigated*, not confined: `git push`, `remote`, `worktree`,
 Claude peasant as trusted-but-fenced, not jailed. Add more denials per member
 with `"deny": ["Bash(curl:*)"]`.
 
-**Spend is capped.** `maxBudgetUsd` in `kingdom.config.json` applies to every
-member (override per member). A looping peasant stops costing money by itself.
+**Spend can be capped — it is not capped by default.** Set `maxBudgetUsd`
+(per member, overridable per member) or `maxKingdomUsd` (whole court) in
+`kingdom.config.json` and a looping member stops costing money by itself.
+Leave them unset, as shipped, and nothing stops it but you.
+
+Until recently a cap would not have worked anyway on a codex or agy court:
+those CLIs report no cost at all, so the check compared $0 against the ceiling
+on every turn and could never fire. Turns are now priced from a rate card
+(`src/price.js`) when the CLI will not say, so caps apply to the whole court —
+except models with no published price, which spend nothing rather than be
+enforced against a guess. `node src/ctx.js <repo>` shows the real bill either
+way.
 
 **Rate limits fail over.** With more than one token in the pool, a
 rate-limited member is moved to a sibling token and restarted — its session
@@ -308,3 +328,9 @@ node test/dump.js <repo>   # peek at a kingdom's bus
 ```
 
 `t-agent.js` and `t-comms.js` spend real quota, so `npm test` leaves them out.
+
+`npm test` runs four suites at a time (185s → 74s here). A suite that fails is
+re-run alone before it is reported, because several of them use real resources —
+the live tick loop, git, ports, a Whisper model — and lose races for them under
+load; a failure that passes on the retry is printed as `flaky`, not as a pass.
+Set `KINGDOM_TEST_WIDTH=1` for the old one-at-a-time run.

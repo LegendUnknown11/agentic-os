@@ -14,7 +14,8 @@ import { skillsBlock, expandSkillCommand, listSkills } from './skills.js';
 import { engineerPrompt, pickModels } from './advisor.js';
 import { summarize, settingsOf as summarizerSettings } from './summarize.js';
 import { Bus } from './bus.js';
-import { inputTokens } from './usage.js';
+import { inputTokens, deltaOf, totalsOf } from './usage.js';
+import { costOf, tableFrom } from './price.js';
 import { parseWindow, autoWindow, fmtTokens } from './compact.js';
 import { argue, pickPanel, verdictNote } from './argue.js';
 import {
@@ -33,7 +34,7 @@ const POLL_MS = 300;
 // `(idle && quiet for settleMs) || older than BATCH_MAX_WAIT_MS`, so a cap
 // below the window silently clamps it — raising the window would do nothing
 // and nothing would report the conflict. `settleFloor` below pins the gap.
-const BATCH_MAX_WAIT_MS = 180_000;  // hold a batch this long waiting for idle
+export const BATCH_MAX_WAIT_MS = 180_000;  // hold a batch this long waiting for idle
 // Pure FYI never wakes an agent on its own. Deliberately EQUAL to the backstop
 // above: a held notice then never extends the tail beyond what an ordinary
 // batch already costs, so routing something through `notice` is free in
@@ -41,7 +42,7 @@ const BATCH_MAX_WAIT_MS = 180_000;  // hold a batch this long waiting for idle
 // 60/120/180/300/600/900s — past 180s it saves at most 3 more turns while the
 // worst wait tracks the hold all the way to 15 minutes. If BATCH_MAX_WAIT_MS
 // is ever lowered, lower this with it or notices become the tail.
-const NOTICE_HOLD_MS = 180_000;
+export const NOTICE_HOLD_MS = 180_000;
 // Even an idle member is worth a pause: two messages seconds apart would
 // otherwise cost two full context replays instead of one. Measured on a real
 // run, the king took six separate 70k-context turns inside 2.5 minutes because
@@ -78,7 +79,7 @@ const NOTICE_HOLD_MS = 180_000;
 // The sovereign is exempt (see `urgent` below), so no human ever waits for
 // this; only agents talking to each other do.
 // Read lazily, not at import: it must be tunable at runtime (and by tests).
-const settleMs = () => Number(process.env.KINGDOM_SETTLE_MS ?? 90_000);
+export const settleMs = () => Number(process.env.KINGDOM_SETTLE_MS ?? 90_000);
 // Models that take no effort flag at all (per the sovereign's Model Guidance).
 const NO_EFFORT_MODELS = ['haiku'];
 // A member awake but unaddressed still holds context you will pay to replay.
@@ -139,6 +140,8 @@ export class Kingdom extends EventEmitter {
     this.turnBuf = new Map();   // name -> events of the turn in flight, for the summariser
     this.lastBatch = new Map(); // name -> {from,to}, so a dead turn can be redelivered
     this.turnsSinceSpawn = new Map(); // name -> turns, so nobody recycles on turn one
+    this.lastUsage = new Map(); // name -> last usage totals; codex reports cumulatively
+    this.spawning = new Map(); // name -> in-flight spawn promise, so nobody spawns twice
     this.base = null;
     this.timer = null;
   }
@@ -555,7 +558,30 @@ export class Kingdom extends EventEmitter {
 
   // --- spawning -------------------------------------------------------
 
-  async #spawn(name, seedPrompt = null) {
+  /**
+   * Wake a member, at most once, however many callers ask at once.
+   *
+   * The dedupe has to live HERE rather than at the call sites. `#doSpawn`
+   * awaits `createWorktree` before it ever reaches `agents.set`, so a bare
+   * `agents.has` check at the top is not a lock: two callers both pass it and
+   * both run `git worktree add` on the same path. That is the spawn cascade
+   * this project has already had once, and it now has more ways to happen —
+   * delivery no longer awaits, and an approved crew spawns in parallel.
+   *
+   * Returns the SAME promise to every concurrent caller, so they all get the
+   * one agent and any failure reaches all of them.
+   */
+  #spawn(name, seedPrompt = null) {
+    const live = this.agents.get(name);
+    if (live) return Promise.resolve(live);
+    const inflight = this.spawning.get(name);
+    if (inflight) return inflight;
+    const p = this.#doSpawn(name, seedPrompt).finally(() => this.spawning.delete(name));
+    this.spawning.set(name, p);
+    return p;
+  }
+
+  async #doSpawn(name, seedPrompt = null) {
     if (this.agents.has(name)) return this.agents.get(name);
     const spec = this.specOf(name);
     if (!spec) throw new Error(`No such member of the court: ${name}`);
@@ -663,16 +689,35 @@ export class Kingdom extends EventEmitter {
       this.#record(name, 'turn_end', u);
       this.#summarizeTurn(name);   // async, deliberately not awaited
       this.lastActive.set(name, Date.now());
-      const spent = Number(this.bus.get('spentUsd') ?? 0) + (u.costUsd ?? 0);
+
+      // codex reports its usage CUMULATIVELY per thread, so this must be a
+      // delta or every earlier turn is counted again — the same rule ctx.js
+      // and daemon.js use, now shared from usage.js rather than re-derived
+      // (re-deriving it is how these three drifted apart the last two times).
+      const d = deltaOf(this.lastUsage.get(name), u.usage ?? {});
+      this.lastUsage.set(name, totalsOf(u.usage ?? {}));
+
+      // Only claude reports total_cost_usd; codex and agy hardcode 0. That
+      // left `spentUsd` frozen at 44.18 through three runs while the court
+      // burned 42M tokens — and, worse, left maxBudgetUsd and maxKingdomUsd
+      // permanently unable to fire on a court that is entirely codex. So when
+      // the CLI will not say what a turn cost, price it from the rate card.
+      // An unpriced model yields null, and null spends nothing: a cap enforced
+      // against an invented price would be worse than no cap.
+      // `peasantDefaults` is normally baked into each spec at seed time, but a
+      // hand-added peasant may omit cli/model, and an unpriced member silently
+      // opts itself out of the cap. Resolve the same way #seedRoles does.
+      const def = this.config.peasantDefaults ?? {};
+      const spec = { ...def, ...(this.specOf(name) ?? {}) };
+      const cost = u.costUsd || costOf(d, spec.cli, spec.model, tableFrom(this.config)) || 0;
+      const spent = Number(this.bus.get('spentUsd') ?? 0) + cost;
       this.bus.set('spentUsd', String(spent));
-      const mine = Number(this.bus.get(`spent:${name}`) ?? 0) + (u.costUsd ?? 0);
+      const mine = Number(this.bus.get(`spent:${name}`) ?? 0) + cost;
       this.bus.set(`spent:${name}`, String(mine));
 
-      // TOKENS, not dollars, are the only spend signal a codex court actually
-      // has: codex reports no total_cost_usd at all, so `spentUsd` sat frozen
-      // at 44.18 through three runs while the court burned 42M tokens. A
-      // permanently-$0 readout is worse than no readout.
-      const spentTok = (u.usage?.input_tokens ?? 0) + (u.usage?.output_tokens ?? 0);
+      // Tokens are still tracked alongside: they are the honest readout for a
+      // model with no published price, and they are what `/autocompact` tunes on.
+      const spentTok = d.in + d.out;
       const tokens = Number(this.bus.get('tokens') ?? 0) + spentTok;
       this.bus.set('tokens', String(tokens));
       this.bus.set(`tokens:${name}`, String(Number(this.bus.get(`tokens:${name}`) ?? 0) + spentTok));
@@ -1203,7 +1248,23 @@ export class Kingdom extends EventEmitter {
       if (!ripe) continue;
 
       // An idle-slept member is revived on demand; its session resumes.
-      const live = agent ?? (await this.#spawn(name));
+      //
+      // Started, NOT awaited. Waking a peasant validates its worktree — several
+      // git subprocesses, ~100ms each on Windows — and this loop runs inside a
+      // single `ticking` critical section, so awaiting it here stopped every
+      // other member's mail too. Measured before: 3.6s from the sovereign
+      // pressing enter to the king being handed the text, 3.3s of it spent on
+      // peasants nobody was waiting for. Ordering the king first (see `rank`
+      // above) hid that for the king alone; this removes it for everyone.
+      //
+      // The batch stays UNACKED, so the next tick delivers it once the member
+      // is live. That is the whole trick: no state to unwind if the spawn
+      // fails, and #spawn dedupes so repeated ticks cannot pile up spawns.
+      if (!agent) {
+        this.#spawn(name).catch((e) => this.emit('error', e));
+        continue;
+      }
+      const live = agent;
 
       // ONE turn for the whole batch instead of one turn per message.
       live.send(deliverable.length === 1
@@ -1872,7 +1933,10 @@ export class Kingdom extends EventEmitter {
     }
 
     if (p.kind === 'summon') {
-      for (const n of p.names) await this.#spawn(n);
+      // In parallel: each wake is its own git worktree, and they do not touch
+      // each other. Serially, an approved crew of six paid for six worktree
+      // creations end to end before the sovereign saw anyone wake up.
+      await Promise.all(p.names.map((n) => this.#spawn(n)));
       this.approvals.delete(id);
       this.bus.set(`resolved:${id}`, 'approved');
       this.bus.post('orchestrator', this.config.king.name,

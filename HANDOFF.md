@@ -1,293 +1,343 @@
-# Handoff — Agentic OS (Kingdom) — 2026-08-07
+# Handoff — Agentic OS (Kingdom) — 2026-08-16
 
 ## Goal & status
 
 Agentic OS is a multi-agent orchestrator at `E:\AI\Agentic OS`, shaped as a
-kingdom: a king orchestrates, a jester observes cheaply, and 14 peasants work
-in isolated git worktrees. Its differentiator is that peasants message each
-other **directly over MCP**, not through the king. Members run the Codex CLI,
-the Claude Code CLI, or the Antigravity CLI (`agy`).
+kingdom: a king decomposes and delegates, a jester watches cheaply and briefs,
+and peasants work in isolated git worktrees. Its differentiator is that members
+message each other **directly over MCP** rather than routing through the king.
+Members run the Codex CLI, the Claude Code CLI, or Antigravity (`agy`).
 
-This session did three things, all **complete and verified**: a UI overhaul
-(board layout, member card, and a substantial visual pass), a desktop pet
-(HappyDog, in his own always-on-top window), and an unplanned but important
-fix — the `agy` CLI silently self-updated and broke the king.
+The 2026-08-16 session rebuilt the **cost and token instrumentation**, which was
+wrong in three independent ways, and parallelised the test runner. The work is
+functionally complete and tested. It is **entirely uncommitted** — 14 modified
+files and 2 new ones sit in the working tree on branch `main`, whose only commit
+is `19ea8ad kingdom: base commit`.
 
-Nothing is half-finished. There is no work in flight.
+The single most useful next act is to review that diff and commit it.
 
 ## Current state (what exists now)
 
-**This is not a git repository.** `git rev-parse` fails in the project root;
-there is no `.git`. Nothing this session can be diffed, reverted, or inspected
-through git — the filesystem is the only record. If you want history, the
-first useful act is `git init`.
+### Verified as of this writing
 
-Verified as of this writing:
+- `node src/price.js`, `node src/recycle.js`, `node src/usage.js` and
+  `node src/ctx.js` self-checks all exit 0 when run individually.
+- `node src/ctx.js "E:/AI/Sant Dnyaneshwar"` reports
+  `3 turns · 1.89M in · 0.01M out · $0.604`. Before this session the same
+  command reported 2.37M and no dollar figure.
+- **`node test/run-all.js` → 37 of 37 suites passed, 4-wide, 58.8s, nothing
+  retried.** Exit code 0. This is the last thing that ran before this handoff
+  was saved.
+- `node test/t-stt.js` fails with `mkl_malloc: failed to allocate memory` when
+  the machine is down to ~0.6GB free, and passes above roughly 2.3GB. See
+  *Watch out for*.
+- `E:\AGIOS Kingdom\Obsidian Vault\Kingdom\Memories\` exists and holds 7 notes.
+  There is no `Kingdom\Memory\` — which is what the `MEMORY_DIR` fix below was
+  about.
+- `kingdom.config.json` right now: king `codex/gpt-5.6-terra`, jester
+  `codex/gpt-5.6-luna`, **105 peasants**, `recycleAtTokens: 80000`, and
+  **no `maxBudgetUsd`, no `maxKingdomUsd`, no `prices`** — deliberately, see
+  *Decisions*.
 
-- `node test/run-all.js` — **24 suites, all pass**, on three consecutive clean
-  runs with no other court process running.
-- The Electron app launches, the pet window appears, drag and resize behave
-  (measurements in *Decisions* below).
-- The king answers on `agy`: prompted "Reply with exactly: the court hears
-  you.", it replied `the court hears you.` with real token usage recorded.
+### Believed but not re-checked at handoff time
 
-### Files created this session
+- The Electron app and the pet window were last exercised in the 2026-08-07
+  session and have not been run since. Nothing this session touched `electron/`
+  or `ui/`.
+
+### New files
 
 | Path | What it is |
 |---|---|
-| `ui/pet.js` | Sprite engine for HappyDog — clips, moods, fidgets. Shared by both windows. |
-| `ui/pet.html` | The floating pet window's page. |
-| `ui/pet-window.js` | Desktop-pet behaviour: court subscription, drag, size slider. |
-| `ui/pet/happydog.webp` | The sprite sheet, copied from `~/.codex/pets/happydog/`. |
-| `ui/pet/happydog.json` | Codex's own manifest for it, copied verbatim. |
-| `ui/avatar.js` | Per-member coloured monogram, derived from the name. |
-| `ui/identity.js` | The right-hand member card. |
-| `electron/pet-preload.cjs` | IPC bridge for the pet window. CommonJS on purpose (see *Watch out for*). |
-| `HANDOFF.md` | This file. |
+| `src/price.js` | `$/Mtok` rate card per `cli/model` plus `costOf()`. Prices fresh input, cache reads (0.1x) and claude cache writes (1.25x) separately. Returns **null**, never a guess, for a model with no published price. |
+| `src/recycle.js` | Derives what `recycleAtTokens` should be, from a session's real context growth. Closed form plus a sweep table. |
+| `docs/PLAN-saas.md` | What it would take to make this a product rather than a personal tool: three candidate product shapes, nine concrete blockers with the file each lives in, a five-phase plan, and four questions that must be answered before Phase 1. |
 
-### Files changed this session
+### Changed files
 
-- `electron/main.js` — the floating pet window: creation, placement, drag,
-  resize, persistence.
-- `ui/app.js` — board/flow mode, member-card wiring, pet mood, toolbar
-  overflow menu, avatars on member panels.
-- `ui/app.css` — board grid, member card, avatars, and a "fourth refit" block
-  addressing defects found in a screenshot.
-- `ui/index.html` — mode tabs, the member-card `<aside>`, the rail's pet slot,
-  the overflow menu container.
-- `ui/win.js` — `setTiled()` so board mode does not overwrite free-canvas
-  geometry; `data-id` on each panel.
-- `ui/rail.js` — avatars; stopped printing "not summoned" on every row.
-- `ui/icons.js` — three new icons: `who`, `more`, `pet`.
-- `src/agent.js` — **the agy prompt fix** (see *Dead ends*).
-- `src/doctor.js` — same fix in the agy probe.
-- `test/t-agy.js` — assertions repointed to the new agy contract.
-
-### Live configuration (read from `kingdom.config.json` just now)
-
-- king: `agy` / `gemini-3.6-flash-high` / effort `high`
-- jester: `codex` / `gpt-5.6-luna`
-- 14 peasants: `codex` / `gpt-5.6-luna`
-- advisor: `codex` / `gpt-5.6-luna` / effort `xhigh`, with **`promptEngineer:
-  false` and `autoModel: false`** — both were on earlier and have since been
-  turned off. Allowlist is `codex/gpt-5.6-luna`, `codex/gpt-5.6-terra`.
-- summarizer: enabled, `codex` / `gpt-5.4-mini`, effort `none`, 16 words
-- `maxKingdomUsd: 75`
+- `src/usage.js` — gained `totalsOf`, `isCumulative`, `deltaOf`, `ZERO`. The
+  delta rule now lives beside the cache-field rule so all consumers share it.
+- `src/ctx.js` — takes deltas, prices turns, reports a cost column and a
+  cost-weighted split. Its auto-conclusion was rewritten (see *Decisions*).
+- `src/kingdom.js` — `turn_end` now deltas usage and prices it when the CLI
+  reports no cost; `#spawn` split into an idempotent promise-deduping wrapper
+  plus `#doSpawn`; the delivery loop no longer awaits a spawn; approved crews
+  spawn in parallel. `BATCH_MAX_WAIT_MS`, `NOTICE_HOLD_MS` and `settleMs` are
+  now exported.
+- `src/daemon.js` — uses the shared `deltaOf`; `/api/metrics` filters
+  `turn_end` in SQL and counts messages with `count(*)`.
+- `src/bus.js` — `events({type})` filters in SQL; new `countMessages()`.
+- `src/memory.js` — `MEMORY_DIR` corrected from `'Memory'` to `'Memories'`.
+- `src/replay.js` — imports the live delivery constants instead of keeping its
+  own copy, with a drift guard in the self-check.
+- `test/run-all.js` — concurrency pool with serial retry (see *Decisions*).
+- `test/t-batching.js` — new case: a member behind a **failing** spawn must
+  still be delivered. New case: concurrent wakes produce one agent. Five
+  positive assertions moved off fixed sleeps onto a polling `until()` helper.
+- `.gitignore` — ignores `.tmp-*`. The two stale SQLite probe siblings
+  (`.tmp-mcp-probe.db-shm`, `.tmp-mcp-probe.db-wal`, dated 2026-08-04) turned out
+  to be **tracked**, not untracked — they were committed in `19ea8ad`. They are
+  deleted from HEAD now, but they remain in history. That was judged not worth a
+  history rewrite: together they are ~92KB of SQLite scratch from an MCP probe,
+  with no credentials in them.
+- `test/t-budget.js` — the token assertion corrected from 12,000 to 107,000
+  (the old code ignored claude's cache read), plus a whole new section proving
+  a codex member reporting `$0` still accrues spend and trips a cap.
+- `README.md` — corrected two false claims about spend caps; documented the
+  three cost tools and the test runner's behaviour.
+- `AGENTS.md` — suite count 25 → 37.
+- `package.json` — added `npm run recycle`.
+- `kingdom.config.json`, `roles.json` — **were already modified before this
+  session started.** The only change this session made to `kingdom.config.json`
+  is net zero (caps were added, then removed at the user's instruction). Do not
+  assume the rest of those two diffs is this session's work.
 
 ## Decisions made, and why
 
-**Board is the default layout; Flow is the free canvas.** Board tiles every
-open panel into a grid filling the stage; Flow keeps the pannable canvas where
-you place panels yourself. Board is default because an even grid needs no
-setup. Board is implemented purely in CSS overriding the inline geometry the
-canvas writes (hence the `!important` — inline styles are what is being
-overridden), so switching back restores your arrangement untouched. The one JS
-addition is `setTiled()` in `ui/win.js`: while tiled, drag and
-geometry-remember are off, or every grid cell size would overwrite the saved
-flow layout.
+**Cost is computed from a rate card when the CLI will not report it.** Only the
+claude CLI reports `total_cost_usd`; `src/agent.js` hardcodes `costUsd: 0` for
+codex and agy, and the entire live court is codex. So `spentUsd` sat frozen
+while the court burned tokens, and `#enforceBudget` compared `$0` against the
+ceiling on every turn — meaning `maxBudgetUsd` and `maxKingdomUsd` **could never
+fire at all**. Turns are now priced from `src/price.js` when the CLI is silent.
 
-**Members get a coloured monogram derived from their name.** Sixteen rows of
-grey text beside identical grey dots was the single biggest reason the roster
-read as a list of strings rather than a court. Deriving the hue from the name
-means it is stable across restarts and needs no configuration.
+**An unpriced model spends nothing rather than an estimated amount.** `costOf`
+returns `null` for a model not in the table, and null contributes zero to
+`spentUsd`. A cap enforced against an invented price stops members for reasons
+nobody can audit, which is worse than no cap. This is why `agy` members are
+currently exempt from any cap: no verified Gemini rates were available.
 
-**The toolbar is six icons plus an overflow menu.** Fourteen unlabelled 16px
-hairlines in a row is a memory test — you cannot tell vault from metrics from
-chronicle. The six opened during a working session stay on the bar; the rest
-moved behind `⋯`, which shows their real names. Every tool kept its Alt key.
+**There are no spend caps in the config, by the user's explicit instruction**
+("there shouldnt be a max budget"). The enforcement machinery works and is
+tested — it is simply not switched on. Absent keys mean disabled; the code reads
+`?? 0` and `0` is falsy. Do not add caps back without being asked.
 
-**HappyDog reports the court; he is not decoration.** Asleep when nobody is
-working, running while any member has a turn in flight, cheering on a merge or
-milestone. The mood is derived from the roster each time rather than from a
-counter, for the same reason as the approvals badge: a tally and the screen can
-disagree, and you believe the screen.
+**No `prices` key was added to `kingdom.config.json`.** The override mechanism
+exists in `tableFrom()` for models the code does not know, but copying the
+built-in table into config would recreate exactly the drift class that
+`src/replay.js` was fixed for in the same session.
 
-**In Electron the dog lives in his own window; in a browser he lives at the
-foot of the rail.** The environment decides, no setting. The first attempt put
-him on the stage, which forced a choice between being buried under a panel
-(`ui/win.js` hands each focused card an ever-increasing z-index) and floating
-over one — and on top he sat squarely across the bottom-left card's prompt
-input. The rail's foot is the only place on screen that never holds content.
+**`ctx.js` no longer advises "recycle sooner" on a high cache-read share.** That
+advice was backwards twice over. A high replay share means the cache is working
+— those tokens bill at a tenth of fresh ones — and recycling is the one action
+that *destroys* the cached prefix, converting 0.1x tokens into 1.0x tokens and
+buying a handover turn at the member's maximum context. The report now draws its
+conclusion from the cost split, not the token split.
 
-**Pet drag is driven entirely from the main process via
-`screen.getCursorScreenPoint()`.** Renderer coordinates cannot be used; see
-*Dead ends*.
+**The delivery loop starts a spawn instead of awaiting it.** Delivery runs
+inside a single `ticking` critical section, and it used to `await this.#spawn()`
+inline, so one peasant's worktree validation froze every other member's mail.
+The batch is now left unacked and a later tick delivers it once the member is
+live. The `ticking` guard stays — it exists because two overlapping ticks each
+spawned the same member.
 
-**The pet window is moved with `setBounds` and an explicitly computed size,
-never `setPosition`.** Also *Dead ends*. The size comes from `petBox(petScale)`
-— computed from the scale, never read back off the window.
+**Spawn deduplication lives inside `#spawn`, not at its call sites.** `#doSpawn`
+awaits `createWorktree` before it ever reaches `agents.set`, so an `agents.has`
+check at the top is not a lock: two callers both pass it and both run
+`git worktree add` on the same path. That cascade has happened in this project
+before, and there are now more routes into it.
 
-**The `×` dismisses the dog for the session only, not permanently.** His
-tooltip promises he comes back next launch, and there is no IPC bridge in the
-throne room to summon him back, so persisting the dismissal would make the
-tooltip a lie.
+**`recycleAtTokens` stays at 80,000.** This was the session's final measurement
+and the answer is "do not move it", which is a finding rather than a shrug. On
+the only session with usable data the king's context peaked at 15,448 — 19% of
+the threshold, 11 turns of growth short of it, with 0 handovers. The threshold
+never fired, so changing it would alter behaviour nobody has observed.
+`src/recycle.js` also derives a floor of `T* = 8,352` for that growth rate, but
+that floor assumes a successor *resumes* when in reality it *rediscovers* —
+re-reading files at 10x the cache rate on a cold prefix, which nothing in the
+event log measures. The gap between 8k and 80k is the rediscovery allowance.
+
+**Failing test suites are retried once, serially, rather than quarantined.**
+See *Dead ends* for the two approaches that lost.
+
+**A test waits for a condition, never for a duration — unless it is asserting
+that nothing happened.** A flat sleep before a positive assertion measures the
+machine, not the code, and this repo has now lost two full runs to exactly that.
+Negative assertions ("a lone notice must NOT cost a turn") genuinely need a
+fixed window, because there is no condition to poll for; those keep their sleeps
+and should not be converted.
+
+**The product recommendation is B — host the control plane, keep execution on
+the customer's machine.** The reasoning is in `docs/PLAN-saas.md`. In short: the
+two things that sink a solo-built agent SaaS are taking custody of customer
+source and paying for inference you resell at a margin, and shape B avoids both
+while being the shape this codebase is already closest to. The hosted-execution
+version (A) stays reachable afterwards — Phase 2 is the shared prerequisite.
 
 ## Dead ends — don't retry these
 
-**Do not move the pet window with `setPosition`.** It is implemented as "keep
-the current size, change the origin", and on a display at 125% scaling that
-round trip re-applies the scale factor. Measured across a single 100-step
-drag: the window grew **144×172 → 180×208 → 267×295 → 344×378 → 432×467**,
-compounding by roughly ×1.25 every few frames. The *position* was always
-correct; the transparent box around the dog ballooned, throwing the `×` and
-the slider off into space. Fixed by `setBounds` with an explicit size every
-frame. Re-verified: 144×171 at every checkpoint of the same drag.
+### From this session
 
-**Do not compute the pet drag from renderer `screenX`/`screenY`.** Chromium
-derives `screenX` as `clientX` plus the window's *cached* screen origin, and
-that cache updates a beat after the window moves. Every frame measured against
-a stale origin and fed the error into the next move — hold the dog still and
-he sails off across the desktop. There is no renderer-side fix; the cursor
-must be read from outside the window being moved.
+**Do not put timing- or memory-sensitive suites in a hand-maintained solo
+list.** This was tried twice. The list only grew — `t-batching` first, then
+`t-stt` — and it did not even work: `t-stt` failed when run alone anyway,
+because the machine itself was out of memory. Retrying a failure serially covers
+contention for memory, timing and ports alike, with no list to maintain and no
+per-worker memory budget to guess at.
 
-**Do not freeze the pet's drag size from `getBounds()`.** It returns whole
-DIPs while the physical box rounds up, so each drag re-freezes the slightly
-larger reading. Measured creeping 114 → 118 → 119 → 120 over four drags.
-Compute it from the scale instead.
+**Do not use `spawn` in the test runner without an `error` handler.**
+`spawnSync` always came back with a status; `spawn` can fail to start a process
+at all and then never emits `close`. A full run died outright with
+`Error: spawn UNKNOWN (errno -4094)` after 30 green suites, losing every result
+with it. `run()` in `test/run-all.js` now treats a start failure as just another
+failed suite.
 
-**Do not call `setBounds` on the pet window without lifting `resizable`
-first.** The window is created `resizable: false`, and on Windows that pins
-min/max size so `setBounds` is silently clamped — the sprite scaled via CSS
-while the window did not, and the `×` and slider drifted further from the dog
-at every step. `pet:scale` toggles `setResizable(true)` around the one call and
-restores it immediately, so the frameless window keeps no invisible drag
-borders.
+**Do not sum codex `usage` across turns.** codex reports it **cumulatively per
+thread**. `src/daemon.js` already knew this; `src/ctx.js` and `src/kingdom.js`
+did not, and summed raw. On the real Sant Dnyaneshwar database that read 2.37M
+input tokens where the truth is 1.89M — a 25% overcount that grows with turn
+count. Use `deltaOf` from `src/usage.js`.
 
-**Do not put a looping clip in the pet's `FIDGET` list.** A fidget only ends
-when its clip wraps and clears `once`; `sit` loops, so it pinned the dog in
-that animation permanently. `play()` now refuses any looping clip outright.
+**Do not treat a cache read as costing the same as fresh input.** It costs 0.1x.
+The three token kinds differ by 12.5x end to end, so a token count cannot stand
+in for a bill in either direction.
 
-**Do not pass the agy prompt as a trailing positional.** See *Watch out for* —
-this is the live trap, not merely a historical one.
+### Still true from the 2026-08-07 session
 
-**Do not trust `EnumWindows`-based window measurement from PowerShell here.**
-It matches Electron's hidden helper windows (there is a 159×27 one titled
-"Kingdom" at −25600,−25600), and a callback delegate that gets
-garbage-collected mid-enumeration returns partial results. Several apparently
-alarming measurements this session were this tooling, not the app. Keep the
-delegate alive in a variable and filter by size, or take a desktop screenshot
-instead.
+These concern `electron/` and `ui/`, untouched this session, and remain live:
+
+- **Do not move the pet window with `setPosition`.** On a 125%-scaled display it
+  re-applies the scale factor each call; measured compounding 144×172 → 432×467
+  across one drag. Use `setBounds` with an explicitly computed size.
+- **Do not compute the pet drag from renderer `screenX`/`screenY`.** Chromium's
+  cached window origin updates a beat late, so the error feeds forward and the
+  dog sails off. The cursor must be read from the main process.
+- **Do not freeze the pet's drag size from `getBounds()`** — it returns whole
+  DIPs while the physical box rounds up, creeping larger each drag.
+- **Do not call `setBounds` on the pet window without lifting `resizable`
+  first.** Windows pins min/max size when `resizable: false`, and the call is
+  silently clamped.
+- **Do not put a looping clip in the pet's `FIDGET` list** — a fidget only ends
+  when its clip wraps.
+- **Do not pass the `agy` prompt as a trailing positional.** See *Watch out for*.
+- **Do not trust `EnumWindows`-based window measurement from PowerShell here.**
+  It matches Electron's hidden helper windows, and a garbage-collected callback
+  delegate returns partial results.
 
 ## Next steps
 
-There is no queued work. These are the things actually worth doing next, in
-order:
+1. **Review and commit the working tree.** `git diff` then `git add -A` and
+   commit. Be aware that `kingdom.config.json` and `roles.json` carry ~1,860
+   lines of changes that predate this session; decide deliberately whether they
+   belong in the same commit. Done when `git status` is clean.
+   **Do not push without a fresh, explicit instruction from the user** — that is
+   a standing rule in `E:\AI\CLAUDE.md`.
 
-1. **`git init` and make a first commit.** This is the highest-value single
-   action available. The project has no version control at all, and a session
-   just rewrote large parts of the UI and the agy backend with no way to diff
-   or revert. Done when `git log` shows one commit and `git status` is clean.
+2. **Read `docs/PLAN-saas.md` and answer its four closing questions.** It is the
+   plan for turning this from a personal tool into a product, and Phase 1 cannot
+   start until the product shape (A, B or C) is chosen. The recommendation is B
+   — host the control plane, keep execution on the customer's side.
 
-2. **Delete the stale probe files in the project root:**
-   `.tmp-mcp-probe.db-shm` and `.tmp-mcp-probe.db-wal` (dated 2026-08-04).
-   They are leftovers from an MCP test, not used by anything. Do this before
-   the first commit so they never enter history — or add them to
-   `.gitignore`.
+3. **Re-run `node src/recycle.js "<repo>"` after a session long enough to
+   actually reach 80,000 context tokens.** The current answer rests on a
+   3-turn sample where the threshold never fired. Done when the report stops
+   printing `OBSERVED PEAK … never came close to recycling`.
 
-3. **Rebuild the installer if you want the pet shipped.** `npm run dist`
-   produces `dist/Kingdom Setup 0.1.0.exe`; the current one is dated
-   2026-08-04 and predates every change in this session. `package.json`
-   `build.files` already covers the new files via `electron/**` and `ui/**` —
-   no manifest change needed.
+4. **Consider pricing the `agy`/Gemini models** in `src/price.js` or via a
+   `prices` key. Until then every agy member is invisible to cost reporting and
+   exempt from any cap. This needs verified public rates, not estimates.
 
-4. **Consider adding a regression test for the agy argument order.**
-   `test/t-agy.js` now pins it, which is the important half. What is not
-   covered is the *class* of failure: an auto-updating CLI changing an
-   argument's arity. A periodic `agy --help` diff, or a doctor check that
-   fails loudly on an unexpected flag surface, would catch the next one.
+5. **Optional: confirm the live spend path end to end with one short real court
+   run.** Everything in this session was verified offline against fixtures and a
+   read-only replay of an existing database. Only a real run exercises pricing
+   through `#enforceBudget` with live CLI usage payloads.
 
 ## Watch out for
 
+**This machine runs out of memory, and that is what most test failures here
+are.** It has 8.36GB total and was repeatedly down to 0.4–0.9GB free during this
+session. At that level `test/t-stt.js` cannot load its Whisper model, `spawn`
+itself starts failing with `UNKNOWN`, and neighbouring suites die with
+`0xC0000409`. Check free memory before investigating any failure.
+
+**`test/t-batching.js` used to assert against wall-clock deadlines, and this is
+now fixed — do not reintroduce them.** Five positive assertions sat behind flat
+`await wait(...)` calls, the worst giving a member 5,000ms to be revived when
+reviving one means `git worktree add` plus `behindBase`, three or four git
+subprocesses. On a loaded box (a full run taking 513.7s against a normal
+74–105s) that budget was missed and the suite failed twice, then passed
+standalone the moment the machine was quiet. Those five now poll a condition
+through the `until()` helper at the top of the file, with a 60s ceiling. Fixed
+waits remain only where the assertion is that *nothing* happened, which cannot
+be polled for. Suite runtime is unchanged (27.6s).
+
+**`npm test` runs four suites at a time now.** A suite that fails is re-run alone
+before being reported; one that then passes prints `flaky (failed in the pool,
+passed alone)` rather than being silently forgiven. Set `KINGDOM_TEST_WIDTH=1`
+for the old one-at-a-time behaviour when debugging. Wall clock is 59–105s,
+against 185s sequential, the spread tracking free memory.
+
+**Test suites bind ports derived from the process PID, and a stray daemon on
+port 7788 causes false failures.** Check for one before investigating a failing
+suite.
+
+**`kingdom.config.json` and `roles.json` were already dirty when this session
+began.** Any `git diff` on them mixes this session's work with someone else's.
+
 **`agy` updates itself, and 1.1.11 changed `--print` from a boolean to a flag
-that takes the prompt as its value** (`--prompt` is now listed as an alias for
-it). The code passed the prompt as a trailing positional, so agy's Go flag
-parser read the *next flag* as the prompt: the king spent its turn writing a
-chat answer about what `--output-format` means, emitted no JSONL, and was
-reported as "produced no output (exit 0)". Fixed in `src/agent.js`
-`#runAgyTurn()` and `src/doctor.js`. **The installed version right now is
-1.1.11**, and there is an `agy.exe.*.old` sitting beside the binary in
-`%LOCALAPPDATA%\agy\bin` — that is what a self-update leaves behind. If the
-king ever goes silent again with exit 0, check the agy version and `agy
---help` before anything else.
+that takes the prompt as its value.** The old code passed the prompt as a
+trailing positional, so agy's Go flag parser read the *next flag* as the prompt
+and the member emitted no JSONL while exiting 0. Fixed in `src/agent.js`
+`#runAgyTurn()` and `src/doctor.js`. If a member on agy ever goes silent with
+exit 0, check `agy --help` before anything else. The king is now on
+`codex/gpt-5.6-terra`, so this affects no live member at present.
 
 **A bare `agy` call without `--dangerously-skip-permissions` exits 0 with no
-output**, because a tool needed the `command` permission that headless mode
-cannot prompt for. The agent code passes the flag unless
-`spec.skipPermissions === false`, so members are fine — but a manual probe
-without it will look like a broken CLI when it is not.
+output.** A manual probe without that flag looks like a broken CLI when it is
+not; the agent code passes it automatically.
 
-**The test suites bind ports derived from the process PID.** Two intermittent
-failures were observed early in this session, both while a test daemon (port
-7788) and an Electron instance were still running. With nothing else running,
-three consecutive full runs were clean. If a suite fails, check for a stray
-daemon before investigating the test.
+**`electron/pet-preload.cjs` must keep the `.cjs` extension** — `package.json`
+declares `"type": "module"` and a sandboxed preload cannot be ESM.
 
-**`electron/pet-preload.cjs` must keep the `.cjs` extension.** `package.json`
-declares `"type": "module"`, so a `.js` preload would be parsed as ESM, which
-a sandboxed preload cannot be.
-
-**A hook auto-opens `ui/pet.html` in the Claude Code Browser pane** whenever
-that file is written or edited. There is no IPC bridge there, so the dog
-renders but nothing works — this looked exactly like a broken feature during
-the session. The page now detects the missing bridge and hides the controls
-that would be lying, but expect the pane to pop open when you touch that file.
-
-**`ui/win.js` hands each focused panel an ever-increasing z-index.** Anything
-placed on the stage will eventually be buried. The pet works around this by
-not living on the stage under Electron.
-
-**`ui/app.css` has four appended "REFIT" blocks** that override earlier rules
-in the same file. When changing panel or chrome styling, check whether a later
+**`ui/app.css` has five appended "REFIT" blocks** (at lines 597, 670, 743, 850
+and 1024) that override earlier rules in the same file. Check whether a later
 block already overrides what you are editing, or your change will appear to do
 nothing.
 
-**Screenshots of the app do not work through the in-app Browser pane** (it
+**Screenshots of the app do not work through the Claude Code Browser pane** (it
 does not composite frames). Use `mcp__claude-in-chrome` against
 `http://127.0.0.1:<port>`, or a PowerShell desktop capture for the Electron
-window. Four rounds of UI work happened blind before this was discovered, and
-the first real screenshot immediately revealed defects that no amount of DOM
-measurement had caught.
+window.
 
 ## Open questions for the user
 
-1. **Should the project be put under git?** Everything else in `E:\AI` and
-   `E:\Claude` is versioned; this one is not. Answering yes unblocks next step
-   1 and makes every future session safer.
+1. **Which product shape — A, B or C?** See `docs/PLAN-saas.md`. Nothing in
+   Phase 1 can start without this, and it is the only question on this list that
+   blocks other work.
 
-2. **Is the UI now acceptable, or is the disagreement about direction?** The
-   user called it "trash" or "slop" four times across the session. The last
-   round fixed five concrete, measurable defects (no visual hierarchy, an
-   empty 1050×620 card, "not summoned" printed twelve times, fourteen
-   unlabelled icons, no per-member identity) and the user has not commented on
-   the result. It remains possible the objection is to the whole dark-glass
-   direction rather than to defects within it. If so, that is a redesign, not
-   a fix, and should be scoped as one.
+2. **Do the pet window, wallpaper and music survive into the product, as brand
+   or as personal workflow?** It decides whether Electron stays a first-class
+   client or becomes one of several.
 
-3. **Should the king stay on `agy`?** It is the only non-codex member, it is
-   the member whose CLI just broke silently, and `agy` auto-updates without
-   asking. Moving the king to `codex/gpt-5.6-terra` (already on the advisor's
-   allowlist for its memory) would remove a whole class of failure. This is a
-   real trade-off, not a recommendation — agy may be there deliberately.
+3. **What should happen to the pre-existing `kingdom.config.json` and
+   `roles.json` changes?** They total roughly 1,860 lines, were already in the
+   working tree when this session started, and were deliberately left out of
+   this session's commit. They are still uncommitted.
+
+4. **Should `agy`/Gemini models be priced?** Answering yes (with real published
+   rates) makes agy members visible in `ctx.js` and eligible for a cap.
+   Answering no keeps them permanently exempt, which is safe but silent.
+
+3. **Is a real court run worth doing to confirm the live spend path?** It costs
+   actual API quota. Everything else was verified without spending any.
 
 ## Pointers
 
-- Project root: `E:\AI\Agentic OS`
-- Run the app: `npm start` (Electron; picks a repo, then starts a detached
-  daemon on port 7777)
-- Run the tests: `node test/run-all.js` (also `npm test`)
-- Preflight the CLIs: `node src/doctor.js` — **run from a normal terminal**,
-  not inside a Claude Code session, or the claude-CLI checks are misleading
-- Build the installer: `npm run dist`
-- Pet state (position and scale) persists to
-  `%APPDATA%\Kingdom\pet.json`
-- Source of the sprite sheet: `~/.codex/pets/happydog/` — Codex ships a second
-  pet, `cyan`, which is 1536×2288 on the same 192×208 grid and is not wired up
-- Sprite sheet geometry, measured not documented: 1536×1872, an 8-column grid
-  of 192×208 cells, nine rows, with live frame counts `[6, 8, 8, 4, 5, 8, 6,
-  6, 6]` — the trailing cells of a short row are transparent, so playing all
-  eight would flash a blank patch
+- Project root: `E:\AI\Agentic OS`; branch `main`, one commit, working tree dirty
+- Run the tests: `npm test` (or `node test/run-all.js`)
+- Where the money went: `npm run ctx -- <repo>` — e.g.
+  `node src/ctx.js "E:/AI/Sant Dnyaneshwar"`
+- What a different delivery window would cost: `npm run replay -- <repo>`
+- What `recycleAtTokens` should be: `npm run recycle -- <repo>`
+- Run the app: `npm start`; preflight the CLIs: `node src/doctor.js`, **from a
+  normal terminal**, not inside a Claude Code session
+- Court databases live at `E:\AI\.kingdom\<repo name>\kingdom.db`. Only
+  `Sant Dnyaneshwar` has turn data (3 turns); `Agentic OS` has none.
+- The sovereign's vault: `E:\AGIOS Kingdom\Obsidian Vault\Kingdom\` — court
+  instructions, decisions, and `Memories\` (7 notes, now actually read by
+  `brainBlock` since the `MEMORY_DIR` fix)
+- Codebase rules: `AGENTS.md` in the project root. Four rules govern every
+  change here: tests ship with the change and must fail without it; never trust
+  a measurement you did not take; comments carry the evidence, not the intent;
+  degrade, never wedge.
 - Workspace map and standing rules: `E:\AI\CLAUDE.md`
-- The user's Obsidian vault records project decisions and a Mistake Ledger at
-  `E:\AGIOS Kingdom\Obsidian Vault\Kingdom\`. The agy arity change is a good
-  candidate entry (an auto-updating CLI silently changing an argument's
-  meaning) and has **not** been written there.
