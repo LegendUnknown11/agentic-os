@@ -3,6 +3,7 @@
 // the canvas owns where it sits.
 import * as W from './win.js';
 import { setIcon, icon } from './icons.js';
+import { matchesQuery } from './court.js';
 
 const get = (u) => fetch(u).then((r) => r.json()).catch(() => ({ ok: false }));
 
@@ -489,6 +490,119 @@ export function openApprovals({ post, toast }) {
 }
 
 /* ================= vault browser ================= */
+/* ================= the summoning ================= */
+/**
+ * Who is in the court, and who could be.
+ *
+ * This screen exists because the rail used to BE this screen: every role in the
+ * config got a permanent row, so the front door was 107 names of which 105 were
+ * not in the court and could not be told apart at a glance. Recruiting is a
+ * deliberate act you perform occasionally; a party is what you look at
+ * constantly. They are different screens now.
+ *
+ * `wake` is the summon and `sleep` is the dismissal — no new endpoint. See
+ * kingdom.js: wake() spawns and adds to `summoned`, sleep() stops and removes.
+ *
+ * @param roster () => Map<name, {role, title, description, cli, model, summoned}>
+ */
+export function openSummon({ post, toast, roster }) {
+  W.toggle('summon', {
+    title: 'The Summoning',
+    cls: 'summon',
+    build(box) {
+      const search = el('div', 'searchbar');
+      const input = el('input');
+      input.placeholder = 'Search by name, title or skill…';
+      input.autocomplete = 'off';
+      search.append(input);
+      const body = el('div', 'log settings');
+      box.append(search, body);
+
+      const card = (m) => {
+        const row = el('button', `sum-row${m.summoned ? ' in' : ''}`);
+        const main = el('span', 'sum-main');
+        main.append(el('span', 'sum-name', m.name));
+        if (m.title && m.title !== m.name) main.append(el('span', 'sum-title', m.title));
+        row.append(main);
+        if (m.description) row.append(el('span', 'sum-desc', m.description));
+
+        const meta = el('span', 'sum-meta');
+        if (m.model) meta.append(el('span', 'sum-model', m.model));
+        meta.append(el('span', 'sum-act', m.summoned ? 'Dismiss' : 'Summon'));
+        row.append(meta);
+
+        row.title = m.summoned
+          ? `${m.name} is in the court — dismiss to stop it and free its worktree`
+          : `Summon ${m.name} into the court`;
+        row.onclick = () => {
+          const going = m.summoned;
+          post(going ? 'sleep' : 'wake', { name: m.name });
+          toast(going ? `${m.name} leaves the court.` : `${m.name} is summoned.`);
+          // Pending, not optimistic. Summoning a peasant creates a worktree —
+          // three or four git subprocesses — so the row must answer the click
+          // immediately, but it must not claim an outcome it does not have. The
+          // roster event below repaints from the server and settles it either
+          // way, including when the spawn fails and the row stays available.
+          row.disabled = true;
+          row.classList.add('pending');
+          row.querySelector('.sum-act').textContent = going ? 'Dismissing…' : 'Summoning…';
+        };
+        return row;
+      };
+
+      function paint(q) {
+        const all = [...roster().entries()]
+          .map(([name, m]) => ({ ...m, name }))
+          .filter((m) => m.role === 'peasant')
+          .sort((a, b) => a.name.localeCompare(b.name));
+
+        body.textContent = '';
+        const here = all.filter((m) => m.summoned && matchesQuery(m, q));
+        const rest = all.filter((m) => !m.summoned && matchesQuery(m, q));
+
+        if (here.length) {
+          body.append(el('div', 'note', `In your court · ${here.length}`));
+          for (const m of here) body.append(card(m));
+        }
+        if (rest.length) {
+          body.append(el('div', 'note', q ? `Matching · ${rest.length}` : `Available · ${rest.length}`));
+          for (const m of rest) body.append(card(m));
+        }
+        if (!here.length && !rest.length) {
+          body.append(el('div', 'empty', q
+            ? `Nobody matches “${q}”.`
+            : 'No peasants are configured. Add them to kingdom.config.json.'));
+        }
+      }
+
+      // The roster is the server's, not this panel's. Repaint whenever it
+      // changes so a member summoned from here — or from the member card, or by
+      // the king while you are looking at this — lands in the right section.
+      //
+      // Unregisters on the first event after the panel is detached rather than
+      // from onClose: win.js fires onClose for the X button and toggle(), but
+      // not for closeAll(), and a listener that outlives its DOM is a leak per
+      // open/close cycle.
+      const onRoster = () => {
+        if (!box.isConnected) return document.removeEventListener('kd:roster', onRoster);
+        paint(input.value.trim().toLowerCase());
+      };
+      document.addEventListener('kd:roster', onRoster);
+
+      input.oninput = () => paint(input.value.trim().toLowerCase());
+      // Enter summons the top match, so recruiting someone you can name is
+      // three keystrokes and a return rather than a scroll.
+      input.onkeydown = (e) => {
+        if (e.key !== 'Enter') return;
+        body.querySelector('.sum-row:not(.in)')?.click();
+        input.select();
+      };
+      paint('');
+      setTimeout(() => input.focus(), 0);
+    },
+  });
+}
+
 export function openVault() {
   W.toggle('vault', {
     title: 'Vault',

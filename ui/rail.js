@@ -172,8 +172,27 @@ export function setOpen(openIds) {
   for (const [name, r] of rows) r.el.classList.toggle('open', openIds.has(`m:${name}`));
 }
 
+/**
+ * Take a member out of the rail entirely.
+ *
+ * The rail is the PARTY, not the roster. Before this existed every configured
+ * role got a row whether or not it was in the court, so a stock config put 107
+ * rows and 4,179px of scroll behind a 580px viewport — and 105 of them said
+ * "not summoned", which is the one thing a member list should never mostly say.
+ * Recruiting moved to its own screen (panels.js, openSummon) and this is how a
+ * dismissed member leaves the list.
+ */
+export function remove(name) {
+  const r = rows.get(name);
+  if (!r) return;
+  r.el.remove();
+  rows.delete(name);
+  resort();            // drops a group heading that just lost its last member
+}
+
 export const has = (name) => rows.has(name);
 export const names = () => [...rows.keys()];
+export const count = () => rows.size;
 
 export function initCollapse(btn) {
   const apply = () => {

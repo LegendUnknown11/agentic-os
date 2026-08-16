@@ -176,7 +176,7 @@ The kingdom is built around that fact:
 | Lever | Effect |
 |---|---|
 | **Batched delivery** | Messages arriving together become **one** turn, not one each. |
-| **Busy agents aren't interrupted** | Delivery waits for idle (up to 45s), so no replay is spent on a half-finished thought. |
+| **Busy agents aren't interrupted** | Delivery waits for idle (up to 90s), so no replay is spent on a half-finished thought. |
 | **Notices ride along** | Pure FYI never buys its own turn; it waits for real traffic (or 3 min). |
 | **4000-char message cap** | Pasting a file through the bus replays it into someone's context. Write a file, send the path — peasants can read each other's worktrees. |
 | **Idle sleep** | Untouched members stop after 15 min (`KINGDOM_IDLE_SLEEP_MS`, 0 disables) and revive with memory on the next message. |
@@ -273,6 +273,17 @@ additions. Each member picks its own CLI and model:
 { "name": "reviewer", "cli": "claude", "model": "sonnet", "prompt": "..." }
 ```
 
+Configuring a role does not put it in the court — it makes it **available**.
+The rail on the left holds the members actually serving; everyone else lives
+behind **Summon** (Alt+E), which searches names, titles and descriptions, so
+you can find the person who does Kubernetes without knowing they are filed
+under `cloud-architect`. Summoning is `wake`, dismissing is `sleep`; both are
+reversible and a dismissed member keeps its transcript.
+
+This split is the point: the shipped roster is 105 roles, and a rail that
+listed them all was 4,179px of scroll in a 580px viewport with 105 rows reading
+"not summoned".
+
 ## One behavioural difference between the CLIs
 
 A **claude** agent is one long-lived process fed turns over stdin, so an
@@ -293,6 +304,7 @@ claude.
 | `src/daemon.js` | HTTP + SSE server |
 | `src/cli.js` | terminal interface |
 | `ui/` | the throne room (no framework) |
+| `ui/court.js` | who belongs in the rail vs. the summoning screen — pure, and tested |
 | `electron/main.js` | thin shell; spawns the daemon and shows the UI |
 
 State lives **outside** your repo, in `<repoParent>/.kingdom/<repoName>/` —
@@ -329,7 +341,7 @@ node test/dump.js <repo>   # peek at a kingdom's bus
 
 `t-agent.js` and `t-comms.js` spend real quota, so `npm test` leaves them out.
 
-`npm test` runs four suites at a time (185s → 59s here). A suite that fails is
+`npm test` runs four suites at a time (185s → 50-74s here). A suite that fails is
 re-run alone before it is reported, because several of them use real resources —
 the live tick loop, git, ports, a Whisper model — and lose races for them under
 load; a failure that passes on the retry is printed as `flaky`, not as a pass.

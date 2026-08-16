@@ -3,7 +3,7 @@
 // Suites run in a small concurrency pool, not one after another. Nearly all the
 // wall-clock here is a suite sitting in `await wait(...)` for a settle window or
 // a git subprocess, so the CPU is idle almost the whole run — measured on this
-// machine: 185.2s sequential (35 suites) -> 59-105s at 4-wide (37 suites). The
+// machine: 185.2s sequential (35 suites) -> 50-105s at 4-wide (38 suites). The
 // spread is how much memory the box had free at the time, not noise in the
 // measurement — see the retry note below. One run on a badly loaded box took
 // 513.7s, with t-stt's cold model load alone accounting for 208s of it, so a
@@ -25,6 +25,7 @@ const suites = [
   ['turn pricing', join(HERE, '..', 'src', 'price.js')],
   ['delivery replay', join(HERE, '..', 'src', 'replay.js')],
   ['recycle threshold', join(HERE, '..', 'src', 'recycle.js')],
+  ['court vs roster', join(HERE, '..', 'ui', 'court.js')],
   ['doctor cli parsing', join(HERE, 't-doctor.js')],
   ['court memory + instructions', join(HERE, '..', 'src', 'memory.js')],
   ['concurrency', join(HERE, 't-concurrent.js')],

@@ -8,13 +8,16 @@ and peasants work in isolated git worktrees. Its differentiator is that members
 message each other **directly over MCP** rather than routing through the king.
 Members run the Codex CLI, the Claude Code CLI, or Antigravity (`agy`).
 
-The 2026-08-16 session rebuilt the **cost and token instrumentation**, which was
-wrong in three independent ways, and parallelised the test runner. The work is
-functionally complete and tested. It is **entirely uncommitted** — 14 modified
-files and 2 new ones sit in the working tree on branch `main`, whose only commit
-is `19ea8ad kingdom: base commit`.
+The 2026-08-16 session did three things. It rebuilt the **cost and token
+instrumentation**, which was wrong in three independent ways, and parallelised
+the test runner — committed as `bd13360` and `c7f4e79`. It wrote
+`docs/PLAN-saas.md`, the plan for turning this into a product. And it
+restructured **the front door**: the rail now holds the court instead of the
+whole 105-role roster, and recruiting moved to its own searchable screen.
 
-The single most useful next act is to review that diff and commit it.
+All of it is complete and tested. The UI work is uncommitted at the time of
+writing; `kingdom.config.json` and `roles.json` remain uncommitted from before
+the session and are deliberately excluded — see *Open questions*.
 
 ## Current state (what exists now)
 
@@ -25,9 +28,15 @@ The single most useful next act is to review that diff and commit it.
 - `node src/ctx.js "E:/AI/Sant Dnyaneshwar"` reports
   `3 turns · 1.89M in · 0.01M out · $0.604`. Before this session the same
   command reported 2.37M and no dollar figure.
-- **`node test/run-all.js` → 37 of 37 suites passed, 4-wide, 58.8s, nothing
-  retried.** Exit code 0. This is the last thing that ran before this handoff
-  was saved.
+- **`node test/run-all.js` → 38 of 38 suites passed, 4-wide, 74.0s.** Exit code
+  0. `turn batching` failed in the pool and passed on its serial retry, so it
+  was reported as `flaky` — the polling fix reduced that class but did not
+  eliminate it, and the remaining fixed sleeps are the ones asserting that
+  nothing happened, which cannot be polled for.
+- **The front door was verified in a real browser**, not just by reading code:
+  the daemon was run against a scratch repo with `KINGDOM_CODEX_BIN` pointed at
+  a stub so no API quota was spent, and summon/dismiss was driven end to end.
+  Rail rows went 107 → 2, scroll height 4,179px → none.
 - `node test/t-stt.js` fails with `mkl_malloc: failed to allocate memory` when
   the machine is down to ~0.6GB free, and passes above roughly 2.3GB. See
   *Watch out for*.
@@ -42,8 +51,9 @@ The single most useful next act is to review that diff and commit it.
 ### Believed but not re-checked at handoff time
 
 - The Electron app and the pet window were last exercised in the 2026-08-07
-  session and have not been run since. Nothing this session touched `electron/`
-  or `ui/`.
+  session and have not been run since. The UI restructure was verified in a
+  browser against the daemon, which is the same `ui/` Electron loads, but the
+  Electron shell itself was not launched — and `electron/` was not touched.
 
 ### New files
 
@@ -52,6 +62,7 @@ The single most useful next act is to review that diff and commit it.
 | `src/price.js` | `$/Mtok` rate card per `cli/model` plus `costOf()`. Prices fresh input, cache reads (0.1x) and claude cache writes (1.25x) separately. Returns **null**, never a guess, for a model with no published price. |
 | `src/recycle.js` | Derives what `recycleAtTokens` should be, from a session's real context growth. Closed form plus a sweep table. |
 | `docs/PLAN-saas.md` | What it would take to make this a product rather than a personal tool: three candidate product shapes, nine concrete blockers with the file each lives in, a five-phase plan, and four questions that must be answered before Phase 1. |
+| `ui/court.js` | The two predicates that decide what the front door shows — `inCourt` (rail vs. roster) and `matchesQuery` (summon search). Pure and DOM-free specifically so `npm test` can check them; there is no browser in the test run. |
 
 ### Changed files
 
@@ -74,6 +85,9 @@ The single most useful next act is to review that diff and commit it.
 - `test/t-batching.js` — new case: a member behind a **failing** spawn must
   still be delivered. New case: concurrent wakes produce one agent. Five
   positive assertions moved off fixed sleeps onto a polling `until()` helper.
+- `ui/app.js`, `ui/panels.js`, `ui/rail.js`, `ui/index.html`, `ui/app.css`,
+  `ui/icons.js` — the front-door restructure. See *Decisions* for what changed
+  and why.
 - `.gitignore` — ignores `.tmp-*`. The two stale SQLite probe siblings
   (`.tmp-mcp-probe.db-shm`, `.tmp-mcp-probe.db-wal`, dated 2026-08-04) turned out
   to be **tracked**, not untracked — they were committed in `19ea8ad`. They are
@@ -85,7 +99,7 @@ The single most useful next act is to review that diff and commit it.
   a codex member reporting `$0` still accrues spend and trips a cap.
 - `README.md` — corrected two false claims about spend caps; documented the
   three cost tools and the test runner's behaviour.
-- `AGENTS.md` — suite count 25 → 37.
+- `AGENTS.md` — suite count 25 → 38.
 - `package.json` — added `npm run recycle`.
 - `kingdom.config.json`, `roles.json` — **were already modified before this
   session started.** The only change this session made to `kingdom.config.json`
@@ -157,6 +171,35 @@ Negative assertions ("a lone notice must NOT cost a turn") genuinely need a
 fixed window, because there is no condition to poll for; those keep their sleeps
 and should not be converted.
 
+**The rail is the court; the roster moved to its own screen.** Measured on a
+running instance: the rail rendered 107 rows and 4,179px of scroll into a 580px
+viewport, of which 105 said "not summoned". A member list that is 98% absence is
+a wall. The rail now holds only the king, the jester and summoned peasants — 2
+rows on a fresh court — and everyone else is behind **Summon** (Alt+E), which
+searches name, title *and* description. No backend change was needed:
+`kingdom.wake()` already adds to `summoned` and `sleep()` removes, so the UI
+drives the existing endpoints.
+
+**The empty states are now the loudest thing on screen, not the quietest.** The
+goal bar used to set `hidden` when there was no goal — hiding itself exactly
+when it had something to say — and a court with nobody in it showed a blank
+canvas. There is now a persistent "Your court is empty" panel with three
+clickable steps, shown whenever no peasant is summoned and no goal is set. It is
+state-driven, not a one-shot tour, so it comes back the day you dismiss everyone;
+a tutorial you can only see once is no use to someone returning in a month.
+
+**Summon/dismiss shows a pending state rather than an optimistic one.** The
+first version flipped the row immediately and was simply wrong — it mutated a
+copy of the roster entry, so nothing happened. The fix is not a better
+optimistic write: summoning creates a worktree, so the row says "Summoning…",
+disables, and waits for the server's roster event to settle it. That is also
+correct when the spawn fails.
+
+**The visual work stayed inside the existing glass system.** `app.css` has five
+stacked REFIT blocks that override each other, and the temptation was to
+consolidate them. That is a separate job and not what makes the UI hard to use —
+the appended section styles only new selectors, so it is not a sixth REFIT.
+
 **The product recommendation is B — host the control plane, keep execution on
 the customer's machine.** The reasoning is in `docs/PLAN-saas.md`. In short: the
 two things that sink a solo-built agent SaaS are taking custody of customer
@@ -167,6 +210,19 @@ version (A) stays reachable afterwards — Phase 2 is the shared prerequisite.
 ## Dead ends — don't retry these
 
 ### From this session
+
+**Do not use a bare `process.argv` self-check guard in a `ui/` module.** The
+`src/` files all end with `if (process.argv[1]?.endsWith('x.js'))`, and copying
+that into `ui/court.js` threw `ReferenceError: process is not defined` in the
+browser. Because `app.js` imports it first, the whole module graph died and the
+throne room booted to an empty shell — header with no tools, no rail, no modes.
+Guard with `typeof process !== 'undefined'`. Nothing in the test suite catches
+this; only loading the page does.
+
+**Do not anchor toolbar layout to a specific tool's name.** `buildTools()` had
+`if (ico === 'diff') nav.append(moreButton())`, which silently assumed `diff`
+was the last primary tool. Adding one after it put the overflow button in the
+middle of the row. It is anchored to a computed `LAST_PRIMARY` now.
 
 **Do not put timing- or memory-sensitive suites in a hand-maintained solo
 list.** This was tried twice. The list only grew — `t-batching` first, then
@@ -223,21 +279,28 @@ These concern `electron/` and `ui/`, untouched this session, and remain live:
    **Do not push without a fresh, explicit instruction from the user** — that is
    a standing rule in `E:\AI\CLAUDE.md`.
 
-2. **Read `docs/PLAN-saas.md` and answer its four closing questions.** It is the
+2. **Continue the UI work at the "feel" stage.** The sovereign chose
+   *structure first, then feel*, and structure is done. Feel is untouched: no
+   motion on state change, no sound, no weight behind a summon or a merge. The
+   natural next pieces are transitions on rail state changes, a real sense of
+   arrival when a member joins, and progress that is felt rather than read.
+   Nothing here is started, so there is nothing half-built to clean up first.
+
+3. **Read `docs/PLAN-saas.md` and answer its four closing questions.** It is the
    plan for turning this from a personal tool into a product, and Phase 1 cannot
    start until the product shape (A, B or C) is chosen. The recommendation is B
    — host the control plane, keep execution on the customer's side.
 
-3. **Re-run `node src/recycle.js "<repo>"` after a session long enough to
+4. **Re-run `node src/recycle.js "<repo>"` after a session long enough to
    actually reach 80,000 context tokens.** The current answer rests on a
    3-turn sample where the threshold never fired. Done when the report stops
    printing `OBSERVED PEAK … never came close to recycling`.
 
-4. **Consider pricing the `agy`/Gemini models** in `src/price.js` or via a
+5. **Consider pricing the `agy`/Gemini models** in `src/price.js` or via a
    `prices` key. Until then every agy member is invisible to cost reporting and
    exempt from any cap. This needs verified public rates, not estimates.
 
-5. **Optional: confirm the live spend path end to end with one short real court
+6. **Optional: confirm the live spend path end to end with one short real court
    run.** Everything in this session was verified offline against fixtures and a
    read-only replay of an existing database. Only a real run exercises pricing
    through `#enforceBudget` with live CLI usage payloads.

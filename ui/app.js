@@ -12,6 +12,8 @@ import * as N from './notify.js';
 import * as I from './identity.js';
 import { avatar } from './avatar.js';
 import * as PET from './pet.js';
+// The rail-vs-roster rule, apart from the DOM so `npm test` can check it.
+import { inCourt } from './court.js';
 
 const $ = (s) => document.querySelector(s);
 
@@ -372,6 +374,13 @@ function applyRoster(roster) {
       effort: r.effort, takesEffort: r.takesEffort, awake: r.awake, summoned: r.summoned,
       auto: r.auto,
     });
+    if (!inCourt(r)) {
+      // Dismissed, or never summoned. Its panel and its transcript survive —
+      // only the rail row goes, so re-summoning restores it where it was.
+      G.remove(r.name);
+      I.refresh(r.name);
+      continue;
+    }
     G.upsertNode(r.name, r.role);
     G.setState(r.name, r.awake ? 'awake' : 'asleep');
     G.setServing(r.name, r.summoned);
@@ -387,7 +396,78 @@ function applyRoster(roster) {
     syncControls(r.name);
     I.refresh(r.name);
   }
+  paintCourtCount();
+  paintFirstRun();
   syncPet();
+  // Anything painting from the roster repaints here — the summoning screen is
+  // the first, and it must not disagree with the rail about who is in the court.
+  document.dispatchEvent(new CustomEvent('kd:roster'));
+}
+
+/**
+ * How many are in the court, on the rail's own header.
+ *
+ * The rail no longer shows the roster, so the size of the roster has to be
+ * visible somewhere or summoning looks like it does nothing. This is also the
+ * only always-on answer to "how big is my court", which used to require
+ * counting rows.
+ */
+function paintCourtCount() {
+  const n = $('#court-count');
+  if (!n) return;
+  const total = [...members.values()].filter((m) => m.role === 'peasant').length;
+  const here = [...members.values()].filter((m) => m.role === 'peasant' && m.summoned).length;
+  n.textContent = `${here}/${total}`;
+  n.title = `${here} peasant${here === 1 ? '' : 's'} in the court, `
+    + `${total - here} more available to summon`;
+}
+
+const openSummon = () => P.openSummon({ post, toast, roster: () => members });
+$('#summon-btn').onclick = openSummon;
+
+/**
+ * What to do when there is nothing to look at.
+ *
+ * State-driven, not a one-shot tour: it appears whenever the court has no
+ * peasants and no goal, which is true on a first run and true again the day you
+ * dismiss everyone. A tutorial you can only ever see once is no help to someone
+ * who comes back in a month, and this costs nothing to keep correct.
+ *
+ * The king and the jester are always present, so they are not the test — an
+ * empty court means nobody has been summoned to do the work.
+ */
+function paintFirstRun() {
+  const box = $('#firstrun');
+  if (!box) return;
+  const staffed = [...members.values()].some((m) => m.role === 'peasant' && m.summoned);
+  if (staffed || GOAL) { box.hidden = true; return; }
+
+  if (box.dataset.built) { box.hidden = false; return; }
+  box.dataset.built = '1';
+  box.hidden = false;
+
+  const step = (n, label, hint, run) => {
+    const b = document.createElement('button');
+    b.className = 'fr-step';
+    b.append(
+      Object.assign(document.createElement('span'), { className: 'fr-n num', textContent: n }),
+      Object.assign(document.createElement('span'), { className: 'fr-label', textContent: label }),
+      Object.assign(document.createElement('span'), { className: 'fr-hint', textContent: hint }),
+    );
+    b.onclick = run;
+    return b;
+  };
+
+  box.append(
+    Object.assign(document.createElement('h1'), { textContent: 'Your court is empty' }),
+    Object.assign(document.createElement('p'), {
+      textContent: 'The king and the jester are here. Nobody is doing any work yet.',
+    }),
+    step('1', 'Summon someone', 'Pick who joins the court', openSummon),
+    step('2', 'Set a standing goal', 'What everyone is working towards',
+      () => P.openGoal({ post, toast, goal: () => GOAL })),
+    step('3', 'Give the king an order', 'Type it at the bottom', () => $('#cmd').focus()),
+  );
 }
 
 /* ---------- bus ---------- */
@@ -633,8 +713,11 @@ function connect() {
         break;
       }
       case 'spend':
-        // Cost only when there IS one. codex reports none, so a codex court
-        // showed "$0.00" forever while burning tens of millions of tokens.
+        // Cost only when there IS one. The CLIs that report no cost of their
+        // own are priced from the rate card now (src/price.js), so this is a
+        // real figure for a codex court too — but a model with no published
+        // price still contributes nothing, and inventing $0.00 for it would be
+        // worse than saying nothing.
         $('#spend').textContent =
           `${d.total > 0 ? money(d.total) + ' · ' : ''}${tokens(d.tokens)} · ${d.turns} turns`;
         if (d.name && d.ctx) {
@@ -764,12 +847,17 @@ const ELECTRON = navigator.userAgent.includes('Electron');
 if (ELECTRON) $('#rail-pet').remove();
 else PET.initPet($('#rail-pet'));
 
-/* ---------- board / flow ----------
- * Two ways to hold the same panels. Board tiles everything open into a grid
- * that fills the stage — the layout you want when you are watching a crew
- * work. Flow is the free canvas: you place panels and pan between them, which
- * is the layout you want when you are comparing two of them side by side.
- * Board is the default because an even grid is the one that needs no setup.
+/* ---------- the hall / the grounds ----------
+ * Two ways to hold the same panels. The hall ("board" internally) tiles
+ * everything open into a grid that fills the stage — the layout you want when
+ * you are watching a crew work. The grounds ("flow") is the free canvas: you
+ * place panels and pan between them, which is the layout you want when you are
+ * comparing two of them side by side. The hall is the default because an even
+ * grid is the one that needs no setup.
+ *
+ * The internal names stay `board` and `flow`: they are in localStorage under
+ * kd.mode and in CSS class names, and renaming them would log every sovereign
+ * out of their chosen layout to change a word they never see.
  */
 function setMode(m) {
   const board = m === 'board';
@@ -782,14 +870,17 @@ function setMode(m) {
 
 function buildModes() {
   const nav = $('#mode');
-  for (const [m, hint] of [
-    ['board', 'Tile every open panel into a grid'],
-    ['flow', 'Place panels yourself on a canvas you can pan and zoom'],
+  // In-world names, plain-English tooltips. "Board" and "Flow" named the
+  // mechanism (a tiling window manager and a canvas); the hall and the grounds
+  // name the place, which is the thing you are actually choosing between.
+  for (const [m, label, hint] of [
+    ['board', 'Hall', 'Every open panel assembled in a grid'],
+    ['flow', 'Grounds', 'Place panels yourself on a canvas you can pan and zoom'],
   ]) {
     const b = document.createElement('button');
     b.dataset.mode = m;
-    b.textContent = m[0].toUpperCase() + m.slice(1);
-    b.title = `${b.textContent} — ${hint}  (Alt+L)`;
+    b.textContent = label;
+    b.title = `${label} — ${hint}  (Alt+L)`;
     b.onclick = () => setMode(m);
     nav.append(b);
   }
@@ -1355,6 +1446,7 @@ function openAdvisor() {
 const TOOLS = [
   ['goal', 'Standing goal', 'What the court is working towards', () => P.openGoal({ post, toast, goal: () => GOAL })],
   ['approve', 'Approvals', 'What the court is asking permission for', () => P.openApprovals({ post, toast })],
+  ['summon', 'Summon', 'Who is in the court, and who could be', () => openSummon()],
   ['chronicle', 'Chronicle', 'Everything the court did, searchable', () => P.openChronicle({ onOpenMember: openMember })],
   ['bus', 'Court bus', 'Every message between members', () => openBus()],
   ['metrics', 'Metrics', 'Turns, tokens and spend', () => P.openMetrics()],
@@ -1384,7 +1476,7 @@ const TOOLS = [
  * touch once, so it moves behind one button that shows its actual name.
  * Nothing is lost — every tool keeps its Alt key and its label in the menu.
  */
-const PRIMARY = new Set(['goal', 'approve', 'chronicle', 'bus', 'metrics', 'diff']);
+const PRIMARY = new Set(['goal', 'approve', 'summon', 'chronicle', 'bus', 'metrics', 'diff']);
 
 /**
  * The goal, in the header, always.
@@ -1397,8 +1489,19 @@ function paintGoal() {
   const bar = $('#goalbar');
   if (!bar) return;
   bar.textContent = '';
-  if (!GOAL) { bar.hidden = true; return; }
   bar.hidden = false;
+  // Hiding this when there is no goal hid it exactly when it had something to
+  // say. An empty objective is a state worth showing — it is the difference
+  // between "the court is working towards nothing" and "I forgot to look".
+  if (!GOAL) {
+    bar.classList.add('unset');
+    bar.append(icon('goal', 13), Object.assign(
+      document.createElement('span'), { className: 'gtext', textContent: 'Set a standing goal' }));
+    bar.title = 'The court has no standing goal. Click to set what it is working towards.';
+    bar.onclick = () => P.openGoal({ post, toast, goal: () => GOAL });
+    return;
+  }
+  bar.classList.remove('unset');
 
   const open = (GOAL.milestones ?? []).filter((m) => !m.done).length;
   const total = (GOAL.milestones ?? []).length;
@@ -1415,6 +1518,7 @@ function paintGoal() {
   bar.title = `${GOAL.text}\n\n${(GOAL.milestones ?? [])
     .map((m) => `[${m.done ? 'x' : ' '}] ${m.text}`).join('\n') || 'No milestones.'}`;
   bar.onclick = () => P.openGoal({ post, toast, goal: () => GOAL });
+  paintFirstRun();      // a goal means the court has a purpose; stand down
 }
 
 /**
@@ -1431,9 +1535,12 @@ function paintGoal() {
  */
 const KEYS = {
   goal: 'g', approve: 'a', bus: 'b', chronicle: 'c', metrics: 'm', diff: 'd', vault: 'v',
+  summon: 'e',
   summary: 's', advisor: 'i', image: 'w', music: 'u', bell: 'n', who: 'p',
   pet: 'k', gather: 'j', zoom: '0',
 };
+
+const LAST_PRIMARY = TOOLS.filter(([ico]) => PRIMARY.has(ico)).at(-1)?.[0];
 
 function buildTools() {
   const nav = $('#tools');
@@ -1461,7 +1568,12 @@ function buildTools() {
       nav.append(b);
       // The overflow button sits between the working tools and the
       // destructive one, so "end the court" stays last and alone.
-      if (ico === 'diff') nav.append(moreButton());
+      //
+      // Anchored to whichever primary happens to be last, not to a name. This
+      // read `ico === 'diff'`, so adding a primary after diff put the overflow
+      // button in the middle of the working tools and left the new one stranded
+      // on the far side of it.
+      if (ico === LAST_PRIMARY) nav.append(moreButton());
       continue;
     }
     const row = document.createElement('button');
@@ -1673,6 +1785,11 @@ cmd.addEventListener('keydown', (e) => {
 // the array they read does not.
 buildTools();
 initKeys();
+
+// The header's cost readout is painted by the `spend` event, which does not
+// arrive until the first turn ends — so a court you have just opened showed an
+// empty slot where a number belongs, which reads as broken rather than as zero.
+$('#spend').textContent = '0 turns';
 
 /**
  * Open the king on a first run.
