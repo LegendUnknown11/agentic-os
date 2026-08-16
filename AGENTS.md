@@ -32,8 +32,9 @@ node src/doctor.js      # preflight the CLIs — run from a normal terminal
 - **Any confining codex sandbox denies every MCP tool call**, so a member loses `send_message` and `declare_done` and says nothing about it. `danger-full-access` is the default for that reason.
 - **codex reports no `total_cost_usd`.** Track tokens; dollars are not available.
 - **`agy` self-updates and has changed flag arity mid-session.** If a member goes silent at exit 0, check `agy --help` before anything else.
-- **`ui/app.css` has five appended REFIT blocks** that override earlier rules. Check whether a later block already overrides what you are editing, or your change will appear to do nothing.
-- **Screenshots do not work** through either in-app browser pane — neither composites frames. Verify UI by reading computed styles, or take a desktop capture.
+- **`ui/app.css` declares every selector exactly once — keep it that way.** It used to end in five appended REFIT blocks that each overrode the last, so the rule you found was rarely the rule that won. Edit the rule where it lives; do not append an override section. Keep the evidence comments beside the values they explain.
+- **The Browser pane reports `prefers-reduced-motion: reduce`**, so no animation plays there. Verify one by driving `Animation.currentTime` and reading computed styles, or open the app outside the pane.
+- **Screenshots work, but only while the Browser pane is displayed.** `computer{action:"screenshot"}` returns "the Browser pane is not displayed, so the page is not compositing frames" otherwise — `preview_start{url}` re-displays it. Two live limits: the image is scaled down to 800px wide (so design at a viewport near 800 and read layout, not detail, above it), and region `zoom` is not implemented. If the pane wedges — `navigate` timing out at 300s, screenshots at 30s — close the stuck tabs and `preview_start` a fresh one; the daemon is almost never the fault, check it with `curl -o /dev/null -w "%{http_code}" http://127.0.0.1:7788/` first.
 
 ## Layout
 

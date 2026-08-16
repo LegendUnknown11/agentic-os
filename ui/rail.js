@@ -8,6 +8,7 @@
 // Same job, so the same shape of API the graph exposed: upsert, state, status,
 // size. Nothing here knows about the canvas.
 import { avatar } from './avatar.js';
+import { arrive, depart, pulse } from './feel.js';
 
 const rows = new Map();     // name -> {el, role, state, status, ctx}
 let listEl, onOpen;
@@ -35,6 +36,7 @@ export function upsertNode(name, role) {
     rows.set(name, r);
     listEl.append(el);
     resort();
+    arrive(el);          // after resort(): it moves the node, which cancels it
   } else if (role && role !== r.role) {
     r.role = role;
     r.el.classList.toggle('king', role === 'king');
@@ -55,7 +57,10 @@ function resort() {
     if (r.role !== group) {
       group = r.role;
       const h = document.createElement('div');
-      h.className = 'rail-group';
+      // The role goes on the class so the throne's heading can wear gold. The
+      // rule trailing off to the right is drawn by ::after, so the text node
+      // has to stay the only child.
+      h.className = `rail-group ${group}`;
       h.textContent = GROUP[group] ?? 'Court';
       listEl.append(h);
     }
@@ -78,7 +83,12 @@ function resort() {
  */
 export function setState(name, state) {
   const r = upsertNode(name);
+  const woke = state !== r.state && (state === 'awake' || state === 'busy');
   r.state = state;
+  // A member coming to life is the one transition worth a ring. Only on the
+  // CHANGE — this is called on every roster tick, and pulsing an already-awake
+  // member twice a second is a strobe, not a signal.
+  if (woke) pulse(r.el.querySelector('.av'));
   r.el.classList.toggle('awake', state === 'awake' || state === 'busy');
   r.el.classList.toggle('busy', state === 'busy');
   r.el.classList.toggle('dead', state === 'dead');
@@ -185,9 +195,15 @@ export function setOpen(openIds) {
 export function remove(name) {
   const r = rows.get(name);
   if (!r) return;
-  r.el.remove();
+  // Dropped from `rows` immediately, removed from the DOM when the collapse
+  // finishes. Anything arriving during those 260ms must see them as already
+  // gone — a re-summon mid-departure would otherwise find a stale row and then
+  // have it deleted out from under it.
   rows.delete(name);
-  resort();            // drops a group heading that just lost its last member
+  depart(r.el, () => {
+    r.el.remove();
+    resort();          // drops a group heading that just lost its last member
+  });
 }
 
 export const has = (name) => rows.has(name);

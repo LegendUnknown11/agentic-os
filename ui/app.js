@@ -14,6 +14,7 @@ import { avatar } from './avatar.js';
 import * as PET from './pet.js';
 // The rail-vs-roster rule, apart from the DOM so `npm test` can check it.
 import { inCourt } from './court.js';
+import { cue, soundOn, setSound } from './feel.js';
 
 const $ = (s) => document.querySelector(s);
 
@@ -604,6 +605,11 @@ function setStatus(name, word) {
   statusOf.set(name, word);
   G.setStatus(name, word, toneOf(word));
   I.refresh(name);
+  // A working member's panel says so on its own top edge. The status word
+  // already names WHAT it is doing; this answers "is anything happening" from
+  // across the room, without reading — which is the question you actually ask
+  // of a court of six while doing something else.
+  W.getWindow(`m:${name}`)?.classList.toggle('working', isBusy(word));
   syncPet();
 }
 const clearSticky = (name) => statusOf.delete(name);
@@ -1460,6 +1466,14 @@ const TOOLS = [
   ['who', 'Member card', 'Show or hide who the selected member is', () => I.toggleCollapse()],
   ['pet', 'Court dog', 'Show or hide HappyDog',
     () => toast(PET.toggle() ? 'HappyDog is back.' : 'HappyDog has gone for a walk.')],
+  ['sound', 'Court horns', 'The short cues on summoning and on ruling', () => {
+    setSound(!soundOn());
+    // The confirmation IS the cue when turning it on: you hear what you just
+    // agreed to. Turning it off can only be confirmed in words.
+    if (soundOn()) cue('summon');
+    toast(soundOn() ? 'Horns sound again.' : 'The horns are silenced.');
+    buildTools();                    // repaint so the menu row shows the state
+  }],
   ['gather', 'Gather panels', 'Bring every open panel back into view', () => W.gather()],
   ['zoom', 'Reset zoom', 'Back to 1:1', () => C.resetZoom()],
   ['power', 'End the court', 'Stops every member. The court survives this window closing.',
@@ -1536,7 +1550,7 @@ function paintGoal() {
 const KEYS = {
   goal: 'g', approve: 'a', bus: 'b', chronicle: 'c', metrics: 'm', diff: 'd', vault: 'v',
   summon: 'e',
-  summary: 's', advisor: 'i', image: 'w', music: 'u', bell: 'n', who: 'p',
+  summary: 's', advisor: 'i', image: 'w', music: 'u', bell: 'n', who: 'p', sound: 'h',
   pet: 'k', gather: 'j', zoom: '0',
 };
 
@@ -1552,6 +1566,13 @@ function buildTools() {
     const key = KEYS[ico];
     return `${label} — ${hint}${key ? `  (Alt+${key.toUpperCase()})` : ''}`;
   };
+  // Two tooltips, deliberately. `data-tip` is the styled one CSS draws on
+  // hover; it names the tool and its key and appears instantly, which is the
+  // only thing that makes a row of 16px hairlines usable. `title` is the
+  // browser's own — it arrives about a second later with the full sentence, and
+  // it is what a screen reader and a keyboard user actually get.
+  const short = (label, ico) =>
+    `${label}${KEYS[ico] ? `  ·  Alt+${KEYS[ico].toUpperCase()}` : ''}`;
 
   for (const [ico, label, hint, run] of TOOLS) {
     // In Electron the dog is a separate always-on-top window with its own
@@ -1564,6 +1585,7 @@ function buildTools() {
       b.dataset.tool = ico;
       setIcon(b, ico, label);
       b.title = tip(label, hint, ico);
+      b.dataset.tip = short(label, ico);
       b.onclick = run;
       nav.append(b);
       // The overflow button sits between the working tools and the
@@ -1573,13 +1595,20 @@ function buildTools() {
       // read `ico === 'diff'`, so adding a primary after diff put the overflow
       // button in the middle of the working tools and left the new one stranded
       // on the far side of it.
-      if (ico === LAST_PRIMARY) nav.append(moreButton());
+      // `data-edge` draws the hairline that separates the working tools from
+      // the overflow button and the destructive one. It is an attribute rather
+      // than a selector in app.css naming a tool, because the last primary
+      // changes whenever PRIMARY does and CSS cannot know which one that is.
+      if (ico === LAST_PRIMARY) { b.dataset.edge = ''; nav.append(moreButton()); }
       continue;
     }
     const row = document.createElement('button');
     row.dataset.tool = ico;
     row.append(icon(ico), document.createTextNode(label));
     row.title = hint;
+    // A toggle in a menu has to show its state, or it is a coin flip. Sound is
+    // the only row here that is on or off rather than a panel to open.
+    if (ico === 'sound') row.classList.toggle('on', soundOn());
     if (KEYS[ico]) {
       const k = document.createElement('span');
       k.className = 'k';
@@ -1602,6 +1631,7 @@ function moreButton() {
   b.dataset.tool = 'more';
   setIcon(b, 'more', 'More');
   b.title = 'Everything else — settings, notes, wallpaper, music';
+  b.dataset.tip = 'Everything else';
   b.onclick = (e) => {
     e.stopPropagation();
     const menu = $('#menu');

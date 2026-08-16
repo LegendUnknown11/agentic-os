@@ -305,6 +305,7 @@ claude.
 | `src/cli.js` | terminal interface |
 | `ui/` | the throne room (no framework) |
 | `ui/court.js` | who belongs in the rail vs. the summoning screen — pure, and tested |
+| `ui/feel.js` | the weight: arrival/departure motion, and the horn cues on a summon or a ruling |
 | `electron/main.js` | thin shell; spawns the daemon and shows the UI |
 
 State lives **outside** your repo, in `<repoParent>/.kingdom/<repoName>/` —

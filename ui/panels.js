@@ -4,6 +4,7 @@
 import * as W from './win.js';
 import { setIcon, icon } from './icons.js';
 import { matchesQuery } from './court.js';
+import { cue } from './feel.js';
 
 const get = (u) => fetch(u).then((r) => r.json()).catch(() => ({ ok: false }));
 
@@ -470,9 +471,9 @@ export function openApprovals({ post, toast }) {
         if (live) {
           const btns = el('div', 'btns');
           const go = el('button', 'go', 'Approve');
-          go.onclick = async () => { await post('approve', { id: a.id }); toast('Approved'); draw(); };
+          go.onclick = async () => { cue('approve'); await post('approve', { id: a.id }); toast('Approved'); draw(); };
           const no = el('button', 'no', 'Reject');
-          no.onclick = async () => { await post('reject', { id: a.id }); toast('Rejected'); draw(); };
+          no.onclick = async () => { cue('reject'); await post('reject', { id: a.id }); toast('Rejected'); draw(); };
           btns.append(go, no);
           d.append(btns);
         } else {
@@ -536,6 +537,7 @@ export function openSummon({ post, toast, roster }) {
           : `Summon ${m.name} into the court`;
         row.onclick = () => {
           const going = m.summoned;
+          cue(going ? 'dismiss' : 'summon');
           post(going ? 'sleep' : 'wake', { name: m.name });
           toast(going ? `${m.name} leaves the court.` : `${m.name} is summoned.`);
           // Pending, not optimistic. Summoning a peasant creates a worktree —
@@ -561,11 +563,12 @@ export function openSummon({ post, toast, roster }) {
         const rest = all.filter((m) => !m.summoned && matchesQuery(m, q));
 
         if (here.length) {
-          body.append(el('div', 'note', `In your court · ${here.length}`));
+          body.append(el('div', 'note engraved', `In your court · ${here.length}`));
           for (const m of here) body.append(card(m));
         }
         if (rest.length) {
-          body.append(el('div', 'note', q ? `Matching · ${rest.length}` : `Available · ${rest.length}`));
+          body.append(el('div', 'note engraved',
+            q ? `Matching · ${rest.length}` : `Available · ${rest.length}`));
           for (const m of rest) body.append(card(m));
         }
         if (!here.length && !rest.length) {

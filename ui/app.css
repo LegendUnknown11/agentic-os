@@ -1,9 +1,25 @@
-/* Throne room — glass.
+/* The throne room.
  *
- * Glass only reads as glass if there is something behind it to refract. Frosted
- * panels over flat near-black are just grey rectangles, which is exactly how
- * the first attempt failed. So the stage always has a backdrop: an ambient
- * aurora by default, the sovereign's wallpaper when they set one.
+ * ---------------------------------------------------------------------------
+ * HOW TO CHANGE THIS FILE
+ *
+ * Every selector is declared ONCE, in the section it belongs to. It did not
+ * used to be: five stacked "REFIT" blocks had grown on the end, each one
+ * re-declaring `.win`, `.rail-row`, `.tool`, `#bg` and `:root` to override the
+ * pass before it. `.win` was declared four times, `#bg` three, `:root` three.
+ * Nothing could be changed by reading it — you had to scroll to the bottom to
+ * find which copy actually won, and every new fix became a sixth copy.
+ *
+ * So: edit the rule where it lives. Do not append an override block. The
+ * reasoning each refit paid for is kept as comments beside the value it
+ * produced, because the value without its reason is the thing that gets
+ * reverted by the next person who thinks it looks arbitrary.
+ * ---------------------------------------------------------------------------
+ *
+ * The room is a room, not a dashboard. It has a light above the throne, a
+ * floor, walls that fall into shadow at the edges, and glass panes floating in
+ * front of all of it. Glass only reads as glass if there is something behind it
+ * to refract, which is why the backdrop is never allowed to be flat.
  *
  * Every pane is built from the same four ingredients, never improvised:
  *   1. a translucent fill                 (--glass)
@@ -19,8 +35,11 @@
  * and raises the scrim to a readable floor — see safeDim().
  */
 :root {
-  --bg:#070a0f;
-  --deep:#0a0e15;
+  /* Darker than the panes on purpose. The stage recedes and the cards come
+     forward; when both sat within a few percent of each other no edge read as
+     an edge and nothing looked like a card. */
+  --bg:#04060a;
+  --deep:#070a10;
 
   --ink:#eef3f8;
   --dim:#a6b3c1;
@@ -31,27 +50,44 @@
   --crown:#f0c97d;
   --danger:#ff8585;
 
-  /* The glass system. Tuned together — changing one alone breaks the effect. */
-  --glass:rgba(16,20,27,.90);
-  --glass-strong:rgba(13,17,23,.94);
-  --glass-raised:rgba(255,255,255,.055);
-  --frost:blur(18px) saturate(135%);
-  --frost-lite:blur(12px) saturate(125%);
-  --edge:rgba(255,255,255,.07);
-  --edge-strong:rgba(255,255,255,.15);
-  /* The specular top edge. This one line is most of what sells it. */
-  --sheen:inset 0 1px 0 rgba(255,255,255,.05);
-  --lift:0 10px 30px -10px rgba(0,0,0,.7), 0 2px 6px -2px rgba(0,0,0,.55);
+  /* The glass system. Tuned together — changing one alone breaks the effect.
+     .72 is not a taste call. Solved for: composite every surface over the
+     wallpaper -> safeDim() scrim -> glass, across bright/midtone/warm/cool/dark
+     images, and take the WORST contrast for --faint (the lightest text in use).
+     .68 gives 4.42:1 and fails AA; .70 gives 4.53:1; .72 gives 4.64:1 and keeps
+     a margin. An earlier pass used .93, at which an 18px blur moves almost
+     nothing — 93% of every pixel is the flat fill, so the panes wore a blur
+     they could not show and the room read as slate. */
+  --glass:rgba(20,26,36,.72);
+  --glass-strong:rgba(14,19,27,.82);
+  --glass-raised:rgba(255,255,255,.075);
+  --frost:blur(30px) saturate(165%);
+  --frost-lite:blur(20px) saturate(140%);
+  --edge:rgba(255,255,255,.12);
+  --edge-strong:rgba(255,255,255,.22);
+  /* Top highlight AND bottom shade: a pane with only a top edge reads as a
+     sticker, one with both reads as a slab with depth. This one pair of lines
+     is most of what sells the material. */
+  --sheen:inset 0 1px 0 rgba(255,255,255,.13), inset 0 -1px 0 rgba(0,0,0,.30);
+  --lift:0 20px 48px -18px rgba(0,0,0,.9), 0 4px 12px -4px rgba(0,0,0,.65);
+
+  /* Gold is the sovereign's alone. Anything wearing it is the throne, the
+     standing decree, or an approval waiting on the sovereign personally. */
+  --gold-edge:rgba(240,201,125,.18);
+  --gold-wash:rgba(240,201,125,.07);
 
   --ui:"Segoe UI Variable Text","Segoe UI",Inter,system-ui,-apple-system,sans-serif;
   --mono:"JetBrains Mono","Cascadia Code",Consolas,ui-monospace,monospace;
-  --t-micro:10.5px; --t-sm:12px; --t-base:13px; --t-lg:16px;
+  /* Six steps, not one. Everything used to be within a point of 12.5px, so
+     nothing announced itself as a heading, a name or a footnote — the eye had
+     no order to follow and every screen read as one undifferentiated block. */
+  --t-micro:10.5px; --t-sm:12px; --t-base:13px; --t-md:14px; --t-lg:16px; --t-xl:20px;
 
   --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:24px; --s6:32px;
   --r-sm:6px; --r-md:8px; --r-lg:10px; --r-xl:12px;
 
   --ease:cubic-bezier(.22,1,.36,1);
-  --fast:140ms; --base:240ms;
+  --fast:140ms; --base:240ms; --slow:420ms;
 }
 
 *{box-sizing:border-box;margin:0;padding:0}
@@ -65,21 +101,41 @@ main{flex:1;display:flex;min-height:0}
 .icon{flex:none;display:block}
 .num{font-family:var(--mono);font-variant-numeric:tabular-nums;letter-spacing:-.01em}
 
-/* ---------- chrome ---------- */
-header,footer{flex:none;display:flex;align-items:center;gap:var(--s3);
+/* An engraved label: the section headings on the walls of the room. One class,
+   because five places were hand-rolling the same four declarations. */
+.engraved{font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--faint);opacity:.85}
+
+/* ---------- the banner (header) ----------
+   The top of the room carries who you are, what the court is for, and the
+   tools. Its underline is gold rather than white: it is the sovereign's band,
+   and it is the only horizontal rule in the app that is not neutral. */
+header,footer{flex:none;display:flex;align-items:center;gap:var(--s2);
   background:var(--glass-strong);backdrop-filter:var(--frost);
   -webkit-backdrop-filter:var(--frost);position:relative;z-index:20}
-header{padding:var(--s2) var(--s4);border-bottom:1px solid var(--edge);box-shadow:var(--sheen)}
-footer{padding:0 var(--s3) 0 var(--s4);border-top:1px solid var(--edge);box-shadow:var(--sheen)}
+header{padding:var(--s2) var(--s3);border-bottom:1px solid var(--gold-edge);
+  box-shadow:var(--sheen),0 10px 26px -18px rgba(0,0,0,.9)}
+footer{padding:var(--s2) var(--s3);border-top:1px solid var(--edge);box-shadow:var(--sheen)}
 
-.mark{color:var(--crown);display:flex}
-#repo{color:var(--dim);font-size:var(--t-sm);white-space:nowrap;overflow:hidden;
-  text-overflow:ellipsis;max-width:34ch}
-#spend{color:var(--dim);font-size:var(--t-sm)}
+.mark{color:var(--crown);display:flex;flex:none;
+  filter:drop-shadow(0 0 7px rgba(240,201,125,.45))}
+/* Header overflow is fought in one place: everything is `flex:none` and the
+   goal bar is the only thing allowed to shrink. Before this the whole row
+   competed — the repo path ellipsised to four characters, "0 turns" wrapped
+   onto two lines and pushed the header 6px taller, and the goal read
+   "Set a sta...". Squeeze belongs on the one element that can survive it. */
+#repo{flex:none;color:var(--dim);font-size:11.5px;white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis;max-width:20ch}
+#spend{flex:none;color:var(--dim);font-size:11.5px;white-space:nowrap;opacity:.9}
 .grow{flex:1}
 .conn{width:7px;height:7px;border-radius:50%;background:var(--danger);flex:none;
   transition:background var(--base) var(--ease);box-shadow:0 0 8px currentColor}
 .conn.up{background:var(--accent)}
+/* Under ~1040px there is genuinely not room for identity AND purpose AND
+   tools. The repo path is stable knowledge you learn once; the standing goal
+   changes and is the thing you must not stop reading. Identity yields. */
+@media (max-width:1040px){#repo{display:none}}
+@media (max-width:880px){#spend{display:none}}
 
 button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;
   display:inline-flex;align-items:center;gap:var(--s2);
@@ -92,8 +148,14 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-r
 .chip:hover{color:var(--ink);background:var(--glass-raised)}
 .chip.on{color:var(--accent)}
 
-footer input{flex:1;background:none;border:0;color:var(--ink);font:inherit;
-  padding:var(--s3) 0;outline:none;user-select:text}
+/* ---------- the word (footer) ----------
+   Where the sovereign speaks. A pill, not a strip: a bare underline in a bar
+   does not look like something you type into. */
+footer input{flex:1;background:rgba(0,0,0,.3);border:1px solid var(--edge);
+  border-radius:999px;color:var(--ink);font:inherit;font-size:var(--t-sm);
+  padding:var(--s2) var(--s4);outline:none;user-select:text;
+  transition:border-color var(--fast) var(--ease),background var(--fast) var(--ease)}
+footer input:focus{border-color:var(--edge-strong);background:rgba(0,0,0,.42)}
 input::placeholder{color:var(--faint)}
 .mic{color:var(--faint);padding:var(--s2);border-radius:var(--r-sm)}
 .mic:hover{color:var(--ink)}
@@ -103,127 +165,304 @@ input::placeholder{color:var(--faint)}
 @keyframes breathe{50%{opacity:.4}}
 
 /* The advisor rewrites before anything is sent, so the bar shows it working. */
-footer:has(#cmd.advising){border-top-color:var(--accent);
+footer:has(#cmd.advising) input{border-color:var(--accent);
   animation:advising 1.4s var(--ease) infinite}
-@keyframes advising{50%{border-top-color:var(--edge)}}
+@keyframes advising{50%{border-color:var(--edge)}}
 
 /* ---------- the court rail ----------
    The graph is gone. This is how you reach a member now: a list you can read
-   at a glance, which is what the graph stopped being once the court passed six. */
-.rail{flex:none;width:212px;display:flex;flex-direction:column;min-height:0;
-  background:var(--glass);backdrop-filter:var(--frost);-webkit-backdrop-filter:var(--frost);
+   at a glance, which is what the graph stopped being once the court passed six.
+
+   The rail holds the COURT — the king, the jester, and whoever is summoned.
+   Everyone else lives on the summoning screen. Conflating the two is what made
+   this app unusable to open: 107 rows and 4,179px of scroll behind a 580px
+   viewport, 105 of them reading "not summoned". */
+.rail{flex:none;width:214px;display:flex;flex-direction:column;min-height:0;
+  /* Chrome sits a step denser than content: the rail and the member card are
+     the frame, and a frame that competes with the work is noise. */
+  background:rgba(9,12,18,.76);backdrop-filter:var(--frost);
+  -webkit-backdrop-filter:var(--frost);
   border-right:1px solid var(--edge);position:relative;z-index:15;
   transition:width var(--base) var(--ease)}
-.rail-head{flex:none;display:flex;align-items:center;justify-content:space-between;
-  padding:var(--s3) var(--s3) var(--s2) var(--s4);
-  font-size:var(--t-micro);letter-spacing:.09em;text-transform:uppercase;color:var(--faint)}
+.rail-head{flex:none;display:flex;align-items:center;gap:var(--s2);
+  padding:var(--s3) var(--s3) var(--s2)}
 .rail-list{flex:1;overflow-y:auto;padding:0 var(--s2) var(--s3)}
 
-.rail-row{display:flex;align-items:center;gap:var(--s2);width:100%;
-  padding:var(--s2) var(--s2) var(--s2) var(--s3);border-radius:var(--r-md);
-  font-size:var(--t-sm);color:var(--dim);text-align:left;position:relative}
+.rail-row{display:flex;align-items:center;gap:var(--s3);width:100%;
+  padding:var(--s2);border-radius:var(--r-md);
+  font-size:12.5px;color:var(--dim);text-align:left;position:relative;
+  transition:background var(--fast) var(--ease),opacity var(--fast) var(--ease)}
 .rail-row:hover,.rail-row.open{background:var(--glass-raised);color:var(--ink)}
 .rail-row.open::before{content:"";position:absolute;left:2px;top:50%;translate:0 -50%;
   width:2px;height:15px;border-radius:2px;background:var(--accent)}
-.rail-row .nm{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rail-row .nm{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  font-size:var(--t-base);font-weight:550;letter-spacing:.005em;color:var(--dim)}
+/* Members not in the crew fade out entirely; the ones working are the only
+   thing at full contrast. */
+.rail-row:not(.serving){opacity:.5}
+.rail-row:not(.serving):hover{opacity:1}
+.rail-row.serving .nm{color:var(--ink)}
+/* The throne wears gold and sits in a warm pool of it. */
+.rail-row.king{background:linear-gradient(90deg,var(--gold-wash),transparent 72%)}
 .rail-row.king .nm{color:var(--crown)}
-.rail-row .st{font-size:var(--t-micro);color:var(--faint);white-space:nowrap}
-.rail-row .st.tone-talk{color:var(--accent)}
-.rail-row .st.tone-bad{color:var(--danger)}
+.rail-row .st{font-size:10px;letter-spacing:.02em;color:var(--accent);opacity:.85;
+  white-space:nowrap}
+.rail-row .st.tone-bad{color:var(--danger);opacity:1}
 
-/* One dot carries asleep / awake / busy / failed. */
-.dot{flex:none;width:6px;height:6px;border-radius:50%;background:#3a4553}
+/* One dot carries asleep / awake / busy / failed. Kept for anything drawn
+   without an avatar; the avatar's own corner light is the usual carrier. */
+.dot{flex:none;width:7px;height:7px;border-radius:50%;background:#3a4553}
 .rail-row.awake .dot{background:var(--accent);box-shadow:0 0 7px var(--accent)}
 .rail-row.busy .dot{animation:blip 1.5s var(--ease) infinite}
 .rail-row.dead .dot{background:var(--danger);box-shadow:0 0 7px var(--danger)}
 @keyframes blip{50%{opacity:.35}}
+/* Three states, not two. A court of seven quietly resting looked identical to
+   a court of none, because "in service, idle-slept" and "never summoned"
+   shared one grey dot. Resting is a hollow ring — present, not lit. */
+.rail-row.serving:not(.awake) .dot{background:transparent;
+  box-shadow:inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 55%, transparent)}
+.rail-row.serving:not(.awake) .st{color:var(--faint)}
 
-.rail-group{padding:var(--s4) var(--s3) var(--s1);font-size:var(--t-micro);
-  letter-spacing:.09em;text-transform:uppercase;color:var(--faint)}
+/* Group headings are engraved into the wall: small caps trailing off into a
+   hairline rule, the way a chapter divider does. */
+.rail-group{display:flex;align-items:center;gap:var(--s2);
+  padding:var(--s4) var(--s2) var(--s1);
+  font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--faint);opacity:.8}
+.rail-group::after{content:"";flex:1;height:1px;
+  background:linear-gradient(90deg,var(--edge),transparent)}
+.rail-group.king{color:var(--crown);opacity:.95}
+.rail-group.king::after{background:linear-gradient(90deg,var(--gold-edge),transparent)}
+
+/* The rail's second line: what each member is actually doing, without opening
+   anything. Two lines is the most a 214px rail can carry legibly. */
+.rail-row.two-line{align-items:flex-start;flex-wrap:wrap}
+.rail-row.two-line .dot{margin-top:5px}
+.rail-row.two-line .av{margin-top:1px}
+.rail-row .sum{flex-basis:100%;min-width:0;max-width:100%;font-size:var(--t-micro);
+  line-height:1.35;color:var(--faint);margin-top:2px;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.rail-row:hover .sum,.rail-row.open .sum{color:var(--dim)}
 
 body.rail-collapsed .rail{width:52px}
 body.rail-collapsed .rail-head span,
 body.rail-collapsed .rail-row .nm,
 body.rail-collapsed .rail-row .st,
+body.rail-collapsed .rail-row .sum,
 body.rail-collapsed .rail-group{display:none}
-body.rail-collapsed .rail-row{justify-content:center;padding:var(--s2)}
+body.rail-collapsed .rail-row{justify-content:center;padding:var(--s2) 0}
 body.rail-collapsed #rail-collapse{rotate:180deg}
 
-/* ---------- stage and backdrop ---------- */
+/* The collapse chevrons were a 10.5px glyph in --dim at the far edge of a
+   214px column — effectively invisible, so the collapse nobody could find
+   might as well not have been built. */
+.rail-head .chip,.who-head .chip{font-size:15px;line-height:1;color:var(--faint);
+  padding:2px 6px;border-radius:var(--r-sm)}
+.rail-head .chip:hover,.who-head .chip:hover{color:var(--ink);background:var(--glass-raised)}
+
+/* ---------- the hall: stage and backdrop ---------- */
 #stage{flex:1;position:relative;min-height:0;overflow:hidden;isolation:isolate}
 #surface{position:absolute;inset:0;z-index:1;cursor:grab;touch-action:none}
 #surface.panning{cursor:grabbing}
 
-/* The default backdrop. Large, slow, low-contrast — it exists to give the
-   glass something to bend, not to be looked at. */
+/* The room.
+ *
+ * A backdrop exists to give glass something to bend; the moment you LOOK at it,
+ * it has failed. An early version was three enormous saturated blobs filling
+ * the stage and read as a lava lamp. This one is architecture instead: a warm
+ * light falling from above the throne, cool washes in the upper corners so no
+ * quadrant is dead, and a floor with a visible horizon at the bottom. All of it
+ * low-contrast, all of it behind panes. */
 #bg{position:absolute;inset:0;z-index:0;pointer-events:none;overflow:hidden;
   background:
-    radial-gradient(58% 46% at 18% 12%, #123a4d 0%, transparent 62%),
-    radial-gradient(52% 44% at 84% 26%, #2a1f4d 0%, transparent 60%),
-    radial-gradient(64% 52% at 62% 92%, #0f3f38 0%, transparent 64%),
-    linear-gradient(160deg, var(--deep), var(--bg));
+    /* the light falling from above the throne */
+    radial-gradient(72% 46% at 50% -14%, rgba(240,201,125,.16) 0%,
+                                          rgba(240,201,125,.05) 40%, transparent 74%),
+    /* cool washes, upper corners */
+    radial-gradient(48% 42% at 6% 10%,   rgba(24,74,98,.42) 0%, transparent 74%),
+    radial-gradient(46% 40% at 96% 14%,  rgba(52,39,94,.34) 0%, transparent 74%),
+    /* the floor. The line where it meets the wall is drawn in ::before, so it
+       can fade out at the edges — a hairline running the full width of the
+       stage reads as a rendering seam, not as a horizon. */
+    linear-gradient(to top,
+      rgba(4,7,12,.92) 0 11%,
+      rgba(4,7,12,.5) 11% 19%,
+      transparent 36%),
+    /* what the floor reflects back */
+    radial-gradient(64% 24% at 50% 100%, rgba(69,236,198,.13) 0%, transparent 74%),
+    linear-gradient(168deg, #0d131d 0%, #090d15 55%, #050810 100%);
   animation:drift 46s var(--ease) infinite alternate}
-@keyframes drift{to{background-position:6% 4%, -5% 6%, 3% -5%, center}}
+@keyframes drift{to{background-position:0 0, 5% 3%, -4% 4%, 0 0, 0 0, center}}
+/* Walls. The room falls into shadow at its edges, which is also what stops the
+   corners of the stage reading as dead black rectangles. Kept under .5: the
+   vignette is what makes the room a room, but it is also the thing that will
+   quietly eat the whole backdrop if it is allowed to, and at .62 it did. */
+#bg::before{content:"";position:absolute;inset:0;
+  background:
+    /* the horizon: brightest under the throne, gone by the walls */
+    linear-gradient(90deg, transparent, rgba(255,255,255,.11) 32%,
+                    rgba(255,255,255,.11) 68%, transparent) 0 89% / 100% 1px no-repeat,
+    radial-gradient(122% 96% at 50% 34%, transparent 52%, rgba(0,0,0,.46) 100%)}
 
-/* With a wallpaper up, the aurora would fight the image, so it steps aside. */
+/* With a wallpaper up, the room would fight the image, so it steps aside. */
 body.has-bg #bg{background-image:var(--wall);background-repeat:no-repeat;
   background-size:cover;background-position:center;animation:none}
+body.has-bg #bg::before{display:none}
 #bg::after{content:"";position:absolute;inset:0;background:var(--bg);opacity:0}
+/* The scrim and the glass are ONE system. An earlier pass cut this to 55% of
+   the measured safeDim() floor — correct then, because panes were 93% opaque
+   and the wallpaper only had to survive around them. At .72 it comes straight
+   through the panes instead, and --dim measured 2.74:1 against a bright image
+   with the scrim reduced. The full floor puts it back over 4.5:1. */
 body.has-bg #bg::after{opacity:var(--bg-dim,.5)}
 
 @media (prefers-reduced-motion:reduce){#bg{animation:none}}
 
-/* ---------- panels ---------- */
-/* Zero-sized on purpose: children position from the CANVAS origin, and a
-   full-size layer would clip them the moment the canvas is panned. */
-#windows{position:absolute;top:0;left:0;width:0;height:0;pointer-events:none;z-index:5}
+/* ---------- panels ----------
+   `#windows` was 0x0 so children positioned from the canvas origin could not be
+   clipped. But an element with a backdrop-filter takes its backdrop from the
+   nearest backdrop root, and a transformed 0x0 layer is a backdrop root with no
+   area — so every .win filtered an EMPTY backdrop and fell back to its bare
+   fill. Two overlapping panels let you read the lower one's text, sharp,
+   straight through the upper one. Overflow stays visible, so a full-size layer
+   clips nothing: same origin, same coordinates, real backdrop. */
+#windows{position:absolute;inset:0;pointer-events:none;z-index:5;overflow:visible}
 
 .win{position:absolute;pointer-events:auto;display:flex;flex-direction:column;
   background:var(--glass);backdrop-filter:var(--frost);-webkit-backdrop-filter:var(--frost);
   border:1px solid var(--edge);border-radius:var(--r-xl);
   box-shadow:var(--lift),var(--sheen);
-  overflow:hidden;resize:both;min-width:300px;min-height:180px;
-  transition:border-color var(--fast) var(--ease)}
+  overflow:hidden;resize:both;
+  /* A 430x320 panel in a 1226x810 stage is a postage stamp — 14% of the
+     surface, with the transcript scrolling in a slot six lines tall. */
+  min-width:340px;min-height:200px;
+  transition:border-color var(--fast) var(--ease);
+  animation:materialize var(--base) var(--ease)}
+@keyframes materialize{from{opacity:0;scale:.985;translate:0 8px}}
 .win:hover{border-color:var(--edge-strong)}
 .win.asleep{opacity:.72}
 .win.role-king{border-color:rgba(240,201,125,.28)}
+/* Focused pane: the accent edge reads THROUGH the glass rather than being
+   swallowed by an opaque fill. */
+.win.focus{border-color:color-mix(in srgb,var(--accent) 34%,var(--edge-strong));
+  box-shadow:var(--lift),var(--sheen),0 0 0 1px color-mix(in srgb,var(--accent) 14%,transparent)}
 
-.win>.bar{flex:none;display:flex;align-items:center;gap:var(--s2);
-  padding:var(--s2) var(--s2) var(--s2) var(--s4);
+/* Working: a light travelling along the pane's top edge, for as long as the
+   member is mid-turn. Indeterminate on purpose — a turn has no percentage, and
+   a bar that fills to 90% and stops is a worse lie than no bar. It answers only
+   "is anything happening", which is the question you ask of a court of six from
+   across the room while doing something else. The status word beside the name
+   still says WHAT, in text, for anyone reading rather than glancing. */
+.win.working::after{content:"";position:absolute;top:0;left:0;right:0;height:2px;
+  pointer-events:none;z-index:2;
+  background:linear-gradient(90deg,transparent,var(--accent),transparent) no-repeat;
+  background-size:38% 100%;
+  animation:sweep 1.9s linear infinite;opacity:.85}
+@keyframes sweep{from{background-position:-45% 0}to{background-position:145% 0}}
+
+/* The titlebar catches the light — a diagonal sweep rather than a flat wash,
+   which is what stops a row of panes looking like printed rectangles. */
+.win>.bar{flex:none;display:flex;align-items:center;gap:var(--s1);
+  min-height:38px;padding:0 var(--s2) 0 var(--s4);
   border-bottom:1px solid var(--edge);cursor:move;
-  background:linear-gradient(rgba(255,255,255,.055),transparent)}
-.win .title{font-weight:600;font-size:var(--t-sm);letter-spacing:.01em}
+  background:linear-gradient(150deg,rgba(255,255,255,.10),rgba(255,255,255,.02) 55%)}
+.win .title{font-weight:600;font-size:var(--t-base);letter-spacing:.01em}
 .win.role-king .title{color:var(--crown)}
-.win .stat{font-family:var(--mono);font-size:10.5px;color:var(--faint);
-  letter-spacing:-.01em;white-space:nowrap}
-.win .slot{margin-left:auto;display:flex;align-items:center;gap:var(--s1)}
-.win .x{color:var(--faint);padding:var(--s1);border-radius:var(--r-sm)}
-.win .x:hover{color:var(--danger);background:var(--glass-raised)}
+/* A status dot before the name — for panels that are not a member. Member
+   panels carry state on the avatar's own corner, and both drawn together read
+   as a rendering fault. */
+.win>.bar::before{content:"";width:7px;height:7px;border-radius:50%;flex:none;
+  background:#3a4553;margin-right:var(--s1)}
+.win:not(.asleep)>.bar::before{background:var(--accent);box-shadow:0 0 6px var(--accent)}
+.win.role-king>.bar::before{background:var(--crown);box-shadow:0 0 6px var(--crown)}
+.win.member>.bar::before{display:none}
+.win>.bar .av{margin-right:var(--s1)}
+.win .stat{font-family:var(--mono);font-size:10px;color:var(--faint);
+  letter-spacing:-.01em;white-space:nowrap;opacity:.75}
+/* Close is created with the frame but build() appends its buttons afterwards,
+   so in DOM order close comes first. It belongs last — rightmost, as in every
+   window ever made. `order` fixes the position without fighting the lifecycle. */
+.win .slot{margin-left:auto;display:flex;align-items:center;gap:0}
+.win .slot .x{order:99;margin-left:2px}
+.win .slot>button,.win .x,.win .quiet{padding:5px;border-radius:var(--r-sm);
+  color:var(--faint);opacity:.8}
+.win .slot>button:hover,.win .x:hover,.win .quiet:hover{opacity:1;background:rgba(255,255,255,.06)}
+.win .x:hover{color:var(--danger)}
 
-.win .log{flex:1;overflow-y:auto;padding:var(--s3) var(--s4);
-  font:400 var(--t-sm)/1.6 var(--mono);user-select:text;scrollbar-width:thin;
-  scrollbar-color:rgba(255,255,255,.14) transparent}
-.win .log>div{margin-bottom:var(--s1);white-space:pre-wrap;word-break:break-word}
+/* Body. Air on all four sides, and a faint floor of its own so body text is
+   not fighting the wallpaper directly. */
+.win .log{flex:1;overflow-y:auto;padding:var(--s4) var(--s5) var(--s4) var(--s4);
+  font:400 12.5px/1.65 var(--mono);user-select:text;scrollbar-width:thin;
+  scrollbar-color:rgba(255,255,255,.14) transparent;
+  background:linear-gradient(rgba(0,0,0,.10),rgba(0,0,0,.22))}
+.win .log>div{margin-bottom:5px;white-space:pre-wrap;word-break:break-word}
+.win .log>div:last-child{margin-bottom:0}
+/* A card the size of the stage containing nothing at all was the single most
+   damning thing in the first screenshot that ever rendered. */
+.win .log:empty{display:flex;align-items:center;justify-content:center}
+.win .log:empty::after{content:"Nothing from " attr(data-who) " yet — prompt them below.";
+  color:var(--faint);font:400 var(--t-sm)/1.6 var(--ui);text-align:center;
+  max-width:34ch;opacity:.8}
 
-.win form{flex:none;display:flex;align-items:center;gap:var(--s1);
-  padding:0 var(--s2) 0 var(--s4);border-top:1px solid var(--edge);
-  background:rgba(255,255,255,.02)}
+/* The prompt: its own band, input on its own line, small chips underneath.
+   The reference never puts model pickers in a title bar and neither does this. */
+.win form{flex:none;display:flex;flex-direction:column;align-items:stretch;gap:0;
+  padding:0;border-top:1px solid var(--edge-strong);background:rgba(0,0,0,.22)}
+.win form .row1{display:flex;align-items:center;gap:var(--s2);
+  padding:var(--s2) var(--s2) var(--s1) var(--s4)}
 .win form input{flex:1;background:none;border:0;color:var(--ink);font:inherit;
-  font-size:var(--t-sm);padding:var(--s3) 0;outline:none;user-select:text}
+  font-size:12.5px;padding:var(--s2) 0;outline:none;user-select:text}
+.win form input::placeholder{color:var(--faint);opacity:.85}
+.win form .chips{display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap;
+  padding:0 var(--s3) var(--s3) var(--s4)}
+/* A <select> reports scrollWidth from its WIDEST option, not its shown value,
+   so a long model name made the chip overflow its own box. text-overflow does
+   nothing on a select; the fix is to let it shrink and clip cleanly. */
+.win form .chips select{background:none;border:0;color:var(--faint);
+  font:400 10.5px/1 var(--ui);padding:3px 4px;border-radius:var(--r-sm);
+  cursor:pointer;outline:none;max-width:15ch;
+  text-overflow:ellipsis;overflow:hidden;white-space:nowrap;min-width:0;flex:0 1 auto}
+.win form .chips select:hover{color:var(--ink);background:rgba(255,255,255,.06)}
+.win form .chips select:focus{color:var(--ink)}
+.win form .chips .sep{width:1px;height:10px;background:var(--edge);flex:none;opacity:.6}
+.win form .send{flex:none;color:var(--faint);padding:6px;border-radius:var(--r-sm)}
+.win form .send:hover{color:var(--accent);background:rgba(255,255,255,.06)}
 
 .power{font-size:var(--t-micro);color:var(--faint);padding:2px var(--s2);
   border:1px solid var(--edge);border-radius:var(--r-sm)}
 .power:hover{color:var(--ink);border-color:var(--edge-strong);background:var(--glass-raised)}
 .win.asleep .power:hover{color:var(--accent)}
 
-/* transcript lines */
+/* transcript lines.
+   Accent is for the exception, not for half the screen: measured on a real
+   transcript, 64 of 146 lines were .t-msg, all painted accent cyan. Forty-four
+   percent of the content shouting is why this read as noise. A delivered
+   message is ordinary content with a quiet marker in the gutter to say where it
+   came from. */
 .t-text{color:var(--ink)}
-.t-tool{color:var(--faint)}
-.t-sys{color:var(--dim);font-style:italic}
-.t-error{color:var(--danger)}
-.t-msg{color:var(--accent)}
-.t-end{height:var(--s2)}
+.t-tool{color:var(--faint);font-size:11px}
+.t-sys{color:var(--dim);font-style:normal;opacity:.85;font-size:11.5px}
+.t-error{color:var(--danger);border-left:2px solid rgba(255,133,133,.5);
+  padding-left:var(--s2);margin-left:-2px}
+.t-msg{color:var(--ink);border-left:2px solid rgba(69,236,198,.45);
+  padding-left:var(--s2);margin-left:-2px}
+.t-end{height:var(--s3)}
 .more{color:var(--accent);cursor:pointer}
+
+/* The line the cheap model wrote. Given the accent and a rule, because in
+   summary-only mode it is the entire content of the panel. */
+.t-sum{color:var(--ink);font-family:var(--ui);font-size:var(--t-sm);line-height:1.5;
+  padding:var(--s2) 0 var(--s2) var(--s3);margin:var(--s1) 0;
+  border-left:2px solid var(--accent)}
+/* Summary-only: everything except summaries, errors and system lines is hidden.
+   Not `display:none` on the whole log — scrollback and scroll position must
+   survive the toggle, so only the rows disappear. */
+.win.summary-only .log .t-text,
+.win.summary-only .log .t-tool,
+.win.summary-only .log .t-end{display:none}
+.quiet{color:var(--faint);padding:var(--s1);border-radius:var(--r-sm)}
+.quiet:hover{color:var(--ink);background:var(--glass-raised)}
+.quiet.on{color:var(--accent)}
 
 /* selects in a panel bar */
 .model{background:var(--glass-raised);color:var(--dim);border:1px solid var(--edge);
@@ -234,6 +473,31 @@ body.has-bg #bg::after{opacity:var(--bg-dim,.5)}
 .model:disabled{opacity:.4;cursor:not-allowed}
 .model.custom{max-width:150px}
 .model option,.model optgroup{background:#141a24;color:var(--ink)}
+
+/* ---------- a face per member ----------
+   Colour comes from the name, so it is stable everywhere and free. Before this
+   every member was a grey word beside a grey dot, and the roster read as a list
+   of strings rather than as people. */
+.av{--av:22px;position:relative;flex:none;width:var(--av);height:var(--av);
+  border-radius:calc(var(--av) * .3);display:grid;place-items:center;
+  font:600 calc(var(--av) * .44)/1 var(--ui);letter-spacing:.02em;
+  color:hsl(var(--h) 62% 80%);background:hsl(var(--h) 40% 24%);
+  box-shadow:inset 0 0 0 1px hsl(var(--h) 42% 36%)}
+.av.crown{color:#2a1e07;background:var(--crown);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.25),0 0 12px -2px rgba(240,201,125,.5)}
+/* State rides the face: one element, both questions answered. */
+.av i{position:absolute;right:-2px;bottom:-2px;width:8px;height:8px;border-radius:50%;
+  background:#39414f;box-shadow:0 0 0 2px var(--glass);
+  transition:background var(--base) var(--ease),box-shadow var(--base) var(--ease)}
+.rail-row.awake .av i,.win:not(.asleep)>.bar .av i,.who-id.awake .av i{
+  background:var(--accent);box-shadow:0 0 0 2px var(--glass),0 0 7px var(--accent)}
+.rail-row.serving:not(.awake) .av i{background:transparent;
+  box-shadow:0 0 0 2px var(--glass),inset 0 0 0 1.5px color-mix(in srgb,var(--accent) 60%,transparent)}
+.rail-row.dead .av i{background:var(--danger);box-shadow:0 0 0 2px var(--glass),0 0 7px var(--danger)}
+/* Busy is the one state worth animating: it is the difference between waiting
+   for a member and waiting for nothing. */
+.rail-row.busy .av i{animation:pip 1.4s var(--ease) infinite}
+@keyframes pip{50%{box-shadow:0 0 0 2px var(--glass),0 0 14px var(--accent);opacity:.6}}
 
 /* ---------- bus panel ---------- */
 .m{padding:var(--s2) 0;border-bottom:1px solid var(--edge);font-size:var(--t-sm)}
@@ -246,9 +510,10 @@ body.has-bg #bg::after{opacity:var(--bg-dim,.5)}
 /* ---------- approvals ---------- */
 #approvals{position:absolute;right:var(--s4);bottom:var(--s4);z-index:30;
   display:flex;flex-direction:column;gap:var(--s2);max-width:420px}
-.approval{background:var(--glass-strong);backdrop-filter:var(--frost);
+.approval{background:rgba(12,16,24,.86);backdrop-filter:var(--frost);
   -webkit-backdrop-filter:var(--frost);border:1px solid var(--edge-strong);
-  border-radius:var(--r-lg);padding:var(--s3) var(--s4);box-shadow:var(--lift),var(--sheen)}
+  border-radius:var(--r-lg);padding:var(--s3) var(--s4);box-shadow:var(--lift),var(--sheen);
+  animation:rise var(--base) var(--ease)}
 .approval summary{cursor:pointer;font-size:var(--t-sm);list-style:none}
 .approval summary::-webkit-details-marker{display:none}
 .approval summary .who{color:var(--crown)}
@@ -266,7 +531,7 @@ body.has-bg #bg::after{opacity:var(--bg-dim,.5)}
 /* ---------- toast ---------- */
 #toast{position:absolute;left:50%;translate:-50% 0;bottom:var(--s4);z-index:40;
   display:flex;flex-direction:column;gap:var(--s2);align-items:center;pointer-events:none}
-#toast div{background:var(--glass-strong);backdrop-filter:var(--frost-lite);
+#toast div{background:rgba(12,16,24,.86);backdrop-filter:var(--frost-lite);
   -webkit-backdrop-filter:var(--frost-lite);border:1px solid var(--edge);
   border-radius:999px;padding:var(--s2) var(--s4);font-size:var(--t-sm);
   box-shadow:var(--lift),var(--sheen);animation:rise var(--base) var(--ease)}
@@ -279,7 +544,7 @@ body.has-bg #bg::after{opacity:var(--bg-dim,.5)}
 #palette[hidden]{display:none}
 #palette .sheet{width:min(560px,92vw);height:fit-content;max-height:66vh;
   display:flex;flex-direction:column;overflow:hidden;
-  background:var(--glass-strong);backdrop-filter:var(--frost);
+  background:rgba(12,16,24,.86);backdrop-filter:var(--frost);
   -webkit-backdrop-filter:var(--frost);border:1px solid var(--edge-strong);
   border-radius:var(--r-xl);box-shadow:var(--lift),var(--sheen);
   animation:pop var(--base) var(--ease)}
@@ -294,7 +559,8 @@ body.has-bg #bg::after{opacity:var(--bg-dim,.5)}
 #palette li.on .lbl{color:var(--accent)}
 
 /* ---------- settings panels (advisor, wallpaper, music) ---------- */
-.win .log.settings{font-family:var(--ui);font-size:var(--t-sm);line-height:1.5}
+.win .log.settings{font-family:var(--ui);font-size:var(--t-sm);line-height:1.55;
+  padding:var(--s4) var(--s5) var(--s4) var(--s4)}
 .srow{display:flex;align-items:center;justify-content:space-between;gap:var(--s3);
   padding:var(--s3) 0;border-bottom:1px solid var(--edge);cursor:pointer}
 .srow:last-child{border-bottom:0}
@@ -366,12 +632,6 @@ body.has-bg #bg::after{opacity:var(--bg-dim,.5)}
   border:2px solid transparent;background-clip:content-box}
 ::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,.24);background-clip:content-box}
 
-/* backdrop-filter IS the effect. Without it every pane would be a
-   near-transparent smear of unreadable text, so fall back to solid fills. */
-@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
-  .win,.rail,header,footer,.approval,#palette .sheet,#toast div{background:#131924}
-}
-
 /* ---------- metrics ---------- */
 .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(84px,1fr));
   gap:var(--s2);padding:var(--s2) 0 var(--s3)}
@@ -431,7 +691,8 @@ pre.diff .del{background:rgba(255,133,133,.08)}
 .link:hover{text-decoration:underline}
 
 /* ---------- vault ---------- */
-.searchbar{flex:none;padding:var(--s2) var(--s4);border-bottom:1px solid var(--edge);
+.searchbar{flex:none;display:flex;flex-direction:column;gap:var(--s2);
+  padding:var(--s2) var(--s4);border-bottom:1px solid var(--edge);
   background:rgba(255,255,255,.02)}
 .searchbar input{width:100%;background:none;border:0;color:var(--ink);
   font:400 var(--t-sm)/1 var(--ui);padding:var(--s2) 0;outline:none;user-select:text}
@@ -455,65 +716,42 @@ pre.diff .del{background:rgba(255,133,133,.08)}
 .note.bad{color:var(--danger)}
 
 /* ---------- the toolbar ----------
-   Replaces the Ctrl+K palette. Ten icons, one row, always in the same place —
-   a palette made every global action a search, and searching for "wallpaper"
-   is worse than looking at a picture of one. */
-.tools{display:flex;align-items:center;gap:2px}
-.tool{color:var(--faint);padding:var(--s2);border-radius:var(--r-sm);position:relative}
+   Replaces the Ctrl+K palette, which made every global action a search — and
+   searching for "wallpaper" is worse than looking at a picture of one.
+
+   Seven icons stay out here; the rest live behind the More button, which shows
+   their actual names. Unlabelled 16px hairlines in a row are a memory test, and
+   no amount of spacing fixes an icon nobody can name — so every one of these
+   carries a real tooltip that appears instantly, rather than the browser's
+   native one that arrives a second late in a system font. */
+.tools{display:flex;align-items:center;gap:1px}
+.tool{color:var(--dim);padding:8px;border-radius:var(--r-md);position:relative}
 .tool:hover{color:var(--ink);background:var(--glass-raised)}
 .tool.on{color:var(--accent)}
+.tool::before{content:attr(data-tip);position:absolute;top:calc(100% + 7px);left:50%;
+  translate:-50% -3px;z-index:70;pointer-events:none;
+  padding:5px var(--s2);border-radius:var(--r-sm);
+  background:rgba(10,14,20,.96);border:1px solid var(--edge-strong);
+  box-shadow:var(--lift);color:var(--ink);
+  font:500 var(--t-micro)/1 var(--ui);letter-spacing:.02em;white-space:nowrap;
+  opacity:0;transition:opacity var(--fast) var(--ease),translate var(--fast) var(--ease)}
+.tool:hover::before,.tool:focus-visible::before{opacity:1;translate:-50% 0}
+/* The rightmost tools would push their tooltip off the window. */
+.tool:nth-last-child(-n+2)::before{left:auto;right:0;translate:0 -3px}
+.tool:nth-last-child(-n+2):hover::before{translate:0 0}
+/* A hairline between the working tools and the destructive one, so ending the
+   court is not just another icon. It hangs off whichever tool is last before
+   the More button; `data-edge` is set in app.js so this never has to name one. */
+.tool[data-edge]{margin-right:var(--s3)}
+.tool[data-edge]::after{content:"";position:absolute;
+  right:calc(var(--s3) / -2 - 1px);top:22%;height:56%;width:1px;background:var(--edge)}
+.tool[data-tool="power"]{margin-left:var(--s2);border-left:1px solid var(--edge);
+  padding-left:var(--s3);border-radius:0 var(--r-md) var(--r-md) 0}
+.tool[data-tool="power"]:hover{color:var(--danger)}
 /* Armed: the next click ends the court. Red and pulsing, not subtle. */
 .tool.arm{color:var(--danger);background:rgba(255,133,133,.14);
   animation:blip .8s var(--ease) infinite}
-.tool[data-tool="power"]:hover{color:var(--danger)}
-/* A hairline before the destructive one, so it is not just another icon. */
-.tool[data-tool="power"]{margin-left:var(--s2);
-  border-left:1px solid var(--edge);padding-left:var(--s3);border-radius:0 var(--r-sm) var(--r-sm) 0}
-
-/* ---------- summaries ---------- */
-/* The line the cheap model wrote. Given the accent and a rule, because in
-   summary-only mode it is the entire content of the panel. */
-.t-sum{color:var(--ink);font-family:var(--ui);font-size:var(--t-sm);line-height:1.5;
-  padding:var(--s2) 0 var(--s2) var(--s3);margin:var(--s1) 0;
-  border-left:2px solid var(--accent)}
-
-/* Summary-only: everything except summaries, errors and system lines is hidden.
-   Not `display:none` on the whole log — scrollback and scroll position must
-   survive the toggle, so only the rows disappear. */
-.win.summary-only .log .t-text,
-.win.summary-only .log .t-tool,
-.win.summary-only .log .t-end{display:none}
-.win.summary-only .log .t-sum{border-left-color:var(--accent);padding-left:var(--s3)}
-.quiet{color:var(--faint);padding:var(--s1);border-radius:var(--r-sm)}
-.quiet:hover{color:var(--ink);background:var(--glass-raised)}
-.quiet.on{color:var(--accent)}
-
-/* The rail's second line: what each member is actually doing, without opening
-   anything. Two lines is the most a 212px rail can carry legibly. */
-.rail-row.two-line{align-items:flex-start;flex-wrap:wrap}
-.rail-row.two-line .dot{margin-top:5px}
-.rail-row .sum{flex-basis:100%;min-width:0;max-width:100%;font-size:var(--t-micro);
-  line-height:1.35;color:var(--faint);margin-top:2px;
-  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.rail-row:hover .sum,.rail-row.open .sum{color:var(--dim)}
-body.rail-collapsed .rail-row .sum{display:none}
-
-/* The style box in the summariser panel. */
-textarea.style{width:100%;background:rgba(0,0,0,.22);color:var(--ink);
-  border:1px solid var(--edge);border-radius:var(--r-md);padding:var(--s3);
-  font:400 var(--t-sm)/1.55 var(--ui);resize:vertical;outline:none;
-  user-select:text;margin:var(--s2) 0}
-textarea.style:focus{border-color:var(--accent)}
-
-/* ---------- three-state rail dot ----------
-   The bug this fixes: a court of seven members quietly resting looked
-   identical to a court of none, because "in service, idle-slept" and "never
-   summoned" shared one grey dot. Resting is a hollow ring — present, not lit. */
-.rail-row.serving:not(.awake) .dot{background:transparent;
-  box-shadow:inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 55%, transparent)}
-.rail-row.serving:not(.awake) .st{color:var(--faint)}
-
-/* ---------- approvals: toolbar badge ---------- */
+/* Approvals are the sovereign's own business, so the badge is gold. */
 .tool[data-tool="approve"].waiting{color:var(--crown)}
 .tool[data-tool="approve"].waiting::after{
   content:attr(data-count);position:absolute;top:1px;right:1px;
@@ -521,6 +759,53 @@ textarea.style:focus{border-color:var(--accent)}
   background:var(--crown);color:#1a1206;
   font:600 9.5px/14px var(--ui);text-align:center;
   box-shadow:0 0 0 2px var(--glass-strong)}
+
+.menu{position:absolute;top:calc(100% + 6px);right:var(--s3);z-index:60;min-width:236px;
+  padding:var(--s2);border-radius:var(--r-lg);
+  background:rgba(12,16,24,.86);backdrop-filter:var(--frost);
+  -webkit-backdrop-filter:var(--frost);border:1px solid var(--edge-strong);
+  box-shadow:var(--lift),var(--sheen);animation:pop var(--fast) var(--ease)}
+.menu[hidden]{display:none}
+.menu button{display:flex;align-items:center;gap:var(--s3);width:100%;text-align:left;
+  padding:var(--s2) var(--s3);border-radius:var(--r-md);color:var(--dim);font-size:var(--t-sm)}
+.menu button:hover{color:var(--ink);background:var(--glass-raised)}
+.menu button .k{margin-left:auto;font:400 10px/1 var(--mono);color:var(--faint);
+  border:1px solid var(--edge);border-radius:4px;padding:3px 5px}
+.menu button:hover .k{color:var(--dim);border-color:var(--edge-strong)}
+.menu button.on{color:var(--accent)}
+.tool.more.on{color:var(--ink);background:var(--glass-raised)}
+
+/* ---------- the standing decree ----------
+   In the header, not behind a panel: a goal you have to go looking for is one
+   you stop checking work against, which is the failure it exists to prevent.
+   It is the only thing in the header allowed to shrink. */
+.goalbar{display:flex;align-items:center;gap:var(--s2);
+  flex:0 1 auto;min-width:8ch;max-width:38ch;
+  padding:var(--s1) var(--s3);border-radius:99px;
+  border:1px solid var(--gold-edge);background:var(--gold-wash);
+  color:var(--dim);font-size:var(--t-sm)}
+/* `display:flex` above outranks the UA's [hidden] rule, so with no goal set an
+   empty 26px pill sat in the header doing nothing. */
+.goalbar[hidden]{display:none}
+.goalbar:hover{color:var(--ink);border-color:rgba(240,201,125,.4)}
+.goalbar .gtext{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.goalbar .gcount{flex:none;font-size:var(--t-micro);color:var(--faint)}
+.goalbar .gcount.done{color:var(--accent)}
+/* An unset goal is a prompt, not a value: same slot, quieter, and it reads as
+   something to do rather than something that is true. */
+.goalbar.unset{border-color:var(--edge);background:none}
+/* Not italic. `overflow:hidden` clips an italic's right-hand overhang, so the
+   last letter of "Set a standing goal" lost its stem and the pill read as
+   truncated when it was not. Quieter ink says the same thing without lying. */
+.goalbar.unset .gtext{color:var(--faint)}
+.goalbar.unset:hover .gtext{color:var(--dim)}
+
+.srow.ms .mtext{overflow-wrap:anywhere}
+.srow.ms.done .mtext{color:var(--faint);text-decoration:line-through}
+input.msnew{flex:1;min-width:0;background:rgba(0,0,0,.22);color:var(--ink);
+  border:1px solid var(--edge);border-radius:var(--r-sm);padding:var(--s1) var(--s3);
+  font:400 var(--t-sm)/1.6 var(--ui);outline:none;user-select:text}
+input.msnew:focus{border-color:var(--accent)}
 
 /* ---------- approvals panel ---------- */
 .appr{border:1px solid var(--edge);border-radius:var(--r-md);padding:var(--s3);
@@ -546,29 +831,7 @@ textarea.style:focus{border-color:var(--accent)}
 .appr .verdict.rejected{color:var(--faint)}
 .appr.approved,.appr.rejected{opacity:.72}
 
-/* ---------- the standing goal ---------- */
-/* In the header, not behind a panel: a goal you have to go looking for is one
-   you stop checking work against, which is the failure it exists to prevent. */
-.goalbar{display:flex;align-items:center;gap:var(--s2);min-width:0;max-width:46ch;
-  padding:var(--s1) var(--s3);border-radius:99px;border:1px solid var(--edge);
-  background:var(--glass-raised);color:var(--dim);font-size:var(--t-sm)}
-/* `display:flex` above outranks the UA's [hidden] rule, so with no goal set an
-   empty 26px pill sat in the header doing nothing. */
-.goalbar[hidden]{display:none}
-.goalbar:hover{color:var(--ink);border-color:var(--edge-strong)}
-.goalbar .gtext{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.goalbar .gcount{flex:none;font-size:var(--t-micro);color:var(--faint)}
-.goalbar .gcount.done{color:var(--accent)}
-
-.srow.ms .mtext{overflow-wrap:anywhere}
-.srow.ms.done .mtext{color:var(--faint);text-decoration:line-through}
-input.msnew{flex:1;min-width:0;background:rgba(0,0,0,.22);color:var(--ink);
-  border:1px solid var(--edge);border-radius:var(--r-sm);padding:var(--s1) var(--s3);
-  font:400 var(--t-sm)/1.6 var(--ui);outline:none;user-select:text}
-input.msnew:focus{border-color:var(--accent)}
-
 /* ---------- the chronicle ---------- */
-.searchbar{flex:none;display:flex;flex-direction:column;gap:var(--s2)}
 .filters{display:flex;gap:var(--s1);flex-wrap:wrap;padding-bottom:var(--s2)}
 .filt{font-size:var(--t-micro);color:var(--faint);padding:2px var(--s2);
   border:1px solid var(--edge);border-radius:99px}
@@ -593,245 +856,66 @@ input.msnew:focus{border-color:var(--accent)}
 .chron.err .ctext{color:var(--danger)}
 .chron.msg .ctext{color:var(--dim)}
 
-/* ================================================================
-   REFIT — matching the reference: dense, solid cards on a wallpaper.
-   The previous pass read as "slop" because it was doing the opposite of
-   the reference on three axes at once: too transparent (cards dissolved
-   into the backdrop), too round, and too airy (three lines of chrome
-   before any content). Everything below tightens those.
-   ================================================================ */
+/* ---------- Hall and Grounds ----------
+   Two ways to arrange the room, not two applications. Grounds is the free
+   canvas: you place panels, they stay where you put them, the surface pans.
+   Hall tiles whatever is open into an even grid that fills the stage.
 
-/* Cards: a hairline, a small radius, and a header dense enough that the
-   content starts immediately. */
-.win{border-radius:var(--r-xl);min-width:280px;min-height:150px}
-.win>.bar{padding:var(--s2) var(--s2) var(--s2) var(--s3);gap:var(--s1);
-  background:rgba(255,255,255,.025)}
-.win .title{font-weight:500;font-size:var(--t-sm)}
-/* A status dot before the name, as in the reference. */
-.win>.bar::before{content:"";width:6px;height:6px;border-radius:50%;flex:none;
-  background:#3a4553;margin-right:2px}
-.win:not(.asleep)>.bar::before{background:var(--accent);box-shadow:0 0 6px var(--accent)}
-.win.role-king>.bar::before{background:var(--crown);box-shadow:0 0 6px var(--crown)}
-
-/* The header's right-hand cluster: small, quiet, equal-weight icon buttons. */
-.win .slot{gap:0}
-.win .slot>button,.win .x,.win .quiet{padding:5px;border-radius:var(--r-sm);
-  color:var(--faint);opacity:.8}
-.win .slot>button:hover,.win .x:hover,.win .quiet:hover{opacity:1;background:rgba(255,255,255,.06)}
-.win .stat{font-size:10px;opacity:.75}
-
-.win .log{padding:var(--s3);line-height:1.55}
-
-/* The prompt block: input on its own line, small chips underneath — this is
-   the single biggest difference from the reference, which never puts model
-   pickers in the title bar. */
-.win form{flex-direction:column;align-items:stretch;gap:0;padding:0;
-  border-top:1px solid var(--edge);background:rgba(0,0,0,.18)}
-.win form .row1{display:flex;align-items:center;gap:var(--s1);padding:0 var(--s2) 0 var(--s3)}
-.win form input{padding:var(--s2) 0;font-size:var(--t-sm)}
-.win form .chips{display:flex;align-items:center;gap:var(--s1);
-  padding:0 var(--s2) var(--s2) var(--s3);flex-wrap:wrap}
-.win form .chips select{background:none;border:0;color:var(--faint);
-  font:400 var(--t-micro)/1 var(--ui);padding:2px 3px;border-radius:var(--r-sm);
-  cursor:pointer;outline:none;max-width:15ch}
-.win form .chips select:hover{color:var(--ink);background:rgba(255,255,255,.06)}
-.win form .chips select:focus{color:var(--ink)}
-.win form .chips .sep{width:1px;height:11px;background:var(--edge);flex:none}
-
-/* Send affordance, right of the input, like the reference. */
-.win form .send{flex:none;color:var(--faint);padding:var(--s1);border-radius:var(--r-sm)}
-.win form .send:hover{color:var(--accent);background:rgba(255,255,255,.06)}
-
-/* Chrome: thinner, quieter. */
-header{padding:var(--s1) var(--s3)}
-footer{padding:0 var(--s2) 0 var(--s3)}
-.rail{width:196px}
-.rail-row{padding:5px var(--s2) 5px var(--s2);border-radius:var(--r-md)}
-.rail-group{padding:var(--s3) var(--s2) 2px}
-.tool{padding:6px}
-
-/* The wallpaper should be legible BETWEEN cards — that is what makes them
-   read as cards. With solid panels the scrim no longer has to protect text. */
-body.has-bg #bg::after{opacity:calc(var(--bg-dim,.5) * .55)}
-
-/* A <select> reports scrollWidth from its WIDEST option, not its shown value,
-   so a long model name made the chip overflow its own box. text-overflow does
-   nothing on a select; the fix is to let it shrink and clip cleanly. */
-.win form .chips select{text-overflow:ellipsis;overflow:hidden;white-space:nowrap;
-  min-width:0;flex:0 1 auto}
-
-/* Close is created with the frame but build() appends its buttons afterwards,
-   so in DOM order close comes first. It belongs last — rightmost, as in every
-   window ever made. `order` fixes the position without fighting the lifecycle. */
-.win .slot{align-items:center}
-.win .slot .x{order:99;margin-left:2px}
-
-/* ================================================================
-   SECOND REFIT — from an actual screenshot, finally.
-   The default backdrop was three enormous saturated blobs filling the
-   whole stage. It read as a lava lamp, not as a desk. A backdrop exists
-   to give glass something to bend; the moment you LOOK at it, it has
-   failed. Smaller, dimmer, pushed to the corners.
-   ================================================================ */
-#bg{
-  background:
-    radial-gradient(34% 30% at 12% 8%,  rgba(18,58,77,.42) 0%, transparent 70%),
-    radial-gradient(30% 26% at 88% 14%, rgba(42,31,77,.34) 0%, transparent 70%),
-    radial-gradient(38% 32% at 76% 94%, rgba(15,63,56,.34) 0%, transparent 72%),
-    linear-gradient(165deg, #0a0e15 0%, #070a0f 60%);
-}
-
-/* The rail was 10.5px text at 5px row spacing — a column of grey lint.
-   It is the primary navigation; it can afford to be legible. */
-.rail{width:214px}
-.rail-head{padding:var(--s3) var(--s3) var(--s2) var(--s3);font-size:10px;letter-spacing:.12em}
-.rail-row{padding:var(--s2) var(--s2);gap:var(--s3);font-size:12.5px}
-.rail-row .nm{font-weight:450;letter-spacing:.005em}
-.rail-row .st{font-size:10px;letter-spacing:.02em;opacity:.9}
-.rail-group{padding:var(--s4) var(--s2) var(--s1);font-size:9.5px;letter-spacing:.14em;opacity:.75}
-.dot{width:7px;height:7px}
-
-/* Fourteen identical 16px icons in an unbroken row is a wall, not a toolbar.
-   Group them: view / court / look / danger, with air between the groups. */
-.tools{gap:1px}
-.tool{padding:7px;border-radius:var(--r-md)}
-.tool[data-tool="vault"],
-.tool[data-tool="bell"],
-.tool[data-tool="gather"]{margin-right:var(--s3)}
-.tool[data-tool="vault"]::after,
-.tool[data-tool="bell"]::after,
-.tool[data-tool="gather"]::after{
-  content:"";position:absolute;right:calc(var(--s3) / -2 - 1px);top:22%;height:56%;
-  width:1px;background:var(--edge)}
-
-/* Header: give the identity room, and stop the repo path hogging it. */
-header{padding:var(--s2) var(--s3);gap:var(--s2)}
-#repo{max-width:26ch;font-size:11.5px}
-#spend{font-size:11.5px;opacity:.9}
-
-/* The toolbar separators are positioned; the button must be their origin. */
-.tool{position:relative}
-
-/* ---- accent is for the exception, not for half the screen ----
-   Measured on a real transcript: 64 of 146 lines were .t-msg, all painted in
-   accent cyan. Forty-four percent of the content shouting is why this read as
-   noise. A delivered message is ordinary content; it gets ordinary ink and a
-   quiet marker in the gutter to say where it came from. */
-.t-msg{color:var(--ink);border-left:2px solid rgba(69,236,198,.45);
-  padding-left:var(--s2);margin-left:-2px}
-.t-text{color:var(--ink)}
-.t-tool{color:var(--faint);font-size:11px}
-.t-error{color:var(--danger);border-left:2px solid rgba(255,133,133,.5);
-  padding-left:var(--s2);margin-left:-2px}
-
-/* A 430x320 panel in a 1226x810 stage is a postage stamp — 14% of the surface,
-   with the transcript scrolling in a slot six lines tall. */
-.win{min-width:340px;min-height:200px}
-
-/* The backdrop left the bottom-right of the stage as dead black. Wide, very
-   low-contrast washes so no quadrant is empty, without becoming scenery. */
-#bg{
-  background:
-    radial-gradient(46% 40% at 10% 4%,   rgba(20,62,82,.38) 0%, transparent 72%),
-    radial-gradient(42% 36% at 92% 10%,  rgba(44,33,80,.30) 0%, transparent 72%),
-    radial-gradient(52% 44% at 84% 96%,  rgba(16,66,58,.30) 0%, transparent 74%),
-    radial-gradient(48% 42% at 30% 100%, rgba(20,44,70,.26) 0%, transparent 74%),
-    linear-gradient(155deg, #0b1018 0%, #080b11 55%, #060910 100%);
-}
-
-/* ================================================================
-   THIRD REFIT — measured against the reference side by side.
-   The remaining gap was not colour or radius, it was AIR. The
-   reference gives its card ~20px of interior padding, 13px mono at a
-   1.6 rhythm, and a clear three-band structure (header / body /
-   prompt). Mine packed 12px text to the edges, so the same content
-   read as a dump instead of a document.
-   ================================================================ */
-
-/* Header: a real band, not a strip. */
-.win>.bar{min-height:38px;padding:0 var(--s2) 0 var(--s4);
-  background:rgba(255,255,255,.02);border-bottom:1px solid var(--edge)}
-.win .title{font-size:12.5px;font-weight:500;letter-spacing:.01em}
-.win>.bar::before{width:7px;height:7px;margin-right:var(--s1)}
-
-/* Body: the single biggest change. Air on all four sides, bigger type,
-   an open line rhythm. */
-.win .log{padding:var(--s4) var(--s5) var(--s4) var(--s4);
-  font-size:12.5px;line-height:1.65}
-.win .log>div{margin-bottom:5px}
-.win .log>div:last-child{margin-bottom:0}
-
-/* Prompt: its own band, clearly divided, tall enough to be a target. */
-.win form{background:rgba(0,0,0,.22);border-top:1px solid var(--edge-strong)}
-.win form .row1{padding:var(--s2) var(--s2) var(--s1) var(--s4);gap:var(--s2)}
-.win form input{padding:var(--s2) 0;font-size:12.5px}
-.win form input::placeholder{color:var(--faint);opacity:.85}
-.win form .chips{padding:0 var(--s3) var(--s3) var(--s4);gap:var(--s2)}
-.win form .chips select{font-size:10.5px;padding:3px 4px}
-.win form .chips .sep{height:10px;opacity:.6}
-.win form .send{padding:6px}
-
-/* Settings-style panels get the same interior air as transcripts. */
-.win .log.settings{padding:var(--s4) var(--s5) var(--s4) var(--s4);line-height:1.55}
-
-/* The transcript's own bands, so blocks separate the way the reference's
-   content/diff/footnote blocks do. */
-.t-end{height:var(--s3)}
-.t-sys{color:var(--dim);font-style:normal;opacity:.85;font-size:11.5px}
-
-/* ================================================================
-   BOARD — the reference's layout, as a mode rather than a rewrite.
-   Flow is the free canvas: you place panels, they stay where you put
-   them, the surface pans. Board tiles whatever is open into an even
-   grid that fills the stage, which is what makes the reference read
-   as a workspace instead of scattered windows.
-
-   It is entirely CSS: the same panels, the same DOM, the same state.
-   Board overrides the inline geometry the canvas writes (hence the
-   !important — inline styles are the thing being overridden), so
-   switching back restores the arrangement untouched.
-   ================================================================ */
+   It is entirely CSS: the same panels, the same DOM, the same state. Hall
+   overrides the inline geometry the canvas writes (hence the !important —
+   inline styles are the thing being overridden), so switching back restores
+   the arrangement untouched. The class name stays `board` for the same reason
+   the localStorage key does: renaming a label is not renaming a state. */
 .mode{display:flex;align-items:center;gap:2px;padding:2px;border-radius:var(--r-md);
-  background:rgba(0,0,0,.24);border:1px solid var(--edge)}
+  background:rgba(0,0,0,.24);border:1px solid var(--edge);flex:none}
 .mode button{font-size:11px;color:var(--faint);padding:3px var(--s3);border-radius:var(--r-sm);
   letter-spacing:.01em}
 .mode button:hover{color:var(--ink)}
 .mode button.on{color:var(--ink);background:var(--glass-raised);box-shadow:var(--sheen)}
 
 #stage.board #surface{pointer-events:none;cursor:default}
-#stage.board #windows{position:absolute;inset:0;width:auto;height:auto;
+#stage.board #windows{position:absolute;inset:0;
   transform:none!important;pointer-events:auto;overflow-y:auto;
   display:grid;gap:var(--s3);padding:var(--s3);align-content:stretch;
-  grid-template-columns:repeat(auto-fit,minmax(360px,1fr));
+  /* min() rather than a bare 360px: a fixed track minimum wider than the stage
+     overflows it, and a narrow window (rail + member card + a 322px stage) got
+     a permanent horizontal scrollbar under a grid holding nothing. */
+  grid-template-columns:repeat(auto-fit,minmax(min(360px,100%),1fr));
   grid-auto-rows:minmax(220px,1fr)}
 #stage.board .win{position:static!important;
   width:auto!important;height:auto!important;
   min-width:0;min-height:0;resize:none}
 #stage.board .win>.bar{cursor:default}
-/* A board with nothing on it must say so — an empty grid is indistinguishable
-   from a broken one. */
-#stage.board #windows:empty::after{content:"Nothing open. Pick a member from the court on the left.";
-  grid-column:1/-1;align-self:center;justify-self:center;color:var(--faint);font-size:var(--t-sm)}
+/* An empty hall must say so — an empty grid is indistinguishable from a broken
+   one. `white-space:normal` and a max-width are load-bearing: as a single
+   unwrapped line in a 360px grid column the sentence was clipped mid-word
+   ("Pick a member from the"). */
+#stage.board #windows:empty::after{
+  content:"The hall is empty. Open a member from the court on the left, or summon someone new.";
+  grid-column:1/-1;align-self:center;justify-self:center;
+  max-width:30ch;white-space:normal;text-align:center;line-height:1.7;
+  color:var(--faint);font-size:var(--t-sm)}
 
 /* ---------- who: the member card on the right ----------
    The rail says a member exists. This says what it is for. */
 .who{flex:none;width:264px;display:flex;flex-direction:column;min-height:0;
-  background:var(--glass);backdrop-filter:var(--frost);-webkit-backdrop-filter:var(--frost);
+  background:rgba(9,12,18,.76);backdrop-filter:var(--frost);
+  -webkit-backdrop-filter:var(--frost);
   border-left:1px solid var(--edge);position:relative;z-index:15}
 body.who-collapsed .who{display:none}
 .who-head{flex:none;display:flex;align-items:center;justify-content:space-between;
-  padding:var(--s3);font-size:10px;letter-spacing:.12em;text-transform:uppercase;
-  color:var(--faint)}
+  padding:var(--s3)}
 .who-body{flex:1;overflow-y:auto;padding:0 var(--s4) var(--s4)}
 .who-empty{color:var(--faint);font-size:var(--t-sm);line-height:1.6;padding:var(--s3) 0}
 
-.who-id{display:flex;align-items:center;gap:var(--s2);font-size:15px;font-weight:550}
+.who-id{display:flex;align-items:center;gap:var(--s3);font-size:var(--t-lg);font-weight:600}
 .who-id .rl{margin-left:auto;font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;
   color:var(--faint);font-weight:400}
 .who-id.role-king{color:var(--crown)}
+.who-id.role-king .rl{color:rgba(240,201,125,.7)}
 .who-id.awake .dot{background:var(--accent);box-shadow:0 0 7px var(--accent)}
 .who-id.role-king.awake .dot{background:var(--crown);box-shadow:0 0 7px var(--crown)}
-.who-title{font-size:var(--t-sm);color:var(--dim);margin-top:2px}
+.who-title{font-size:var(--t-sm);color:var(--faint);margin-top:var(--s2)}
 .who-desc{font-size:var(--t-sm);color:var(--dim);line-height:1.6;margin-top:var(--s3);
   padding-top:var(--s3);border-top:1px solid var(--edge);overflow-wrap:anywhere}
 
@@ -846,164 +930,16 @@ body.who-collapsed .who{display:none}
   border-left:2px solid var(--accent);font-size:var(--t-sm);line-height:1.5;color:var(--ink)}
 .who .act{margin-top:var(--s4);padding-bottom:0}
 
-/* ================================================================
-   FOURTH REFIT — from a screenshot that finally rendered.
-   What the picture showed, and none of the measurements did:
-
-   1. Nothing had weight. Stage, rail, cards and the member panel all
-      sat within a few percent of the same value, so no edge read as
-      an edge and the cards did not look like cards.
-   2. One open member was a 1050x620 empty rectangle.
-   3. The rail printed "not summoned" twelve times — a column of
-      identical grey that buried the two rows that mattered.
-   4. Sixteen identical hairline icons in a row, unlabelled.
-   5. Every member was a grey word beside a grey dot. Nothing to
-      recognise, so the roster read as a list of strings.
-
-   4 and 5 are the ones that made it read as slop, and neither is a
-   spacing problem — which is why three passes of spacing did not
-   touch them.
-   ================================================================ */
-
-/* ---- 1. surfaces that separate ----
-   The stage goes darker and the cards go lighter, so the hairline is no
-   longer doing the whole job of saying "this is a panel". */
-:root{
-  --bg:#04060a;
-  --deep:#070a10;
-  --glass:rgba(23,28,37,.93);
-  --glass-strong:rgba(17,21,29,.96);
-  --edge:rgba(255,255,255,.10);
-  --edge-strong:rgba(255,255,255,.19);
-  --lift:0 16px 40px -16px rgba(0,0,0,.85), 0 3px 10px -3px rgba(0,0,0,.6);
-}
-.win{border:1px solid var(--edge);box-shadow:var(--lift),var(--sheen)}
-.win>.bar{background:linear-gradient(rgba(255,255,255,.05),rgba(255,255,255,.012))}
-/* The rail and the member card are chrome, not content: they sit BEHIND the
-   cards in value, which is what lets the board read as the foreground. */
-.rail,.who{background:rgba(11,14,20,.92)}
-
-/* ---- 5. a face per member ----
-   Colour comes from the name, so it is stable everywhere and free. */
-.av{--av:22px;position:relative;flex:none;width:var(--av);height:var(--av);
-  border-radius:calc(var(--av) * .3);display:grid;place-items:center;
-  font:600 calc(var(--av) * .44)/1 var(--ui);letter-spacing:.02em;
-  color:hsl(var(--h) 62% 80%);background:hsl(var(--h) 40% 24%);
-  box-shadow:inset 0 0 0 1px hsl(var(--h) 42% 36%)}
-.av.crown{color:#2a1e07;background:var(--crown);box-shadow:inset 0 0 0 1px rgba(255,255,255,.25)}
-/* State rides the face: one element, both questions answered. */
-.av i{position:absolute;right:-2px;bottom:-2px;width:8px;height:8px;border-radius:50%;
-  background:#39414f;box-shadow:0 0 0 2px var(--glass)}
-.rail-row.awake .av i,.win:not(.asleep)>.bar .av i,.who-id.awake .av i{
-  background:var(--accent);box-shadow:0 0 0 2px var(--glass),0 0 7px var(--accent)}
-.rail-row.serving:not(.awake) .av i{background:transparent;
-  box-shadow:0 0 0 2px var(--glass),inset 0 0 0 1.5px color-mix(in srgb,var(--accent) 60%,transparent)}
-.rail-row.dead .av i{background:var(--danger);box-shadow:0 0 0 2px var(--glass),0 0 7px var(--danger)}
-
-/* ---- 3. the rail says less, and means more ----
-   Members not in the crew fade out entirely; the ones working are the only
-   thing with full contrast. */
-.rail-row{gap:var(--s3);padding:var(--s2) var(--s2);align-items:center}
-.rail-row .nm{font-size:12.5px;color:var(--dim)}
-.rail-row:not(.serving){opacity:.5}
-.rail-row:not(.serving):hover{opacity:1}
-.rail-row.serving .nm{color:var(--ink)}
-.rail-row.king .nm{color:var(--crown)}
-.rail-row .st{color:var(--accent);opacity:.85}
-.rail-row .st.tone-bad{color:var(--danger);opacity:1}
-.rail-row.two-line .av{margin-top:1px}
-body.rail-collapsed .rail-row{padding:var(--s2) 0}
-
-/* ---- 4. a toolbar you can read ----
-   Brighter, larger targets, and the two canvas-only tools disappear in board
-   mode, where they do nothing. */
-.tool{color:var(--dim);padding:8px}
-.tool:hover{color:var(--ink);background:var(--glass-raised)}
-/* The old group separators hung off vault/bell/gather, all of which now live
-   in the overflow menu. One rule, on whatever is actually next to a boundary. */
-.tool[data-tool="vault"],.tool[data-tool="bell"],.tool[data-tool="gather"]{margin-right:0}
-.tool[data-tool="vault"]::after,.tool[data-tool="bell"]::after,
-.tool[data-tool="gather"]::after{display:none}
-.tool[data-tool="diff"]{margin-right:var(--s3)}
-.tool[data-tool="diff"]::after{content:"";position:absolute;
-  right:calc(var(--s3) / -2 - 1px);top:22%;height:56%;width:1px;background:var(--edge)}
-
-/* ---- 2. an empty transcript says so ----
-   The single most damning thing in the screenshot was a card the size of the
-   stage containing nothing at all. */
-.win .log:empty{display:flex;align-items:center;justify-content:center}
-.win .log:empty::after{content:"Nothing from " attr(data-who) " yet — prompt them below.";
-  color:var(--faint);font:400 var(--t-sm)/1.6 var(--ui);text-align:center;
-  max-width:34ch;opacity:.8}
-
-/* ---- the footer is a control, not a strip ---- */
-footer{padding:var(--s2) var(--s3);gap:var(--s2);background:var(--glass-strong)}
-footer input{background:rgba(0,0,0,.3);border:1px solid var(--edge);
-  border-radius:999px;padding:var(--s2) var(--s4);font-size:var(--t-sm)}
-footer input:focus{border-color:var(--edge-strong);background:rgba(0,0,0,.42)}
-footer:has(#cmd.advising) input{border-color:var(--accent)}
-
-/* ---- the member card's head, now that it carries a face ---- */
-.who-id{gap:var(--s3);font-size:16px}
-.who-title{margin-top:var(--s2);font-size:var(--t-sm);color:var(--faint)}
-
-/* The bar's CSS status dot predates the avatar, which now carries state on its
-   own corner. Both drawn together read as a rendering fault. */
-.win.member>.bar::before{display:none}
-.win>.bar .av{margin-right:var(--s1)}
-
-/* ---- the toolbar, again ----
-   Fourteen unlabelled 16px hairlines in a row is not a toolbar, it is a
-   memory test — and no amount of spacing fixes an icon nobody can name. Six
-   stay out where they can be hit; the rest move behind one button that shows
-   their actual names. Every one keeps its Alt key. */
-.menu{position:absolute;top:calc(100% + 6px);right:var(--s3);z-index:60;min-width:236px;
-  padding:var(--s2);border-radius:var(--r-lg);
-  background:var(--glass-strong);backdrop-filter:var(--frost);
-  -webkit-backdrop-filter:var(--frost);border:1px solid var(--edge-strong);
-  box-shadow:var(--lift),var(--sheen);animation:pop var(--fast) var(--ease)}
-.menu[hidden]{display:none}
-.menu button{display:flex;align-items:center;gap:var(--s3);width:100%;text-align:left;
-  padding:var(--s2) var(--s3);border-radius:var(--r-md);color:var(--dim);font-size:var(--t-sm)}
-.menu button:hover{color:var(--ink);background:var(--glass-raised)}
-.menu button .k{margin-left:auto;font:400 10px/1 var(--mono);color:var(--faint);
-  border:1px solid var(--edge);border-radius:4px;padding:3px 5px}
-.menu button:hover .k{color:var(--dim);border-color:var(--edge-strong)}
-.tool.more.on{color:var(--ink);background:var(--glass-raised)}
-
-/* The rail and member-card collapse chevrons were a 10.5px glyph in --dim at
-   the far edge of a 214px column — effectively invisible, so the collapse
-   nobody could find might as well not have been built. */
-.rail-head .chip,.who-head .chip{font-size:15px;line-height:1;color:var(--faint);
-  padding:2px 6px;border-radius:var(--r-sm)}
-.rail-head .chip:hover,.who-head .chip:hover{color:var(--ink);background:var(--glass-raised)}
-
-/* ---- flow mode's panels were not frosted at all ----
-   `#windows` was 0x0 so that children positioned from the canvas origin could
-   not be clipped. But an element with a backdrop-filter takes its backdrop
-   from the nearest backdrop root, and a transformed 0x0 layer is a backdrop
-   root with no area — so every .win filtered an EMPTY backdrop and fell back
-   to its bare 93% fill. Two overlapping panels let you read the lower one's
-   text, sharp, straight through the upper one. Board mode was fine only
-   because it gives #windows inset:0.
-
-   The original fear does not apply: overflow stays visible, so a full-size
-   layer clips nothing. Same origin, same coordinates, real backdrop. */
-#windows{inset:0;width:auto;height:auto;overflow:visible}
-
 /* ---------- the court dog ----------
-   Bottom-left of the stage, out of the way of the approval cards on the right
-   and the toast in the middle. Sits ON the stage rather than in the chrome, so
-   he belongs to the workspace and disappears with it.
+   He lives at the foot of the rail, not on the stage. On the stage he had to
+   choose between being buried under a panel (win.js hands each focused card an
+   ever-increasing z-index) or floating on top of one — and on top he sat
+   squarely over the bottom-left card's prompt input. The rail's foot is the one
+   place on screen that never holds content.
 
    image-rendering:pixelated matters: the sheet is chunky-outlined art at 192px
    drawn down to 76px, and the default smooth scale turns the black keylines
    into grey mush. */
-/* He lives at the foot of the rail, not on the stage.
-   On the stage he had to choose between being buried under a panel (win.js
-   hands each focused card an ever-increasing z-index) or floating on top of
-   one — and on top he sat squarely over the bottom-left card's prompt input.
-   The rail's foot is the one place on screen that never holds content. */
 .rail-pet{flex:none;display:flex;align-items:flex-end;justify-content:center;
   padding:var(--s2) 0 var(--s3);border-top:1px solid var(--edge)}
 body.no-pet .rail-pet{display:none}
@@ -1020,87 +956,7 @@ body.no-pet #pet{display:none}
 body.rail-collapsed #pet{width:40px;height:43px}
 @media (prefers-reduced-motion:reduce){#pet{transition:none}}
 
-/* ================================================================
-   FIFTH REFIT — actual glass.
-   ================================================================
-   The fourth refit fixed a real problem (panels that did not separate
-   from the stage) by making them nearly opaque: --glass went to .93 and
-   --glass-strong to .96. At that alpha an 18px backdrop blur moves
-   almost nothing — 93% of every pixel is the flat fill. The result was
-   dark cards wearing a blur they could not show, which is why the room
-   reads as slate rather than as glass.
-
-   Separation is kept, but bought with the four things that actually
-   make glass legible instead of with opacity:
-     1. a real specular top edge (the single strongest cue)
-     2. a dark inner bottom edge, so a pane has THICKNESS
-     3. more blur and saturation, so what shows through is colour, not mud
-     4. a stronger drop shadow, so the pane floats off its backdrop
-
-   Text contrast is preserved because the ink never changed and the
-   scrim floor in assets.js safeDim() still raises the backdrop under a
-   bright wallpaper. The no-backdrop-filter fallback at the top of this
-   file still swaps in a solid fill, so a machine without the filter is
-   unaffected by any of this.
-   ================================================================ */
-:root{
-  /* .72 is not a taste call. Solved for: composite every surface over the
-     wallpaper -> safeDim() scrim -> glass, across bright/midtone/warm/cool/dark
-     images, and take the WORST contrast for --faint (the lightest text in use).
-     .68 gives 4.42:1 and fails AA; .70 gives 4.53:1; .72 gives 4.64:1 and keeps
-     a margin. Still four times more backdrop showing through than the .93 it
-     replaces, which is what the blur needs in order to be visible at all. */
-  --glass:rgba(20,26,36,.72);
-  --glass-strong:rgba(14,19,27,.82);
-  --glass-raised:rgba(255,255,255,.075);
-  --frost:blur(30px) saturate(165%);
-  --frost-lite:blur(20px) saturate(140%);
-  --edge:rgba(255,255,255,.12);
-  --edge-strong:rgba(255,255,255,.22);
-  /* Top highlight AND bottom shade: a pane with only a top edge reads as a
-     sticker, one with both reads as a slab with depth. */
-  --sheen:inset 0 1px 0 rgba(255,255,255,.13), inset 0 -1px 0 rgba(0,0,0,.30);
-  --lift:0 20px 48px -18px rgba(0,0,0,.9), 0 4px 12px -4px rgba(0,0,0,.65);
-}
-
-/* Chrome stays a step denser than content: the rail and member card are the
-   frame, and a frame that competes with the work is noise. */
-.rail,.who{background:rgba(9,12,18,.76)}
-
-/* The titlebar catches the light — a diagonal sweep rather than a flat wash,
-   which is what stops a row of panes looking like printed rectangles. */
-.win>.bar{background:linear-gradient(150deg,rgba(255,255,255,.10),rgba(255,255,255,.02) 55%)}
-
-/* Content sits on the glass, so give the transcript its own faint floor
-   instead of letting body text fight the wallpaper directly. */
-.win .log{background:linear-gradient(rgba(0,0,0,.10),rgba(0,0,0,.22))}
-
-/* Focused pane: the accent edge was already there, now it reads through the
-   glass instead of being swallowed by an opaque fill. */
-.win.focus{border-color:color-mix(in srgb,var(--accent) 34%,var(--edge-strong));
-  box-shadow:var(--lift),var(--sheen),0 0 0 1px color-mix(in srgb,var(--accent) 14%,transparent)}
-
-/* Anything floating ABOVE a pane needs more body than the pane it covers, or
-   the two sets of glass average out into fog. */
-.approval,.menu,#palette .sheet,#toast div{background:rgba(12,16,24,.86)}
-
-@media (prefers-reduced-transparency:reduce){
-  :root{--glass:rgba(20,26,36,.96);--glass-strong:rgba(14,19,27,.98);
-    --frost:none;--frost-lite:none}
-  .rail,.who{background:rgba(9,12,18,.97)}
-}
-
-/* The scrim and the glass are ONE system, and this is the other half of the
-   fifth refit. An earlier pass cut the wallpaper scrim to 55% of the measured
-   safeDim() floor — correct at the time, because panes were 93% opaque and the
-   wallpaper only had to survive around them. At .60 alpha it comes straight
-   through the panes instead, and --dim measured 2.74:1 against a bright image
-   with the scrim reduced. Restoring the full floor puts it back over 4.5:1.
-   safeDim() already scales the floor with the image's own luminance, so a dark
-   wallpaper is not needlessly flattened by this. */
-body.has-bg #bg::after{opacity:var(--bg-dim,.5)}
-
-/* --- the `/` skill menu ------------------------------------------------
+/* ---------- the `/` skill menu ----------
    Opens UPWARD from the input, because both places it attaches — the command
    bar and a member pane's composer — sit at the bottom of their container,
    where a downward menu would open off-screen.
@@ -1108,34 +964,25 @@ body.has-bg #bg::after{opacity:var(--bg-dim,.5)}
    It is a plain absolutely-positioned div rather than a <datalist> or a popover:
    datalist cannot show two columns or be styled, and this needs the trigger
    text next to the name or the menu is 27 opaque slugs. */
-.skillmenu{
-  position:absolute;left:0;right:0;bottom:calc(100% + var(--s2));z-index:40;
+.skillmenu{position:absolute;left:0;right:0;bottom:calc(100% + var(--s2));z-index:40;
   max-height:min(46vh,340px);overflow-y:auto;overscroll-behavior:contain;
   background:var(--glass-strong);backdrop-filter:var(--frost);-webkit-backdrop-filter:var(--frost);
   border:1px solid var(--edge-strong);border-radius:var(--r-lg);
-  box-shadow:0 18px 48px rgba(0,0,0,.5);padding:var(--s1)
-}
-.skillmenu .srow{
-  display:flex;align-items:baseline;gap:var(--s2);cursor:pointer;
-  padding:var(--s1) var(--s2);border-radius:var(--r-sm)
-}
+  box-shadow:0 18px 48px rgba(0,0,0,.5);padding:var(--s1)}
+.skillmenu .srow{display:flex;align-items:baseline;gap:var(--s2);cursor:pointer;
+  padding:var(--s1) var(--s2);border-radius:var(--r-sm);border-bottom:0}
 .skillmenu .srow.on{background:var(--glass-raised)}
 .skillmenu .srow b{color:var(--accent);font-weight:600;white-space:nowrap}
 /* The trigger is the whole point of the menu, so it gets the room and the name
    never wraps; a long trigger is clipped rather than pushing the name around. */
-.skillmenu .srow i{
-  color:var(--dim);font-style:normal;font-size:.86em;flex:1;
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap
-}
+.skillmenu .srow i{color:var(--dim);font-style:normal;font-size:.86em;flex:1;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 /* --dim, not --faint: measured over the glass against a bright wallpaper,
    --faint came out at 3.88:1 — under AA for text this size. It is set apart by
    size and position instead, which is the better signal anyway. */
 .skillmenu .srow em{color:var(--dim);font-style:normal;font-size:.78em;white-space:nowrap}
 
-/* ================= the party and the summoning =================
- *
- * New components, not a sixth REFIT: nothing here re-styles a selector an
- * earlier block already owns, so it is safe to read this section on its own.
+/* ---------- the party and the summoning ----------
  *
  * The rail used to render every configured role — 107 rows and 4,179px of
  * scroll in a 580px viewport, 105 of them reading "not summoned". The rail now
@@ -1143,20 +990,25 @@ body.has-bg #bg::after{opacity:var(--bg-dim,.5)}
  * party-based game makes between the party and the recruitment screen.
  */
 
-/* The rail's primary action. It is the only button in the app that is filled
-   rather than hairline, because on a first run it is the only thing there is
-   to do — an empty court with no visible way to staff it is the dead end this
-   whole section exists to remove. */
+/* The rail's primary action, and the only filled button in the app: on a first
+   run it is the only thing there is to do, and an empty court with no visible
+   way to staff it is the dead end this whole section exists to remove. Filled,
+   but not a flat mint slab — a lit surface with a glow beneath it, so it reads
+   as a thing you raise rather than a form control. */
 .summon-btn{
   flex:none;margin:0 var(--s2) var(--s2);padding:var(--s2) var(--s3);
   display:flex;align-items:center;justify-content:center;gap:var(--s2);
-  background:var(--accent);color:var(--accent-ink);
-  border:0;border-radius:var(--r-md);cursor:pointer;
+  background:linear-gradient(158deg,#63f4d6,#2fc4a4);
+  color:var(--accent-ink);border:0;border-radius:var(--r-md);cursor:pointer;
   font:600 var(--t-sm)/1 var(--ui);letter-spacing:.02em;
-  transition:filter var(--fast) var(--ease),transform var(--fast) var(--ease);
+  box-shadow:0 8px 20px -10px rgba(69,236,198,.7),inset 0 1px 0 rgba(255,255,255,.35);
+  transition:filter var(--fast) var(--ease),transform var(--fast) var(--ease),
+             box-shadow var(--fast) var(--ease);
 }
-.summon-btn:hover{filter:brightness(1.08)}
-.summon-btn:active{transform:translateY(1px)}
+.summon-btn:hover{filter:brightness(1.07);
+  box-shadow:0 10px 26px -10px rgba(69,236,198,.85),inset 0 1px 0 rgba(255,255,255,.4)}
+.summon-btn:active{transform:translateY(1px);
+  box-shadow:0 4px 12px -8px rgba(69,236,198,.7),inset 0 1px 0 rgba(255,255,255,.25)}
 #court-count{color:var(--faint);font-size:var(--t-micro)}
 body.rail-collapsed #court-count{display:none}
 /* Collapsed, the rail is 52px of avatars — a word would not fit, so the button
@@ -1164,8 +1016,16 @@ body.rail-collapsed #court-count{display:none}
 body.rail-collapsed .summon-btn{font-size:0;padding:var(--s2);margin:0 6px var(--s2)}
 body.rail-collapsed .summon-btn::after{content:"+";font-size:15px;line-height:1}
 
-/* ---- the summoning screen ---- */
-.win.summon .log{padding:0 0 var(--s2)}
+/* A container, so the rows can answer the PANEL's width rather than the
+   window's. This panel is opened at any size, and in Hall mode it is whatever
+   width the grid gives it — a viewport media query would be measuring the
+   wrong box. */
+.win.summon .log{padding:0 0 var(--s2);font-family:var(--ui);container-type:inline-size}
+/* Under ~380px the model name is what breaks the row: it holds a fixed ~90px
+   of column 2, which squeezed "accessibility-engineer" into two lines and its
+   title down to "A…". A recruit screen is scanned by name and skill; which
+   model the role happens to run on is the last thing you need here. */
+@container (max-width:380px){.sum-model{display:none}}
 .sum-row{
   display:grid;grid-template-columns:1fr auto;gap:2px var(--s3);
   width:100%;text-align:left;padding:var(--s2) var(--s3);
@@ -1174,7 +1034,11 @@ body.rail-collapsed .summon-btn::after{content:"+";font-size:15px;line-height:1}
 }
 .sum-row:hover{background:var(--glass-raised);color:var(--ink)}
 .sum-main{display:flex;align-items:baseline;gap:var(--s2);min-width:0}
-.sum-name{color:var(--ink);font-weight:600}
+/* Clipped, never wrapped. Every role name in the stock config is hyphenated
+   ("ai-safety-officer"), and a wrapping name breaks at every hyphen — three
+   lines for one name, so a list of twenty is unscannable. */
+.sum-name{color:var(--ink);font-weight:600;font-size:var(--t-base);
+  flex:0 1 auto;min-width:7ch;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sum-row.in .sum-name{color:var(--accent)}
 .sum-title{color:var(--faint);font-size:var(--t-sm);white-space:nowrap;
   overflow:hidden;text-overflow:ellipsis}
@@ -1201,7 +1065,7 @@ body.rail-collapsed .summon-btn::after{content:"+";font-size:15px;line-height:1}
 .sum-row.pending{opacity:.6;cursor:default}
 .sum-row.pending .sum-act{opacity:1;background:none;border-color:var(--edge-strong);color:var(--faint)}
 
-/* ---- the empty court ----
+/* ---------- the empty court ----------
  * Shown whenever nobody is summoned and no goal is set. Sits behind the panels
  * rather than over them: it is guidance, not a modal, and it must never be a
  * thing you have to dismiss before you can work. */
@@ -1210,9 +1074,13 @@ body.rail-collapsed .summon-btn::after{content:"+";font-size:15px;line-height:1}
   align-items:center;justify-content:center;gap:var(--s2);
   pointer-events:none;z-index:0;padding:var(--s6);text-align:center;
 }
+#firstrun[hidden]{display:none}
 #firstrun h1{
   font:600 26px/1.2 var(--ui);color:var(--ink);letter-spacing:-.01em;
-  margin-bottom:var(--s1)
+  margin-bottom:var(--s1);
+  /* The one place gold is used at size: this is the throne addressing you. */
+  background:linear-gradient(180deg,var(--ink),rgba(240,201,125,.85));
+  -webkit-background-clip:text;background-clip:text;color:transparent;
 }
 #firstrun p{color:var(--faint);font-size:var(--t-base);margin-bottom:var(--s4)}
 .fr-step{
@@ -1224,9 +1092,11 @@ body.rail-collapsed .summon-btn::after{content:"+";font-size:15px;line-height:1}
   -webkit-backdrop-filter:var(--frost-lite);
   border:1px solid var(--edge);border-radius:var(--r-lg);box-shadow:var(--sheen);
   color:var(--dim);cursor:pointer;
-  transition:border-color var(--fast) var(--ease),transform var(--fast) var(--ease);
+  transition:border-color var(--fast) var(--ease),transform var(--fast) var(--ease),
+             box-shadow var(--fast) var(--ease);
 }
-.fr-step:hover{border-color:var(--edge-strong);transform:translateY(-1px)}
+.fr-step:hover{border-color:var(--edge-strong);transform:translateY(-2px);
+  box-shadow:var(--sheen),0 14px 30px -18px rgba(0,0,0,.9)}
 .fr-n{
   grid-row:1 / span 2;align-self:center;
   width:26px;height:26px;display:grid;place-items:center;
@@ -1236,6 +1106,27 @@ body.rail-collapsed .summon-btn::after{content:"+";font-size:15px;line-height:1}
 .fr-label{color:var(--ink);font-weight:600}
 .fr-hint{color:var(--faint);font-size:var(--t-sm)}
 
-/* An unset goal is a prompt, not a value: same slot, quieter, and it reads as
-   something to do rather than something that is true. */
-.goalbar.unset .gtext{color:var(--faint);font-style:italic}
+/* ---------- fallbacks ---------- */
+/* backdrop-filter IS the effect. Without it every pane would be a
+   near-transparent smear of unreadable text, so fall back to solid fills. */
+@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
+  .win,.rail,.who,header,footer,.approval,.menu,#palette .sheet,#toast div,.skillmenu,.fr-step
+    {background:#131924}
+}
+@media (prefers-reduced-transparency:reduce){
+  :root{--glass:rgba(20,26,36,.96);--glass-strong:rgba(14,19,27,.98);
+    --frost:none;--frost-lite:none}
+  .rail,.who{background:rgba(9,12,18,.97)}
+}
+/* Every entrance in this file is a fade with a small offset, so switching them
+   all off in one place is honest — nothing here carries meaning that only the
+   movement conveys. */
+@media (prefers-reduced-motion:reduce){
+  .win,#toast div,.approval,.menu,#palette .sheet{animation:none}
+  .rail-row.busy .av i,.tool.arm,.mic.on{animation:none}
+  /* The sweep stays VISIBLE and stops moving: it is the only signal that a
+     member is mid-turn, and deleting it would take information with it. A
+     static accent rule says the same thing without the movement. */
+  .win.working::after{animation:none;background:var(--accent);opacity:.55}
+  *{transition-duration:1ms!important}
+}

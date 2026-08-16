@@ -8,16 +8,26 @@ and peasants work in isolated git worktrees. Its differentiator is that members
 message each other **directly over MCP** rather than routing through the king.
 Members run the Codex CLI, the Claude Code CLI, or Antigravity (`agy`).
 
-The 2026-08-16 session did three things. It rebuilt the **cost and token
+The 2026-08-16 session did four things. It rebuilt the **cost and token
 instrumentation**, which was wrong in three independent ways, and parallelised
 the test runner — committed as `bd13360` and `c7f4e79`. It wrote
-`docs/PLAN-saas.md`, the plan for turning this into a product. And it
-restructured **the front door**: the rail now holds the court instead of the
-whole 105-role roster, and recruiting moved to its own searchable screen.
+`docs/PLAN-saas.md`, the plan for turning this into a product. It restructured
+**the front door**: the rail now holds the court instead of the whole 105-role
+roster, and recruiting moved to its own searchable screen (`80e22f4`). And it
+finished the UI work that restructure had deliberately left undone — the
+**throne-room treatment** and the **feel layer**.
 
-All of it is complete and tested. The UI work is uncommitted at the time of
-writing; `kingdom.config.json` and `roles.json` remain uncommitted from before
-the session and are deliberately excluded — see *Open questions*.
+The UI is now three things it was not. `ui/app.css` is **consolidated**: the
+five stacked REFIT override blocks are gone and every selector is declared once.
+The room is **diegetic** — a light above the throne, a floor with a horizon, and
+walls that fall into shadow, rather than a flat plate with a crown icon on it.
+And state changes have **weight**: members animate in and out of the rail, a
+working member's panel carries a travelling light on its top edge, and a summon
+or a ruling sounds a short synthesised horn (mutable, Alt+H).
+
+All of it is complete and tested. `kingdom.config.json` and `roles.json` remain
+uncommitted from before the session and are deliberately excluded — see
+*Open questions*.
 
 ## Current state (what exists now)
 
@@ -28,15 +38,36 @@ the session and are deliberately excluded — see *Open questions*.
 - `node src/ctx.js "E:/AI/Sant Dnyaneshwar"` reports
   `3 turns · 1.89M in · 0.01M out · $0.604`. Before this session the same
   command reported 2.37M and no dollar figure.
-- **`node test/run-all.js` → 38 of 38 suites passed, 4-wide, 74.0s.** Exit code
-  0. `turn batching` failed in the pool and passed on its serial retry, so it
-  was reported as `flaky` — the polling fix reduced that class but did not
-  eliminate it, and the remaining fixed sleeps are the ones asserting that
-  nothing happened, which cannot be polled for.
+- **`npm test` → 38 of 38 suites passed, 4-wide, 76.5s.** Exit code 0. `turn
+  batching` failed in the pool and passed on its serial retry, so it was
+  reported as `flaky` — that happened on both runs of this session's last pass,
+  so treat it as the expected outcome rather than a new signal. The polling fix
+  reduced that class but did not eliminate it, and the remaining fixed sleeps
+  are the ones asserting that nothing happened, which cannot be polled for.
 - **The front door was verified in a real browser**, not just by reading code:
   the daemon was run against a scratch repo with `KINGDOM_CODEX_BIN` pointed at
   a stub so no API quota was spent, and summon/dismiss was driven end to end.
   Rail rows went 107 → 2, scroll height 4,179px → none.
+- **The redesign was verified the same way**, by screenshot at 800x812 and
+  1280x820: header no longer collides or wraps, the Hall's empty-state sentence
+  wraps instead of clipping, the toolbar tooltips appear instantly and name each
+  icon with its Alt key, the summoning rows fit one name per line, and
+  summon → rail row → dismiss → row gone round-trips with the counter tracking
+  it. Console clean on every load.
+- **The motion layer is only partly verified visually.** The Claude Code Browser
+  pane reports `prefers-reduced-motion: reduce`, so every screenshot above is of
+  the reduced-motion rendering — which is itself worth knowing, because that
+  path is therefore the well-tested one. The animated path was verified by
+  driving `Animation.currentTime` directly: the `sweep` keyframe interpolates
+  `background-position` from `-45%` to `143.9%` over its 1.9s, all nine
+  `@keyframes` parse, and no rule is suppressed except inside the
+  reduced-motion block. **Nobody has watched the summon animation actually
+  play.** Launch the Electron app or a normal browser to see it.
+- **Sound has never been heard.** `ui/feel.js` synthesises its cues with
+  WebAudio and the code paths run without throwing, but the browser pane has no
+  audio output to check against. Verify by clicking a summon in the Electron
+  app; if it is unwanted, Alt+H or the "Court horns" row in the More menu mutes
+  it, and the setting persists in `localStorage` under `kd.sound`.
 - `node test/t-stt.js` fails with `mkl_malloc: failed to allocate memory` when
   the machine is down to ~0.6GB free, and passes above roughly 2.3GB. See
   *Watch out for*.
@@ -63,6 +94,7 @@ the session and are deliberately excluded — see *Open questions*.
 | `src/recycle.js` | Derives what `recycleAtTokens` should be, from a session's real context growth. Closed form plus a sweep table. |
 | `docs/PLAN-saas.md` | What it would take to make this a product rather than a personal tool: three candidate product shapes, nine concrete blockers with the file each lives in, a five-phase plan, and four questions that must be answered before Phase 1. |
 | `ui/court.js` | The two predicates that decide what the front door shows — `inCourt` (rail vs. roster) and `matchesQuery` (summon search). Pure and DOM-free specifically so `npm test` can check them; there is no browser in the test run. |
+| `ui/feel.js` | The weight. `arrive`/`depart`/`pulse` are WAAPI (not CSS animations — `rail.js` re-appends every row on each resort, which would replay a CSS entrance for the whole list). `cue()` synthesises four short horn calls with WebAudio rather than shipping audio files, and never throws: a browser that refuses to start an AudioContext costs silence and nothing else. `soundOn`/`setSound` persist to `localStorage` `kd.sound`. |
 
 ### Changed files
 
@@ -86,8 +118,24 @@ the session and are deliberately excluded — see *Open questions*.
   still be delivered. New case: concurrent wakes produce one agent. Five
   positive assertions moved off fixed sleeps onto a polling `until()` helper.
 - `ui/app.js`, `ui/panels.js`, `ui/rail.js`, `ui/index.html`, `ui/app.css`,
-  `ui/icons.js` — the front-door restructure. See *Decisions* for what changed
-  and why.
+  `ui/icons.js` — the front-door restructure, then the throne room and the feel
+  layer. See *Decisions* for what changed and why. Specifically:
+  - `ui/app.css` — **rewritten, not extended.** 489 rule blocks down to 431 as
+    the duplicates were folded together; the file itself only fell 1,241 → 1,132
+    lines, because the room and the feel layer added sections of their own.
+  - `ui/app.js` — tools carry `data-tip` (the instant styled tooltip) alongside
+    `title` (the browser's, which is what a screen reader gets); the separator
+    before the More button is now a `data-edge` attribute rather than CSS naming
+    a specific tool; `setStatus` toggles `.working` on a member's panel; a
+    `sound` tool was added to `TOOLS` and to `KEYS` as Alt+H.
+  - `ui/rail.js` — group headings carry their role as a class so the throne's
+    can wear gold; `upsertNode` calls `arrive()` on create; `remove()` drops the
+    row from the map immediately and from the DOM when `depart()` finishes;
+    `setState` pulses the avatar on the transition into awake, not on every tick.
+  - `ui/panels.js` — the summoning screen's section headings are `engraved`, and
+    summon/dismiss/approve/reject fire their cue.
+  - `ui/icons.js` — new `sound` glyph (a horn), drawn on the same 16-grid and
+    1.5 stroke as the rest of the toolbar set.
 - `.gitignore` — ignores `.tmp-*`. The two stale SQLite probe siblings
   (`.tmp-mcp-probe.db-shm`, `.tmp-mcp-probe.db-wal`, dated 2026-08-04) turned out
   to be **tracked**, not untracked — they were committed in `19ea8ad`. They are
@@ -195,10 +243,38 @@ optimistic write: summoning creates a worktree, so the row says "Summoning…",
 disables, and waits for the server's roster event to settle it. That is also
 correct when the spawn fails.
 
-**The visual work stayed inside the existing glass system.** `app.css` has five
-stacked REFIT blocks that override each other, and the temptation was to
-consolidate them. That is a separate job and not what makes the UI hard to use —
-the appended section styles only new selectors, so it is not a sixth REFIT.
+**`ui/app.css` was consolidated rather than extended a sixth time.** The five
+REFIT blocks were not a tidiness problem, they were a comprehension one: `.win`
+was declared four times, `#bg` three, `:root` three, so the rule you found by
+searching was rarely the rule that won, and every fix became another override.
+Consolidation was done as the first step of the visual work for exactly that
+reason — a diegetic pass layered on top would have been a sixth block. Every
+selector is now declared once, in its own section. **The evidence comments were
+kept**, moved next to the value each one produced (why `--glass` is `.72` and
+not `.93`, why the scrim is at its full floor, why `#windows` has `inset:0`).
+Those are what stop the next person reverting a measured value because it looks
+arbitrary.
+
+**The room is architecture, not decoration.** "Lean into the kingdom theme" was
+resolved as a light above the throne, a floor with a fading horizon, and walls
+that darken at the edges — all of it low-contrast and behind the panes. It is
+deliberately not ornament: no textures, no serif type, no gold anywhere except
+the throne, the standing decree, and approvals, which are the three things that
+are genuinely the sovereign's. A backdrop you look *at* has failed; an earlier
+version of this file was three saturated blobs and read as a lava lamp.
+
+**Sound follows a click, never an event.** `cue()` fires on summon, dismiss,
+approve and reject — all things the sovereign did. Nothing fires on a turn
+ending, a message arriving, or a member waking on its own. An orchestrator that
+chimes at you while you are in another window is one you mute permanently, and
+then the cues you *did* want are gone with it. Muting is Alt+H.
+
+**The working indicator is indeterminate on purpose.** A travelling light on a
+panel's top edge answers "is anything happening" from across the room; it does
+not pretend to know how far along a turn is, because nothing does. A bar that
+fills to 90% and stops is a worse lie than no bar. Under
+`prefers-reduced-motion` it stops moving but stays visible — it is the only
+signal that a member is mid-turn, so deleting it would take information with it.
 
 **The product recommendation is B — host the control plane, keep execution on
 the customer's machine.** The reasoning is in `docs/PLAN-saas.md`. In short: the
@@ -222,7 +298,29 @@ this; only loading the page does.
 **Do not anchor toolbar layout to a specific tool's name.** `buildTools()` had
 `if (ico === 'diff') nav.append(moreButton())`, which silently assumed `diff`
 was the last primary tool. Adding one after it put the overflow button in the
-middle of the row. It is anchored to a computed `LAST_PRIMARY` now.
+middle of the row. It is anchored to a computed `LAST_PRIMARY` now, and the CSS
+separator that used to be `.tool[data-tool="diff"]::after` is now
+`.tool[data-edge]::after`, set from the same computation.
+
+**Do not put `!important` on a `background` shorthand when testing an animated
+`background-position`.** Half an hour went into "the sweep animation does not
+run" — `Animation.currentTime` advanced and `background-position` stayed at
+`0% 0%`. The animation was fine; the *probe* was wrong. The shorthand resets
+`background-position`, and `!important` made that reset outrank the keyframe.
+Verified correctly by injecting the same declarations with no `!important`:
+`-45%` → `143.9%` across the 1.9s.
+
+**Do not expect to see motion in the Claude Code Browser pane.** It reports
+`prefers-reduced-motion: reduce`, so every animation in `app.css` and every
+WAAPI call in `feel.js` is suppressed there. Screenshots from it are of the
+reduced-motion rendering. To check an animation, either drive
+`Animation.currentTime` and read computed styles, or open the app in the
+Electron shell.
+
+**Do not use a fixed track minimum in the Hall grid.** `minmax(360px,1fr)`
+overflows a stage narrower than 360px, and a narrow window (rail 214 + member
+card 264 out of 800) leaves a 322px stage with a permanent horizontal scrollbar
+under a grid holding nothing. It is `minmax(min(360px,100%),1fr)` now.
 
 **Do not put timing- or memory-sensitive suites in a hand-maintained solo
 list.** This was tried twice. The list only grew — `t-batching` first, then
@@ -279,12 +377,13 @@ These concern `electron/` and `ui/`, untouched this session, and remain live:
    **Do not push without a fresh, explicit instruction from the user** — that is
    a standing rule in `E:\AI\CLAUDE.md`.
 
-2. **Continue the UI work at the "feel" stage.** The sovereign chose
-   *structure first, then feel*, and structure is done. Feel is untouched: no
-   motion on state change, no sound, no weight behind a summon or a merge. The
-   natural next pieces are transitions on rail state changes, a real sense of
-   arrival when a member joins, and progress that is felt rather than read.
-   Nothing here is started, so there is nothing half-built to clean up first.
+2. **Watch the UI move, in a browser that is not the Claude Code pane.** Run
+   `npm start` (or the daemon plus a normal browser at `http://127.0.0.1:7788`)
+   and summon someone. Three things have never been seen playing: the rail row
+   sliding in, the row collapsing out on dismiss, and the horn cue. All three
+   are verified structurally and none has been watched. Done when you have seen
+   a summon land and decided whether the sound stays on by default — Alt+H
+   toggles it, `localStorage.kd.sound` persists it.
 
 3. **Read `docs/PLAN-saas.md` and answer its four closing questions.** It is the
    plan for turning this from a personal tool into a product, and Phase 1 cannot
@@ -352,15 +451,24 @@ not; the agent code passes it automatically.
 **`electron/pet-preload.cjs` must keep the `.cjs` extension** — `package.json`
 declares `"type": "module"` and a sandboxed preload cannot be ESM.
 
-**`ui/app.css` has five appended "REFIT" blocks** (at lines 597, 670, 743, 850
-and 1024) that override earlier rules in the same file. Check whether a later
-block already overrides what you are editing, or your change will appear to do
-nothing.
+**`ui/app.css` is now consolidated — do not start a sixth REFIT block.** It used
+to end in five appended "REFIT" sections that each re-declared `.win`,
+`.rail-row`, `.tool`, `#bg` and `:root` to override the pass before; `.win` was
+declared four times and nothing could be changed by reading the rule you found.
+Every selector is now declared once, in its own section, with the reasoning each
+refit paid for kept as a comment beside the value it produced. Edit the rule
+where it lives.
 
-**Screenshots of the app do not work through the Claude Code Browser pane** (it
-does not composite frames). Use `mcp__claude-in-chrome` against
-`http://127.0.0.1:<port>`, or a PowerShell desktop capture for the Electron
-window.
+**Screenshots DO work through the Claude Code Browser pane** — the previous
+handoff said otherwise and was wrong. `computer{action:"screenshot"}` renders
+the app fine, but only while the pane is *displayed*; otherwise it returns "the
+Browser pane is not displayed, so the page is not compositing frames" and
+`preview_start{url:"http://127.0.0.1:<port>"}` re-displays it. Two real limits:
+the returned image is scaled to 800px wide, and region `zoom` is unimplemented,
+so design at a viewport near 800 and use wider ones only to check layout. If the
+pane wedges (`navigate` timing out at 300s, screenshots at 30s), close the stuck
+tabs with `tabs_close` and `preview_start` a fresh one — check the daemon with
+`curl` first, it is almost never the cause.
 
 ## Open questions for the user
 
