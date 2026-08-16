@@ -78,6 +78,13 @@
 
   --ui:"Segoe UI Variable Text","Segoe UI",Inter,system-ui,-apple-system,sans-serif;
   --mono:"JetBrains Mono","Cascadia Code",Consolas,ui-monospace,monospace;
+  /* The court's own voice. Names, titles and engraved labels are set in it;
+     everything measured or transient stays in --ui or --mono, so the serif
+     marks WHO and WHAT rather than becoming costume.
+     All four faces ship with Windows — no webfont, no build step, no network.
+     Sitka Display is Microsoft's display serif and is the reason this works at
+     all: Georgia alone at 13px on a dark ground goes muddy, Sitka does not. */
+  --display:"Sitka Display","Constantia",Cambria,Georgia,"Palatino Linotype",serif;
   /* Six steps, not one. Everything used to be within a point of 12.5px, so
      nothing announced itself as a heading, a name or a footnote — the eye had
      no order to follow and every screen read as one undifferentiated block. */
@@ -102,9 +109,11 @@ main{flex:1;display:flex;min-height:0}
 .num{font-family:var(--mono);font-variant-numeric:tabular-nums;letter-spacing:-.01em}
 
 /* An engraved label: the section headings on the walls of the room. One class,
-   because five places were hand-rolling the same four declarations. */
-.engraved{font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;
-  color:var(--faint);opacity:.85}
+   because five places were hand-rolling the same four declarations. Set in the
+   display serif at small caps spacing, which is what makes it read as cut into
+   the wall rather than as a form label. */
+.engraved{font-family:var(--display);font-size:10.5px;font-weight:600;
+  letter-spacing:.2em;text-transform:uppercase;color:var(--faint);opacity:.9}
 
 /* ---------- the banner (header) ----------
    The top of the room carries who you are, what the court is for, and the
@@ -195,8 +204,12 @@ footer:has(#cmd.advising) input{border-color:var(--accent);
 .rail-row:hover,.rail-row.open{background:var(--glass-raised);color:var(--ink)}
 .rail-row.open::before{content:"";position:absolute;left:2px;top:50%;translate:0 -50%;
   width:2px;height:15px;border-radius:2px;background:var(--accent)}
+/* Names are set in the display serif. This is the change that stops the rail
+   reading as a list of strings: a member is a person at court, and the one
+   thing on the row that names them should not be the same face as the byte
+   counts. Everything else on the row stays in --ui. */
 .rail-row .nm{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
-  font-size:var(--t-base);font-weight:550;letter-spacing:.005em;color:var(--dim)}
+  font:600 var(--t-md)/1.25 var(--display);letter-spacing:.01em;color:var(--dim)}
 /* Members not in the crew fade out entirely; the ones working are the only
    thing at full contrast. */
 .rail-row:not(.serving){opacity:.5}
@@ -304,6 +317,20 @@ body.rail-collapsed #rail-collapse{rotate:180deg}
                     rgba(255,255,255,.11) 68%, transparent) 0 89% / 100% 1px no-repeat,
     radial-gradient(122% 96% at 50% 34%, transparent 52%, rgba(0,0,0,.46) 100%)}
 
+/* The hall, drawn in index.html.
+   Anchored to the bottom of the stage and cropped at the sides (the SVG's
+   preserveAspectRatio is xMidYMax slice), so the floor always meets the footer
+   and the throne always sits on the centre line however the window is shaped.
+   It is scenery: when there is work on the stage it recedes rather than
+   competing with it, and it never appears over a wallpaper, which is already
+   somebody's chosen room. */
+#hall{position:absolute;inset:0;width:100%;height:100%;z-index:0;
+  pointer-events:none;opacity:1;
+  transition:opacity var(--slow) var(--ease)}
+#stage:has(.win) #hall{opacity:.3}
+body.has-bg #hall{display:none}
+@media (prefers-reduced-motion:reduce){#hall{transition:none}}
+
 /* With a wallpaper up, the room would fight the image, so it steps aside. */
 body.has-bg #bg{background-image:var(--wall);background-repeat:no-repeat;
   background-size:cover;background-position:center;animation:none}
@@ -363,10 +390,16 @@ body.has-bg #bg::after{opacity:var(--bg-dim,.5)}
 /* The titlebar catches the light — a diagonal sweep rather than a flat wash,
    which is what stops a row of panes looking like printed rectangles. */
 .win>.bar{flex:none;display:flex;align-items:center;gap:var(--s1);
-  min-height:38px;padding:0 var(--s2) 0 var(--s4);
+  min-height:42px;padding:0 var(--s2) 0 var(--s4);
   border-bottom:1px solid var(--edge);cursor:move;
   background:linear-gradient(150deg,rgba(255,255,255,.10),rgba(255,255,255,.02) 55%)}
-.win .title{font-weight:600;font-size:var(--t-base);letter-spacing:.01em}
+/* The king's plaque is gilded. Nothing else in the app gets this. */
+.win.role-king>.bar{border-bottom-color:var(--gold-edge);
+  background:linear-gradient(150deg,rgba(240,201,125,.13),rgba(255,255,255,.02) 58%)}
+/* The titlebar is a plaque, not a strip: the name is cut into it in the
+   display serif, and the band is tall enough to be read as a nameplate on the
+   front of the pane rather than as a row of controls above it. */
+.win .title{font:600 var(--t-md)/1.2 var(--display);letter-spacing:.015em}
 .win.role-king .title{color:var(--crown)}
 /* A status dot before the name — for panels that are not a member. Member
    panels carry state on the avatar's own corner, and both drawn together read
@@ -724,8 +757,14 @@ pre.diff .del{background:rgba(255,133,133,.08)}
    no amount of spacing fixes an icon nobody can name — so every one of these
    carries a real tooltip that appears instantly, rather than the browser's
    native one that arrives a second late in a system font. */
-.tools{display:flex;align-items:center;gap:1px}
-.tool{color:var(--dim);padding:8px;border-radius:var(--r-md);position:relative}
+/* Held in a plate, like the mode switch beside it. Eight hairline glyphs
+   floating loose in a bar is the single most dashboard-looking thing left in
+   the room; framed, they read as one instrument with eight controls rather
+   than as eight stray marks. */
+.tools{display:flex;align-items:center;gap:1px;
+  padding:2px;border-radius:var(--r-md);
+  background:rgba(0,0,0,.24);border:1px solid var(--edge)}
+.tool{color:var(--dim);padding:7px;border-radius:var(--r-sm);position:relative}
 .tool:hover{color:var(--ink);background:var(--glass-raised)}
 .tool.on{color:var(--accent)}
 .tool::before{content:attr(data-tip);position:absolute;top:calc(100% + 7px);left:50%;
@@ -745,8 +784,8 @@ pre.diff .del{background:rgba(255,133,133,.08)}
 .tool[data-edge]{margin-right:var(--s3)}
 .tool[data-edge]::after{content:"";position:absolute;
   right:calc(var(--s3) / -2 - 1px);top:22%;height:56%;width:1px;background:var(--edge)}
-.tool[data-tool="power"]{margin-left:var(--s2);border-left:1px solid var(--edge);
-  padding-left:var(--s3);border-radius:0 var(--r-md) var(--r-md) 0}
+.tool[data-tool="power"]{margin-left:var(--s1);border-left:1px solid var(--edge);
+  padding-left:var(--s3);border-radius:0 var(--r-sm) var(--r-sm) 0}
 .tool[data-tool="power"]:hover{color:var(--danger)}
 /* Armed: the next click ends the court. Red and pulsing, not subtle. */
 .tool.arm{color:var(--danger);background:rgba(255,133,133,.14);
@@ -788,7 +827,10 @@ pre.diff .del{background:rgba(255,133,133,.08)}
    empty 26px pill sat in the header doing nothing. */
 .goalbar[hidden]{display:none}
 .goalbar:hover{color:var(--ink);border-color:rgba(240,201,125,.4)}
-.goalbar .gtext{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* The decree is set in the court's own voice too — it is the one line of text
+   in the header that came from the sovereign rather than from the machine. */
+.goalbar .gtext{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  font-family:var(--display);font-size:var(--t-base)}
 .goalbar .gcount{flex:none;font-size:var(--t-micro);color:var(--faint)}
 .goalbar .gcount.done{color:var(--accent)}
 /* An unset goal is a prompt, not a value: same slot, quieter, and it reads as
@@ -891,10 +933,10 @@ input.msnew:focus{border-color:var(--accent)}
    unwrapped line in a 360px grid column the sentence was clipped mid-word
    ("Pick a member from the"). */
 #stage.board #windows:empty::after{
-  content:"The hall is empty. Open a member from the court on the left, or summon someone new.";
-  grid-column:1/-1;align-self:center;justify-self:center;
-  max-width:30ch;white-space:normal;text-align:center;line-height:1.7;
-  color:var(--faint);font-size:var(--t-sm)}
+  content:"The hall is yours. Open a member from the court, or summon someone new.";
+  grid-column:1/-1;align-self:end;justify-self:center;margin-bottom:4vh;
+  max-width:34ch;white-space:normal;text-align:center;line-height:1.7;
+  color:var(--faint);font:400 var(--t-base)/1.7 var(--display);letter-spacing:.01em}
 
 /* ---------- who: the member card on the right ----------
    The rail says a member exists. This says what it is for. */
@@ -908,9 +950,10 @@ body.who-collapsed .who{display:none}
 .who-body{flex:1;overflow-y:auto;padding:0 var(--s4) var(--s4)}
 .who-empty{color:var(--faint);font-size:var(--t-sm);line-height:1.6;padding:var(--s3) 0}
 
-.who-id{display:flex;align-items:center;gap:var(--s3);font-size:var(--t-lg);font-weight:600}
-.who-id .rl{margin-left:auto;font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;
-  color:var(--faint);font-weight:400}
+.who-id{display:flex;align-items:center;gap:var(--s3);
+  font:600 var(--t-xl)/1.15 var(--display);letter-spacing:.01em}
+.who-id .rl{margin-left:auto;font:600 10.5px/1 var(--display);letter-spacing:.2em;
+  text-transform:uppercase;color:var(--faint)}
 .who-id.role-king{color:var(--crown)}
 .who-id.role-king .rl{color:rgba(240,201,125,.7)}
 .who-id.awake .dot{background:var(--accent);box-shadow:0 0 7px var(--accent)}
@@ -1037,7 +1080,7 @@ body.rail-collapsed .summon-btn::after{content:"+";font-size:15px;line-height:1}
 /* Clipped, never wrapped. Every role name in the stock config is hyphenated
    ("ai-safety-officer"), and a wrapping name breaks at every hyphen — three
    lines for one name, so a list of twenty is unscannable. */
-.sum-name{color:var(--ink);font-weight:600;font-size:var(--t-base);
+.sum-name{color:var(--ink);font:600 var(--t-md)/1.25 var(--display);letter-spacing:.01em;
   flex:0 1 auto;min-width:7ch;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sum-row.in .sum-name{color:var(--accent)}
 .sum-title{color:var(--faint);font-size:var(--t-sm);white-space:nowrap;
@@ -1076,8 +1119,8 @@ body.rail-collapsed .summon-btn::after{content:"+";font-size:15px;line-height:1}
 }
 #firstrun[hidden]{display:none}
 #firstrun h1{
-  font:600 26px/1.2 var(--ui);color:var(--ink);letter-spacing:-.01em;
-  margin-bottom:var(--s1);
+  font:600 32px/1.15 var(--display);color:var(--ink);letter-spacing:.005em;
+  margin-bottom:var(--s2);
   /* The one place gold is used at size: this is the throne addressing you. */
   background:linear-gradient(180deg,var(--ink),rgba(240,201,125,.85));
   -webkit-background-clip:text;background-clip:text;color:transparent;

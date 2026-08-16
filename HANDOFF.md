@@ -19,11 +19,20 @@ finished the UI work that restructure had deliberately left undone — the
 
 The UI is now three things it was not. `ui/app.css` is **consolidated**: the
 five stacked REFIT override blocks are gone and every selector is declared once.
-The room is **diegetic** — a light above the throne, a floor with a horizon, and
-walls that fall into shadow, rather than a flat plate with a crown icon on it.
-And state changes have **weight**: members animate in and out of the rail, a
-working member's panel carries a travelling light on its top edge, and a summon
-or a ruling sounds a short synthesised horn (mutable, Alt+H).
+The room is **diegetic** — `ui/index.html` carries a drawn hall (three lit
+windows, columns, banners, a dais and a throne on it) behind the panes, and
+every name and title is set in a display serif. And state changes have
+**weight**: members animate in and out of the rail, a working member's panel
+carries a travelling light on its top edge, and a summon or a ruling sounds a
+short synthesised horn (mutable, Alt+H).
+
+**The first attempt at the room was rejected by the user** — "you did no
+improvements" — and the rejection was correct. That pass was four layout bug
+fixes, invisible CSS consolidation, and atmosphere at 7% opacity: a dashboard
+with better spacing. The hall, the serif and the gilded king's plaque are the
+second attempt, and they are what makes the change visible from across a room.
+Do not undo them in the name of restraint; the restrained version was tried and
+failed.
 
 All of it is complete and tested. `kingdom.config.json` and `roles.json` remain
 uncommitted from before the session and are deliberately excluded — see
@@ -38,12 +47,13 @@ uncommitted from before the session and are deliberately excluded — see
 - `node src/ctx.js "E:/AI/Sant Dnyaneshwar"` reports
   `3 turns · 1.89M in · 0.01M out · $0.604`. Before this session the same
   command reported 2.37M and no dollar figure.
-- **`npm test` → 38 of 38 suites passed, 4-wide, 76.5s.** Exit code 0. `turn
-  batching` failed in the pool and passed on its serial retry, so it was
-  reported as `flaky` — that happened on both runs of this session's last pass,
-  so treat it as the expected outcome rather than a new signal. The polling fix
-  reduced that class but did not eliminate it, and the remaining fixed sleeps
-  are the ones asserting that nothing happened, which cannot be polled for.
+- **`npm test` → 38 of 38 suites passed, 4-wide, 44.4s, exit 0**, with nothing
+  reported flaky. Two earlier runs in the same session (76.3s and 76.5s) both
+  reported `turn batching` as `flaky` — failed in the pool, passed on its serial
+  retry. So that suite is contention-sensitive, not broken, and the spread
+  tracks how loaded the machine is. The polling fix reduced that class but did
+  not eliminate it; the remaining fixed sleeps are the ones asserting that
+  nothing happened, which cannot be polled for.
 - **The front door was verified in a real browser**, not just by reading code:
   the daemon was run against a scratch repo with `KINGDOM_CODEX_BIN` pointed at
   a stub so no API quota was spent, and summon/dismiss was driven end to end.
@@ -54,6 +64,15 @@ uncommitted from before the session and are deliberately excluded — see
   icon with its Alt key, the summoning rows fit one name per line, and
   summon → rail row → dismiss → row gone round-trips with the counter tracking
   it. Console clean on every load.
+- **The hall was verified by screenshot** at 800x812 with the rail and the
+  member card in both states: the windows, beams, columns, banners, dais, runner
+  and throne all render, the empty-hall sentence sits below the throne rather
+  than over it, and nothing overflows. An apparent scale-down after the SVG
+  landed was measured and was not real — `devicePixelRatio: 1.25` plus the
+  pane's 800px downscale; `inner:[800,812] main:[800,711] stage:[322,711]
+  hall:[322,711]`.
+- All five `--display` fallback faces were confirmed installed with
+  `document.fonts.check` before the token shipped.
 - **The motion layer is only partly verified visually.** The Claude Code Browser
   pane reports `prefers-reduced-motion: reduce`, so every screenshot above is of
   the reduced-motion rendering — which is itself worth knowing, because that
@@ -122,7 +141,12 @@ uncommitted from before the session and are deliberately excluded — see
   layer. See *Decisions* for what changed and why. Specifically:
   - `ui/app.css` — **rewritten, not extended.** 489 rule blocks down to 431 as
     the duplicates were folded together; the file itself only fell 1,241 → 1,132
-    lines, because the room and the feel layer added sections of their own.
+    lines, because the room and the feel layer added sections of their own. Then
+    the second visual pass added the `--display` serif token and its call sites,
+    the `#hall` rules, the king's gilded title bar, and the toolbar plate.
+  - `ui/index.html` — the `#hall` SVG, roughly 60 lines of paths between `#bg`
+    and `#surface`. `aria-hidden` because it is scenery. This is the single
+    largest visible change of the session.
   - `ui/app.js` — tools carry `data-tip` (the instant styled tooltip) alongside
     `title` (the browser's, which is what a screen reader gets); the separator
     before the More button is now a `data-edge` attribute rather than CSS naming
@@ -255,13 +279,38 @@ not `.93`, why the scrim is at its full floor, why `#windows` has `inset:0`).
 Those are what stop the next person reverting a measured value because it looks
 arbitrary.
 
-**The room is architecture, not decoration.** "Lean into the kingdom theme" was
-resolved as a light above the throne, a floor with a fading horizon, and walls
-that darken at the edges — all of it low-contrast and behind the panes. It is
-deliberately not ornament: no textures, no serif type, no gold anywhere except
-the throne, the standing decree, and approvals, which are the three things that
-are genuinely the sovereign's. A backdrop you look *at* has failed; an earlier
-version of this file was three saturated blobs and read as a lava lamp.
+**The room is a drawn hall, in inline SVG, not an image and not a gradient.**
+"Lean into the kingdom theme" was first resolved as light and shadow only — a
+glow above the throne, a floor horizon, walls falling off at the edges. That
+version was rejected as invisible, and it deserved to be: at 7% opacity it read
+as a flat dark box. `#hall` in `ui/index.html` now draws the room literally.
+Inline SVG rather than a raster because it costs no network request, no build
+step and no second asset to keep in sync, scales to any window, and takes its
+colours from the same tokens as everything else. It is still architecture rather
+than illustration — every stone fill is under 6% white, the only colour is the
+light through the glass — so it recedes the moment there is anything to look at:
+`#stage:has(.win) #hall{opacity:.3}`, and it hides entirely under a wallpaper,
+which is a room of its own.
+
+**The throne is drawn as a seat, not as an arch.** The first version was a
+pointed panel on the dais and read unmistakably as a second doorway behind the
+centre window. It is now a high back with a three-point crown, a seat slab, two
+armrests and a plinth, with a runner leading down the steps towards the viewer.
+The runner is the cheapest element in the drawing and does more than the columns
+do: it is what turns three stacked slabs into an approach.
+
+**Names are set in a display serif; the interface is not.** `--display`
+(`Sitka Display`, then Constantia / Cambria / Georgia / Palatino Linotype) is on
+member names, panel titles, the engraved section labels and the empty-hall
+sentence — the things that name someone or address you. Everything functional
+stays on the UI sans and the mono. All five faces were confirmed present with
+`document.fonts.check` before shipping; there is no webfont, per the no-network
+rule.
+
+Gold (`--crown`) is still reserved: the throne, the standing decree, approvals,
+and the king's own title bar. Those are the things that are genuinely the
+sovereign's. A backdrop you look *at* has failed; an earlier version of `#bg`
+was three saturated blobs and read as a lava lamp.
 
 **Sound follows a click, never an event.** `cue()` fires on summon, dismiss,
 approve and reject — all things the sovereign did. Nothing fires on a turn
@@ -316,6 +365,19 @@ WAAPI call in `feel.js` is suppressed there. Screenshots from it are of the
 reduced-motion rendering. To check an animation, either drive
 `Animation.currentTime` and read computed styles, or open the app in the
 Electron shell.
+
+**Do not try to carry the kingdom theme on atmosphere alone.** The first visual
+pass was gradients, a vignette and a 7%-opacity glow, and the user's verdict was
+"you did no improvements." Low-contrast light does not read as a room; it reads
+as a dark rectangle. The theme needed drawn geometry — windows, columns, a dais,
+a throne — plus type that is not the system sans, before anyone could see it had
+changed at all.
+
+**Do not draw the throne as an arch or a pointed panel.** The first `#hall`
+version did, and behind the centre window it read as a second doorway — the one
+ambiguity that picture cannot afford. It needs the parts of a chair: a back, a
+seat, armrests, a plinth. The runner leading down the steps is what supplies the
+depth cue that the arch was trying to supply.
 
 **Do not use a fixed track minimum in the Hall grid.** `minmax(360px,1fr)`
 overflows a stage narrower than 360px, and a narrow window (rail 214 + member
