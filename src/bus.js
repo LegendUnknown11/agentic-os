@@ -81,18 +81,28 @@ export class Bus {
     this.set(`cursor:${agent}`, String(messageId));
   }
 
-  /** Full log for the jester, or the king's escape hatch. */
-  history({ since = 0, limit = 200, agent = null } = {}) {
-    return agent
-      ? this.db
-          .prepare(
-            `select * from messages where id > ? and (sender = ? or recipient = ?)
-              order by id limit ?`
-          )
-          .all(since, agent, agent, limit)
-      : this.db
-          .prepare('select * from messages where id > ? order by id limit ?')
-          .all(since, limit);
+  /**
+   * Full log for the jester, or the king's escape hatch.
+   *
+   * `tail` decides WHICH end the limit cuts from, and the two callers want
+   * opposite ends. A cursor reader ("what is new since id 40, 60 rows please")
+   * must get the OLDEST 60 after the cursor or it silently skips everything
+   * between — that is the default. A snapshot ("the last 200, I am repainting
+   * the room") must get the NEWEST 200. Only the first was implemented, so the
+   * throne room's reload replayed the FIRST 200 messages of a session and
+   * nothing since — which reads, correctly, as messages not being saved at all.
+   */
+  history({ since = 0, limit = 200, agent = null, tail = false } = {}) {
+    const args = [since];
+    let where = 'id > ?';
+    if (agent) { where += ' and (sender = ? or recipient = ?)'; args.push(agent, agent); }
+    args.push(limit);
+    return this.db.prepare(
+      tail
+        ? `select * from (select * from messages where ${where} order by id desc limit ?)
+             order by id`
+        : `select * from messages where ${where} order by id limit ?`
+    ).all(...args);
   }
 
   // --- raw agent events (jester firehose + UI replay) -----------------
@@ -107,15 +117,19 @@ export class Bus {
   // returns is JSON.parsed: /api/metrics wants only the turn_ends, and pulling
   // all 20,000 retained events to keep a handful of them parsed the whole log
   // every 5 seconds.
-  events({ since = 0, agent = null, type = null, limit = 500 } = {}) {
+  // `tail` as in history(): the newest `limit` rows rather than the oldest.
+  events({ since = 0, agent = null, type = null, limit = 500, tail = false } = {}) {
     const where = ['id > ?'];
     const args = [since];
     if (agent) { where.push('agent = ?'); args.push(agent); }
     if (type) { where.push('type = ?'); args.push(type); }
     args.push(limit);
-    const rows = this.db
-      .prepare(`select * from events where ${where.join(' and ')} order by id limit ?`)
-      .all(...args);
+    const w = where.join(' and ');
+    const rows = this.db.prepare(
+      tail
+        ? `select * from (select * from events where ${w} order by id desc limit ?) order by id`
+        : `select * from events where ${w} order by id limit ?`
+    ).all(...args);
     return rows.map((r) => ({ ...r, payload: JSON.parse(r.payload) }));
   }
 

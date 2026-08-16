@@ -209,8 +209,11 @@ createServer(async (req, res) => {
       skills: kingdom.skills(),
       summarizer: kingdom.summarizer(),
       goal: kingdom.goal(),
-      events: kingdom.bus.events({ limit: 400 }),
-      messages: kingdom.bus.history({ limit: 200 }),
+      // tail: this is a window repainting itself, so it wants the LAST 400/200,
+      // not the first. Without it a reload showed the opening of the session and
+      // nothing that had happened since.
+      events: kingdom.bus.events({ limit: 400, tail: true }),
+      messages: kingdom.bus.history({ limit: 200, tail: true }),
       approvals: [...kingdom.approvals].map(([id, p]) => ({ id, ...p })),
     })}\n\n`);
     req.on('close', () => clients.delete(res));
@@ -222,7 +225,7 @@ createServer(async (req, res) => {
   // with an empty queue there was no sign the feature existed at all, and no
   // record of what had already been agreed to.
   if (url.pathname === '/api/approvals') {
-    const rows = kingdom.bus.history({ limit: 2000 })
+    const rows = kingdom.bus.history({ limit: 2000, tail: true })
       .filter((m) => m.kind === 'approval')
       .map((m) => {
         let p = {};
@@ -251,7 +254,7 @@ createServer(async (req, res) => {
 
     // Summaries and errors — one line per turn, which is the readable layer.
     if (kinds.has('summary') || kinds.has('error')) {
-      for (const e of kingdom.bus.events({ limit: 20_000 })) {
+      for (const e of kingdom.bus.events({ limit: 20_000, tail: true })) {
         if (e.type !== 'summary' && e.type !== 'error') continue;
         if (!kinds.has(e.type)) continue;
         let p;
@@ -263,7 +266,7 @@ createServer(async (req, res) => {
     }
 
     if (kinds.has('message') || kinds.has('done')) {
-      for (const m of kingdom.bus.history({ limit: 20_000 })) {
+      for (const m of kingdom.bus.history({ limit: 20_000, tail: true })) {
         const kind = m.kind === 'done' ? 'done' : 'message';
         if (!kinds.has(kind)) continue;
         // Approvals and notices are machinery, not narrative.

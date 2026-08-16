@@ -72,6 +72,40 @@ a.ok(kingFirst.includes('progress 0'), "the king's cursor is its own, not the je
 // --- the payload is flattened, not raw JSON ---------------------------
 a.ok(!first.includes('"payload"'), 'events must be flattened, not raw JSON');
 
+// --- a limit cuts from the OLD end for a cursor read, the NEW end for a
+//     snapshot ---------------------------------------------------------
+// The throne room repaints itself from the daemon's snapshot, so `limit` there
+// means "the last N". It was cutting the other way, which meant a reload
+// replayed the opening of a session and nothing since — indistinguishable, from
+// the sovereign's chair, from messages not being saved at all.
+for (let i = 0; i < 60; i++) {
+  bus.post('coder', 'king', `line ${i}`);
+  bus.logEvent('coder', 'tool', { name: `Tool${i}` });
+}
+
+const tailMsgs = bus.history({ limit: 10, tail: true }).map((m) => m.body);
+a.equal(tailMsgs.at(-1), 'line 59', 'a tail read must end at the newest message');
+a.equal(tailMsgs.length, 10);
+a.ok(!tailMsgs.includes('progress 0'), 'a tail read must not return the oldest rows');
+a.deepEqual([...tailMsgs].sort((x, y) => Number(x.split(' ')[1]) - Number(y.split(' ')[1])),
+  tailMsgs, 'a tail read must still come back oldest-first, ready to append');
+
+const tailEvts = bus.events({ limit: 10, tail: true });
+a.equal(tailEvts.at(-1).payload.name, 'Tool59', 'a tail read of events must end at the newest');
+a.equal(tailEvts.length, 10);
+
+// ...and the default is unchanged, because a cursor reader that jumped to the
+// newest rows would silently skip everything between.
+a.equal(bus.history({ limit: 10 })[0].body, 'progress 0',
+  'without tail, a limit must still cut from the new end and keep the oldest');
+a.equal(bus.history({ since: 0, limit: 3, tail: false }).length, 3);
+// The two agree whenever the limit is not actually reached.
+a.deepEqual(bus.history({ limit: 100_000 }), bus.history({ limit: 100_000, tail: true }),
+  'tail changes which rows are dropped, never their order or content');
+// `agent` and `type` still compose with it.
+a.equal(bus.history({ limit: 5, tail: true, agent: 'coder' }).at(-1).body, 'line 59');
+a.equal(bus.events({ limit: 5, tail: true, type: 'tool' }).at(-1).payload.name, 'Tool59');
+
 bus.close();
 try { rmSync(dir, { recursive: true, force: true }); } catch {}
 console.log('t-incremental.js OK — reads are incremental, per-agent, and flattened');
