@@ -16,6 +16,7 @@ import { summarize, settingsOf as summarizerSettings } from './summarize.js';
 import { Bus } from './bus.js';
 import { inputTokens, deltaOf, totalsOf } from './usage.js';
 import { costOf, tableFrom } from './price.js';
+import { readApproval } from './approval.js';
 import { parseWindow, autoWindow, fmtTokens } from './compact.js';
 import { argue, pickPanel, verdictNote } from './argue.js';
 import {
@@ -532,11 +533,27 @@ export class Kingdom extends EventEmitter {
     this.emit('started', { base: this.base, dir: kingdomDir(this.repo) });
   }
 
-  /** A proposal the sovereign never answered must survive an app restart. */
+  /**
+   * A proposal the sovereign never answered must survive an app restart.
+   *
+   * The read is guarded because this runs inside start(). One approval row
+   * whose body was not JSON threw here, the exception escaped start(), and
+   * the DAEMON NEVER CAME UP — not a degraded panel, no court at all, with no
+   * way back except editing SQLite by hand. #surfaceApprovals had always
+   * guarded the identical parse; this copy was missed, which is why the rule
+   * now lives in one place (`readApproval`) that all three readers share.
+   *
+   * tail: the newest 1,000, not the oldest — retention keeps 5,000 messages,
+   * and an unanswered proposal is by definition a recent one.
+   */
   #reloadApprovals() {
-    for (const m of this.bus.history({ limit: 1000 })) {
+    for (const m of this.bus.history({ limit: 1000, tail: true })) {
       if (m.kind !== 'approval' || this.bus.get(`resolved:${m.id}`)) continue;
-      const p = JSON.parse(m.body);
+      const p = readApproval(m.body);
+      if (!p) {
+        console.warn(`kingdom: approval #${m.id} from ${m.sender} is unreadable — skipped`);
+        continue;
+      }
       this.approvals.set(m.id, p);
       this.emit('approval', { id: m.id, ...p });
     }
@@ -1318,8 +1335,11 @@ export class Kingdom extends EventEmitter {
       this.bus.set('approvals:cursor', String(m.id));
       if (m.kind !== 'approval') continue;
       if (this.bus.get(`resolved:${m.id}`)) continue;
-      let payload;
-      try { payload = JSON.parse(m.body); } catch { continue; }
+      const payload = readApproval(m.body);
+      if (!payload) {
+        console.warn(`kingdom: approval #${m.id} from ${m.sender} is unreadable — skipped`);
+        continue;
+      }
       this.approvals.set(m.id, payload);
       this.emit('approval', { id: m.id, ...payload });
     }

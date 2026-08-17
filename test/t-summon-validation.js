@@ -2,7 +2,7 @@
 //
 //   node test/t-summon-validation.js
 import { strict as a } from 'node:assert';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -60,6 +60,31 @@ try {
   a.match(resultText(await call(5, ['coder', 'coder'])), /duplicate name/);
   a.match(resultText(await call(6, Array(33).fill('coder'))), /too many names/);
   a.match(resultText(await call(7, ['coder', 'tester'])), /Proposal sent/);
+
+  // --- a message to nobody must not be reported as sent ------------------
+  // send_message and send_back posted whatever name they were handed and
+  // answered "Sent to X." either way. pending() matches on recipient, so a
+  // name that is not on the roster produced a row nobody could ever be
+  // delivered, while the sender was told it had arrived.
+  const tool = (id, name, args) => request({
+    jsonrpc: '2.0', id, method: 'tools/call', params: { name, arguments: args },
+  });
+
+  const ghost = resultText(await tool(8, 'send_message', { to: 'ghost', body: 'hello?' }));
+  a.match(ghost, /No member named "ghost"/, 'an unknown recipient must be refused');
+  a.match(ghost, /nothing was sent/, 'and the refusal must say nothing was sent');
+
+  // A near miss names the candidates rather than only saying no.
+  a.match(resultText(await tool(9, 'send_message', { to: 'code', body: 'hi' })),
+    /Did you mean: coder/, 'a near miss must suggest the real name');
+
+  // send_back is the king's other addressed tool and had the same hole.
+  a.match(resultText(await tool(10, 'send_back', { peasant: 'ghost', notes: 'redo it' })),
+    /No member named "ghost"/, 'send_back must validate too');
+
+  // A real name still goes through untouched.
+  a.match(resultText(await tool(11, 'send_message', { to: 'coder', body: 'carry on' })),
+    /Sent to coder\./);
 } finally {
   child.kill();
   await new Promise((resolve) => child.once('exit', resolve));
@@ -67,8 +92,60 @@ try {
   const approvals = check.history({ limit: 20 }).filter((m) => m.kind === 'approval');
   a.equal(approvals.length, 1, 'only the valid summon may post an approval');
   a.deepEqual(JSON.parse(approvals[0].body).names, ['coder', 'tester']);
+  // Exactly one message left the king: the one addressed to a real member.
+  const sent = check.history({ limit: 50 }).filter((m) => m.sender === 'king' && m.kind !== 'approval');
+  a.deepEqual(sent.map((m) => m.recipient), ['coder'],
+    'refused messages must not be on the bus at all');
   check.close();
   try { rmSync(dir, { recursive: true, force: true }); } catch {}
 }
 
-console.log('t-summon-validation.js OK — invalid summon payloads are rejected');
+// --- the king is whoever the roster says, not the string "king" ---------
+// declare_done and brief_king posted to the literal name "king". The king's
+// name is configuration (`kingdom.config.json` king.name), delivery is by
+// recipient, and kingdom.js only treats a `done` as a completion when it
+// reaches the king — so renaming the king silently threw every completion
+// and every briefing away while the tool answered that it had been notified.
+{
+  const dir2 = mkdtempSync(join(tmpdir(), 'kingdom-office-'));
+  const db2 = join(dir2, 'bus.db');
+  const seed2 = new Bus(db2);
+  seed2.set('roster', JSON.stringify([
+    { name: 'sovereign-regent', role: 'king' },
+    { name: 'fool', role: 'jester' },
+    { name: 'coder', role: 'peasant' },
+  ]));
+  seed2.close();
+
+  const once = (agent, role, name, args) => {
+    const rpc = [
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: {
+        protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 't', version: '1' } } },
+      { jsonrpc: '2.0', method: 'notifications/initialized' },
+      { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name, arguments: args } },
+    ].map((m) => JSON.stringify(m)).join('\n') + '\n';
+    const r = spawnSync(process.execPath, [join(HERE, '..', 'src', 'mcp.js')], {
+      input: rpc, encoding: 'utf8',
+      env: { ...process.env, KINGDOM_AGENT: agent, KINGDOM_ROLE: role, KINGDOM_DB: db2 },
+    });
+    const reply = r.stdout.split('\n').filter(Boolean)
+      .map((l) => { try { return JSON.parse(l); } catch { return null; } })
+      .find((m) => m && m.id === 2);
+    a.ok(reply, `no reply for ${name}: ${r.stderr.slice(0, 300)}`);
+    return reply.result?.content?.[0]?.text ?? '';
+  };
+
+  a.match(once('coder', 'peasant', 'declare_done', { summary: 'built it' }),
+    /sovereign-regent has been notified/, 'declare_done must name the real king');
+  once('fool', 'jester', 'brief_king', { summary: 'all quiet' });
+
+  const check2 = new Bus(db2);
+  const done = check2.history({ limit: 20 }).find((m) => m.kind === 'done');
+  a.equal(done.recipient, 'sovereign-regent', 'a completion must be addressed to the real king');
+  const brief = check2.history({ limit: 20 }).find((m) => m.kind === 'brief');
+  a.equal(brief.recipient, 'sovereign-regent', 'a briefing must be addressed to the real king');
+  check2.close();
+  try { rmSync(dir2, { recursive: true, force: true }); } catch {}
+}
+
+console.log('t-summon-validation.js OK — invalid payloads rejected, messages reach a real member');

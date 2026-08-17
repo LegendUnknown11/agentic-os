@@ -23,6 +23,7 @@ const suites = [
   ['context audit', join(HERE, '..', 'src', 'ctx.js')],
   ['usage accounting', join(HERE, '..', 'src', 'usage.js')],
   ['turn pricing', join(HERE, '..', 'src', 'price.js')],
+  ['approval payloads', join(HERE, '..', 'src', 'approval.js')],
   ['delivery replay', join(HERE, '..', 'src', 'replay.js')],
   ['recycle threshold', join(HERE, '..', 'src', 'recycle.js')],
   ['court vs roster', join(HERE, '..', 'ui', 'court.js')],

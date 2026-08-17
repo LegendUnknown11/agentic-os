@@ -112,6 +112,61 @@ function tooBig(body) {
 
 const str = (description) => ({ type: 'string', description });
 
+// --- who is actually out there ---------------------------------------
+// The roster is published to the bus by the orchestrator on every change
+// (`kingdom.js` roster()), so it is the one view of the court that every
+// member's MCP server shares.
+const rosterNow = () => {
+  try {
+    const r = JSON.parse(bus.get('roster') ?? '[]');
+    return Array.isArray(r) ? r : [];
+  } catch { return []; }
+};
+
+/**
+ * The member currently holding an office, by role rather than by name.
+ *
+ * `declare_done` and `brief_king` used to post to the literal string "king".
+ * The king's name is configuration — `kingdom.config.json` has `king.name`,
+ * `roleOf()` compares against it, and `#promptFor` tells every member what it
+ * is — and delivery is by recipient (`bus.pending(agent)` matches
+ * `recipient = ?`). So renaming the king sent every declare_done and every
+ * jester briefing to a recipient nobody reads, while the tool still answered
+ * "The king has been notified." Silent, and precisely the failure AGENTS.md
+ * rule 4 is about.
+ *
+ * Falls back to the literal name if the roster has not been published yet:
+ * degrading to the old behaviour beats refusing to report work as done.
+ */
+const officer = (role, fallback) => rosterNow().find((m) => m.role === role)?.name ?? fallback;
+
+/**
+ * Reject a message addressed to somebody who does not exist.
+ *
+ * `send_message` and `send_back` posted whatever name they were given and
+ * answered "Sent to X." unconditionally. A typo, a hallucinated specialist, or
+ * a role the sovereign had deleted produced a row that `pending()` could never
+ * match for anyone — the message was stored, delivered to no one, and reported
+ * as sent. `assign` has always validated; these two never did.
+ *
+ * An empty roster means the court has not published one yet, and blocking on
+ * that would wedge a member for a condition that is not its fault. So: no
+ * roster, no check.
+ */
+function badRecipient(to) {
+  const roster = rosterNow();
+  if (!roster.length || roster.some((m) => m.name === to)) return null;
+  const q = String(to).toLowerCase();
+  const near = roster
+    .map((m) => m.name)
+    .filter((n) => n.toLowerCase().includes(q) || q.includes(n.toLowerCase()))
+    .slice(0, 5);
+  return `No member named "${to}" — nothing was sent. `
+    + (near.length
+      ? `Did you mean: ${near.join(', ')}?`
+      : `Call the roster tool for the names that exist.`);
+}
+
 /**
  * Incremental reads. These tools defaulted to `since = 0`, so every jester
  * briefing re-injected the ENTIRE history into its context — measured at 182k
@@ -143,7 +198,7 @@ const TOOLS = {
       required: ['to', 'body'],
     },
     run: ({ to, body }) => {
-      const err = tooBig(body);
+      const err = tooBig(body) ?? badRecipient(to);
       if (err) return err;
       bus.post(ME, to, body);
       return `Sent to ${to}.`;
@@ -182,8 +237,9 @@ const TOOLS = {
       required: ['summary'],
     },
     run: ({ summary }) => {
-      bus.post(ME, 'king', summary, 'done');
-      return 'Declared done. The king has been notified; await review.';
+      const king = officer('king', 'king');
+      bus.post(ME, king, summary, 'done');
+      return `Declared done. ${king} has been notified; await review.`;
     },
   },
 
@@ -242,7 +298,7 @@ const TOOLS = {
       'Brief the king in plain language. Flag anything blocked, looping or contradictory.',
     schema: { type: 'object', properties: { summary: str('The briefing') }, required: ['summary'] },
     run: ({ summary }) => {
-      bus.post(ME, 'king', summary, 'brief');
+      bus.post(ME, officer('king', 'king'), summary, 'brief');
       return 'Briefing delivered.';
     },
   },
@@ -616,6 +672,8 @@ const TOOLS = {
       required: ['peasant', 'notes'],
     },
     run: ({ peasant, notes }) => {
+      const err = badRecipient(peasant);
+      if (err) return err;
       bus.post(ME, peasant, `Your work was sent back. ${notes}`, 'assignment');
       return `Sent back to ${peasant}.`;
     },

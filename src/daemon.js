@@ -16,6 +16,7 @@ import { kingdomDir, worktreePath, diffOf, statOf } from './worktree.js';
 import { searchVault, recentNotes, readNote } from './vault.js';
 import { Speech } from './stt.js';
 import { deltaOf, totalsOf } from './usage.js';
+import { readApproval } from './approval.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PUBLIC = join(HERE, '..', 'ui');
@@ -225,17 +226,28 @@ createServer(async (req, res) => {
   // with an empty queue there was no sign the feature existed at all, and no
   // record of what had already been agreed to.
   if (url.pathname === '/api/approvals') {
-    const rows = kingdom.bus.history({ limit: 2000, tail: true })
-      .filter((m) => m.kind === 'approval')
-      .map((m) => {
-        let p = {};
-        try { p = JSON.parse(m.body); } catch {}
-        return {
-          id: m.id, ts: m.ts, from: m.sender, ...p,
-          resolved: kingdom.bus.get(`resolved:${m.id}`) ?? null,
-        };
-      })
-      .reverse();
+    // An approval whose body will not parse used to come through as `{}` —
+    // an entry with an id, a sender, and no `kind`. The throne room renders
+    // one with `TITLES[a.kind] ?? a.kind.toUpperCase()` (`ui/app.js`), so an
+    // undefined kind threw, and the throw took the whole approvals pass with
+    // it: one unreadable row and the sovereign stopped being shown ANY of
+    // them, including the ones still waiting on a decision. Drop what cannot
+    // be rendered, and say on stderr that it was dropped — a bad row must
+    // cost its own line and nothing else.
+    const rows = [];
+    for (const m of kingdom.bus.history({ limit: 2000, tail: true })) {
+      if (m.kind !== 'approval') continue;
+      const p = readApproval(m.body);
+      if (!p) {
+        process.stderr.write(`daemon: approval #${m.id} from ${m.sender} is unreadable — skipped\n`);
+        continue;
+      }
+      rows.push({
+        id: m.id, ts: m.ts, from: m.sender, ...p,
+        resolved: kingdom.bus.get(`resolved:${m.id}`) ?? null,
+      });
+    }
+    rows.reverse();
     return res.writeHead(200, { 'content-type': 'application/json' })
       .end(JSON.stringify({ ok: true, approvals: rows, pending: [...kingdom.approvals.keys()] }));
   }

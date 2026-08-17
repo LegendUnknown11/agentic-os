@@ -67,6 +67,13 @@ writeFileSync(cfg, JSON.stringify({
   turn('coder', 40_000, 12_000);
   bus.set('spentUsd', '3.50');
   bus.set('spent:king', '2.00');
+  // One good approval and two the throne room cannot render. The UI does
+  // `TITLES[a.kind] ?? a.kind.toUpperCase()`, so an entry with no `kind` threw
+  // and took the whole approvals pass down with it — including the pending one
+  // the sovereign was waiting on. A bad row must cost only itself.
+  bus.post('king', null, JSON.stringify({ kind: 'summon', names: ['coder'], reason: 'work' }), 'approval');
+  bus.post('king', null, 'this is not json at all', 'approval');
+  bus.post('king', null, JSON.stringify({ reason: 'parses, but has no kind' }), 'approval');
   bus.close();
 }
 
@@ -222,7 +229,21 @@ try {
     console.log('  vault: recent, search, filename matches, traversal refused');
   }
 
-  console.log('t-panels.js OK — metrics take deltas, diffs are real, the vault stays contained');
+  /* ---------- 4. approvals: one unreadable row costs only itself ---------- */
+  {
+    const r = await get('/api/approvals');
+    a.ok(r.ok);
+    a.equal(r.approvals.length, 1,
+      'the two unrenderable approvals must be dropped, not passed through as {}');
+    a.equal(r.approvals[0].kind, 'summon',
+      'and the readable one must still arrive — a bad row must not hide a good one');
+    a.deepEqual(r.approvals[0].names, ['coder']);
+    a.ok(r.approvals.every((x) => typeof x.kind === 'string'),
+      'every row handed to the UI must carry the field the UI renders on');
+    console.log('  approvals: unreadable rows dropped, the readable one survives');
+  }
+
+  console.log('t-panels.js OK — metrics take deltas, diffs are real, bad approvals cost one row, the vault stays contained');
 } finally {
   daemon.kill();
   await wait(300);
