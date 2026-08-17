@@ -542,6 +542,161 @@ const TOOLS = {
     },
   },
 
+  // --- the shared task list --------------------------------------------
+  // An assignment is a message: it is sent, and then it is gone. Nothing could
+  // answer "what is still outstanding", so an assignment a peasant dropped on
+  // the floor left no trace anywhere. These four put the work itself on the
+  // bus, where the sovereign can see it and an idle member can pick it up.
+
+  add_task: {
+    roles: ['king'],
+    description:
+      'Put a unit of work on the shared list. Size it so it has ONE clear deliverable — a function, '
+      + 'a test file, a review. Too small and the coordination costs more than the work; too large and '
+      + 'nobody checks in until it has gone wrong. Use needs for real ordering only: a task waits until '
+      + 'everything it needs is done, so a false dependency idles a peasant for nothing.',
+    schema: {
+      type: 'object',
+      properties: {
+        title: str('The deliverable, in one line'),
+        detail: str('Scope, constraints, and how you will know it is done'),
+        needs: {
+          type: 'array', items: { type: 'integer' }, maxItems: 20,
+          description: 'Task ids that must finish first (optional)',
+        },
+        require_plan: {
+          type: 'boolean',
+          description: 'For risky work: the peasant must submit a plan and have it approved before it may finish',
+        },
+      },
+      required: ['title', 'detail'],
+    },
+    run: ({ title, detail, needs = [], require_plan = false }) => {
+      const known = new Set(bus.tasks().map((t) => t.id));
+      const missing = needs.filter((n) => !known.has(Number(n)));
+      if (missing.length) return `No such task: ${missing.map((n) => `#${n}`).join(', ')}. Nothing was added.`;
+      const id = bus.addTask({ title, detail, needs, needsPlan: require_plan, by: ME });
+      return `Task #${id} added${needs.length ? `, waiting on ${needs.map((n) => `#${n}`).join(', ')}` : ''}.`;
+    },
+  },
+
+  tasks: {
+    roles: ['king', 'jester', 'peasant'],
+    description: 'The shared task list: what is outstanding, who holds it, and what is blocked.',
+    schema: { type: 'object', properties: {}, required: [] },
+    run: () => {
+      const all = bus.tasks();
+      if (!all.length) return 'The task list is empty.';
+      const line = (t) => {
+        const who = t.owner ? ` [${t.owner}]` : '';
+        const wait = t.blockedBy.length ? ` (waits on ${t.blockedBy.map((n) => `#${n}`).join(', ')})` : '';
+        return `#${t.id} ${t.state}${who} ${t.title}${wait}`;
+      };
+      const open = all.filter((t) => t.state !== 'done');
+      const done = all.filter((t) => t.state === 'done');
+      return [
+        ...(open.length ? ['OPEN', ...open.map(line)] : ['Nothing is outstanding.']),
+        ...(done.length ? ['', `DONE (${done.length})`, ...done.map(line)] : []),
+      ].join('\n');
+    },
+  },
+
+  claim_task: {
+    roles: ['peasant'],
+    description:
+      'Take a task off the list. Omit id to take the next available one. Claiming is atomic — if two of '
+      + 'you ask at once exactly one gets it, and the other is told who holds it.',
+    schema: {
+      type: 'object',
+      properties: { id: { type: 'integer', description: 'Which task (optional)' } },
+      required: [],
+    },
+    run: ({ id = null }) => {
+      const r = bus.claimTask(ME, id);
+      if (!r.ok) return r.why;
+      const t = r.task;
+      return t.state === 'planning'
+        ? `Claimed #${t.id}: ${t.title}\n\n${t.detail}\n\nThis task requires an approved plan. `
+          + `Investigate, then call submit_plan — do NOT change any file until the king approves it.`
+        : `Claimed #${t.id}: ${t.title}\n\n${t.detail}`;
+    },
+  },
+
+  finish_task: {
+    roles: ['peasant'],
+    description: 'Mark your task done. Only its owner may, and only once its plan is approved.',
+    schema: {
+      type: 'object',
+      properties: { id: { type: 'integer', description: 'Which task' }, summary: str('What you delivered') },
+      required: ['id', 'summary'],
+    },
+    run: ({ id, summary }) => {
+      const t = bus.tasks().find((x) => x.id === Number(id));
+      if (!t) return `No task #${id}.`;
+      if (t.owner !== ME) return `Task #${id} is ${t.owner ?? 'unclaimed'}, not yours.`;
+      if (t.state === 'done') return `Task #${id} is already done.`;
+      // The plan gate is enforced HERE rather than by asking nicely in the
+      // prompt: a member cannot close a risky task by deciding its plan was
+      // fine. This is the one boundary the orchestrator actually controls.
+      if (t.state === 'planning') {
+        return `Task #${id} still needs an approved plan. Call submit_plan and wait for the king.`;
+      }
+      bus.updateTask(id, { state: 'done', doneTs: Date.now() });
+      const king = officer('king', 'king');
+      bus.post(ME, king, `Task #${id} (${t.title}) done. ${summary}`, 'done');
+      const left = bus.tasks().filter((x) => x.state !== 'done').length;
+      return `Task #${id} closed. ${left ? `${left} still open — claim_task for the next.` : 'The list is clear.'}`;
+    },
+  },
+
+  submit_plan: {
+    roles: ['peasant'],
+    description:
+      'Send the king your approach for a task that requires approval. You stay read-only until it is approved.',
+    schema: {
+      type: 'object',
+      properties: { id: { type: 'integer', description: 'Which task' }, plan: str('What you intend to do, and why') },
+      required: ['id', 'plan'],
+    },
+    run: ({ id, plan }) => {
+      const t = bus.tasks().find((x) => x.id === Number(id));
+      if (!t) return `No task #${id}.`;
+      if (t.owner !== ME) return `Task #${id} is not yours.`;
+      if (t.state !== 'planning') return `Task #${id} is ${t.state} — it does not need a plan.`;
+      bus.updateTask(id, { plan });
+      bus.post(ME, officer('king', 'king'), `Plan for task #${id} (${t.title}):\n\n${plan}`, 'plan');
+      return `Plan sent for #${id}. Do not edit anything until the king approves it.`;
+    },
+  },
+
+  rule_on_plan: {
+    roles: ['king'],
+    description:
+      'Approve or reject a peasant\'s plan. Rejecting keeps them read-only and hands back your notes, so say '
+      + 'what would make it acceptable rather than only what is wrong.',
+    schema: {
+      type: 'object',
+      properties: {
+        id: { type: 'integer', description: 'Which task' },
+        approve: { type: 'boolean', description: 'true to let the work begin' },
+        notes: str('Your reasoning, or what must change'),
+      },
+      required: ['id', 'approve', 'notes'],
+    },
+    run: ({ id, approve, notes }) => {
+      const t = bus.tasks().find((x) => x.id === Number(id));
+      if (!t) return `No task #${id}.`;
+      if (t.state !== 'planning') return `Task #${id} is ${t.state} — there is no plan pending on it.`;
+      if (!t.plan) return `Task #${id} has not submitted a plan yet.`;
+      if (approve) bus.updateTask(id, { state: 'active' });
+      bus.post(ME, t.owner,
+        approve ? `Plan approved for #${id}. Begin. ${notes}`
+          : `Plan rejected for #${id}. Revise and submit again — you remain read-only. ${notes}`,
+        'assignment');
+      return approve ? `#${id} approved; ${t.owner} may begin.` : `#${id} sent back to ${t.owner}.`;
+    },
+  },
+
   summon: {
     roles: ['king'],
     description:

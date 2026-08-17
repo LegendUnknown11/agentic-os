@@ -74,6 +74,11 @@ writeFileSync(cfg, JSON.stringify({
   bus.post('king', null, JSON.stringify({ kind: 'summon', names: ['coder'], reason: 'work' }), 'approval');
   bus.post('king', null, 'this is not json at all', 'approval');
   bus.post('king', null, JSON.stringify({ reason: 'parses, but has no kind' }), 'approval');
+  // A task list the sovereign can see. #2 waits on #1, so the panel must be
+  // able to distinguish "nobody has taken this" from "nobody CAN take it yet".
+  const t1 = bus.addTask({ title: 'write the parser', by: 'king' });
+  bus.addTask({ title: 'test the parser', needs: [t1], by: 'king' });
+  bus.claimTask('coder', t1);
   bus.close();
 }
 
@@ -243,7 +248,20 @@ try {
     console.log('  approvals: unreadable rows dropped, the readable one survives');
   }
 
-  console.log('t-panels.js OK — metrics take deltas, diffs are real, bad approvals cost one row, the vault stays contained');
+  /* ---------- 5. the task list is visible to the sovereign ---------- */
+  {
+    const r = await get('/api/tasks');
+    a.ok(r.ok);
+    a.equal(r.open, 2, 'both tasks are outstanding — a claimed task is not a finished one');
+    a.equal(r.available, 0,
+      'and neither is claimable: one is held, the other is blocked. "open" and "available" are different questions');
+    a.equal(r.tasks[0].owner, 'coder');
+    a.deepEqual(r.tasks[1].blockedBy, [r.tasks[0].id],
+      'the panel must be told WHAT a task is waiting for, not merely that it waits');
+    console.log('  tasks: outstanding, held, and blocked are three distinguishable states');
+  }
+
+  console.log('t-panels.js OK — metrics take deltas, diffs are real, bad approvals cost one row, the task list is visible');
 } finally {
   daemon.kill();
   await wait(300);

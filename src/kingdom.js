@@ -1104,6 +1104,13 @@ export class Kingdom extends EventEmitter {
         `When specialists are needed, call the summon tool immediately; never ask ` +
         `for approval only in prose, because prose does not create an approval card. ` +
         `Do not assign work to a proposed member until the summon tool returns approval. ` +
+        `Put the work on the SHARED TASK LIST with add_task, not only in messages: a ` +
+        `message is sent and then gone, a task is still there tomorrow. Size each one so ` +
+        `it has ONE clear deliverable — a function, a test file, a review — and use needs ` +
+        `only for real ordering, because a false dependency idles a peasant for nothing. ` +
+        `Peasants claim their own next task, so a stocked list keeps them working without ` +
+        `you; an empty one leaves them idle. For risky work set require_plan, then ` +
+        `rule_on_plan — they cannot finish such a task until you have approved the approach. ` +
         `When a peasant's work is digested for you, review it and either ` +
         `request_merge or send_back with notes. If the digest is vague or ` +
         `something looks off, use read_diff to check the real changes before ` +
@@ -1138,7 +1145,12 @@ export class Kingdom extends EventEmitter {
         `"../coder/src/thing.js") — do not ask them to paste files at you. Never ` +
         `write into another peasant's worktree.\n` +
         `If you are blocked or need something from another peasant, send_message ` +
-        `them directly.\n\n` +
+        `them directly.\n` +
+        `There is a SHARED TASK LIST. When you finish something, call finish_task and ` +
+        `then claim_task for the next one rather than stopping — unclaimed work is yours ` +
+        `to take, and claiming is atomic, so you cannot collide with another peasant. If a ` +
+        `task is claimed into planning it is one the king judged risky: submit_plan and ` +
+        `change NOTHING on disk until it is approved.\n\n` +
         DOCTRINE,
     };
 
@@ -1357,6 +1369,27 @@ export class Kingdom extends EventEmitter {
     if (!agent || agent.busy) return;
     const since = this.lastActive.get(name) ?? now;
     if (now - since < IDLE_SLEEP_MS) return;
+
+    // A woken peasant going quiet with claimable work on the list is a member
+    // that stopped, not a member that is finished. Agent teams solve this with
+    // a TeammateIdle hook whose exit code 2 means "here is feedback, keep
+    // working"; the court's equivalent is to spend one message before spending
+    // a whole respawn. Nudged ONCE — lastActive moves when the message lands,
+    // so a peasant that ignores it sleeps on the next pass rather than being
+    // poked forever.
+    if (this.roleOf(name) === 'peasant' && !this.nudged?.has(name)) {
+      const open = this.bus.availableTasks();
+      if (open.length) {
+        (this.nudged ??= new Set()).add(name);
+        this.bus.post(this.config.king.name, name,
+          `You have gone quiet with ${open.length} task${open.length > 1 ? 's' : ''} unclaimed. `
+          + `Call claim_task to take the next one, or say what is blocking you. Do not stop with work on the list.`,
+          'assignment');
+        return;
+      }
+    }
+    this.nudged?.delete(name);
+
     agent.stop();
     this.agents.delete(name);
     this.#publishRoster();

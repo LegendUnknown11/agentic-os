@@ -252,6 +252,20 @@ createServer(async (req, res) => {
       .end(JSON.stringify({ ok: true, approvals: rows, pending: [...kingdom.approvals.keys()] }));
   }
 
+  // ---- the shared task list --------------------------------------------
+  // The one question the panels could not answer: what is still outstanding.
+  // Approvals show what the sovereign must decide and the chronicle shows what
+  // was said, but an assignment nobody acted on appeared in neither.
+  if (url.pathname === '/api/tasks') {
+    const tasks = kingdom.bus.tasks();
+    return res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({
+      ok: true,
+      tasks,
+      open: tasks.filter((t) => t.state !== 'done').length,
+      available: kingdom.bus.availableTasks().length,
+    }));
+  }
+
   // ---- the chronicle: everything that happened, in order ---------------
   // The bus panel shows messages; a member's panel shows one transcript. There
   // was no view of the court as a whole over time, and no way to find which of

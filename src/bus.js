@@ -23,8 +23,22 @@ create table if not exists state (
   k text primary key,
   v text not null
 );
+create table if not exists tasks (
+  id         integer primary key autoincrement,
+  ts         integer not null,
+  title      text    not null,
+  detail     text    not null default '',
+  owner      text,                          -- null = nobody has claimed it
+  state      text    not null default 'pending', -- pending|planning|active|done|dropped
+  needs      text    not null default '[]', -- json array of task ids that must finish first
+  needs_plan integer not null default 0,    -- 1 = the plan must be approved before work
+  plan       text,
+  by         text    not null,
+  done_ts    integer
+);
 create index if not exists idx_msg_recipient on messages(recipient, id);
 create index if not exists idx_evt_agent on events(agent, id);
+create index if not exists idx_task_state on tasks(state, owner);
 `;
 
 export class Bus {
@@ -138,6 +152,100 @@ export class Bus {
     return this.db.prepare('select count(*) as n from messages').get().n;
   }
 
+  // --- the shared task list -------------------------------------------
+  //
+  // Before this, the king assigned by message and nothing tracked the result.
+  // An assignment that a peasant never acted on left no trace: not in a queue,
+  // not in a count, nowhere the sovereign could see it. So the court could not
+  // answer "what is still outstanding" — the single question an orchestrator
+  // exists to answer.
+  //
+  // Claiming is one `begin immediate` transaction rather than the file lock
+  // Claude Code's agent teams use for the same job. Every member's MCP server
+  // is a separate process against one SQLite file, which is exactly the race
+  // the transaction was designed for, and busy_timeout (set in the
+  // constructor) makes the loser wait instead of failing.
+
+  /** Deps are stored as json because a task has none or two, never a join. */
+  addTask({ title, detail = '', needs = [], needsPlan = false, by }) {
+    const { lastInsertRowid } = this.db.prepare(
+      'insert into tasks (ts, title, detail, needs, needs_plan, by) values (?,?,?,?,?,?)'
+    ).run(Date.now(), title, detail, JSON.stringify(needs.map(Number)), needsPlan ? 1 : 0, by);
+    return Number(lastInsertRowid);
+  }
+
+  /**
+   * The whole list, each row told whether it is blocked and by what.
+   *
+   * `blockedBy` is computed here rather than stored, because "done" moves
+   * underneath it: a task unblocks the moment its last dependency finishes,
+   * with nobody having to remember to go and update it. Agent teams cite the
+   * opposite failure — "teammates sometimes fail to mark tasks as completed,
+   * which blocks dependent tasks" — as a live limitation.
+   */
+  tasks({ state = null, owner = null } = {}) {
+    const rows = this.db.prepare('select * from tasks order by id').all();
+    const done = new Set(rows.filter((t) => t.state === 'done').map((t) => t.id));
+    const out = rows.map((t) => {
+      let needs = [];
+      try { needs = JSON.parse(t.needs); } catch { /* a corrupt dep list blocks nothing */ }
+      return {
+        ...t,
+        needs,
+        needsPlan: !!t.needs_plan,
+        blockedBy: needs.filter((id) => !done.has(id)),
+      };
+    });
+    return out.filter((t) => (!state || t.state === state) && (!owner || t.owner === owner));
+  }
+
+  /** Unclaimed, unblocked, oldest first — what an idle member could pick up. */
+  availableTasks() {
+    return this.tasks({ state: 'pending' }).filter((t) => !t.owner && !t.blockedBy.length);
+  }
+
+  /**
+   * Take a task, or say precisely why not. `id` null means "the next one".
+   *
+   * The read and the write are one transaction: two peasants asking at the
+   * same instant must not both be told yes. The refusal reasons are separated
+   * because "somebody else has it" and "its dependency is not finished" call
+   * for opposite behaviour from the member reading them.
+   */
+  claimTask(owner, id = null) {
+    this.db.exec('begin immediate');
+    try {
+      const t = id == null ? this.availableTasks()[0] : this.tasks().find((x) => x.id === Number(id));
+      if (!t) { this.db.exec('commit'); return { ok: false, why: id == null ? 'No task is available.' : `No task #${id}.` }; }
+      if (t.owner) { this.db.exec('commit'); return { ok: false, why: `Task #${t.id} is already ${t.owner}'s.` }; }
+      if (t.state !== 'pending') { this.db.exec('commit'); return { ok: false, why: `Task #${t.id} is ${t.state}.` }; }
+      if (t.blockedBy.length) {
+        this.db.exec('commit');
+        return { ok: false, why: `Task #${t.id} waits on ${t.blockedBy.map((n) => `#${n}`).join(', ')}.` };
+      }
+      const state = t.needs_plan ? 'planning' : 'active';
+      this.db.prepare('update tasks set owner = ?, state = ? where id = ?').run(owner, state, t.id);
+      this.db.exec('commit');
+      return { ok: true, task: { ...t, owner, state } };
+    } catch (e) {
+      this.db.exec('rollback');
+      throw e;
+    }
+  }
+
+  /** Returns the updated row, or null if there is no such task. */
+  updateTask(id, fields) {
+    const cols = { state: 'state', plan: 'plan', owner: 'owner', doneTs: 'done_ts' };
+    const set = [], args = [];
+    for (const [k, col] of Object.entries(cols)) {
+      if (fields[k] !== undefined) { set.push(`${col} = ?`); args.push(fields[k]); }
+    }
+    if (!set.length) return this.tasks().find((t) => t.id === Number(id)) ?? null;
+    args.push(Number(id));
+    this.db.prepare(`update tasks set ${set.join(', ')} where id = ?`).run(...args);
+    return this.tasks().find((t) => t.id === Number(id)) ?? null;
+  }
+
   // --- kv state (session ids, roster, cursors) ------------------------
 
   get(k) {
@@ -234,5 +342,36 @@ if (process.argv[1]?.endsWith('bus.js')) {
   b.post('king', null, 'unheard');
   a.equal(seen, 1);
 
-  console.log('bus.js self-check OK');
+  // --- the task list ---------------------------------------------------
+  const t1 = b.addTask({ title: 'write the parser', by: 'king' });
+  const t2 = b.addTask({ title: 'test the parser', needs: [t1], by: 'king' });
+  const t3 = b.addTask({ title: 'risky migration', needsPlan: true, by: 'king' });
+
+  a.deepEqual(b.availableTasks().map((t) => t.id), [t1, t3],
+    'a task waiting on an unfinished one is not available to claim');
+
+  const first = b.claimTask('coder');
+  a.equal(first.task.id, t1, 'the next available task is the oldest unblocked one');
+  a.equal(first.task.state, 'active');
+
+  a.equal(b.claimTask('mason', t1).ok, false, 'two members must not hold one task');
+  a.match(b.claimTask('mason', t1).why, /already coder's/);
+
+  a.equal(b.claimTask('mason', t2).ok, false, 'and a blocked task cannot be claimed at all');
+  a.match(b.claimTask('mason', t2).why, new RegExp(`waits on #${t1}`),
+    'the refusal must name what it is waiting for, or the member cannot act on it');
+
+  a.equal(b.claimTask('mason', t3).task.state, 'planning',
+    'a task that needs a plan is claimed into planning, not straight into work');
+
+  b.updateTask(t1, { state: 'done', doneTs: Date.now() });
+  a.deepEqual(b.availableTasks().map((t) => t.id), [t2],
+    'finishing a dependency unblocks its dependents with nobody updating them by hand');
+  a.deepEqual(b.tasks({ owner: 'coder' }).map((t) => t.id), [t1]);
+  a.deepEqual(b.tasks().find((t) => t.id === t2).blockedBy, [],
+    'and blockedBy is recomputed, never a stale stored flag');
+
+  a.equal(b.claimTask('coder', 9999).ok, false, 'a task that does not exist is a refusal, not a throw');
+
+  console.log('bus.js self-check OK — messages, events, state, and a task list two members cannot both claim');
 }
