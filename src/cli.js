@@ -2,9 +2,9 @@
 // Headless driver. The Electron app is the real interface, but this runs the
 // whole kingdom from a terminal — useful for testing and for headless boxes.
 //
-//   node src/cli.js <repo> [--config path] ["initial command to the king"]
+//   node src/cli.js <repo> [--config path] ["initial command to the orchestrator"]
 //
-// Type at the prompt to speak to the king. `@name text` speaks to one member.
+// Type at the prompt to speak to the orchestrator. `@name text` speaks to one member.
 // `/approve <id>`, `/reject <id>`, `/roster`, `/quit`.
 import { createInterface } from 'node:readline';
 import { resolve } from 'node:path';

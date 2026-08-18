@@ -45,7 +45,7 @@ for (const c of shipped.filter((s) => s.combo.length)) {
 }
 
 // ---- a skill that names a court member must name one that exists ----
-// A skill that assigns work by name — "send this to the sentry" — fails at the
+// A skill that assigns work by name — "send this to the devops-engineer" — fails at the
 // worst possible moment if that role was renamed or removed: mid-task, after
 // the sovereign has already approved a crew. Check every skill, not one.
 {

@@ -21,7 +21,7 @@ process.stdout.write(JSON.stringify({ type: 'item.completed',
   item: { type: 'agent_message', text: ${JSON.stringify(reply)} } }) + '\\n');
 `);
 
-const { transcriptOf, clean, summarize, DEFAULTS, EFFORTS } = await import('../src/summarize.js');
+const { transcriptOf, clean, summarize, settingsOf, DEFAULTS, EFFORTS } = await import('../src/summarize.js');
 
 /* ---------- 1. the turn is collapsed before it is sent ---------- */
 {
@@ -132,6 +132,21 @@ const { transcriptOf, clean, summarize, DEFAULTS, EFFORTS } = await import('../s
   a.equal(DEFAULTS.effort, 'none');
   a.equal(DEFAULTS.model, 'gpt-5.4-mini');
   console.log(`  effort ladder pinned: ${EFFORTS.join(', ')}`);
+
+  // Asserting DEFAULTS is not asserting what the summariser RUNS AT. The live
+  // config carried `effort: ""` and `style: ""`; a plain spread let both
+  // through, advisor.js drops a falsy effort flag, and codex then ran the
+  // summariser at its own default — medium reasoning, billed as output, on a
+  // one-line cosmetic summary. Assert the RESOLVED value.
+  a.equal(settingsOf({ summarizer: { effort: '' } }).effort, 'none',
+    'a cleared key means the default, not empty — an empty effort silently ran at medium');
+  a.equal(settingsOf({ summarizer: { style: '' } }).style, DEFAULTS.style,
+    'an empty style rendered a blank line where the instruction belongs');
+  a.equal(settingsOf({ summarizer: { maxWords: undefined } }).maxWords, DEFAULTS.maxWords);
+  a.equal(settingsOf({ summarizer: { effort: 'high' } }).effort, 'high',
+    'but a real override still overrides');
+  a.equal(settingsOf({ summarizer: { enabled: false } }).enabled, false,
+    'and false is a VALUE, not an absence — the sovereign turning it off must stick');
 }
 
 try { rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 150 }); } catch {}

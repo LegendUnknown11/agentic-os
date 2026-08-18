@@ -58,7 +58,7 @@ const { readFileSync } = await import('node:fs');
 const turn = (agent) => new Promise((res) => agent.once('turn_end', res));
 
 // A RESUMED turn — the case that was broken.
-const resumed = new Agent({ name: 'king', cli: 'codex', model: 'gpt-5.6-terra', effort: 'high' },
+const resumed = new Agent({ name: 'orchestrator', cli: 'codex', model: 'gpt-5.6-terra', effort: 'high' },
   { cwd: dir, sessionId: 'thr-existing' });
 resumed.start();
 const done = turn(resumed);
@@ -89,9 +89,9 @@ console.log('  resumed argv is clean:', argv.filter((x) => x.startsWith('-') || 
 // Windows caps a command line at 32,767 chars. The sovereign's briefs are
 // routinely longer, and passing one as argv made spawn throw ENAMETOOLONG
 // SYNCHRONOUSLY — so proc.on('exit') never ran, `busy` never cleared, and the
-// king was wedged for the rest of the session with its order already acked.
+// orchestrator was wedged for the rest of the session with its order already acked.
 // Observed for real: a 53k-char brief vanished without a word.
-const big = new Agent({ name: 'king', cli: 'codex' }, { cwd: dir, sessionId: 'thr-big' });
+const big = new Agent({ name: 'orchestrator', cli: 'codex' }, { cwd: dir, sessionId: 'thr-big' });
 big.start();
 const bigDone = turn(big);
 big.send('x'.repeat(100_000));
@@ -126,7 +126,7 @@ process.exit(2);
 process.env.KINGDOM_CODEX_BIN = silent;
 const { Agent: A2 } = await import('../src/agent.js?silent');   // fresh CLI cache
 
-const mute = new A2({ name: 'king', cli: 'codex' }, { cwd: dir, sessionId: 'thr-x' });
+const mute = new A2({ name: 'orchestrator', cli: 'codex' }, { cwd: dir, sessionId: 'thr-x' });
 mute.start();
 const errors = [];
 mute.on('error', (m) => errors.push(m));
@@ -153,7 +153,7 @@ setInterval(() => {}, 1000);   // never completes the turn, never exits
   process.env.KINGDOM_TURN_TIMEOUT_MS = '1500';
   const { Agent: A3 } = await import('../src/agent.js?hang');
 
-  const stuck = new A3({ name: 'king', cli: 'codex' }, { cwd: dir, sessionId: 'thr-h' });
+  const stuck = new A3({ name: 'orchestrator', cli: 'codex' }, { cwd: dir, sessionId: 'thr-h' });
   stuck.start();
   const said = [];
   stuck.on('error', (m) => said.push(m));

@@ -1,4 +1,4 @@
-// One Agent = one member of the court (king, jester, or peasant), backed by
+// One Agent = one member of the court (orchestrator, briefer, or peasant), backed by
 // either the `claude` or `codex` CLI. Both are normalised to the same events:
 //
 //   ready(sessionId)  text(str)  tool({name,input})  turn_end({usage,costUsd})
@@ -18,13 +18,24 @@ import { homedir, tmpdir } from 'node:os';
 const IS_WIN = process.platform === 'win32';
 
 // npm-shim CLIs have no real .exe; run the package's JS entry with our own node.
-const NPM_ENTRY = { codex: '@openai/codex/bin/codex.js' };
+const NPM_ENTRY = {
+  codex: '@openai/codex/bin/codex.js',
+  opencode: 'opencode/bin/opencode.js',
+};
 // agy's own ladder. Narrower than codex's, and it has no 'none' or 'max' —
 // passing one borrowed from another member is rejected outright.
 export const AGY_EFFORTS = new Set(['low', 'medium', 'high']);
+export const OPENCODE_EFFORTS = new Set(['low', 'medium', 'high']);
 // Windows caps a command line at 32,767 chars; leave room for the exe path,
-// the flags, and the model name. Above this an agy brief goes to a file.
+// the flags, and the model name. Above this an agy or opencode brief goes to a file.
 const AGY_ARGV_BUDGET = 24_000;
+const OPENCODE_ARGV_BUDGET = 24_000;
+// A claude member's system prompt is fixed at spawn and grows with the roster
+// (every peasant's name and description) and the court's own state. Above
+// this it goes to a file instead of the command line — claude reads it via
+// --append-system-prompt-file, so unlike the agy/opencode brief fallback the
+// content never has to be summarised down to "go read this file".
+const CLAUDE_SYSPROMPT_ARGV_BUDGET = 24_000;
 
 const cliCache = new Map();
 
@@ -258,9 +269,11 @@ export class Agent extends EventEmitter {
     if (!this.busy) this.#runTurn();
   }
 
-  /** codex and agy both spawn a fresh child per turn; claude holds one open. */
+  /** codex, agy, and opencode all spawn a fresh child per turn; claude holds one open. */
   #runTurn() {
-    return this.cli === 'agy' ? this.#runAgyTurn() : this.#runCodexTurn();
+    if (this.cli === 'agy') return this.#runAgyTurn();
+    if (this.cli === 'opencode') return this.#runOpenCodeTurn();
+    return this.#runCodexTurn();
   }
 
   stop() {
@@ -300,6 +313,10 @@ export class Agent extends EventEmitter {
 
   #startClaude() {
     this.sessionId ??= randomUUID();
+    // A stale staged file from a previous spawn (a resume after a crash, say)
+    // must not linger — it is never read again once this call picks a fresh one.
+    if (this.sysPromptFile) { rmSync(this.sysPromptFile, { force: true }); this.sysPromptFile = null; }
+    const prompt = this.spec.prompt ?? '';
     const args = [
       '--print',
       '--verbose',
@@ -309,10 +326,19 @@ export class Agent extends EventEmitter {
       // Peasants must not inherit the operator's hooks/plugins/CLAUDE.md —
       // otherwise every peasant gets the user's global prompt injected.
       '--setting-sources', 'project',
-      // append, not --system-prompt: replacing it strips Claude Code's own
-      // tool-use guidance and lobotomises the agent.
-      '--append-system-prompt', this.spec.prompt ?? '',
     ];
+    // append, not --system-prompt: replacing it strips Claude Code's own
+    // tool-use guidance and lobotomises the agent. Inline above the budget
+    // and spawn() throws ENAMETOOLONG synchronously — the file form is real
+    // (verified against the installed CLI), not a documented-only flag.
+    if (prompt.length <= CLAUDE_SYSPROMPT_ARGV_BUDGET) {
+      args.push('--append-system-prompt', prompt);
+    } else {
+      const file = join(tmpdir(), `kingdom-sysprompt-${this.name}-${randomUUID().slice(0, 8)}.md`);
+      writeFileSync(file, prompt, 'utf8');
+      this.sysPromptFile = file;
+      args.push('--append-system-prompt-file', file);
+    }
     if (this.spec.resume) args.push('--resume', this.sessionId);
     else args.push('--session-id', this.sessionId);
     if (this.spec.model) args.push('--model', this.spec.model);
@@ -321,7 +347,7 @@ export class Agent extends EventEmitter {
       args.push('--effort', this.spec.effort);
     }
     // Built-in tool schemas are re-sent on EVERY turn. A member that delegates
-    // rather than edits (king, jester) needs none of them — `--tools ""`
+    // rather than edits (orchestrator, briefer) needs none of them — `--tools ""`
     // removes the lot. This also enforces the role boundary for free.
     if (this.spec.tools !== undefined) args.push('--tools', this.spec.tools);
     if (this.spec.maxBudgetUsd) args.push('--max-budget-usd', String(this.spec.maxBudgetUsd));
@@ -342,12 +368,13 @@ export class Agent extends EventEmitter {
     }
 
     const { command, prefixArgs } = resolveCli('claude');
-    const proc = spawn(command, [...prefixArgs, ...args], {
+    const proc = spawnGuarded(this, 'claude', command, [...prefixArgs, ...args], {
       cwd: this.cwd,
       env: claudeEnv(this.env),
       stdio: ['pipe', 'pipe', 'pipe'],
       windowsHide: true,
     });
+    if (!proc) return;
     this.proc = proc;
     this.alive = true;
 
@@ -355,9 +382,33 @@ export class Agent extends EventEmitter {
     proc.stdout.on('data', jsonLines((o) => this.#onClaudeEvent(o)));
     proc.stderr.setEncoding('utf8');
     proc.stderr.on('data', (d) => this.emit('stderr', d));
+    // A write to a dead pipe emits on the SOCKET, and an 'error' with no
+    // listener is not an error — it is Node throwing, which takes the daemon
+    // and every other member down with it. #runCodexTurn has always guarded
+    // this; the long-lived claude process, which is exposed to it on every
+    // turn rather than once, did not.
+    proc.stdin.on('error', () => {});
     proc.on('exit', (code) => {
       this.alive = false;
       this.proc = null;
+      // The CLI already read this at spawn; a resume stages a fresh one.
+      if (this.sysPromptFile) { rmSync(this.sysPromptFile, { force: true }); this.sysPromptFile = null; }
+      // The CLI created this session, so a restart must RESUME it. Left false,
+      // #startClaude passes --session-id with an id that already exists, claude
+      // refuses it, and the member is permanently dead while the roster still
+      // reports it awake.
+      this.spec.resume = true;
+      // A turn that died mid-flight never reaches the `result` event, so `busy`
+      // would stay true forever: the ripeness gate is skipped by the backstop,
+      // every later batch is fed to a corpse and acked, and the sovereign's
+      // orders vanish with nothing logged. Say so instead — "produced no
+      // output" is what #rewindForRetry already watches for, so the batch is
+      // redelivered without a second mechanism.
+      if (this.busy) {
+        this.busy = false;
+        this.emit('error', `claude exited (${code}) mid-turn and produced no output.`);
+        this.emit('turn_end', { usage: null, costUsd: 0, ctx: this.ctxTokens() });
+      }
       this.emit('exit', code);
     });
     proc.on('error', (e) => this.emit('error', e.message));
@@ -517,7 +568,7 @@ export class Agent extends EventEmitter {
    * 1.1.11 (which the CLI installs by itself — there is an agy.exe.*.old lying
    * beside the binary) made `--print` take the prompt, with `--prompt` as an
    * alias for it. Under the old form its Go flag parser read the NEXT FLAG as
-   * the prompt: the king spent its turn answering a chat question about what
+   * the prompt: the orchestrator spent its turn answering a chat question about what
    * `--output-format` means, emitted no JSONL at all, and was reported as
    * having produced no output and failed.
    */
@@ -687,8 +738,135 @@ export class Agent extends EventEmitter {
         break;
       case 'turn.failed':
       case 'error':
-        this.emit('error', o.error?.message ?? JSON.stringify(o));
+        this.emit('error', o.error?.message ?? o.message ?? (typeof o === 'string' ? o : JSON.stringify(o)));
         break;
+    }
+  }
+
+  // --- opencode: turn-based CLI with --format json streaming ----------
+
+  #opencodePrompt(prompt) {
+    if (prompt.length <= OPENCODE_ARGV_BUDGET) return prompt;
+    try {
+      const file = join(tmpdir(), `kingdom-brief-${this.name}-${randomUUID().slice(0, 8)}.md`);
+      writeFileSync(file, prompt, 'utf8');
+      this.briefFile = file;
+      return `Your full instructions are in a file. Read it and follow it exactly as if it had been typed here:\n\n${file}\n\n`
+        + `Read that file FIRST, before doing anything else. Do not summarise it back to me.`;
+    } catch (e) {
+      this.emit('error', `Could not stage a long opencode brief (${e.message}); sending it inline.`);
+      return prompt;
+    }
+  }
+
+  #runOpenCodeTurn() {
+    if (this.busy || !this.queue.length || !this.alive) return;
+    this.busy = true;
+    const text = this.queue.shift();
+
+    const prompt = this.sessionId ? text : `${this.spec.prompt ?? ''}\n\n---\n\n${text}`;
+    this.ctxChars += prompt.length;
+
+    const args = ['run', this.#opencodePrompt(prompt), '--format', 'json', '--auto'];
+    if (this.sessionId) args.push('--session', this.sessionId);
+    if (this.spec.model) args.push('--model', this.spec.model);
+    if (this.spec.effort && OPENCODE_EFFORTS.has(this.spec.effort)) {
+      args.push('--effort', this.spec.effort);
+    }
+    if (this.spec.agent) args.push('--agent', this.spec.agent);
+
+    const { command, prefixArgs } = resolveCli('opencode');
+    const proc = spawnGuarded(this, 'opencode', command, [...prefixArgs, ...args], {
+      cwd: this.cwd,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
+    });
+    if (!proc) return;
+    this.proc = proc;
+    this.alive = true;
+
+    let spoke = false;
+    let err = '';
+
+    proc.stdout.setEncoding('utf8');
+    proc.stdout.on('data', jsonLines((o) => { spoke = true; this.#onOpenCodeEvent(o); }));
+    proc.stderr.setEncoding('utf8');
+    proc.stderr.on('data', (d) => { err = (err + d).slice(-600); this.emit('stderr', d); });
+    const dog = armTurnWatchdog(this, 'opencode', proc);
+    proc.on('error', (e) => this.emit('error', e.message));
+    proc.on('exit', (code) => {
+      dog.clear();
+      if (this.briefFile) {
+        rmSync(this.briefFile, { force: true });
+        this.briefFile = null;
+      }
+      this.busy = false;
+      this.proc = null;
+      if (!spoke) {
+        this.emit('error',
+          `opencode produced no output (exit ${code}). ${err.trim() || 'No error text.'}`);
+      }
+      if (!spoke || dog.timedOut()) {
+        this.emit('turn_end', { usage: null, costUsd: 0, ctx: this.ctxTokens() });
+      }
+      if (this.queue.length) this.#runOpenCodeTurn();
+    });
+  }
+
+  #onOpenCodeEvent(o) {
+    // Session tracking
+    const sid = o.sessionID ?? o.sessionId ?? o.session_id ?? (o.type === 'session' ? (o.id ?? o.sessionID) : null);
+    if (sid && sid !== this.sessionId) {
+      this.sessionId = sid;
+      this.emit('ready', sid);
+    }
+
+    // Text messages
+    if (o.type === 'text' && o.text) {
+      this.ctxChars += o.text.length;
+      this.emit('text', o.text);
+    } else if (o.type === 'message' && o.content) {
+      const text = typeof o.content === 'string' ? o.content : JSON.stringify(o.content);
+      this.ctxChars += text.length;
+      this.emit('text', text);
+    } else if (o.part?.type === 'text' && o.part?.text) {
+      this.ctxChars += o.part.text.length;
+      this.emit('text', o.part.text);
+    } else if (o.type === 'assistant') {
+      for (const block of o.message?.content ?? []) {
+        if (block.type === 'text' && block.text) this.emit('text', block.text);
+        else if (block.type === 'tool_use') this.emit('tool', { name: block.name, input: block.input });
+      }
+    }
+
+    // Tool use
+    if (o.type === 'tool_use' || o.type === 'tool') {
+      const name = o.part?.tool ?? o.tool ?? o.name ?? 'tool';
+      const input = o.part?.input ?? o.input ?? {};
+      this.ctxChars += JSON.stringify(input).length;
+      this.emit('tool', { name, input });
+    }
+
+    // Result / turn completion
+    if (o.type === 'result' || o.type === 'step_finish' || o.type === 'done' || o.event === 'result') {
+      if (o.is_error || o.error) {
+        this.emit('error', o.error ?? o.result ?? 'opencode turn failed');
+      }
+      const u = o.usage ?? {
+        input_tokens: o.tokens_in ?? o.input_tokens ?? 0,
+        output_tokens: o.tokens_out ?? o.output_tokens ?? 0,
+        total_tokens: (o.tokens_in ?? o.input_tokens ?? 0) + (o.tokens_out ?? o.output_tokens ?? 0),
+      };
+      this.lastUsage = u;
+      if (u.total_tokens || u.input_tokens) {
+        this.ctxExact = u.total_tokens ?? u.input_tokens;
+      }
+      this.costUsd += o.total_cost_usd ?? o.cost ?? 0;
+      this.emit('turn_end', { usage: u, costUsd: o.total_cost_usd ?? o.cost ?? 0, ctx: this.ctxTokens() });
+    }
+
+    if (o.type === 'error' && !o.is_error) {
+      this.emit('error', o.error?.message ?? o.message ?? (typeof o === 'string' ? o : JSON.stringify(o)));
     }
   }
 }

@@ -34,9 +34,24 @@ let changed = () => {};
 export const onChange = (fn) => { changed = fn; };
 export const getWindow = (id) => wins.get(id);
 
+// Teardown per panel, run by close() itself.
+//
+// It used to be the caller's job — `close(id); onClose?.()` at the X button and
+// at toggle(). Every other way a panel dies skipped it: Escape calls W.close()
+// directly, and so do closeAll() and the rail. Metrics kept a 5s draw timer and
+// Approvals a 6s poll running forever against detached DOM. The music panel's
+// cleanup could not run even from the X button, because it was reached through
+// `getWindow('music')?._offMusic?.()` and close() had already dropped the
+// element — an optional chain quietly no-opping over a ~4Hz callback that
+// pinned the whole detached subtree.
+const teardown = new Map();
+
 export function close(id) {
+  const fns = teardown.get(id);
+  teardown.delete(id);
   wins.get(id)?.remove();
   wins.delete(id);
+  for (const fn of fns ?? []) { try { fn(); } catch (e) { console.error(e); } }
   changed();
 }
 
@@ -64,24 +79,31 @@ export function open(id, { title, cls = '', build, onClose } = {}) {
   x.className = 'x';
   el.querySelector('.slot').append(x);
   setIcon(x, 'close', 'Close');
-  x.onclick = () => { close(id); onClose?.(); };
+  x.onclick = () => close(id);
   el.addEventListener('pointerdown', () => front(el), true);
 
   host.append(el);
   wins.set(id, el);
   drag(el.querySelector('.bar'), el, id);
   remember(id, el);   // so even a window you never touch keeps its spot
-  new ResizeObserver(() => remember(id, el)).observe(el);
+  const ro = new ResizeObserver(() => remember(id, el));
+  ro.observe(el);
+  // Registered BEFORE build(), so a build that throws still leaves the observer
+  // disconnectable — and so build() itself can add its own via onTeardown.
+  teardown.set(id, [() => ro.disconnect(), ...(onClose ? [onClose] : [])]);
   build?.(el);
   changed();
   return el;
 }
 
 export function toggle(id, opts) {
-  if (wins.has(id)) { close(id); opts?.onClose?.(); return false; }
+  if (wins.has(id)) { close(id); return false; }
   open(id, opts);
   return true;
 }
+
+/** Cleanup a panel's own build() wants to run when it closes. */
+export const onTeardown = (id, fn) => teardown.get(id)?.push(fn);
 
 const front = (el) => { el.style.zIndex = ++z; };
 
@@ -107,8 +129,14 @@ function remember(id, el) {
     x: parseFloat(el.style.left), y: parseFloat(el.style.top),
     w: el.offsetWidth, h: el.offsetHeight,
   };
-  localStorage.setItem('kd.win2', JSON.stringify(geom));
+  // The in-memory geometry updates now — open() reads it synchronously. The
+  // WRITE waits: a ResizeObserver fires this once per frame for the whole drag
+  // of a corner, and stringifying every panel's geometry to localStorage on
+  // each frame is work no one asked for. Only the last frame matters.
+  clearTimeout(flushGeom);
+  flushGeom = setTimeout(() => localStorage.setItem('kd.win2', JSON.stringify(geom)), 250);
 }
+let flushGeom;
 
 function drag(bar, el, id) {
   bar.addEventListener('pointerdown', (e) => {
@@ -129,10 +157,16 @@ function drag(bar, el, id) {
     const up = () => {
       bar.removeEventListener('pointermove', move);
       bar.removeEventListener('pointerup', up);
+      // A pointer the browser takes back — a touch cancelled by a system
+      // gesture, a pen leaving range — fires pointercancel and never
+      // pointerup, so without this the move handler stayed attached and the
+      // panel kept following the cursor. pet-window.js:120 already had it.
+      bar.removeEventListener('pointercancel', up);
       remember(id, el);
     };
     bar.addEventListener('pointermove', move);
     bar.addEventListener('pointerup', up);
+    bar.addEventListener('pointercancel', up);
   });
 }
 

@@ -75,7 +75,7 @@ const turn = (ag) => new Promise((res) => ag.once('turn_end', res));
     'without this every tool call is soft-denied in print mode and the member is mute');
   // The prompt is --print's VALUE, not a trailing positional. agy 1.1.11
   // changed this (--print used to be a boolean) and the old form made its Go
-  // flag parser take the NEXT FLAG as the prompt: the king answered a chat
+  // flag parser take the NEXT FLAG as the prompt: the orchestrator answered a chat
   // question about --output-format, emitted no JSONL, and was declared failed.
   const prompt = argv[argv.indexOf('--print') + 1];
   a.ok(prompt.includes('fix the race'), 'the prompt is the value of --print');
@@ -155,8 +155,8 @@ const turn = (ag) => new Promise((res) => ag.once('turn_end', res));
   const cfg = join(repo, 'kingdom.config.json');
   writeFileSync(cfg, JSON.stringify({
     vault,
-    king: { name: 'king', cli: 'agy' },
-    jester: { name: 'jester', cli: 'codex' },
+    orchestrator: { name: 'orchestrator', cli: 'agy' },
+    briefer: { name: 'briefer', cli: 'codex' },
     peasants: [],
     rolesSeeded: true,
     advisor: { promptEngineer: false, autoModel: false },
@@ -177,8 +177,8 @@ const turn = (ag) => new Promise((res) => ag.once('turn_end', res));
   const idFile = join(repo, '.agents', 'kingdom-id.json');
   a.ok(existsSync(idFile), 'an agy member must get .agents/kingdom-id.json');
   const id = JSON.parse(readFileSync(idFile, 'utf8'));
-  a.equal(id.agent, 'king', 'the file names the member, because the shared config cannot');
-  a.equal(id.role, 'king');
+  a.equal(id.agent, 'orchestrator', 'the file names the member, because the shared config cannot');
+  a.equal(id.role, 'orchestrator');
   a.equal(id.vault, vault);
 
   // And the real mcp.js must resolve that identity with NOTHING in the env —
@@ -190,7 +190,7 @@ const turn = (ag) => new Promise((res) => ag.once('turn_end', res));
     cwd: repo,
     env: { PATH: process.env.PATH, SystemRoot: process.env.SystemRoot },
   }).trim();
-  a.equal(probe, 'king|king', 'identity must resolve from the working directory alone');
+  a.equal(probe, 'orchestrator|orchestrator', 'identity must resolve from the working directory alone');
 
   // The global declaration is what headless agy actually reads, and it must
   // MERGE — this file belongs to the user's Antigravity install, not to us.
@@ -198,7 +198,7 @@ const turn = (ag) => new Promise((res) => ag.once('turn_end', res));
 
   await k.stop();
   for (const d of [repo, vault]) { try { rmSync(d, { recursive: true, force: true, maxRetries: 8 }); } catch {} }
-  console.log('  identity travels by directory: mcp.js resolves "king" from cwd alone');
+  console.log('  identity travels by directory: mcp.js resolves "orchestrator" from cwd alone');
 }
 
 /* ---------- a brief too long for a command line goes to a FILE ---------- */
@@ -213,7 +213,7 @@ const turn = (ag) => new Promise((res) => ag.once('turn_end', res));
   const argvFile = join(dir, 'argv.json');
   rm(argvFile, { force: true });
 
-  const big = new Agent({ name: 'king', cli: 'agy', prompt: 'p' }, { cwd: dir });
+  const big = new Agent({ name: 'orchestrator', cli: 'agy', prompt: 'p' }, { cwd: dir });
   // EventEmitter throws an unhandled 'error' at the process, which would crash
   // this file with a stack trace instead of the assertion that explains why.
   const oops = [];
@@ -262,7 +262,7 @@ const turn = (ag) => new Promise((res) => ag.once('turn_end', res));
     { jsonrpc: '2.0', method: 'notifications/initialized' },
     { jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} },
     { jsonrpc: '2.0', id: 3, method: 'tools/call',
-      params: { name: 'send_message', arguments: { to: 'king', body: 'hi' } } },
+      params: { name: 'send_message', arguments: { to: 'orchestrator', body: 'hi' } } },
   ].map((m) => JSON.stringify(m)).join('\n') + '\n';
 
   const env = { ...process.env };

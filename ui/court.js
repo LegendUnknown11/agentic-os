@@ -13,12 +13,12 @@
 /**
  * Is this member part of the working court, and therefore in the rail?
  *
- * The throne and the watch are structural: a kingdom always has a king and a
- * jester, they are never summoned or dismissed, and hiding them because they
+ * The throne and the watch are structural: a kingdom always has an orchestrator and a
+ * briefer, they are never summoned or dismissed, and hiding them because they
  * happen to be idle would leave a court of nobody. Peasants come and go.
  */
 export const inCourt = (m) =>
-  m.role === 'king' || m.role === 'jester' || Boolean(m.summoned);
+  m.role === 'orchestrator' || m.role === 'briefer' || Boolean(m.summoned);
 
 /**
  * Does this member answer a search on the summoning screen?
@@ -45,8 +45,8 @@ if (typeof process !== 'undefined' && process.argv?.[1]?.endsWith('court.js')) {
   const { strict: a } = await import('node:assert');
 
   // --- the rail is the court, not the roster ---
-  a.equal(inCourt({ role: 'king' }), true, 'the king is always in the rail');
-  a.equal(inCourt({ role: 'jester' }), true, 'so is the jester');
+  a.equal(inCourt({ role: 'orchestrator' }), true, 'the orchestrator is always in the rail');
+  a.equal(inCourt({ role: 'briefer' }), true, 'so is the briefer');
   a.equal(inCourt({ role: 'peasant', summoned: true }), true, 'a summoned peasant is in the court');
   a.equal(inCourt({ role: 'peasant', summoned: false }), false,
     'an unsummoned peasant must NOT hold a rail row — this is the whole fix');
@@ -54,8 +54,8 @@ if (typeof process !== 'undefined' && process.argv?.[1]?.endsWith('court.js')) {
 
   // The regression this exists to prevent, at the scale it actually happened.
   const roster = [
-    { name: 'king', role: 'king' },
-    { name: 'jester', role: 'jester' },
+    { name: 'orchestrator', role: 'orchestrator' },
+    { name: 'briefer', role: 'briefer' },
     ...Array.from({ length: 105 }, (_, i) => ({ name: `role-${i}`, role: 'peasant' })),
   ];
   a.equal(roster.filter(inCourt).length, 2,

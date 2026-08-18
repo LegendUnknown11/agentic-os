@@ -2,6 +2,15 @@ node_modules/
 dist/
 .kingdom/
 
+# Per-machine identity and tool config, not project state. .agents/kingdom-id.json
+# holds absolute paths to this machine's db, repo and vault — and peasants run
+# `git add -A`, so anything untracked here gets committed onto a branch and
+# merged by whoever presses the button.
+.agents/
+.claude/
+kingdom.config.json.tmp
+kingdom.config.json.broken
+
 # Scratch databases from probing a CLI or the MCP server by hand. SQLite leaves
 # -shm/-wal siblings behind, and a pair of them sat in this repo untracked for
 # twelve days before anyone noticed.

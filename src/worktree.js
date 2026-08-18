@@ -19,8 +19,17 @@ const exec = promisify(execFile);
 
 const git = (cwd, ...args) => exec('git', args, { cwd, maxBuffer: 64 * 1024 * 1024 });
 
-/** Where this repo's kingdom lives: <repoParent>/.kingdom/<repoName>/ */
+/**
+ * Where this repo's kingdom lives: <repoParent>/.kingdom/<repoName>/
+ *
+ * No repo yet (Chat/Research/Build can run before Code mode ever attaches
+ * one) falls back to a single fixed workspace home, same shape as
+ * globalTokenStore's homedir fallback above. Goal, roster, vault and research
+ * notes are workspace-level, not repo-level, so this state stays put even
+ * after a repo is later attached — see Kingdom#attachRepo.
+ */
 export function kingdomDir(repo) {
+  if (!repo) return join(homedir(), '.kingdom', 'workspace');
   const r = resolve(repo);
   return join(dirname(r), '.kingdom', basename(r));
 }
@@ -186,7 +195,7 @@ export async function removeWorktree(repo, peasant) {
 /**
  * Commit whatever the peasant left lying in its worktree. Peasants edit files
  * but routinely forget to commit, and `diff base...branch` only sees commits —
- * so without this the king reviews an empty diff and the merge is a no-op.
+ * so without this the orchestrator reviews an empty diff and the merge is a no-op.
  * Idempotent: a clean tree is not an error.
  */
 export async function commitAll(repo, peasant, message) {
@@ -289,7 +298,7 @@ export function testCommand(dir) {
   }
   // Flutter before Dart: a Flutter project has a pubspec too, and `dart test`
   // cannot load the Flutter test bindings. Without this every peasant in a
-  // Flutter repo is reported to the king as "TESTS: NONE FOUND" — the court
+  // Flutter repo is reported to the orchestrator as "TESTS: NONE FOUND" — the court
   // reviews and merges work that was never verified, in a repo that has a
   // full test suite sitting right there.
   if (existsSync(join(dir, 'pubspec.yaml'))) {

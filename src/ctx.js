@@ -57,8 +57,12 @@ export function audit(db, since = 0, { config = null } = {}) {
     // Which KIND of token the money went on. This is the whole reason the
     // report exists: a token count cannot tell you, because the three kinds
     // differ by 12.5x, and the lever is different for each.
+    // costOf does its OWN `in - cached - written` subtraction, so `in` here is
+    // the raw total. Pre-subtracting `written` took it off twice and understated
+    // the fresh line by exactly the cache writes — worst in the cold-prefix case
+    // this report exists to detect, where `written` IS the whole context.
     split.cached += costOf({ cached: d.cached }, spec?.cli, spec?.model, rates) ?? 0;
-    split.fresh += costOf({ in: d.in - d.cached - d.written, written: d.written },
+    split.fresh += costOf({ in: d.in - d.cached, written: d.written },
       spec?.cli, spec?.model, rates) ?? 0;
     split.out += costOf({ out: d.out }, spec?.cli, spec?.model, rates) ?? 0;
 
@@ -98,7 +102,7 @@ function specsOf(config) {
   const m = new Map();
   if (!config) return m;
   const def = config.peasantDefaults ?? {};
-  for (const s of [config.king, config.jester, ...(config.peasants ?? [])]) {
+  for (const s of [config.orchestrator, config.briefer, ...(config.peasants ?? [])]) {
     if (s?.name) m.set(s.name, { cli: s.cli ?? def.cli, model: s.model ?? def.model });
   }
   return m;
@@ -188,11 +192,11 @@ if (process.argv[1]?.endsWith('ctx.js') && !process.argv[2]) {
   // These are codex-shaped, so the readings are CUMULATIVE: three turns of
   // 100/90/10 each arrive as 100, 200, 300. Written flat (100,100,100) — as
   // they were before deltas — they would mean two turns that did nothing.
-  turn('king', 100, 90, 10, 20_000);
-  turn('king', 200, 180, 20, 50_000);
-  turn('king', 300, 270, 30, 5_000);    // a drop by more than half = a recycle
+  turn('orchestrator', 100, 90, 10, 20_000);
+  turn('orchestrator', 200, 180, 20, 50_000);
+  turn('orchestrator', 300, 270, 30, 5_000);    // a drop by more than half = a recycle
   db.prepare('insert into messages (ts,sender,recipient,kind,body) values (?,?,?,?,?)')
-    .run(0, 'orchestrator', 'king', 'notice', 'fyi');
+    .run(0, 'orchestrator', 'orchestrator', 'notice', 'fyi');
 
   const r = audit(db);
   a.equal(r.turns, 3);
@@ -200,13 +204,13 @@ if (process.argv[1]?.endsWith('ctx.js') && !process.argv[2]) {
   a.equal(r.cached, 270, 'cached tokens must be counted, not double-counted with input');
   a.equal(r.outTok, 30);
   a.equal(r.handovers, 1, 'a context that halves between turns is a recycle');
-  a.equal(r.mail.king.notices, 1);
-  a.equal(r.per.king.turns, 3);
+  a.equal(r.mail.orchestrator.notices, 1);
+  a.equal(r.per.orchestrator.turns, 3);
   // The bug this replaced: summing the readings raw reports 600, double the truth.
   a.equal(100 + 200 + 300, 600, 'sanity: the raw sum this avoids');
 
-  // Priced, with a config that names the king's model.
-  const cfg = { king: { name: 'king', cli: 'codex', model: 'gpt-5.6-luna' }, peasants: [] };
+  // Priced, with a config that names the orchestrator's model.
+  const cfg = { orchestrator: { name: 'orchestrator', cli: 'codex', model: 'gpt-5.6-luna' }, peasants: [] };
   const priced = audit(db, 0, { config: cfg });
   a.equal(priced.unpriced, 0, 'a member whose model is in the table must be priced');
   a.ok(priced.usd > 0, 'a priced session costs something');
@@ -231,13 +235,13 @@ if (process.argv[1]?.endsWith('ctx.js') && !process.argv[2]) {
     }));
   a.equal(audit(db2).cached, 40, "claude's cache_read_input_tokens must count too");
 
-  // ...and agy/Gemini's third name for it. Missing this scored the king — the
+  // ...and agy/Gemini's third name for it. Missing this scored the orchestrator — the
   // one member that runs on agy, and 61% of the court's output — as having
   // replayed NOTHING, in the audit the whole cost discipline is built on.
   const db3 = new DatabaseSync(':memory:');
   db3.exec('create table events (id integer primary key autoincrement, ts integer, agent text, type text, payload text); create table messages (id integer primary key autoincrement, ts integer, sender text, recipient text, kind text, body text);');
   db3.prepare('insert into events (ts,agent,type,payload) values (?,?,?,?)')
-    .run(0, 'king', 'turn_end', JSON.stringify({
+    .run(0, 'orchestrator', 'turn_end', JSON.stringify({
       ctx: 1, usage: { input_tokens: 17711, cache_read_tokens: 9000, output_tokens: 1, total_tokens: 17712 },
     }));
   a.equal(audit(db3).cached, 9000, "agy's cache_read_tokens must count too");
@@ -245,6 +249,30 @@ if (process.argv[1]?.endsWith('ctx.js') && !process.argv[2]) {
   // replay share must not exceed what actually came in.
   a.ok(audit(db3).cached <= audit(db3).inTok,
     'a nested cached count must never exceed input_tokens');
+
+  // The three split lines are a PARTITION of the bill, so they must add up to
+  // it exactly. They did not: `fresh` pre-subtracted `written` and costOf
+  // subtracted it again, understating the fresh line by the whole cache write —
+  // maximally in the cold-prefix case (written IS the context) that is the one
+  // case this report exists to detect. Only claude reports cache writes, so
+  // only a claude turn can catch it.
+  const db4 = new DatabaseSync(':memory:');
+  db4.exec('create table events (id integer primary key autoincrement, ts integer, agent text, type text, payload text); create table messages (id integer primary key autoincrement, ts integer, sender text, recipient text, kind text, body text);');
+  db4.prepare('insert into events (ts,agent,type,payload) values (?,?,?,?)')
+    .run(0, 'orchestrator', 'turn_end', JSON.stringify({
+      ctx: 1,
+      usage: {
+        input_tokens: 1000, cache_read_input_tokens: 600,
+        cache_creation_input_tokens: 300, output_tokens: 50,
+      },
+    }));
+  const cw = audit(db4, 0, {
+    config: { orchestrator: { name: 'orchestrator', cli: 'claude', model: 'haiku' }, peasants: [] },
+  });
+  const sum = cw.split.cached + cw.split.fresh + cw.split.out;
+  a.ok(Math.abs(sum - cw.usd) < 1e-12,   // float, so "exactly" means to the cent's cent
+    `the three split lines must partition the bill exactly: ${sum} vs ${cw.usd}`);
+  a.ok(cw.split.fresh > 0, 'a turn that wrote a cache prefix has a fresh line');
 
   a.match(report(r), /replayed context/);
   // The conclusion must be drawn from the bill and must no longer tell the

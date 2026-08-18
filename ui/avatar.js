@@ -1,44 +1,29 @@
-// A face for every member.
+// The state light beside a member's name.
 //
-// Sixteen rows of grey text with a grey dot beside each one is the single
-// biggest reason this reads as a list of strings rather than a court. People
-// recognise a colour and a shape far faster than they read a word, and a
-// multi-agent app lives or dies on "which one is this".
+// This file used to draw a face: a hue-derived monogram disc, one per member,
+// on the argument that people recognise a colour faster than they read a word.
+// The discs were removed on the sovereign's instruction. What was INSIDE one is
+// not decoration and stays: a single dot carrying four states —
 //
-// The colour is derived from the name, so it is stable across restarts,
-// consistent everywhere the member appears, and needs no configuration.
-const HUE = new Map();
-
-export function hueOf(name) {
-  if (HUE.has(name)) return HUE.get(name);
-  let h = 0;
-  for (const c of name) h = (h * 31 + c.charCodeAt(0)) % 360;
-  // Skip the muddy yellow-browns: they collide with the crown and read as
-  // "disabled" against this palette.
-  if (h > 38 && h < 62) h = (h + 60) % 360;
-  HUE.set(name, h);
-  return h;
-}
-
-/** One or two letters. "quartermaster" -> Q, "green-screen" -> GS. */
-const monogram = (name) => {
-  const parts = name.split(/[^a-z0-9]+/i).filter(Boolean);
-  return (parts.length > 1 ? parts[0][0] + parts[1][0] : name.slice(0, 1)).toUpperCase();
-};
+//   awake    a live process
+//   resting  in the crew, idle-slept, revives on its next message (hollow ring)
+//   busy     mid-turn (the one state worth animating)
+//   failed   the process died
+//
+// The states are painted in ui/app.css off the row's classes, not from here, so
+// this stays a shape and the rail stays the thing that knows what is happening.
+// `name` and `role` are still taken and still ignored: five call sites pass
+// them, and a signature that changes for no behaviour is a diff nobody can
+// review. They come back the moment the light needs to say WHO as well as what.
 
 /**
- * @param {string} name
- * @param {'king'|'jester'|'peasant'} role  the king wears the crown's gold
- * @param {number} size
+ * @param {string} _name  unused — see above
+ * @param {string} _role  unused — see above
  */
-export function avatar(name, role, size = 22) {
+export function statusDot(_name, _role) {
   const el = document.createElement('span');
-  el.className = `av${role === 'king' ? ' crown' : ''}`;
-  el.style.setProperty('--h', hueOf(name));
-  el.style.setProperty('--av', `${size}px`);
-  el.textContent = monogram(name);
+  el.className = 'av';
   el.setAttribute('aria-hidden', 'true');
-  const dot = document.createElement('i');
-  el.append(dot);
+  el.append(document.createElement('i'));
   return el;
 }

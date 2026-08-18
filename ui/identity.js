@@ -2,13 +2,13 @@
 //
 // The rail says a member exists and one word about what it is doing. The panel
 // says what it is *for*: its title, the role it was given, which model is
-// answering as it, and what that has cost. That used to live only in a title
-// attribute, which meant it lived nowhere: nobody hovers a list to learn what
-// a "quartermaster" does.
+// answering as it, and what that has cost.
 //
 // Selection follows attention: opening a member selects it, and so does
 // clicking anywhere in its panel.
-import { avatar } from './avatar.js';
+import { statusDot } from './avatar.js';
+import { ROLE_CATEGORIES } from './panels.js';
+import { displayName, roleWord } from './names.js';
 
 let root, api = {};
 let current = null;
@@ -32,8 +32,6 @@ export function refresh(name) {
   if (!name || name === current) paint();
 }
 
-const ROLE_WORD = { king: 'Throne', jester: 'Watch', peasant: 'Court' };
-
 function paint() {
   if (!root) return;
   root.textContent = '';
@@ -41,7 +39,7 @@ function paint() {
   if (!m) {
     const e = document.createElement('div');
     e.className = 'who-empty';
-    e.textContent = 'Pick a member from the court to see who they are.';
+    e.textContent = 'Pick someone from the list to see who they are.';
     root.append(e);
     return;
   }
@@ -49,9 +47,23 @@ function paint() {
   const head = document.createElement('div');
   head.className = `who-id role-${m.role ?? 'peasant'}${m.awake ? ' awake' : ''}`;
   head.innerHTML = '<span class="nm"></span><span class="rl"></span>';
-  head.prepend(avatar(m.name, m.role, 34));
-  head.querySelector('.nm').textContent = m.name;
-  head.querySelector('.rl').textContent = ROLE_WORD[m.role] ?? 'Court';
+  head.prepend(statusDot(m.name, m.role));
+  // The role word is dropped when the name already is it: the orchestrator and
+  // the monitor are singletons named after their role, so the card read
+  // "Orchestrator … Orchestrator". A named one keeps both.
+  const shownName = displayName(m.name, m.role);
+  const role = roleWord(m.role);
+  head.querySelector('.nm').textContent = shownName;
+  head.querySelector('.rl').textContent = shownName === role ? '' : role;
+
+  const cat = ROLE_CATEGORIES[m.name];
+  if (cat) {
+    const pill = document.createElement('span');
+    pill.className = 'who-cat';
+    pill.textContent = cat;
+    pill.dataset.cat = cat.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+    head.append(pill);
+  }
   root.append(head);
 
   if (m.title) {
@@ -79,12 +91,8 @@ function paint() {
     facts.append(dt, dd);
   };
   fact('Model', `${m.cli ?? 'claude'} · ${m.model || 'default'}`, 'mono');
-  // An effort a model does not have is worse than no effort shown: it reads as
-  // configured when the CLI is ignoring it.
   fact('Effort', m.takesEffort === false ? 'not applicable' : (m.effort || 'default'), 'mono');
-  fact('State', m.awake ? 'awake' : m.summoned ? 'resting — wakes on its next message' : 'not summoned');
-  // Only while there is a process. Asleep, statusOf still holds "not summoned",
-  // which restated the line above it word for word.
+  fact('State', m.awake ? 'awake' : m.summoned ? 'resting — wakes on its next message' : 'not added');
   if (m.awake) fact('Doing', m.status && m.status !== 'idle' ? m.status : 'idle');
   fact('Cost', m.stat, 'mono');
   root.append(facts);
@@ -102,13 +110,23 @@ function paint() {
   open.className = 'primary';
   open.textContent = m.open ? 'Close panel' : 'Open panel';
   open.onclick = () => api.onOpen?.(m.name);
+  
   const power = document.createElement('button');
   power.textContent = m.awake ? 'Sleep' : 'Wake';
   power.title = m.awake
-    ? `Stop ${m.name}. It leaves service and stops costing anything; its session is kept.`
-    : `Start ${m.name} and hand it any mail waiting for it.`;
+    ? `Stop ${shownName}. It leaves service and stops costing anything; its session is kept.`
+    : `Start ${shownName} and hand it any messages waiting for it.`;
   power.onclick = () => api.onPower?.(m.name);
   act.append(open, power);
+
+  if (m.role === 'peasant' && m.summoned) {
+    const diff = document.createElement('button');
+    diff.textContent = 'Diff';
+    diff.title = `Inspect ${shownName}'s unmerged worktree changes against base.`;
+    diff.onclick = () => api.onDiff?.(m.name);
+    act.append(diff);
+  }
+
   root.append(act);
 }
 

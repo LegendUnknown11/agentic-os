@@ -1,576 +1,303 @@
-# Handoff — Agentic OS (Kingdom) — 2026-08-16
+# Handoff — Agentic OS (Kingdom) — 2026-08-18
 
 ## Goal & status
 
-Agentic OS is a multi-agent orchestrator at `E:\AI\Agentic OS`, shaped as a
-kingdom: a king decomposes and delegates, a jester watches cheaply and briefs,
-and peasants work in isolated git worktrees. Its differentiator is that members
-message each other **directly over MCP** rather than routing through the king.
-Members run the Codex CLI, the Claude Code CLI, or Antigravity (`agy`).
+Agentic OS at `E:\AI\Agentic OS` is a multi-agent orchestrator shaped as a
+kingdom: an orchestrator decomposes and delegates, a cheap briefer watches the
+firehose and briefs it, and peasants work in isolated git worktrees. Members
+message each other **directly over MCP** rather than routing through the
+orchestrator. They run the Claude Code CLI, the Codex CLI, Antigravity
+(`agy`), or opencode.
 
-The 2026-08-16 session did four things. It rebuilt the **cost and token
-instrumentation**, which was wrong in three independent ways, and parallelised
-the test runner — committed as `bd13360` and `c7f4e79`. It wrote
-`docs/PLAN-saas.md`, the plan for turning this into a product. It restructured
-**the front door**: the rail now holds the court instead of the whole 105-role
-roster, and recruiting moved to its own searchable screen (`80e22f4`). And it
-finished the UI work that restructure had deliberately left undone — the
-**throne-room treatment** and the **feel layer**.
+**This session finished "repo becomes optional" — the working tree is no
+longer a mandatory launch argument.** Chat, Research and Build now run with
+no repo attached at all; only Code mode needs one, and it can be picked from
+inside the running app (a native folder dialog in Electron, or a plain
+text-input panel over the browser) instead of on the command line. **Fully
+implemented, tested (`node test/run-all.js` → 50 suites, all green), and
+manually verified end-to-end in a live browser session** — which caught and
+fixed two real bugs the automated suite could not see (both were client-side
+crashes that only happen when a page actually loads with `repo: null`).
 
-The UI is now three things it was not. `ui/app.css` is **consolidated**: the
-five stacked REFIT override blocks are gone and every selector is declared once.
-The room is **diegetic** — `ui/index.html` carries a drawn hall (three lit
-windows, columns, banners, a dais and a throne on it) behind the panes, and
-every name and title is set in a display serif. And state changes have
-**weight**: members animate in and out of the rail, a working member's panel
-carries a travelling light on its top edge, and a summon or a ruling sounds a
-short synthesised horn (mutable, Alt+H).
+This builds directly on two other finished, still-uncommitted efforts sitting
+in the same working tree: the **Four Modes** work (Code/Research/Chat/Build
+mode table, advisor auto-classification, idle-gated mode flips) and a
+**role rename** (king/jester → orchestrator/briefer, plus twelve flavor-role
+renames, propagated into the Obsidian vault). All of that predates this
+session and is also done and tested.
 
-**The first attempt at the room was rejected by the user** — "you did no
-improvements" — and the rejection was correct. That pass was four layout bug
-fixes, invisible CSS consolidation, and atmosphere at 7% opacity: a dashboard
-with better spacing. The hall, the serif and the gilded king's plaque are the
-second attempt, and they are what makes the change visible from across a room.
-Do not undo them in the name of restraint; the restrained version was tried and
-failed.
-
-All of it is complete and tested. `kingdom.config.json` and `roles.json` remain
-uncommitted from before the session and are deliberately excluded — see
-*Open questions*.
+**Nothing from any of this is committed.** The working tree has been
+accumulating uncommitted work across several sessions now — as of this
+writing, `git status --porcelain` reports 73 lines (62 modified, 11
+untracked) on top of HEAD `db202f7`, and there is still no git remote
+configured. Deciding how to stage and commit this is the single largest open
+item — see *Next steps* #1.
 
 ## Current state (what exists now)
 
 ### Verified as of this writing
 
-- `node src/price.js`, `node src/recycle.js`, `node src/usage.js` and
-  `node src/ctx.js` self-checks all exit 0 when run individually.
-- `node src/ctx.js "E:/AI/Sant Dnyaneshwar"` reports
-  `3 turns · 1.89M in · 0.01M out · $0.604`. Before this session the same
-  command reported 2.37M and no dollar figure.
-- **`npm test` → 38 of 38 suites passed, 4-wide, 44.4s, exit 0**, with nothing
-  reported flaky. Two earlier runs in the same session (76.3s and 76.5s) both
-  reported `turn batching` as `flaky` — failed in the pool, passed on its serial
-  retry. So that suite is contention-sensitive, not broken, and the spread
-  tracks how loaded the machine is. The polling fix reduced that class but did
-  not eliminate it; the remaining fixed sleeps are the ones asserting that
-  nothing happened, which cannot be polled for.
-- **The front door was verified in a real browser**, not just by reading code:
-  the daemon was run against a scratch repo with `KINGDOM_CODEX_BIN` pointed at
-  a stub so no API quota was spent, and summon/dismiss was driven end to end.
-  Rail rows went 107 → 2, scroll height 4,179px → none.
-- **The redesign was verified the same way**, by screenshot at 800x812 and
-  1280x820: header no longer collides or wraps, the Hall's empty-state sentence
-  wraps instead of clipping, the toolbar tooltips appear instantly and name each
-  icon with its Alt key, the summoning rows fit one name per line, and
-  summon → rail row → dismiss → row gone round-trips with the counter tracking
-  it. Console clean on every load.
-- **The hall was verified by screenshot** at 800x812 with the rail and the
-  member card in both states: the windows, beams, columns, banners, dais, runner
-  and throne all render, the empty-hall sentence sits below the throne rather
-  than over it, and nothing overflows. An apparent scale-down after the SVG
-  landed was measured and was not real — `devicePixelRatio: 1.25` plus the
-  pane's 800px downscale; `inner:[800,812] main:[800,711] stage:[322,711]
-  hall:[322,711]`.
-- All five `--display` fallback faces were confirmed installed with
-  `document.fonts.check` before the token shipped.
-- **The motion layer is only partly verified visually.** The Claude Code Browser
-  pane reports `prefers-reduced-motion: reduce`, so every screenshot above is of
-  the reduced-motion rendering — which is itself worth knowing, because that
-  path is therefore the well-tested one. The animated path was verified by
-  driving `Animation.currentTime` directly: the `sweep` keyframe interpolates
-  `background-position` from `-45%` to `143.9%` over its 1.9s, all nine
-  `@keyframes` parse, and no rule is suppressed except inside the
-  reduced-motion block. **Nobody has watched the summon animation actually
-  play.** Launch the Electron app or a normal browser to see it.
-- **Sound has never been heard.** `ui/feel.js` synthesises its cues with
-  WebAudio and the code paths run without throwing, but the browser pane has no
-  audio output to check against. Verify by clicking a summon in the Electron
-  app; if it is unwanted, Alt+H or the "Court horns" row in the More menu mutes
-  it, and the setting persists in `localStorage` under `kd.sound`.
-- `node test/t-stt.js` fails with `mkl_malloc: failed to allocate memory` when
-  the machine is down to ~0.6GB free, and passes above roughly 2.3GB. See
-  *Watch out for*.
-- `E:\AGIOS Kingdom\Obsidian Vault\Kingdom\Memories\` exists and holds 7 notes.
-  There is no `Kingdom\Memory\` — which is what the `MEMORY_DIR` fix below was
-  about.
-- `kingdom.config.json` right now: king `codex/gpt-5.6-terra`, jester
-  `codex/gpt-5.6-luna`, **105 peasants**, `recycleAtTokens: 80000`, and
-  **no `maxBudgetUsd`, no `maxKingdomUsd`, no `prices`** — deliberately, see
-  *Decisions*.
+- **`node test/run-all.js` → 50 suites, 4-wide, ~45–53s, all passed.** Run
+  twice this session (once before, once after the two live-testing fixes
+  below), both green.
+- **The full repo-optional flow was driven live in the Browser pane**, not
+  just unit-tested: booted the daemon with no CLI argument and no saved repo
+  → confirmed `repo: null` in `/api/ping` and in the SSE snapshot → switched
+  through Chat/Research/Build with no worktree created → clicked Code →
+  got the "Code mode needs a repository — attach one first." toast with a
+  "Choose repo…" action → opened the browser-path picker panel (a plain text
+  input, since Electron's native dialog can't be driven remotely) → attached
+  this repo (`E:\AI\Agentic OS`) → Code mode became active immediately, no
+  restart, header updated live. Then killed that daemon and rebooted with
+  **no CLI argument again** → it found the previously-attached repo in the
+  saved workspace config and came up already in Code mode against it
+  (`throne room: http://127.0.0.1:7777  (repo: E:\AI\Agentic OS)`).
+- **Explicit-repo launch still works unchanged** (regression check): a fresh
+  temp repo passed as `node src/daemon.js <repo> --port 7778` booted and
+  reported that exact repo over `/api/ping`. This is the pre-existing launch
+  path and it was not touched by this feature beyond making the argument
+  optional.
+- `git log --oneline -1` → still `db202f7`, branch `main`, **no remote
+  configured**.
+- No daemon process is currently running on 7777 or 7778 — both were stopped
+  after verification (confirmed via `Get-NetTCPConnection -State Listen`).
 
-### Believed but not re-checked at handoff time
+### Two bugs found only by loading the real page, both fixed this session
 
-- The Electron app and the pet window were last exercised in the 2026-08-07
-  session and have not been run since. The UI restructure was verified in a
-  browser against the daemon, which is the same `ui/` Electron loads, but the
-  Electron shell itself was not launched — and `electron/` was not touched.
+Neither was caught by `test/run-all.js` — both are client-side, only trigger
+when a page actually connects with `repo: null`, and the first one silently
+swallowed itself (caught by `es.onmessage`'s own try/catch, logged, nothing
+visibly wrong beyond a roster that never populated).
 
-### New files
+1. **[ui/app.js](ui/app.js) — snapshot handler crashed on a null repo.**
+   `$('#repo').textContent = d.repo.split(...)` threw
+   `TypeError: Cannot read properties of null (reading 'split')` on *every*
+   SSE `snapshot` event when `d.repo` was `null`, which aborted all the code
+   after it in that switch case — roster, goal, models, efforts, advisor
+   settings, skills, the whole snapshot replay never applied. Fixed by
+   extracting a `paintRepo(repo, base)` helper that renders `"no repository"`
+   when `repo` is falsy.
+2. **[src/daemon.js](src/daemon.js) — the `'repo'` event was never forwarded
+   over SSE.** `Kingdom#attachRepo` emits `this.emit('repo', {repo, base})`,
+   but daemon.js's list of events it re-broadcasts to the browser didn't
+   include `'repo'`, so after a live attach the header's repo label stayed
+   stuck on "no repository" until a manual page reload. Fixed by adding
+   `'repo'` to that forwarded-events list and adding a `case 'repo':` in
+   `ui/app.js`'s `onStreamEvent` switch that calls the same `paintRepo`
+   helper.
 
-| Path | What it is |
+### New / touched files this session
+
+| Path | What changed |
 |---|---|
-| `src/price.js` | `$/Mtok` rate card per `cli/model` plus `costOf()`. Prices fresh input, cache reads (0.1x) and claude cache writes (1.25x) separately. Returns **null**, never a guess, for a model with no published price. |
-| `src/recycle.js` | Derives what `recycleAtTokens` should be, from a session's real context growth. Closed form plus a sweep table. |
-| `docs/PLAN-saas.md` | What it would take to make this a product rather than a personal tool: three candidate product shapes, nine concrete blockers with the file each lives in, a five-phase plan, and four questions that must be answered before Phase 1. |
-| `ui/court.js` | The two predicates that decide what the front door shows — `inCourt` (rail vs. roster) and `matchesQuery` (summon search). Pure and DOM-free specifically so `npm test` can check them; there is no browser in the test run. |
-| `ui/feel.js` | The weight. `arrive`/`depart`/`pulse` are WAAPI (not CSS animations — `rail.js` re-appends every row on each resort, which would replay a CSS entrance for the whole list). `cue()` synthesises four short horn calls with WebAudio rather than shipping audio files, and never throws: a browser that refuses to start an AudioContext costs silence and nothing else. `soundOn`/`setSound` persist to `localStorage` `kd.sound`. |
+| `src/worktree.js` | `kingdomDir(repo)` falls back to `~/.kingdom/workspace/` when `repo` is falsy, instead of requiring one. `dbPath`/`worktreePath` inherit this for free. |
+| `src/kingdom.js` | Constructor/`start()` accept `repo: null`; new `attachRepo(path)`; `setMode`/`queueMode` refuse/degrade Code mode without a repo; `#doSpawn`'s worktree condition now requires `Boolean(this.repo)` too; new `#cwd()` helper so a null repo never reaches a spawned CLI's argv as a literal `null`; `#onDone`/`#rescueWork` gained repo-less early-return branches. |
+| `src/daemon.js` | CLI repo argument is now optional — falls back to a previously-saved repo in the workspace config, then to `null`; new `POST /api/attachRepo`; `/api/ping` and the SSE snapshot report the *live* `kingdom.repo`, not the boot-time value; `'repo'` added to the forwarded SSE event list (bug fix #2 above). |
+| `electron/main.js` | No longer blocks app launch behind a native folder-picker dialog; repo is optional at spawn; new `ipcMain.handle('repo:choose', ...)` for on-demand picking. |
+| `electron/court-preload.cjs` | **New.** Bridges `window.kingdomShell.chooseRepo()` to the `repo:choose` IPC handler, mirroring the existing `pet-preload.cjs` pattern. |
+| `ui/app.js` | Mode-switch buttons now check the result and show a toast + "Choose repo…" action on refusal; new `openRepoPicker()`/`attachRepo()`/`openRepoPanel()`; new `paintRepo()` helper (bug fix #1 above); new `case 'repo':` in the SSE handler (bug fix #2 above). |
+| `test/t-repo-optional.js` | **New.** Covers null-repo construction, `setMode`/`queueMode` gating, worktree-skipping for a repo-less worktrees:true mode, and a live `attachRepo` call — registered in `test/run-all.js`. |
+| `.claude/launch.json` | **New "daemon" entry** — `node src/daemon.js --port 7777` with no repo argument, for driving the daemon from the Browser pane tool without Electron's native dialog in the way. The pre-existing `"start"` entry (`npm run start`, i.e. Electron, port 3000) is unchanged. |
 
-### Changed files
+### Side effects of manual testing (real state, not a mistake, but worth knowing)
 
-- `src/usage.js` — gained `totalsOf`, `isCumulative`, `deltaOf`, `ZERO`. The
-  delta rule now lives beside the cache-field rule so all consumers share it.
-- `src/ctx.js` — takes deltas, prices turns, reports a cost column and a
-  cost-weighted split. Its auto-conclusion was rewritten (see *Decisions*).
-- `src/kingdom.js` — `turn_end` now deltas usage and prices it when the CLI
-  reports no cost; `#spawn` split into an idempotent promise-deduping wrapper
-  plus `#doSpawn`; the delivery loop no longer awaits a spawn; approved crews
-  spawn in parallel. `BATCH_MAX_WAIT_MS`, `NOTICE_HOLD_MS` and `settleMs` are
-  now exported.
-- `src/daemon.js` — uses the shared `deltaOf`; `/api/metrics` filters
-  `turn_end` in SQL and counts messages with `count(*)`.
-- `src/bus.js` — `events({type})` filters in SQL; new `countMessages()`.
-- `src/memory.js` — `MEMORY_DIR` corrected from `'Memory'` to `'Memories'`.
-- `src/replay.js` — imports the live delivery constants instead of keeping its
-  own copy, with a drift guard in the self-check.
-- `test/run-all.js` — concurrency pool with serial retry (see *Decisions*).
-- `test/t-batching.js` — new case: a member behind a **failing** spawn must
-  still be delivered. New case: concurrent wakes produce one agent. Five
-  positive assertions moved off fixed sleeps onto a polling `until()` helper.
-- `ui/app.js`, `ui/panels.js`, `ui/rail.js`, `ui/index.html`, `ui/app.css`,
-  `ui/icons.js` — the front-door restructure, then the throne room and the feel
-  layer. See *Decisions* for what changed and why. Specifically:
-  - `ui/app.css` — **rewritten, not extended.** 489 rule blocks down to 431 as
-    the duplicates were folded together; the file itself only fell 1,241 → 1,132
-    lines, because the room and the feel layer added sections of their own. Then
-    the second visual pass added the `--display` serif token and its call sites,
-    the `#hall` rules, the king's gilded title bar, and the toolbar plate.
-  - `ui/index.html` — the `#hall` SVG, roughly 60 lines of paths between `#bg`
-    and `#surface`. `aria-hidden` because it is scenery. This is the single
-    largest visible change of the session.
-  - `ui/app.js` — tools carry `data-tip` (the instant styled tooltip) alongside
-    `title` (the browser's, which is what a screen reader gets); the separator
-    before the More button is now a `data-edge` attribute rather than CSS naming
-    a specific tool; `setStatus` toggles `.working` on a member's panel; a
-    `sound` tool was added to `TOOLS` and to `KEYS` as Alt+H.
-  - `ui/rail.js` — group headings carry their role as a class so the throne's
-    can wear gold; `upsertNode` calls `arrive()` on create; `remove()` drops the
-    row from the map immediately and from the DOM when `depart()` finishes;
-    `setState` pulses the avatar on the transition into awake, not on every tick.
-  - `ui/panels.js` — the summoning screen's section headings are `engraved`, and
-    summon/dismiss/approve/reject fire their cue.
-  - `ui/icons.js` — new `sound` glyph (a horn), drawn on the same 16-grid and
-    1.5 stroke as the rest of the toolbar set.
-- `.gitignore` — ignores `.tmp-*`. The two stale SQLite probe siblings
-  (`.tmp-mcp-probe.db-shm`, `.tmp-mcp-probe.db-wal`, dated 2026-08-04) turned out
-  to be **tracked**, not untracked — they were committed in `19ea8ad`. They are
-  deleted from HEAD now, but they remain in history. That was judged not worth a
-  history rewrite: together they are ~92KB of SQLite scratch from an MCP probe,
-  with no credentials in them.
-- `test/t-budget.js` — the token assertion corrected from 12,000 to 107,000
-  (the old code ignored claude's cache read), plus a whole new section proving
-  a codex member reporting `$0` still accrues spend and trips a cap.
-- `README.md` — corrected two false claims about spend caps; documented the
-  three cost tools and the test runner's behaviour.
-- `AGENTS.md` — suite count 25 → 38.
-- `package.json` — added `npm run recycle`.
-- `kingdom.config.json`, `roles.json` — **were already modified before this
-  session started.** The only change this session made to `kingdom.config.json`
-  is net zero (caps were added, then removed at the user's instruction). Do not
-  assume the rest of those two diffs is this session's work.
+- **`~/.kingdom/workspace/kingdom.config.json` now exists on this machine for
+  the first time** (created because the repo-less daemon was actually
+  booted). Because the live-attach test used this project's own repo as its
+  target, that file now holds `mode: "code"` and
+  `repo: "E:\\AI\\Agentic OS"`. Practical effect: **the next time anyone runs
+  `node src/daemon.js` with no argument on this machine, it will boot straight
+  into Code mode against this repo**, not into a clean no-repo state. To
+  re-test the true first-ever-launch experience, delete that file (or its
+  `repo` key) first.
+- **A second, separate config home for this same repo already existed before
+  this session**: `E:\AI\.kingdom\Agentic OS\kingdom.config.json` (created by
+  an earlier session's explicit `node src/daemon.js "E:\AI\Agentic OS"`
+  launch, per the previous handoff). This feature does not touch or migrate
+  that file — it is unrelated, still live, and used whenever the repo is
+  passed explicitly on the command line. The two configs now coexist and can
+  drift independently; that is expected, not a bug, per this session's
+  explicit design decision (see *Decisions*).
+- A leftover daemon process (PID 18768) was found already running on :7777
+  from an earlier session's wallpaper testing (repo `E:\AI\Agentic OS`
+  attached) and was stopped to free the port for this session's testing.
+- `Background.jpg` sits **untracked at the repo root**
+  (`E:\AI\Agentic OS\Background.jpg`) — the user's own wallpaper test image
+  from an earlier part of this session, never cleaned up or gitignored. The
+  app's own asset store (inside `kingdomDir/assets`) has its own copy; this
+  root-level file is just the original drop.
 
 ## Decisions made, and why
 
-**Cost is computed from a rate card when the CLI will not report it.** Only the
-claude CLI reports `total_cost_usd`; `src/agent.js` hardcodes `costUsd: 0` for
-codex and agy, and the entire live court is codex. So `spentUsd` sat frozen
-while the court burned tokens, and `#enforceBudget` compared `$0` against the
-ceiling on every turn — meaning `maxBudgetUsd` and `maxKingdomUsd` **could never
-fire at all**. Turns are now priced from `src/price.js` when the CLI is silent.
+**Worktree isolation is now gated on `mode.worktrees && Boolean(this.repo)`,
+not `mode.worktrees` alone.** `src/modes.js` gives Research and Build
+`worktrees: true` deliberately — a git worktree is the *mechanism* that makes
+"can't touch the real repo" true, since only one of the four CLIs has its own
+sandbox flag. That's still correct when a repo is open. But a worktree
+protects a repo; with none attached there is nothing to protect, so there is
+nothing to isolate. Resolved by asking the user directly rather than
+guessing — their answer: *"Chat + Research + Build as Chat mode doesnt edit
+anything, research mode saves it to the vault, build mode edits the
+fundamentals of this application (like skills, vault, etc.) so only code
+needs a repo."*
 
-**An unpriced model spends nothing rather than an estimated amount.** `costOf`
-returns `null` for a model not in the table, and null contributes zero to
-`spentUsd`. A cap enforced against an invented price stops members for reasons
-nobody can audit, which is worse than no cap. This is why `agy` members are
-currently exempt from any cap: no verified Gemini rates were available.
+**Attaching a repo does NOT migrate workspace state.** The db, config, vault
+pointer, goal and roster stay at `kingdomDir(null)` (the workspace home)
+permanently, even after `attachRepo()` runs — only `kingdom.repo`/`base`
+change, pointing Code mode's worktrees somewhere new. The alternative
+(copying state into a repo-relative `.kingdom/<repoName>/` on attach) would
+require hot-swapping a live sqlite connection mid-session for no real
+benefit, since goal/roster/vault/research notes are workspace-level concepts
+per the user's own framing above, not repo-level ones. Switching to a
+genuinely *different* repo later still needs a fresh court, exactly as
+before.
 
-**There are no spend caps in the config, by the user's explicit instruction**
-("there shouldnt be a max budget"). The enforcement machinery works and is
-tested — it is simply not switched on. Absent keys mean disabled; the code reads
-`?? 0` and `0` is falsy. Do not add caps back without being asked.
+**Code mode's refusal is a thrown error, not a special response shape.** The
+daemon's existing generic `/api/*` dispatch already turns any thrown error
+into `{ok:false, error: message}` over HTTP — `setMode` just throws
+`'Code mode needs a repository — attach one first.'` and the toolbar surfaces
+it directly, no new API contract needed. `queueMode` (the advisor's
+background auto-classifier) degrades silently instead — it must never throw
+out of a call nothing is watching for an exception.
 
-**No `prices` key was added to `kingdom.config.json`.** The override mechanism
-exists in `tableFrom()` for models the code does not know, but copying the
-built-in table into config would recreate exactly the drift class that
-`src/replay.js` was fixed for in the same session.
-
-**`ctx.js` no longer advises "recycle sooner" on a high cache-read share.** That
-advice was backwards twice over. A high replay share means the cache is working
-— those tokens bill at a tenth of fresh ones — and recycling is the one action
-that *destroys* the cached prefix, converting 0.1x tokens into 1.0x tokens and
-buying a handover turn at the member's maximum context. The report now draws its
-conclusion from the cost split, not the token split.
-
-**The delivery loop starts a spawn instead of awaiting it.** Delivery runs
-inside a single `ticking` critical section, and it used to `await this.#spawn()`
-inline, so one peasant's worktree validation froze every other member's mail.
-The batch is now left unacked and a later tick delivers it once the member is
-live. The `ticking` guard stays — it exists because two overlapping ticks each
-spawned the same member.
-
-**Spawn deduplication lives inside `#spawn`, not at its call sites.** `#doSpawn`
-awaits `createWorktree` before it ever reaches `agents.set`, so an `agents.has`
-check at the top is not a lock: two callers both pass it and both run
-`git worktree add` on the same path. That cascade has happened in this project
-before, and there are now more routes into it.
-
-**`recycleAtTokens` stays at 80,000.** This was the session's final measurement
-and the answer is "do not move it", which is a finding rather than a shrug. On
-the only session with usable data the king's context peaked at 15,448 — 19% of
-the threshold, 11 turns of growth short of it, with 0 handovers. The threshold
-never fired, so changing it would alter behaviour nobody has observed.
-`src/recycle.js` also derives a floor of `T* = 8,352` for that growth rate, but
-that floor assumes a successor *resumes* when in reality it *rediscovers* —
-re-reading files at 10x the cache rate on a cold prefix, which nothing in the
-event log measures. The gap between 8k and 80k is the rediscovery allowance.
-
-**Failing test suites are retried once, serially, rather than quarantined.**
-See *Dead ends* for the two approaches that lost.
-
-**A test waits for a condition, never for a duration — unless it is asserting
-that nothing happened.** A flat sleep before a positive assertion measures the
-machine, not the code, and this repo has now lost two full runs to exactly that.
-Negative assertions ("a lone notice must NOT cost a turn") genuinely need a
-fixed window, because there is no condition to poll for; those keep their sleeps
-and should not be converted.
-
-**The rail is the court; the roster moved to its own screen.** Measured on a
-running instance: the rail rendered 107 rows and 4,179px of scroll into a 580px
-viewport, of which 105 said "not summoned". A member list that is 98% absence is
-a wall. The rail now holds only the king, the jester and summoned peasants — 2
-rows on a fresh court — and everyone else is behind **Summon** (Alt+E), which
-searches name, title *and* description. No backend change was needed:
-`kingdom.wake()` already adds to `summoned` and `sleep()` removes, so the UI
-drives the existing endpoints.
-
-**The empty states are now the loudest thing on screen, not the quietest.** The
-goal bar used to set `hidden` when there was no goal — hiding itself exactly
-when it had something to say — and a court with nobody in it showed a blank
-canvas. There is now a persistent "Your court is empty" panel with three
-clickable steps, shown whenever no peasant is summoned and no goal is set. It is
-state-driven, not a one-shot tour, so it comes back the day you dismiss everyone;
-a tutorial you can only see once is no use to someone returning in a month.
-
-**Summon/dismiss shows a pending state rather than an optimistic one.** The
-first version flipped the row immediately and was simply wrong — it mutated a
-copy of the roster entry, so nothing happened. The fix is not a better
-optimistic write: summoning creates a worktree, so the row says "Summoning…",
-disables, and waits for the server's roster event to settle it. That is also
-correct when the spawn fails.
-
-**`ui/app.css` was consolidated rather than extended a sixth time.** The five
-REFIT blocks were not a tidiness problem, they were a comprehension one: `.win`
-was declared four times, `#bg` three, `:root` three, so the rule you found by
-searching was rarely the rule that won, and every fix became another override.
-Consolidation was done as the first step of the visual work for exactly that
-reason — a diegetic pass layered on top would have been a sixth block. Every
-selector is now declared once, in its own section. **The evidence comments were
-kept**, moved next to the value each one produced (why `--glass` is `.72` and
-not `.93`, why the scrim is at its full floor, why `#windows` has `inset:0`).
-Those are what stop the next person reverting a measured value because it looks
-arbitrary.
-
-**The room is a drawn hall, in inline SVG, not an image and not a gradient.**
-"Lean into the kingdom theme" was first resolved as light and shadow only — a
-glow above the throne, a floor horizon, walls falling off at the edges. That
-version was rejected as invisible, and it deserved to be: at 7% opacity it read
-as a flat dark box. `#hall` in `ui/index.html` now draws the room literally.
-Inline SVG rather than a raster because it costs no network request, no build
-step and no second asset to keep in sync, scales to any window, and takes its
-colours from the same tokens as everything else. It is still architecture rather
-than illustration — every stone fill is under 6% white, the only colour is the
-light through the glass — so it recedes the moment there is anything to look at:
-`#stage:has(.win) #hall{opacity:.3}`, and it hides entirely under a wallpaper,
-which is a room of its own.
-
-**The throne is drawn as a seat, not as an arch.** The first version was a
-pointed panel on the dais and read unmistakably as a second doorway behind the
-centre window. It is now a high back with a three-point crown, a seat slab, two
-armrests and a plinth, with a runner leading down the steps towards the viewer.
-The runner is the cheapest element in the drawing and does more than the columns
-do: it is what turns three stacked slabs into an approach.
-
-**Names are set in a display serif; the interface is not.** `--display`
-(`Sitka Display`, then Constantia / Cambria / Georgia / Palatino Linotype) is on
-member names, panel titles, the engraved section labels and the empty-hall
-sentence — the things that name someone or address you. Everything functional
-stays on the UI sans and the mono. All five faces were confirmed present with
-`document.fonts.check` before shipping; there is no webfont, per the no-network
-rule.
-
-Gold (`--crown`) is still reserved: the throne, the standing decree, approvals,
-and the king's own title bar. Those are the things that are genuinely the
-sovereign's. A backdrop you look *at* has failed; an earlier version of `#bg`
-was three saturated blobs and read as a lava lamp.
-
-**Sound follows a click, never an event.** `cue()` fires on summon, dismiss,
-approve and reject — all things the sovereign did. Nothing fires on a turn
-ending, a message arriving, or a member waking on its own. An orchestrator that
-chimes at you while you are in another window is one you mute permanently, and
-then the cues you *did* want are gone with it. Muting is Alt+H.
-
-**The working indicator is indeterminate on purpose.** A travelling light on a
-panel's top edge answers "is anything happening" from across the room; it does
-not pretend to know how far along a turn is, because nothing does. A bar that
-fills to 90% and stops is a worse lie than no bar. Under
-`prefers-reduced-motion` it stops moving but stays visible — it is the only
-signal that a member is mid-turn, so deleting it would take information with it.
-
-**The product recommendation is B — host the control plane, keep execution on
-the customer's machine.** The reasoning is in `docs/PLAN-saas.md`. In short: the
-two things that sink a solo-built agent SaaS are taking custody of customer
-source and paying for inference you resell at a margin, and shape B avoids both
-while being the shape this codebase is already closest to. The hosted-execution
-version (A) stays reachable afterwards — Phase 2 is the shared prerequisite.
+**The browser-path picker is a plain text input, not a fake file browser.**
+Electron's native `dialog.showOpenDialog` can't be driven by the remote
+Browser-pane test tool, and a plain-browser launch (`node src/daemon.js` +
+any browser, the documented headless path) has no native dialog available at
+all — so the fallback had to work without one regardless. A text input over
+the existing `W.toggle` panel primitive (same one `openMetrics` already uses)
+was the smallest thing that covers both cases.
 
 ## Dead ends — don't retry these
 
-### From this session
-
-**Do not use a bare `process.argv` self-check guard in a `ui/` module.** The
-`src/` files all end with `if (process.argv[1]?.endsWith('x.js'))`, and copying
-that into `ui/court.js` threw `ReferenceError: process is not defined` in the
-browser. Because `app.js` imports it first, the whole module graph died and the
-throne room booted to an empty shell — header with no tools, no rail, no modes.
-Guard with `typeof process !== 'undefined'`. Nothing in the test suite catches
-this; only loading the page does.
-
-**Do not anchor toolbar layout to a specific tool's name.** `buildTools()` had
-`if (ico === 'diff') nav.append(moreButton())`, which silently assumed `diff`
-was the last primary tool. Adding one after it put the overflow button in the
-middle of the row. It is anchored to a computed `LAST_PRIMARY` now, and the CSS
-separator that used to be `.tool[data-tool="diff"]::after` is now
-`.tool[data-edge]::after`, set from the same computation.
-
-**Do not put `!important` on a `background` shorthand when testing an animated
-`background-position`.** Half an hour went into "the sweep animation does not
-run" — `Animation.currentTime` advanced and `background-position` stayed at
-`0% 0%`. The animation was fine; the *probe* was wrong. The shorthand resets
-`background-position`, and `!important` made that reset outrank the keyframe.
-Verified correctly by injecting the same declarations with no `!important`:
-`-45%` → `143.9%` across the 1.9s.
-
-**Do not expect to see motion in the Claude Code Browser pane.** It reports
-`prefers-reduced-motion: reduce`, so every animation in `app.css` and every
-WAAPI call in `feel.js` is suppressed there. Screenshots from it are of the
-reduced-motion rendering. To check an animation, either drive
-`Animation.currentTime` and read computed styles, or open the app in the
-Electron shell.
-
-**Do not try to carry the kingdom theme on atmosphere alone.** The first visual
-pass was gradients, a vignette and a 7%-opacity glow, and the user's verdict was
-"you did no improvements." Low-contrast light does not read as a room; it reads
-as a dark rectangle. The theme needed drawn geometry — windows, columns, a dais,
-a throne — plus type that is not the system sans, before anyone could see it had
-changed at all.
-
-**Do not draw the throne as an arch or a pointed panel.** The first `#hall`
-version did, and behind the centre window it read as a second doorway — the one
-ambiguity that picture cannot afford. It needs the parts of a chair: a back, a
-seat, armrests, a plinth. The runner leading down the steps is what supplies the
-depth cue that the arch was trying to supply.
-
-**Do not use a fixed track minimum in the Hall grid.** `minmax(360px,1fr)`
-overflows a stage narrower than 360px, and a narrow window (rail 214 + member
-card 264 out of 800) leaves a 322px stage with a permanent horizontal scrollbar
-under a grid holding nothing. It is `minmax(min(360px,100%),1fr)` now.
-
-**Do not put timing- or memory-sensitive suites in a hand-maintained solo
-list.** This was tried twice. The list only grew — `t-batching` first, then
-`t-stt` — and it did not even work: `t-stt` failed when run alone anyway,
-because the machine itself was out of memory. Retrying a failure serially covers
-contention for memory, timing and ports alike, with no list to maintain and no
-per-worker memory budget to guess at.
-
-**Do not use `spawn` in the test runner without an `error` handler.**
-`spawnSync` always came back with a status; `spawn` can fail to start a process
-at all and then never emits `close`. A full run died outright with
-`Error: spawn UNKNOWN (errno -4094)` after 30 green suites, losing every result
-with it. `run()` in `test/run-all.js` now treats a start failure as just another
-failed suite.
-
-**Do not sum codex `usage` across turns.** codex reports it **cumulatively per
-thread**. `src/daemon.js` already knew this; `src/ctx.js` and `src/kingdom.js`
-did not, and summed raw. On the real Sant Dnyaneshwar database that read 2.37M
-input tokens where the truth is 1.89M — a 25% overcount that grows with turn
-count. Use `deltaOf` from `src/usage.js`.
-
-**Do not treat a cache read as costing the same as fresh input.** It costs 0.1x.
-The three token kinds differ by 12.5x end to end, so a token count cannot stand
-in for a bill in either direction.
-
-### Still true from the 2026-08-07 session
-
-These concern `electron/` and `ui/`, untouched this session, and remain live:
-
-- **Do not move the pet window with `setPosition`.** On a 125%-scaled display it
-  re-applies the scale factor each call; measured compounding 144×172 → 432×467
-  across one drag. Use `setBounds` with an explicitly computed size.
-- **Do not compute the pet drag from renderer `screenX`/`screenY`.** Chromium's
-  cached window origin updates a beat late, so the error feeds forward and the
-  dog sails off. The cursor must be read from the main process.
-- **Do not freeze the pet's drag size from `getBounds()`** — it returns whole
-  DIPs while the physical box rounds up, creeping larger each drag.
-- **Do not call `setBounds` on the pet window without lifting `resizable`
-  first.** Windows pins min/max size when `resizable: false`, and the call is
-  silently clamped.
-- **Do not put a looping clip in the pet's `FIDGET` list** — a fidget only ends
-  when its clip wraps.
-- **Do not pass the `agy` prompt as a trailing positional.** See *Watch out for*.
-- **Do not trust `EnumWindows`-based window measurement from PowerShell here.**
-  It matches Electron's hidden helper windows, and a garbage-collected callback
-  delegate returns partial results.
+**Clicking a mode-switch button via the `computer` tool's `ref` targeting
+intermittently no-oped after the roster re-rendered** (no network request
+sent, no visible error) during this session's manual verification, even
+though the button element, its `onclick` handler, and its on-screen
+coordinates all checked out fine under direct inspection. Switching to
+`javascript_tool` with a direct `element.click()` call fired reliably every
+time. This looks like a `ref`-to-DOM-node mapping going stale across a
+re-render inside the Browser pane tool itself, not an app bug — if a click
+via `computer`+`ref` seems to do nothing, verify with a direct JS click
+before concluding the app is broken.
 
 ## Next steps
 
-1. **Review and commit the working tree.** `git diff` then `git add -A` and
-   commit. Be aware that `kingdom.config.json` and `roles.json` carry ~1,860
-   lines of changes that predate this session; decide deliberately whether they
-   belong in the same commit. Done when `git status` is clean.
-   **Do not push without a fresh, explicit instruction from the user** — that is
-   a standing rule in `E:\AI\CLAUDE.md`.
-
-2. **Watch the UI move, in a browser that is not the Claude Code pane.** Run
-   `npm start` (or the daemon plus a normal browser at `http://127.0.0.1:7788`)
-   and summon someone. Three things have never been seen playing: the rail row
-   sliding in, the row collapsing out on dismiss, and the horn cue. All three
-   are verified structurally and none has been watched. Done when you have seen
-   a summon land and decided whether the sound stays on by default — Alt+H
-   toggles it, `localStorage.kd.sound` persists it.
-
-3. **Read `docs/PLAN-saas.md` and answer its four closing questions.** It is the
-   plan for turning this from a personal tool into a product, and Phase 1 cannot
-   start until the product shape (A, B or C) is chosen. The recommendation is B
-   — host the control plane, keep execution on the customer's side.
-
-4. **Re-run `node src/recycle.js "<repo>"` after a session long enough to
-   actually reach 80,000 context tokens.** The current answer rests on a
-   3-turn sample where the threshold never fired. Done when the report stops
-   printing `OBSERVED PEAK … never came close to recycling`.
-
-5. **Consider pricing the `agy`/Gemini models** in `src/price.js` or via a
-   `prices` key. Until then every agy member is invisible to cost reporting and
-   exempt from any cap. This needs verified public rates, not estimates.
-
-6. **Optional: confirm the live spend path end to end with one short real court
-   run.** Everything in this session was verified offline against fixtures and a
-   read-only replay of an existing database. Only a real run exercises pricing
-   through `#enforceBudget` with live CLI usage payloads.
+1. **Decide how to stage and commit the working tree.** `git status
+   --porcelain` shows 73 lines (62 modified, 11 untracked) covering at least
+   three separate, independently-finished efforts layered on top of each
+   other in the same files: the 2026-08-17 code-review pass, the Four
+   Modes + role-rename work, and this session's repo-optional feature.
+   Answering "one commit, everything" unblocks immediately; answering
+   "separate them" means a hunk-by-hunk pass, as commit `db202f7` already did
+   once for a similar tangle. **There is no remote configured**, and pushing
+   needs a fresh, explicit instruction for the specific commit regardless of
+   any past authorization (see *Watch out for*).
+2. **Phase 5 (fix the Add-agents category bug) and Phases 3/4/6/7 (approvals
+   consolidation, turn cards, settings consolidation, accessibility)** are
+   still open on the original UI/UX redesign plan and were **not** touched
+   this session or the one before it. Don't start them without the user
+   re-raising — they are unrelated to repo-optionality.
+3. **Decide what to do with `Background.jpg` at the repo root** — remove it,
+   gitignore it, or leave it; it's not referenced by any code path (the app
+   reads its own copy from `kingdomDir/assets`).
+4. **Load the app in Electron itself at least once** (`npm start`). This
+   session's verification was entirely through the daemon + Browser pane,
+   because Electron's native repo-picker dialog can't be driven remotely —
+   the `repo:choose` IPC handler and `court-preload.cjs` bridge (the actual
+   Electron-only code path) have not been exercised in a real Electron
+   window this session.
 
 ## Watch out for
 
-**This machine runs out of memory, and that is what most test failures here
-are.** It has 8.36GB total and was repeatedly down to 0.4–0.9GB free during this
-session. At that level `test/t-stt.js` cannot load its Whisper model, `spawn`
-itself starts failing with `UNKNOWN`, and neighbouring suites die with
-`0xC0000409`. Check free memory before investigating any failure.
+**Two live config homes now exist for this one repo, and they can drift
+independently — this is intentional, not a bug to "fix" by merging them.**
+`E:\AI\.kingdom\Agentic OS\kingdom.config.json` (predates this session, used
+when the repo is passed explicitly on the command line) and
+`~/.kingdom/workspace/kingdom.config.json` (new this session, used when the
+daemon boots with no argument). Editing one and expecting the other's daemon
+to see it will not work — check which launch path is in play first.
 
-**`test/t-batching.js` used to assert against wall-clock deadlines, and this is
-now fixed — do not reintroduce them.** Five positive assertions sat behind flat
-`await wait(...)` calls, the worst giving a member 5,000ms to be revived when
-reviving one means `git worktree add` plus `behindBase`, three or four git
-subprocesses. On a loaded box (a full run taking 513.7s against a normal
-74–105s) that budget was missed and the suite failed twice, then passed
-standalone the moment the machine was quiet. Those five now poll a condition
-through the `until()` helper at the top of the file, with a 60s ceiling. Fixed
-waits remain only where the assertion is that *nothing* happened, which cannot
-be polled for. Suite runtime is unchanged (27.6s).
+**`~/.kingdom/workspace/kingdom.config.json` currently has `repo` pre-filled
+with this project's own path**, as a side effect of this session's testing
+(see *Current state*). A repo-less daemon boot on this machine will attach it
+automatically unless that key is cleared first.
 
-**`npm test` runs four suites at a time now.** A suite that fails is re-run alone
-before being reported; one that then passes prints `flaky (failed in the pool,
-passed alone)` rather than being silently forgiven. Set `KINGDOM_TEST_WIDTH=1`
-for the old one-at-a-time behaviour when debugging. Wall clock is 59–105s,
-against 185s sequential, the spread tracking free memory.
+**This machine runs out of memory, and that is what most `npm test` failures
+here turn out to be** — not re-observed this session, but nothing has changed
+to fix it either. 8.36GB total RAM, historically down to 0.4–0.9GB free under
+load; at that level `spawn` itself starts failing with `UNKNOWN` and
+neighbouring test suites die with `0xC0000409`. Check free memory before
+investigating any unexplained failure.
 
-**Test suites bind ports derived from the process PID, and a stray daemon on
-port 7788 causes false failures.** Check for one before investigating a failing
-suite.
-
-**`kingdom.config.json` and `roles.json` were already dirty when this session
-began.** Any `git diff` on them mixes this session's work with someone else's.
+**`npm test` (`node test/run-all.js`) runs four suites at a time and retries
+a failure alone; one that then passes prints `flaky (failed in the pool,
+passed alone)`** — that's the runner working as designed, not a false pass.
+`KINGDOM_TEST_WIDTH=1` forces the old serial run when isolating something. A
+hung suite is killed and reported at 180s rather than hanging the run
+forever.
 
 **`agy` updates itself, and 1.1.11 changed `--print` from a boolean to a flag
-that takes the prompt as its value.** The old code passed the prompt as a
-trailing positional, so agy's Go flag parser read the *next flag* as the prompt
-and the member emitted no JSONL while exiting 0. Fixed in `src/agent.js`
-`#runAgyTurn()` and `src/doctor.js`. If a member on agy ever goes silent with
-exit 0, check `agy --help` before anything else. The king is now on
-`codex/gpt-5.6-terra`, so this affects no live member at present.
+that takes the prompt as its value.** Passing the prompt as a trailing
+positional makes agy's Go flag parser read the *next* flag as the prompt,
+and the member emits no JSONL while exiting 0. If a member on `agy` ever goes
+silent with exit 0, check `agy --help` before anything else.
 
-**A bare `agy` call without `--dangerously-skip-permissions` exits 0 with no
-output.** A manual probe without that flag looks like a broken CLI when it is
-not; the agent code passes it automatically.
+**`electron/pet-preload.cjs` and the new `electron/court-preload.cjs` must
+keep the `.cjs` extension** — `package.json` declares `"type": "module"`, and
+a sandboxed Electron preload script cannot be ESM.
 
-**`electron/pet-preload.cjs` must keep the `.cjs` extension** — `package.json`
-declares `"type": "module"` and a sandboxed preload cannot be ESM.
+**Never put a token in `kingdom.config.json`.** The real token store lives
+outside the repo, at `<repoParent>/.kingdom/<repoName>/tokens.json` (or the
+new workspace home when no repo is attached).
 
-**`ui/app.css` is now consolidated — do not start a sixth REFIT block.** It used
-to end in five appended "REFIT" sections that each re-declared `.win`,
-`.rail-row`, `.tool`, `#bg` and `:root` to override the pass before; `.win` was
-declared four times and nothing could be changed by reading the rule you found.
-Every selector is now declared once, in its own section, with the reasoning each
-refit paid for kept as a comment beside the value it produced. Edit the rule
-where it lives.
+**Never push to `main` without a fresh, explicit "push" instruction for that
+specific commit.** A prior push authorization does not carry forward to a new
+commit, even within the same session. There is currently no remote
+configured, so nothing can be pushed by accident today.
 
-**Screenshots DO work through the Claude Code Browser pane** — the previous
-handoff said otherwise and was wrong. `computer{action:"screenshot"}` renders
-the app fine, but only while the pane is *displayed*; otherwise it returns "the
-Browser pane is not displayed, so the page is not compositing frames" and
-`preview_start{url:"http://127.0.0.1:<port>"}` re-displays it. Two real limits:
-the returned image is scaled to 800px wide, and region `zoom` is unimplemented,
-so design at a viewport near 800 and use wider ones only to check layout. If the
-pane wedges (`navigate` timing out at 300s, screenshots at 30s), close the stuck
-tabs with `tabs_close` and `preview_start` a fresh one — check the daemon with
-`curl` first, it is almost never the cause.
+**Screenshots and DOM inspection through the Claude Code Browser pane only
+work while the pane is displayed** — otherwise `computer{action:"screenshot"}`
+returns "the Browser pane is not displayed, so the page is not compositing
+frames." `read_console_messages` also appears to return a buffered history
+that can include stale entries from before a reload — confirm a fix landed
+by checking DOM/network state directly (e.g. `document.getElementById(...)`
+via `javascript_tool`), not by trusting the console log alone.
 
 ## Open questions for the user
 
-1. **Which product shape — A, B or C?** See `docs/PLAN-saas.md`. Nothing in
-   Phase 1 can start without this, and it is the only question on this list that
-   blocks other work.
-
-2. **Do the pet window, wallpaper and music survive into the product, as brand
-   or as personal workflow?** It decides whether Electron stays a first-class
-   client or becomes one of several.
-
-3. **What should happen to the pre-existing `kingdom.config.json` and
-   `roles.json` changes?** They total roughly 1,860 lines, were already in the
-   working tree when this session started, and were deliberately left out of
-   this session's commit. They are still uncommitted.
-
-4. **Should `agy`/Gemini models be priced?** Answering yes (with real published
-   rates) makes agy members visible in `ctx.js` and eligible for a cap.
-   Answering no keeps them permanently exempt, which is safe but silent.
-
-3. **Is a real court run worth doing to confirm the live spend path?** It costs
-   actual API quota. Everything else was verified without spending any.
+1. **How should the working tree be split into commits?** Three
+   independently-finished efforts (the Aug-17 code review, Four Modes +
+   role rename, and this session's repo-optional feature) are interleaved
+   across the same 62 modified files. "One commit, everything" unblocks
+   immediately; "separate them" means a hunk-by-hunk pass.
+2. **Should `Background.jpg` be removed from the repo root, gitignored, or
+   left as-is?** It's inert either way — not read by any code path — but it
+   is currently an untracked stray file.
+3. **Pick up Phase 5 / Phases 3-4-6-7 of the older UI/UX redesign plan next,
+   or leave them shelved?** They're unrelated to repo-optionality and were
+   not touched this session.
+4. **Which product shape — A, B or C?** See `docs/PLAN-saas.md`. Carried
+   forward unanswered from the 2026-08-17 handoff; nothing in its Phase 1 can
+   start without it. The recommendation there was B: host the control plane,
+   keep execution on the customer's machine.
 
 ## Pointers
 
-- Project root: `E:\AI\Agentic OS`; branch `main`, one commit, working tree dirty
-- Run the tests: `npm test` (or `node test/run-all.js`)
-- Where the money went: `npm run ctx -- <repo>` — e.g.
-  `node src/ctx.js "E:/AI/Sant Dnyaneshwar"`
-- What a different delivery window would cost: `npm run replay -- <repo>`
-- What `recycleAtTokens` should be: `npm run recycle -- <repo>`
-- Run the app: `npm start`; preflight the CLIs: `node src/doctor.js`, **from a
-  normal terminal**, not inside a Claude Code session
-- Court databases live at `E:\AI\.kingdom\<repo name>\kingdom.db`. Only
-  `Sant Dnyaneshwar` has turn data (3 turns); `Agentic OS` has none.
-- The sovereign's vault: `E:\AGIOS Kingdom\Obsidian Vault\Kingdom\` — court
-  instructions, decisions, and `Memories\` (7 notes, now actually read by
-  `brainBlock` since the `MEMORY_DIR` fix)
-- Codebase rules: `AGENTS.md` in the project root. Four rules govern every
-  change here: tests ship with the change and must fail without it; never trust
-  a measurement you did not take; comments carry the evidence, not the intent;
-  degrade, never wedge.
-- Workspace map and standing rules: `E:\AI\CLAUDE.md`
+- Project root: `E:\AI\Agentic OS`; branch `main`, HEAD `db202f7`, **no
+  remote**, working tree dirty (62 modified, 11 untracked)
+- Run the tests: `node test/run-all.js` (50 suites) —
+  `KINGDOM_TEST_WIDTH=1` to serialize
+- Run the app in Electron: `npm start`
+- Run just the daemon for browser-driven testing (no repo required):
+  `node src/daemon.js --port 7777`, or `.claude/launch.json`'s `"daemon"`
+  entry via the Browser pane tool's `preview_start{name:"daemon"}`
+- Attach a repo live once the daemon is running:
+  `POST /api/attachRepo {"path": "..."}`, or the throne room's "Choose
+  repo…" toast action after a refused Code-mode switch
+- Codebase rules: `AGENTS.md`. Four rules govern every change: tests ship
+  with the change and must fail without it; never trust a measurement you
+  did not take; comments carry the evidence, not the intent; degrade, never
+  wedge.
+- Global Claude rules: `C:\Users\mayur\.claude\CLAUDE.md` (only includes
+  `RTK.md`, a token-proxy CLI reference)

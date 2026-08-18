@@ -26,8 +26,8 @@ git('commit', '-qm', 'init');
 const configPath = join(repo, 'kingdom.config.json');
 writeFileSync(configPath, JSON.stringify({
   recycleAtTokens: 80_000,
-  king: { name: 'king', cli: 'codex' },
-  jester: { name: 'jester', cli: 'codex', recycleAtTokens: 20_000 },
+  orchestrator: { name: 'orchestrator', cli: 'codex' },
+  briefer: { name: 'briefer', cli: 'codex', recycleAtTokens: 20_000 },
   peasants: [{ name: 'coder', cli: 'codex' }],
 }));
 
@@ -64,17 +64,17 @@ a.match(said.at(-1), /auto/, 'the error must name the forms that do work');
 a.equal(posted(), before, 'still nothing to the court');
 
 /* ---------- per member, in that member's own pane ----------------------- */
-k.speakTo('jester', '/autocompact 30k');
-a.equal(k.specOf('jester').recycleAtTokens, 30_000);
+k.speakTo('briefer', '/autocompact 30k');
+a.equal(k.specOf('briefer').recycleAtTokens, 30_000);
 a.equal(k.config.recycleAtTokens, 300_000,
   "a member's pane must set that member's window, not the court-wide default");
-a.equal(posted(), before, 'and must not be spoken to the jester as an instruction');
+a.equal(posted(), before, 'and must not be spoken to the briefer as an instruction');
 
-// The king's pane is routed to command(); the local command must be caught
-// BEFORE that, or the king's own window would silently become everyone's.
-k.speakTo('king', '/autocompact 120k');
-a.equal(k.specOf('king').recycleAtTokens, 120_000);
-a.equal(k.config.recycleAtTokens, 300_000, "the king's pane is the king's, not the court's");
+// The orchestrator's pane is routed to command(); the local command must be caught
+// BEFORE that, or the orchestrator's own window would silently become everyone's.
+k.speakTo('orchestrator', '/autocompact 120k');
+a.equal(k.specOf('orchestrator').recycleAtTokens, 120_000);
+a.equal(k.config.recycleAtTokens, 300_000, "the orchestrator's pane is the orchestrator's, not the court's");
 
 /* ---------- auto derives from measurement ------------------------------- */
 // 40 turns whose contexts sit well below the current 300k window, so the tail

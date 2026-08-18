@@ -5,7 +5,7 @@
 // closing a window must not kill work in progress. This window is a viewer.
 // Launching again re-attaches to the court that is already running; to end it
 // for real, use "end court" in the throne room.
-import { app, BrowserWindow, dialog, session, ipcMain, screen } from 'electron';
+import { app, BrowserWindow, dialog, session, ipcMain, screen, shell } from 'electron';
 import { spawn } from 'node:child_process';
 import { openSync, existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
@@ -25,20 +25,29 @@ async function courtOnPort() {
   }
 }
 
-async function pickRepo() {
+/** A repo named on the command line (or packaged app arg), if it's a real one. */
+function repoFromArgv() {
   const fromArgv = process.argv.slice(app.isPackaged ? 1 : 2).find((a) => !a.startsWith('-'));
-  if (fromArgv && existsSync(join(fromArgv, '.git'))) return resolve(fromArgv);
+  return fromArgv && existsSync(join(fromArgv, '.git')) ? resolve(fromArgv) : null;
+}
 
+/**
+ * The native folder picker, on demand — Code mode asks for this through the
+ * `repo:choose` IPC channel (via court-preload.cjs) instead of the app
+ * blocking behind it before the window even opens. Returns a validated path,
+ * or null on cancel / an error message on an invalid pick — the renderer
+ * decides what to do with either, this never retries on its own.
+ */
+async function chooseRepoDialog() {
   const { canceled, filePaths } = await dialog.showOpenDialog({
     title: 'Choose the repository your kingdom will work on',
     properties: ['openDirectory'],
   });
-  if (canceled || !filePaths[0]) return null;
+  if (canceled || !filePaths[0]) return { canceled: true };
   if (!existsSync(join(filePaths[0], '.git'))) {
-    dialog.showErrorBox('Not a repository', `${filePaths[0]} is not a git repository.`);
-    return pickRepo();
+    return { error: `${filePaths[0]} is not a git repository.` };
   }
-  return resolve(filePaths[0]);
+  return { path: resolve(filePaths[0]) };
 }
 
 /** Last words from a daemon that failed to come up — the whole point of the log. */
@@ -59,7 +68,9 @@ function logTail(path, n = 1200) {
 async function startDaemon(repo, logPath) {
   const node = process.env.KINGDOM_NODE ?? 'node';
   const out = openSync(logPath, 'a');
-  const child = spawn(node, [join(HERE, '..', 'src', 'daemon.js'), repo, '--port', String(PORT)], {
+  const child = spawn(node, [
+    join(HERE, '..', 'src', 'daemon.js'), ...(repo ? [repo] : []), '--port', String(PORT),
+  ], {
     detached: true,
     stdio: ['ignore', out, out],
   });
@@ -87,15 +98,41 @@ async function startDaemon(repo, logPath) {
   throw new Error(`The court did not answer on ${ORIGIN} within 90s.\n\n${logTail(logPath)}`);
 }
 
+/**
+ * A court window shows the court, and nothing else.
+ *
+ * Without this, any link or script-driven navigation in the renderer could take
+ * a full-privilege Electron window to an arbitrary origin — and a popup opened
+ * from one inherits the opener's window. The renderer runs with
+ * contextIsolation and no node integration, so this is not an RCE chain, but it
+ * is the difference between "a page in a browser" and "a page wearing the
+ * court's clothes". Outside links go to the real browser, where the address bar
+ * is visible.
+ */
+function lockNavigation(win) {
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:/.test(url)) shell.openExternal(url);
+    return { action: 'deny' };
+  });
+  win.webContents.on('will-navigate', (e, url) => {
+    if (!url.startsWith(`${ORIGIN}/`)) e.preventDefault();
+  });
+}
+
 function openWindow() {
   const win = new BrowserWindow({
     width: 1500,
     height: 950,
     backgroundColor: '#0a0c0f',
     title: 'Kingdom',
-    webPreferences: { nodeIntegration: false, contextIsolation: true },
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: join(HERE, 'court-preload.cjs'),
+    },
   });
   win.setMenuBarVisibility(false);
+  lockNavigation(win);
   win.loadURL(`${ORIGIN}/`);
 }
 
@@ -173,6 +210,7 @@ function openPet() {
   });
   // 'screen-saver' is the level that also floats above full-screen apps, which
   // is what "always on top" is actually expected to mean.
+  lockNavigation(petWin);
   petWin.setAlwaysOnTop(true, 'screen-saver');
   petWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   petWin.loadURL(`${ORIGIN}/pet.html`);
@@ -274,15 +312,25 @@ ipcMain.on('pet:scale', (_e, raw) => {
 // summon him back from the throne room, which has no IPC bridge.
 ipcMain.on('pet:hide', () => petWin?.destroy());
 
+// The throne room's own request for a repository — Code mode asks for this
+// when none is attached yet, rather than the app blocking on it at launch.
+ipcMain.handle('repo:choose', () => chooseRepoDialog());
+
 app.whenReady().then(async () => {
-  const repo = await pickRepo();
-  if (!repo) return app.quit();
+  // No blocking dialog here anymore: Chat/Research/Build don't need a repo at
+  // all, and Code mode asks for one live, from inside the throne room, via
+  // the repo:choose IPC handler below. A repo named on the command line still
+  // launches pre-attached, for the power-user path.
+  const repo = repoFromArgv();
 
   const logPath = join(app.getPath('userData'), 'daemon.log');
 
   // Someone may already be holding the port — usually this court, re-opened.
+  // A conflict only exists when BOTH sides actually name a repo and they
+  // differ: a bare relaunch (no repo) or a court that hasn't attached one yet
+  // just reuses whatever is already running.
   let running = await courtOnPort();
-  if (running && resolve(running.repo) !== repo) {
+  if (running && repo && running.repo && resolve(running.repo) !== repo) {
     const { response } = await dialog.showMessageBox({
       type: 'warning',
       title: 'A court is already running',

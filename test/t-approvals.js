@@ -21,8 +21,8 @@ execFileSync('git', ['commit', '-qm', 'init'], { cwd: repo });
 
 const configPath = join(dir, 'kingdom.config.json');
 writeFileSync(configPath, JSON.stringify({
-  king: { name: 'king', cli: 'codex' },
-  jester: { name: 'jester', cli: 'codex' },
+  orchestrator: { name: 'orchestrator', cli: 'codex' },
+  briefer: { name: 'briefer', cli: 'codex' },
   peasants: [{ name: 'designer', cli: 'codex' }],
   rolesSeeded: true,
 }));
@@ -30,9 +30,9 @@ writeFileSync(configPath, JSON.stringify({
 const k = new Kingdom(repo, configPath);
 const seen = [];
 k.on('approval', (p) => seen.push(p));
-a.match(k.briefFor('king'), /call the summon tool immediately/,
-  'the king must create an approval record through the tool, not prose');
-k.bus.post('king', null,
+a.match(k.briefFor('orchestrator'), /call the summon tool immediately/,
+  'the orchestrator must create an approval record through the tool, not prose');
+k.bus.post('orchestrator', null,
   JSON.stringify({ kind: 'summon', names: ['designer'], reason: 'design probe' }), 'approval');
 await k.start();
 
@@ -40,7 +40,7 @@ a.ok(k.approvals.size, 'a pending approval must survive startup');
 a.ok(seen.some((p) => p.kind === 'summon' && p.names[0] === 'designer'),
   'startup must surface a pending approval');
 
-k.bus.post('king', null,
+k.bus.post('orchestrator', null,
   JSON.stringify({ kind: 'summon', names: ['designer'], reason: 'second probe' }), 'approval');
 await wait(700);
 a.equal(k.approvals.size, 2, 'new approval must be picked up by the delivery loop');

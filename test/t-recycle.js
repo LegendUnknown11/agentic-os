@@ -1,7 +1,7 @@
-// The jester's context-recycle path, exercised without a 120k-token session
+// The briefer's context-recycle path, exercised without a 120k-token session
 // and without spending any quota.
 //
-// A stand-in agent replaces the real jester: it answers the handover request
+// A stand-in agent replaces the real briefer: it answers the handover request
 // like a real one would. The replacement is configured as a codex member,
 // which spawns no process until it is first sent a turn — so nothing here
 // touches an API.
@@ -27,15 +27,15 @@ git('commit', '-qm', 'init');
 
 const configPath = join(repo, 'kingdom.config.json');
 writeFileSync(configPath, JSON.stringify({
-  king: { name: 'king', cli: 'codex' },
-  jester: { name: 'jester', cli: 'codex', prompt: 'You watch.' },
+  orchestrator: { name: 'orchestrator', cli: 'codex' },
+  briefer: { name: 'briefer', cli: 'codex', prompt: 'You watch.' },
   peasants: [{ name: 'coder', cli: 'codex' }],
 }));
 
-const HANDOVER = 'coder is mid-task on math.js; king awaits a verdict.';
+const HANDOVER = 'coder is mid-task on math.js; orchestrator awaits a verdict.';
 
-/** Behaves like a real jester being asked for a handover note. */
-class FakeJester extends EventEmitter {
+/** Behaves like a real briefer being asked for a handover note. */
+class FakeBriefer extends EventEmitter {
   constructor() { super(); this.sent = []; this.stopped = false; }
   send(text) {
     this.sent.push(text);
@@ -50,24 +50,24 @@ class FakeJester extends EventEmitter {
 const k = new Kingdom(repo, configPath);
 k.base = 'master';
 k.bus.set('base', 'master');
-k.bus.set('session:jester', 'old-session-id-should-be-discarded');
+k.bus.set('session:briefer', 'old-session-id-should-be-discarded');
 
-const fake = new FakeJester();
-k.agents.set('jester', fake);
+const fake = new FakeBriefer();
+k.agents.set('briefer', fake);
 
 let recycled = null;
 k.on('recycled', (e) => (recycled = e));
 
-await k.recycleJester();
+await k.recycleBriefer();
 
 // It must have ASKED for a handover before killing anything.
-a.equal(fake.sent.length, 1, 'jester must be asked for a handover note');
+a.equal(fake.sent.length, 1, 'briefer must be asked for a handover note');
 a.match(fake.sent[0], /handover/i, 'the request must ask for a handover');
-a.equal(fake.stopped, true, 'the old jester must be stopped');
+a.equal(fake.stopped, true, 'the old briefer must be stopped');
 
 // The successor must exist, and must not be the same object.
-const successor = k.agents.get('jester');
-a.ok(successor, 'a replacement jester must be spawned');
+const successor = k.agents.get('briefer');
+a.ok(successor, 'a replacement briefer must be spawned');
 a.notEqual(successor, fake, 'the replacement must be a new agent');
 
 // The whole point: the note carries over.
@@ -76,14 +76,53 @@ a.match(successor.spec.prompt, /HANDOVER FROM YOUR PREDECESSOR/,
 a.ok(successor.spec.prompt.includes(HANDOVER),
   'the predecessor\'s actual note must reach the successor');
 
+// A note that is not bounded defeats the point of recycling at all.
+//
+// #captureHandover accumulates EVERY text event of the retirement turn, not
+// just the note, and the result goes into the successor's system prompt — where
+// it is charged on every turn that successor ever takes. A member that reasons
+// out loud before writing its note therefore hands its successor the whole
+// monologue, permanently, and it compounds down a recycle chain. This asserted
+// only that the note arrived, which is why nothing noticed.
+{
+  const verbose = new FakeBriefer();
+  verbose.send = function (text) {
+    this.sent.push(text);
+    setImmediate(() => {
+      this.emit('text', 'thinking out loud. '.repeat(4000));   // ~72k chars of preamble
+      this.emit('text', HANDOVER);                             // the actual note, last
+      this.emit('turn_end', { usage: {}, costUsd: 0 });
+    });
+  };
+  const k2 = new Kingdom(repo, configPath);
+  k2.base = 'master';
+  k2.bus.set('base', 'master');
+  k2.bus.set('session:briefer', 'another-old-session');
+  k2.agents.set('briefer', verbose);
+  await k2.recycleBriefer();
+
+  const prompt = k2.agents.get('briefer').spec.prompt;
+  // From the handover header to the end of the prompt: the note plus whatever
+  // blocks follow it, so the bound is the cap with room for those rather than
+  // the cap itself. Uncapped this region is ~74,000 chars, so the margin is
+  // wide enough that the assertion cannot pass by accident.
+  const seeded = prompt.slice(prompt.indexOf('HANDOVER FROM YOUR PREDECESSOR'));
+  a.ok(seeded.length < 10_000,
+    `a handover must be capped, got ${seeded.length} chars — it rides in the successor's `
+    + 'system prompt on every turn for the life of that session');
+  a.ok(seeded.includes(HANDOVER),
+    'and the cap must keep the TAIL: the note is what was asked for, the rambling came first');
+  k2.stop?.();
+}
+
 // A stale session id would resume the DEAD context and defeat the recycle.
 a.ok(!successor.sessionId || successor.sessionId !== 'old-session-id-should-be-discarded',
   'the successor must not resume the exhausted session');
 
 a.ok(recycled, 'a recycled event must be emitted');
-a.equal(recycled.name, 'jester');
+a.equal(recycled.name, 'briefer');
 a.ok(recycled.note.includes(HANDOVER));
 
 await k.stop();
 for (const d of [repo, kingdomDir(repo)]) { try { rmSync(d, { recursive: true, force: true }); } catch {} }
-console.log('t-recycle.js OK — handover written, old jester retired, successor seeded');
+console.log('t-recycle.js OK — handover written, old briefer retired, successor seeded');

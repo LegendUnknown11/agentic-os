@@ -29,12 +29,24 @@ const suites = [
   ['delivery replay', join(HERE, '..', 'src', 'replay.js')],
   ['recycle threshold', join(HERE, '..', 'src', 'recycle.js')],
   ['court vs roster', join(HERE, '..', 'ui', 'court.js')],
+  // Self-checking, like court.js: the display-name map is pure, and a role that
+  // resolves to nothing prints "undefined" into the rail.
+  ['display names', join(HERE, '..', 'ui', 'names.js')],
+  // Same again: the overview's shaping decides what the home screen SAYS is
+  // happening, and it is the one screen nobody has to open to be misled by.
+  ['overview shaping', join(HERE, '..', 'ui', 'overview.js')],
+  // The mode table decides who can be summoned, what gets a worktree and what
+  // may ever merge. Pure, so it checks itself.
+  ['court modes', join(HERE, '..', 'src', 'modes.js')],
+  // Self-checking, like court.js: the batching decision is pure, and its 14
+  // assertions were running only when someone invoked the file by hand.
+  ['batch ripeness', join(HERE, '..', 'src', 'ripeness.js')],
   ['doctor cli parsing', join(HERE, 't-doctor.js')],
   ['court memory + instructions', join(HERE, '..', 'src', 'memory.js')],
   ['concurrency', join(HERE, 't-concurrent.js')],
   ['token pool', join(HERE, 't-tokens.js')],
   ['worktree + merge', join(HERE, 't-merge.js')],
-  ['jester recycle', join(HERE, 't-recycle.js')],
+  ['briefer recycle', join(HERE, 't-recycle.js')],
   ['compaction window', join(HERE, '..', 'src', 'compact.js')],
   ['/autocompact', join(HERE, 't-compact.js')],
   ['argument panel', join(HERE, '..', 'src', 'argue.js')],
@@ -57,10 +69,24 @@ const suites = [
   ['wallpaper and music assets', join(HERE, 't-assets.js')],
   ['metrics, diff and vault panels', join(HERE, 't-panels.js')],
   ['antigravity (agy) backend', join(HERE, 't-agy.js')],
+  ['opencode backend', join(HERE, 't-opencode.js')],
   ['turn summaries', join(HERE, 't-summarize.js')],
   ['the standing goal', join(HERE, 't-goal.js')],
+  ['four modes', join(HERE, 't-modes.js')],
+  // The repo becomes optional on top of the four modes: Chat/Research/Build
+  // must run with none attached, and only Code may ever require one.
+  ['repo becomes optional', join(HERE, 't-repo-optional.js')],
   ['skill set + observation masking', join(HERE, 't-skills.js')],
+  ['panel teardown', join(HERE, 't-win.js')],
+  ['a claude that dies mid-turn', join(HERE, 't-claude-death.js')],
 ];
+
+// A suite that hangs used to hang `npm test` forever with no output — the exact
+// shape of the `agy models` failure doctor.js:159 documents, where a CLI waits
+// on something that never arrives. The slowest real suite is t-batching at ~35s
+// under contention, so three minutes is far outside honest work and squarely
+// inside "this is never coming back".
+const SUITE_TIMEOUT_MS = 180_000;
 
 // Four is not tuning for this machine's core count — the suites are waiting, not
 // computing, so more workers keeps helping long past the CPUs. It is the point
@@ -82,7 +108,8 @@ const WIDTH = Math.max(1, Math.min(
  * the retry below gets to try again once the pool has drained.
  */
 const run = ([label, file]) => new Promise((resolve) => {
-  const done = (ok, out) => resolve({ label, out, ok });
+  let timer;
+  const done = (ok, out) => { clearTimeout(timer); resolve({ label, out, ok }); };
   let out = '';
   let p;
   try {
@@ -91,6 +118,10 @@ const run = ([label, file]) => new Promise((resolve) => {
     return done(false, `could not start ${label}: ${e.message}\n`);
   }
   p.on('error', (e) => done(false, `${out}\ncould not run ${label}: ${e.message}\n`));
+  timer = setTimeout(() => {
+    p.kill();
+    done(false, `${out}\n${label} timed out after ${SUITE_TIMEOUT_MS / 1000}s and was killed.\n`);
+  }, SUITE_TIMEOUT_MS);
   p.stdout.on('data', (d) => { out += d; });
   p.stderr.on('data', (d) => { out += d; });
   // 'close' rather than 'exit': exit can fire before the pipes have drained, and

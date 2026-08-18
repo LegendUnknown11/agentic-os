@@ -38,6 +38,35 @@ export function readApproval(body) {
   return p;
 }
 
+/** The CLIs a role may name. An unknown one silently ran codex. */
+export const ROLE_CLIS = ['claude', 'codex', 'agy', 'opencode'];
+
+// A role name is not a label. It becomes a directory under wt/ and a git
+// branch, and it reaches renameSync, `git add -A` and `worktree remove
+// --force` — so `../..` in it escapes the worktree root. Git's own refname
+// rules stop the branch half; nothing stopped the filesystem half.
+const NAME_OK = /^[a-z][a-z0-9_-]{0,31}$/;
+
+/**
+ * Why this proposed role cannot be created, or null if it can.
+ *
+ * Used by propose_role (so the orchestrator is told immediately, and can fix it) AND by
+ * approve (because the sovereign is ruling on whether the court needs the role,
+ * having read a description an LLM wrote — that is a judgement, not validation,
+ * and it is the approve path that writes to disk).
+ */
+export function badRole(p, { taken = [] } = {}) {
+  if (typeof p?.name !== 'string' || !NAME_OK.test(p.name)) {
+    return `"${p?.name}" is not a usable name — lowercase letters, digits, - and _ only, `
+      + 'starting with a letter, at most 32 characters.';
+  }
+  if (taken.includes(p.name)) return `"${p.name}" is already a member of the court.`;
+  if (p.cli !== undefined && !ROLE_CLIS.includes(p.cli)) {
+    return `"${p.cli}" is not a CLI this kingdom runs (${ROLE_CLIS.join(', ')}).`;
+  }
+  return null;
+}
+
 if (process.argv[1]?.endsWith('approval.js')) {
   const { strict: a } = await import('node:assert');
 
@@ -61,5 +90,23 @@ if (process.argv[1]?.endsWith('approval.js')) {
   a.equal(readApproval('{"kind":"something-new","note":"hi"}').kind, 'something-new',
     'an unknown kind still renders: TITLES falls back to kind.toUpperCase()');
 
-  console.log('approval.js self-check OK — unreadable rows are null, never an exception');
+  // A role name reaches the filesystem, so it is checked like one.
+  a.equal(badRole({ name: 'archivist', cli: 'claude' }), null, 'an ordinary role is fine');
+  a.equal(badRole({ name: 'a' }), null, 'one letter is a name');
+  a.match(badRole({ name: '../../etc/passwd' }), /not a usable name/,
+    'a traversal must never reach worktreePath');
+  a.match(badRole({ name: '..' }), /not a usable name/);
+  a.match(badRole({ name: 'has space' }), /not a usable name/);
+  a.match(badRole({ name: 'Caps' }), /not a usable name/, 'wt/ is case-insensitive on Windows');
+  a.match(badRole({ name: '9lives' }), /not a usable name/, 'must start with a letter');
+  a.match(badRole({ name: '' }), /not a usable name/);
+  a.match(badRole({ name: 'x'.repeat(33) }), /not a usable name/);
+  a.match(badRole({ name: null }), /not a usable name/);
+  a.match(badRole({ name: 'coder' }, { taken: ['coder'] }), /already a member/,
+    'a duplicate name shadows the member it collides with in specOf');
+  a.match(badRole({ name: 'ok', cli: 'gemini' }), /not a CLI this kingdom runs/,
+    'an unknown cli fell through to codex and ran the wrong model in silence');
+  a.equal(badRole({ name: 'ok' }), null, 'cli is optional — peasantDefaults supplies it');
+
+  console.log('approval.js self-check OK — unreadable rows are null, bad roles never reach disk');
 }

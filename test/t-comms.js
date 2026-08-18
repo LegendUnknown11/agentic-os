@@ -1,5 +1,5 @@
 // The test that matters: can two peasants talk to EACH OTHER, without the
-// king relaying? Uses an all-codex court because claude's OAuth is expired.
+// orchestrator relaying? Uses an all-codex court because claude's OAuth is expired.
 //   node test/t-comms.js
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
@@ -18,8 +18,8 @@ git('commit', '-qm', 'init');
 
 const configPath = join(repo, 'kingdom.config.json');
 writeFileSync(configPath, JSON.stringify({
-  king: { name: 'king', cli: 'codex', prompt: 'You rule.' },
-  jester: { name: 'jester', cli: 'codex', prompt: 'You watch.' },
+  orchestrator: { name: 'orchestrator', cli: 'codex', prompt: 'You rule.' },
+  briefer: { name: 'briefer', cli: 'codex', prompt: 'You watch.' },
   peasants: [
     {
       name: 'alpha', cli: 'codex',

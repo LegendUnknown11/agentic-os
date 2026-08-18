@@ -189,6 +189,11 @@ async function probe(cli) {
     }
   }
 
+  if (cli === 'opencode') {
+    const r = await tryExec(resolved.command, [...resolved.prefixArgs, '--version']);
+    if (r.ok) console.log(ok(`opencode: ${r.out || 'installed'}`));
+  }
+
   // Per CLI, because they share no argument surface at all. This used to be a
   // claude/else ternary, so `agy` was handed codex's `exec --json` and reported
   // as "gave an unrecognised response" — the CLI was fine, the probe was wrong.
@@ -200,6 +205,7 @@ async function probe(cli) {
     // and cheerfully answers a question about it — see #runAgyTurn.
     agy: ['--print', 'reply with the single word OK',
       '--output-format', 'text', '--model', 'gemini-3.6-flash-low'],
+    opencode: ['run', 'reply with the single word OK', '--format', 'json', '--auto'],
   };
   const args = PROBES[cli];
   if (!args) {
@@ -234,7 +240,7 @@ async function probe(cli) {
 const clis = new Set();
 try {
   const cfg = JSON.parse(readFileSync(new URL('../kingdom.config.json', import.meta.url), 'utf8'));
-  for (const m of [cfg.king, cfg.jester, ...cfg.peasants]) clis.add(m.cli ?? 'claude');
+  for (const m of [cfg.orchestrator, cfg.briefer, ...cfg.peasants]) clis.add(m.cli ?? 'claude');
   // The advisor and the summariser are not court members, but they are real
   // model calls on real CLIs and they fail the same way. Leaving them out meant
   // a summariser on a CLI that was broken or logged out was never checked.

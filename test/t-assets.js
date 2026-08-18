@@ -26,8 +26,8 @@ git('commit', '-qm', 'init');
 
 const cfg = join(repo, 'kingdom.config.json');
 writeFileSync(cfg, JSON.stringify({
-  king: { name: 'king', cli: 'codex' },
-  jester: { name: 'jester', cli: 'codex' },
+  orchestrator: { name: 'orchestrator', cli: 'codex' },
+  briefer: { name: 'briefer', cli: 'codex' },
   peasants: [],
   rolesSeeded: true,
   advisor: { promptEngineer: false, autoModel: false },

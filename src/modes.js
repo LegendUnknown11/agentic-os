@@ -1,0 +1,244 @@
+// What shape the court is in.
+//
+// The court had exactly one shape: decompose, summon a crew, put every
+// specialist in an isolated git worktree, test what comes back, merge it. That
+// is right for writing code and wrong for the other three things this
+// application is actually used for. Asking a question spent an advisor call, an
+// orchestrator turn, a summon approval, a `git worktree add` and a peasant
+// carrying four thousand tokens of test doctrine — to produce a paragraph.
+//
+// A mode answers five questions, and they are the questions that differ:
+//
+//   crew        who may be summoned at all
+//   worktrees   does a member get an isolated checkout
+//   merge       can work ever reach the base branch
+//   tasks       is there a shared task list
+//   vaultDir    where the durable output of this mode belongs
+//
+// WHY RESEARCH STILL GETS A WORKTREE. "Read-only against the repo" needs an
+// enforcement mechanism, and a per-CLI sandbox flag is not one: codex has
+// `sandbox_mode` (the advisor uses it), the other three CLIs do not, and a rule
+// that holds for one member in four is not a rule. Isolation is the mechanism
+// this system already has and it holds for all four — a member in a worktree
+// cannot touch the real repo, and with `merge:false` nothing it writes can
+// escape. Read-only by construction rather than by a flag two CLIs ignore.
+//
+// Pure on purpose, and self-checking: nothing here reads a file, spawns a
+// process or touches the bus, so the whole table is testable in milliseconds.
+
+/**
+ * `crew: 'all'` is the whole configured bench; an array is a shortlist; an
+ * empty array means this mode summons nobody at all.
+ */
+export const MODES = {
+  code: {
+    label: 'Code',
+    blurb: 'Write and change code. A crew in isolated worktrees, tests, review, merge.',
+    crew: 'all',
+    worktrees: true,
+    merge: true,
+    tasks: true,
+    vaultDir: null,
+  },
+  research: {
+    label: 'Research',
+    blurb: 'Find things out. Findings are written up as a note; nothing is merged.',
+    crew: ['researcher', 'writer', 'strategist', 'auditor', 'fact-checker', 'defendant', 'critic'],
+    worktrees: true,
+    merge: false,
+    tasks: true,
+    vaultDir: 'Research',
+    pipeline:
+      `Before you write the note, run contestable claims — numbers, named ` +
+      `standards, citations, specific facts — past the fact-checker rather than ` +
+      `trusting how confident they sound. If a finding is worth recording but ` +
+      `genuinely contestable, summon a defendant and a critic to argue it out ` +
+      `before you commit to it.`,
+  },
+  chat: {
+    label: 'Chat',
+    blurb: 'Talk to the orchestrator. No crew, no task list, no worktree, nothing to approve.',
+    crew: [],
+    worktrees: false,
+    merge: false,
+    tasks: false,
+    vaultDir: null,
+  },
+  build: {
+    label: 'Build',
+    blurb: 'Extend the court itself — skills, notes, instructions. Vault writes land; code stays on the branch.',
+    crew: ['writer', 'architect', 'strategist'],
+    worktrees: true,
+    merge: false,
+    tasks: true,
+    vaultDir: null,
+  },
+};
+
+export const MODE_NAMES = Object.keys(MODES);
+export const DEFAULT_MODE = 'code';
+
+/**
+ * Never undefined.
+ *
+ * This is read on every spawn, every tool call and every delivery. A typo in a
+ * config file, a mode from a newer build, or a bus row written before modes
+ * existed must all land somewhere sensible — and the sensible place is the
+ * behaviour the court had before this file existed.
+ */
+export function modeOf(name) {
+  return MODES[name] ?? MODES[DEFAULT_MODE];
+}
+
+/** Normalise anything to a real mode key. */
+export const modeName = (name) => (MODES[name] ? name : DEFAULT_MODE);
+
+/**
+ * Can this member be summoned in this mode?
+ *
+ * The orchestrator and the briefer are exempt: they are the court's officers, they are
+ * started with it, and a mode that could not talk to its own orchestrator would
+ * be a mode with nothing to say. Only the bench is filtered.
+ */
+export function canSummon(mode, name, role = 'peasant') {
+  if (role !== 'peasant') return true;
+  const crew = modeOf(mode).crew;
+  return crew === 'all' ? true : crew.includes(name);
+}
+
+/** The bench this mode offers, given the full configured roster of names. */
+export function crewFor(mode, allNames = []) {
+  const crew = modeOf(mode).crew;
+  return crew === 'all' ? [...allNames] : allNames.filter((n) => crew.includes(n));
+}
+
+/**
+ * Tools this mode withholds, by the capability they belong to rather than by
+ * name — a tool added later that merges is a tool that must be gated, and
+ * listing names here would silently exempt it.
+ *
+ * `declare_done` is deliberately NOT gated by `merge`: it is how a member
+ * reports that it has finished, which every mode needs. What Research and Build
+ * withhold is the step AFTER the report — the merge itself.
+ */
+const GATED = {
+  crew:  ['summon', 'assign', 'propose_role'],
+  tasks: ['add_task', 'tasks', 'claim_task', 'finish_task', 'submit_plan', 'rule_on_plan'],
+  merge: ['request_merge', 'send_back'],
+};
+
+export function toolAllowed(mode, tool) {
+  const m = modeOf(mode);
+  if (GATED.crew.includes(tool) && !(m.crew === 'all' || m.crew.length)) return false;
+  if (GATED.tasks.includes(tool) && !m.tasks) return false;
+  if (GATED.merge.includes(tool) && !m.merge) return false;
+  return true;
+}
+
+/**
+ * The block appended to a member's system prompt.
+ *
+ * Baked in at spawn and cached with the rest of the prompt, which is correct
+ * here: each mode has its own bench, so a member spawned under one mode is not
+ * reused under another. A LIVE mode change is carried by a bus notice instead —
+ * see kingdom.js, and the measurement beside it about what rewriting a cached
+ * prompt costs.
+ */
+export function modeBlock(mode) {
+  const m = modeOf(mode);
+  const lines = [`\n\n--- THIS COURT IS IN ${m.label.toUpperCase()} MODE ---`, m.blurb];
+  if (!m.merge) {
+    lines.push(
+      `NOTHING MERGES IN THIS MODE. Your worktree is yours and it stays on its ` +
+      `own branch — do not ask for a merge, and do not describe work as landed. ` +
+      `Say what you changed and where it is.`);
+  }
+  if (!m.tasks) lines.push(`There is no shared task list in this mode.`);
+  if (m.crew !== 'all' && !m.crew.length) {
+    lines.push(
+      `There is no crew. Answer the sovereign yourself rather than proposing ` +
+      `anyone to do it for you — there is nobody to propose.`);
+  }
+  if (m.vaultDir) {
+    lines.push(
+      `THE DELIVERABLE IS A NOTE. Call vault_write with your findings — it lands ` +
+      `under "${m.vaultDir}/" automatically in this mode, you do not need to put ` +
+      `that in the title. Then say where you put it. A finding that lives only ` +
+      `in this transcript is one the court pays to discover again next month.`);
+  }
+  if (m.pipeline) lines.push(m.pipeline);
+  return lines.join('\n') + '\n';
+}
+
+// Self-check. `typeof process` rather than a bare `process.argv`: this module is
+// imported by the UI's mode switcher too, and a bare reference throws
+// ReferenceError in a browser and takes the whole module graph down with it.
+if (typeof process !== 'undefined' && process.argv?.[1]?.endsWith('modes.js')) {
+  const assert = await import('node:assert/strict');
+  const a = assert.default ?? assert;
+
+  // --- the table itself ---
+  a.deepEqual(MODE_NAMES, ['code', 'research', 'chat', 'build']);
+  for (const n of MODE_NAMES) {
+    const m = MODES[n];
+    a.ok(m.label && m.blurb, `${n} needs a label and a blurb — both reach the UI`);
+    a.ok(m.crew === 'all' || Array.isArray(m.crew), `${n}.crew must be 'all' or a list`);
+  }
+  // The two the sovereign chose deliberately, asserted rather than assumed.
+  a.equal(MODES.code.merge, true);
+  a.equal(MODES.research.merge, false, 'research never merges');
+  a.equal(MODES.build.merge, false, 'build never merges');
+  a.equal(MODES.research.worktrees, true, 'isolation IS the read-only mechanism');
+  a.equal(MODES.build.worktrees, true);
+  a.deepEqual(MODES.chat.crew, [], 'chat is the orchestrator alone');
+  a.equal(MODES.chat.worktrees, false, 'nobody to give a worktree to');
+
+  // --- modeOf never returns undefined ---
+  a.equal(modeOf('code'), MODES.code);
+  a.equal(modeOf('nonsense'), MODES.code, 'an unknown mode falls back to Code, not undefined');
+  a.equal(modeOf(undefined), MODES.code);
+  a.equal(modeOf(null), MODES.code);
+  a.equal(modeName('chat'), 'chat');
+  a.equal(modeName('nonsense'), 'code');
+
+  // --- who may be summoned ---
+  a.equal(canSummon('code', 'compiler-engineer'), true, 'code offers the whole bench');
+  a.equal(canSummon('research', 'researcher'), true);
+  a.equal(canSummon('research', 'compiler-engineer'), false, 'not on the research bench');
+  a.equal(canSummon('chat', 'researcher'), false, 'chat summons nobody');
+  // The officers are never filtered: a mode that could not reach its own
+  // orchestrator would have nothing to say.
+  a.equal(canSummon('chat', 'orchestrator', 'orchestrator'), true);
+  a.equal(canSummon('chat', 'briefer', 'briefer'), true);
+
+  const bench = ['researcher', 'coder', 'writer', 'compiler-engineer'];
+  a.deepEqual(crewFor('code', bench), bench);
+  a.deepEqual(crewFor('research', bench), ['researcher', 'writer']);
+  a.deepEqual(crewFor('chat', bench), []);
+
+  // --- the tool gate agrees with the table ---
+  a.equal(toolAllowed('code', 'request_merge'), true);
+  a.equal(toolAllowed('research', 'request_merge'), false);
+  a.equal(toolAllowed('build', 'request_merge'), false);
+  a.equal(toolAllowed('chat', 'summon'), false, 'nobody to summon');
+  a.equal(toolAllowed('chat', 'add_task'), false, 'no task list in chat');
+  a.equal(toolAllowed('research', 'add_task'), true);
+  // The report survives everywhere; only the merge after it is withheld.
+  for (const n of MODE_NAMES) {
+    a.equal(toolAllowed(n, 'declare_done'), true, `${n} must still be able to report work`);
+    a.equal(toolAllowed(n, 'send_message'), true, `${n} must still be able to talk`);
+    a.equal(toolAllowed(n, 'vault_write'), true, `${n} must still be able to write a note`);
+  }
+
+  // --- the prompt block says the load-bearing thing in each mode ---
+  a.match(modeBlock('research'), /NOTHING MERGES/);
+  a.match(modeBlock('research'), /Research\//, 'research must be told where the note goes');
+  a.match(modeBlock('research'), /fact-checker/i, 'research must nudge toward verifying contestable claims');
+  a.doesNotMatch(modeBlock('code'), /fact-checker/i, 'the pipeline nudge is research-only');
+  a.match(modeBlock('build'), /NOTHING MERGES/);
+  a.doesNotMatch(modeBlock('code'), /NOTHING MERGES/);
+  a.match(modeBlock('chat'), /no crew|nobody to propose/i);
+  a.match(modeBlock('nonsense'), /CODE MODE/, 'an unknown mode still produces a usable block');
+
+  console.log('modes ok — 4 shapes, merge withheld in 2, chat summons nobody');
+}

@@ -1,11 +1,11 @@
-// The kingdom: king (decides), jester (watches everything, briefs the king),
+// The kingdom: orchestrator (decides), briefer (watches everything, briefs the orchestrator),
 // peasants (do the work in isolated worktrees).
 //
-// The jester exists so the king's context survives a long session. The king
+// The briefer exists so the orchestrator's context survives a long session. The orchestrator
 // never drinks the firehose; it reads briefings.
 import { EventEmitter } from 'node:events';
-import { readFileSync, existsSync, writeFileSync, mkdirSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { readFileSync, existsSync, writeFileSync, mkdirSync, renameSync, copyFileSync } from 'node:fs';
+import { join, dirname, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { Agent, MUTES_KINGDOM_TOOLS } from './agent.js';
@@ -16,12 +16,14 @@ import { summarize, settingsOf as summarizerSettings } from './summarize.js';
 import { Bus } from './bus.js';
 import { inputTokens, deltaOf, totalsOf } from './usage.js';
 import { costOf, tableFrom } from './price.js';
-import { readApproval } from './approval.js';
+import { readApproval, badRole } from './approval.js';
 import { parseWindow, autoWindow, fmtTokens } from './compact.js';
+import { ripeness, checkTiming } from './ripeness.js';
 import { argue, pickPanel, verdictNote } from './argue.js';
+import { modeOf, modeName, modeBlock, canSummon } from './modes.js';
 import {
-  ensureRepo, behindBase, commitAll, createWorktree, dbPath, diffOf, statOf, kingdomDir,
-  globalTokenStore, mergeWorktree, removeWorktree, runTests, worktreePath,
+  assertRepo, ensureRepo, behindBase, commitAll, createWorktree, dbPath, diffOf, statOf, kingdomDir,
+  globalTokenStore, mergeWorktree, removeWorktree, runTests, testCommand, worktreePath,
 } from './worktree.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -44,9 +46,26 @@ export const BATCH_MAX_WAIT_MS = 180_000;  // hold a batch this long waiting for
 // worst wait tracks the hold all the way to 15 minutes. If BATCH_MAX_WAIT_MS
 // is ever lowered, lower this with it or notices become the tail.
 export const NOTICE_HOLD_MS = 180_000;
+// A handover note goes into the successor's system prompt and stays there for
+// that session's whole life, so it is charged on every turn the successor takes.
+// 6000 chars is ~1500 tokens — generous for "facts and decisions, not
+// narrative", and 7.5% of the briefer's 20k window rather than the 25% an
+// uncapped monologue was taking.
+export const HANDOVER_CAP = 6_000;
+// Concurrent summariser children. Two, because a summary is a caption on a
+// panel and the court's own work is what the CPU is for.
+const SUMMARY_CONCURRENCY = 2;
+// The event log grows for the whole session — a day-long run accumulates tens
+// of thousands of tool events — and prune() only ever ran at startup.
+const PRUNE_EVERY_MS = 5 * 60_000;
+// A spawn that fails for a reason a retry cannot change — no such CLI on PATH,
+// a repo whose worktree will not create — was retried on every 300ms tick, for
+// the life of the session, each attempt several git subprocesses and one more
+// error at the throne room. Back off to a minute and stay there.
+const SPAWN_BACKOFF_MAX_MS = 60_000;
 // Even an idle member is worth a pause: two messages seconds apart would
 // otherwise cost two full context replays instead of one. Measured on a real
-// run, the king took six separate 70k-context turns inside 2.5 minutes because
+// run, the orchestrator took six separate 70k-context turns inside 2.5 minutes because
 // each peasant reply landed just after the previous batch was acked — 420k
 // tokens where one turn would have done. 4s was far too eager; the cost of
 // waiting is latency, the cost of not waiting is a whole replay.
@@ -71,7 +90,7 @@ export const NOTICE_HOLD_MS = 180_000;
 // beyond it), so this is the knee and not an arbitrary stopping point.
 //
 // Two earlier numbers here were wrong and are worth remembering: 15s was far
-// too narrow (member-to-king gaps are p25 10.4s, median 40.6s), and the "a
+// too narrow (member-to-orchestrator gaps are p25 10.4s, median 40.6s), and the "a
 // third of turns" figure that first justified widening came from clustering
 // timestamps, which overstates by ~4x because it ignores that the sovereign
 // bypasses the window entirely and a busy member's queue already drains as one
@@ -86,7 +105,7 @@ const NO_EFFORT_MODELS = ['haiku'];
 // A member awake but unaddressed still holds context you will pay to replay.
 // Sleeping is free and revival is transparent, so sleep early.
 const IDLE_SLEEP_MS = Number(process.env.KINGDOM_IDLE_SLEEP_MS ?? 300_000); // 0 disables
-const DIGEST_DIFF_LIMIT = 12_000; // the jester is cheap, but this is per-done
+const DIGEST_DIFF_LIMIT = 12_000; // the briefer is cheap, but this is per-done
 // Recycle thresholds now come from #recycleThreshold (per member, configurable).
 
 /**
@@ -131,7 +150,21 @@ export class Kingdom extends EventEmitter {
     super();
     this.repo = repo;
     this.configPath = configPath;
-    this.config = JSON.parse(readFileSync(configPath, 'utf8'));
+    // This runs before any handler exists, so a throw here is not an error the
+    // court reports — it is a court that does not come up at all. #persistConfig
+    // writes atomically now, but a file truncated by an OLDER build, or edited
+    // by hand, must still be survivable: fall back to the shipped template and
+    // keep the broken file for the sovereign to look at.
+    try {
+      this.config = JSON.parse(readFileSync(configPath, 'utf8'));
+    } catch (e) {
+      const template = join(HERE, '..', 'kingdom.config.json');
+      this.config = JSON.parse(readFileSync(template, 'utf8'));
+      this.configBroken = `${configPath} could not be read (${e.message}); `
+        + 'started from the shipped defaults instead. Your roster, goal and model '
+        + 'choices are in that file if it can be repaired.';
+      try { renameSync(configPath, `${configPath}.broken`); } catch { /* nothing to keep */ }
+    }
     this.#seedRoles();
     this.bus = new Bus(dbPath(repo));
     this.agents = new Map(); // name -> Agent (awake, has a live process)
@@ -172,24 +205,24 @@ export class Kingdom extends EventEmitter {
       ...library.filter((r) => !have.has(r.name)).map((r) => ({ ...defaults, ...r })),
     ];
     this.config.rolesSeeded = true;
-    writeFileSync(this.configPath, JSON.stringify(this.config, null, 2));
+    this.#persistConfig();
   }
 
   roleOf(name) {
-    return name === this.config.king.name ? 'king'
-      : name === this.config.jester.name ? 'jester'
+    return name === this.config.orchestrator.name ? 'orchestrator'
+      : name === this.config.briefer.name ? 'briefer'
       : 'peasant';
   }
 
   specOf(name) {
-    if (name === this.config.king.name) return this.config.king;
-    if (name === this.config.jester.name) return this.config.jester;
+    if (name === this.config.orchestrator.name) return this.config.orchestrator;
+    if (name === this.config.briefer.name) return this.config.briefer;
     return this.config.peasants.find((p) => p.name === name);
   }
 
   #publishRoster() {
     if (this.stopping) return [];
-    const roster = [this.config.king, this.config.jester, ...this.config.peasants].map((s) => ({
+    const roster = [this.config.orchestrator, this.config.briefer, ...this.config.peasants].map((s) => ({
       name: s.name,
       role: this.roleOf(s.name),
       title: s.title ?? '',
@@ -246,7 +279,7 @@ export class Kingdom extends EventEmitter {
   authEnvFor(name) {
     const pool = this.#loadTokens();
     if (!pool.length) return null;
-    const order = [this.config.king, this.config.jester, ...this.config.peasants]
+    const order = [this.config.orchestrator, this.config.briefer, ...this.config.peasants]
       .findIndex((s) => s.name === name);
     const offset = Number(this.bus.get(`tokenshift:${name}`) ?? 0);
     return { CLAUDE_CODE_OAUTH_TOKEN: pool[(Math.max(order, 0) + offset) % pool.length] };
@@ -282,7 +315,7 @@ export class Kingdom extends EventEmitter {
    * backend") instead of setting six dropdowns by hand.
    *
    * Overridable per kingdom with `"domains"` in the config. Cross-cutting roles
-   * — tester, reviewer, mason, physician, scout, scribe — are in NEITHER by
+   * — tester, reviewer, refactoring-engineer, debugger, researcher, writer — are in NEITHER by
    * default: they follow the work rather than a layer, and sweeping them with a
    * layer choice is how a reviewer ends up on a model nobody chose for it.
    * A member listed in both domains simply takes whichever was applied last.
@@ -300,8 +333,8 @@ export class Kingdom extends EventEmitter {
   }
 
   domains() {
-    return this.config.domains ?? { frontend: ['designer', 'coder'],
-      backend: ['architect', 'steward', 'sentry', 'quartermaster'] };
+    return this.config.domains ?? { frontend: ['designer', 'coder', 'frontend'],
+      backend: ['backend', 'dba', 'architect', 'devops-engineer'] };
   }
 
   /** Put every member of one domain on the same model. */
@@ -359,8 +392,43 @@ export class Kingdom extends EventEmitter {
     };
   }
 
+  /**
+   * The ONLY writer of kingdom.config.json, and it writes atomically.
+   *
+   * This file is rewritten on every model change, goal edit, advisor toggle and
+   * milestone tick, and it is read in the CONSTRUCTOR — before any handler
+   * exists to catch a parse failure. So a kill mid-write (window close, an
+   * Electron teardown racing a setModel) truncates it and every future launch
+   * throws before the court can start, with no recovery but hand-editing. Same
+   * shape as the approval-parse outage approval.js was written to fix.
+   *
+   * tmp + rename, because rename is atomic: a reader sees the old file or the
+   * new one, never half of either. vault.js:writeIndex already does this.
+   */
+  /**
+   * What this project's tests are actually run with, told to the peasant.
+   *
+   * Read from the repo rather than a worktree: worktrees are created per
+   * peasant and this is built for the prompt, which is assembled before one
+   * necessarily exists. Same detector runTests uses, so what the peasant is
+   * told and what the orchestrator later runs cannot disagree.
+   */
+  #testCommandBlock() {
+    let cmd = null;
+    try { cmd = testCommand(this.repo); } catch { /* unreadable repo; say nothing */ }
+    return cmd
+      ? `This project's tests run with \`${[cmd[0], ...cmd[1]].join(' ')}\`, from the root of `
+        + `your worktree. Use that framework and its existing directory; run it and report the `
+        + `real output.\n`
+      : `This project has NO test command the crown can find. If you cannot find a way to run `
+        + `a check, SAY SO plainly in your report — do not claim tests passed, and do not invent `
+        + `a framework the project does not use.\n`;
+  }
+
   #persistConfig() {
-    writeFileSync(this.configPath, JSON.stringify(this.config, null, 2));
+    const tmp = `${this.configPath}.tmp`;
+    writeFileSync(tmp, JSON.stringify(this.config, null, 2));
+    renameSync(tmp, this.configPath);
   }
 
   /**
@@ -397,6 +465,36 @@ export class Kingdom extends EventEmitter {
   }
 
   /**
+   * Write the kingdom's MCP server configuration for `opencode` into workspace.
+   */
+  #writeOpenCodeMcp(name, cwd, role) {
+    try {
+      const file = join(cwd, '.opencode.json');
+      const cfg = {
+        mcp: {
+          kingdom: {
+            type: 'local',
+            command: [process.execPath, MCP_PATH],
+            enabled: true,
+            environment: {
+              KINGDOM_AGENT: name,
+              KINGDOM_ROLE: role,
+              KINGDOM_DB: dbPath(this.repo),
+              KINGDOM_REPO: this.repo,
+              ...(this.config.vault
+                ? { KINGDOM_VAULT: this.config.vault, KINGDOM_VAULT_DIR: this.config.vaultWriteDir ?? 'Kingdom' }
+                : {}),
+            },
+          },
+        },
+      };
+      writeFileSync(file, JSON.stringify(cfg, null, 2), 'utf8');
+    } catch (e) {
+      this.#warn(`Could not write .opencode.json for "${name}": ${e.message}.`);
+    }
+  }
+
+  /**
    * Declare the kingdom's MCP server in agy's GLOBAL config.
    *
    * Measured on agy 1.1.10: a workspace `.agents/mcp_config.json` is IGNORED in
@@ -411,7 +509,7 @@ export class Kingdom extends EventEmitter {
    * Keep the kingdom's own droppings out of the sovereign's repository.
    *
    * An agy member needs `.agents/kingdom-id.json` in its cwd — that is how the
-   * MCP server works out who it is talking to. For the king and jester that
+   * MCP server works out who it is talking to. For the orchestrator and briefer that
    * cwd IS the repo root, so the court leaves an untracked directory in a repo
    * it does not own, where it shows up in every `git status` and rides along
    * with anyone's `git add -A`.
@@ -487,12 +585,21 @@ export class Kingdom extends EventEmitter {
   }
 
   async start() {
+    // Said now rather than in the constructor, which had nobody listening.
+    if (this.configBroken) this.emit('failure', { name: 'orchestrator', message: this.configBroken });
+
     // Creates the repository if the folder is not one yet — you point the
-    // kingdom at a folder, not at a checkout you prepared first.
-    this.base = await ensureRepo(this.repo, {
-      onInit: (what) => this.emit('started', { init: what, dir: kingdomDir(this.repo) }),
-    });
-    this.bus.set('base', this.base);
+    // kingdom at a folder, not at a checkout you prepared first. No repo at
+    // all is now a valid start: Chat/Research/Build don't need one, and Code
+    // mode is refused (see setMode) until one is attached.
+    if (this.repo) {
+      this.base = await ensureRepo(this.repo, {
+        onInit: (what) => this.emit('started', { init: what, dir: kingdomDir(this.repo) }),
+      });
+      this.bus.set('base', this.base);
+    } else {
+      this.base = null;
+    }
     this.bus.prune();
     // Restore the crew BEFORE the delivery loop starts. #tick only iterates
     // `summoned`, so a peasant woken before a restart would otherwise never be
@@ -509,7 +616,7 @@ export class Kingdom extends EventEmitter {
     const inherited = [...this.summoned].filter((n) => this.roleOf(n) === 'peasant');
     if (inherited.length) {
       this.emit('inherited', { names: inherited });
-      this.bus.post('orchestrator', this.config.king.name,
+      this.bus.post('orchestrator', this.config.orchestrator.name,
         `AWARENESS ONLY — TAKE NO ACTION. Still in service from a previous session: `
         + `${inherited.join(', ')}. They were approved then, not now, and they cost money the `
         + `moment anyone messages them. Do not use one unless this session's work needs it.`,
@@ -517,18 +624,22 @@ export class Kingdom extends EventEmitter {
     }
     this.#publishRoster();
     this.#reloadApprovals();
-    await this.#spawn(this.config.king.name);
-    await this.#spawn(this.config.jester.name);
+    await this.#spawn(this.config.orchestrator.name);
+    await this.#spawn(this.config.briefer.name);
     this.timer = setInterval(() => this.#tick().catch((e) => this.emit('error', e)), POLL_MS);
     // agy reads only the GLOBAL mcp_config.json, so the declaration has to be
     // installed before any Antigravity member is spawned.
-    const usesAgy = [this.config.king, this.config.jester, ...this.config.peasants]
+    const usesAgy = [this.config.orchestrator, this.config.briefer, ...this.config.peasants]
       .some((s) => (s?.cli ?? 'claude') === 'agy')
       || (this.config.advisor?.cli === 'agy') || (this.config.summarizer?.cli === 'agy');
-    if (usesAgy) { this.#installAgyMcp(); this.#excludeAgentsDir(); }
+    if (usesAgy) { this.#installAgyMcp(); if (this.repo) this.#excludeAgentsDir(); }
     // The goal lives in the config; the bus copy is what the MCP tools read,
     // and it must be refreshed on every start or a restarted court forgets.
     this.bus.set('goal', JSON.stringify(this.goal() ?? ''));
+    // Published before the first member spawns: every MCP server reads this to
+    // decide which tools it may offer, and one that starts before the key
+    // exists would fall back to Code and hand a Chat-mode court a summon tool.
+    this.bus.set('mode', this.mode());
 
     this.emit('started', { base: this.base, dir: kingdomDir(this.repo) });
   }
@@ -593,7 +704,26 @@ export class Kingdom extends EventEmitter {
     if (live) return Promise.resolve(live);
     const inflight = this.spawning.get(name);
     if (inflight) return inflight;
-    const p = this.#doSpawn(name, seedPrompt).finally(() => this.spawning.delete(name));
+
+    // The dedupe above collapses CONCURRENT attempts; nothing collapsed
+    // sequential ones. A spawn that fails the same way every time — a CLI
+    // missing from PATH, a repo whose worktree cannot be created — was retried
+    // by the delivery loop every 300ms forever, each attempt running several
+    // git subprocesses and pushing another error at the throne room. Back off
+    // instead, and let the batch sit unacked as it already does.
+    const failed = this.spawnFailed?.get(name);
+    if (failed && Date.now() - failed.at < Math.min(SPAWN_BACKOFF_MAX_MS, 1000 * 2 ** failed.n)) {
+      return Promise.resolve(null);
+    }
+
+    const p = this.#doSpawn(name, seedPrompt)
+      .then((agent) => { this.spawnFailed?.delete(name); return agent; })
+      .catch((e) => {
+        (this.spawnFailed ??= new Map())
+          .set(name, { at: Date.now(), n: Math.min((failed?.n ?? 0) + 1, 8) });
+        throw e;
+      })
+      .finally(() => this.spawning.delete(name));
     this.spawning.set(name, p);
     return p;
   }
@@ -604,17 +734,26 @@ export class Kingdom extends EventEmitter {
     if (!spec) throw new Error(`No such member of the court: ${name}`);
     const role = this.roleOf(name);
 
-    // Peasants work in isolation; king and jester observe from the repo root.
-    const cwd = role === 'peasant'
+    // Peasants work in isolation; orchestrator and briefer observe from the repo root.
+    //
+    // The mode decides whether isolation applies at all. In Research and Build
+    // it is doing MORE work than in Code: with merge disabled, the worktree is
+    // the thing that makes "read-only against the repo" true — enforced by the
+    // checkout rather than by a per-CLI sandbox flag that only codex has.
+    // A worktree protects a repo, so it needs one to exist: with none attached
+    // (Chat/Research/Build before Code mode ever picks one) there is nothing
+    // to isolate from, and every member works directly in the workspace home.
+    const inWorktree = role === 'peasant' && modeOf(this.mode()).worktrees && Boolean(this.repo);
+    const cwd = inWorktree
       ? await createWorktree(this.repo, name, this.base)
-      : this.repo;
+      : this.#cwd();
 
     // A reused branch that still holds unmerged work cannot be caught up
     // safely, so the member must be TOLD it is looking at old code rather than
     // reporting on it as if it were current. Posted to the bus rather than
     // baked into the prompt: a RESUMED member is never re-sent its prompt, and
     // that is exactly the member whose worktree is stale.
-    if (role === 'peasant') {
+    if (inWorktree) {
       const behind = await behindBase(this.repo, name, this.base);
       if (behind) {
         this.bus.post('orchestrator', name,
@@ -629,12 +768,32 @@ export class Kingdom extends EventEmitter {
     // `|| null`, not `??`: recycling and CLI switches blank this to '', and an
     // empty string would sail past `??=` and become a literal --session-id ''.
     const saved = this.bus.get(`session:${name}`) || null;
+
+    // A RESUMED member is handed the prompt it was born with, byte for byte.
+    //
+    // This used to be recomputed at wake time, and brainBlock/skillsBlock/
+    // goalBlock all move: one `remember` call reorders the memory index (it is
+    // sorted newest-first), a Court Instructions edit, a milestone tick or a
+    // touched skill file all change it. A changed system prefix is a changed
+    // prefix — the whole cached context is then billed at the fresh rate, and
+    // members cycle sleep->wake every 5 minutes, so this fired far more often
+    // than a recycle does. Measured on a real session: new input was 28% of a
+    // $101 bill while 96% of the tokens were replay.
+    //
+    // #refreshBrain already exists to carry a changed brain to a live member,
+    // as a notice that rides along with real traffic. That is the ONE path for
+    // mid-session change now, which also stops the brain arriving twice.
+    const prompt = saved
+      ? (this.bus.get(`prompt:${name}`) || this.#promptFor(name, role, spec, seedPrompt, null))
+      : this.#promptFor(name, role, spec, seedPrompt, this.#orientation());
+    if (!saved) this.bus.set(`prompt:${name}`, prompt);
+
     const agent = new Agent(
       {
         ...spec,
         // A fresh session (restart, recycle, CLI switch) gets the state of the
         // kingdom so it can continue rather than interrogate the sovereign.
-        prompt: this.#promptFor(name, role, spec, seedPrompt, saved ? null : this.#orientation()),
+        prompt,
         resume: Boolean(saved),
         // Per-member cap, else the kingdom-wide default. A looping peasant
         // stops costing money on its own instead of running until noticed.
@@ -648,7 +807,8 @@ export class Kingdom extends EventEmitter {
         ctxSeed: saved ? Number(this.bus.get(`ctx:${name}`) ?? 0) : 0,
         // peasants read each other's worktrees to review; everyone reaches the vault
         addDirs: [
-          ...(role === 'peasant' ? [join(kingdomDir(this.repo), 'wt')] : []),
+          // No repo, no worktrees anywhere to read — and the dir was never created.
+          ...(role === 'peasant' && this.repo ? [join(kingdomDir(this.repo), 'wt')] : []),
           ...(this.config.vault && existsSync(this.config.vault) ? [this.config.vault] : []),
         ],
         env: (spec.cli ?? 'claude') === 'claude' ? this.authEnvFor(name) : null,
@@ -659,7 +819,10 @@ export class Kingdom extends EventEmitter {
             KINGDOM_AGENT: name,
             KINGDOM_ROLE: role,
             KINGDOM_DB: dbPath(this.repo),
-            KINGDOM_REPO: this.repo, // read_diff needs the repo, not the worktree
+            // read_diff needs the repo, not the worktree — omitted entirely
+            // rather than passed as null, so mcp.js's own cwd-derived fallback
+            // (identityFromCwd) still works when no repo is attached.
+            ...(this.repo ? { KINGDOM_REPO: this.repo } : {}),
             ...(this.config.vault ? {
               KINGDOM_VAULT: this.config.vault,
               KINGDOM_VAULT_DIR: this.config.vaultWriteDir ?? 'Kingdom',
@@ -674,6 +837,7 @@ export class Kingdom extends EventEmitter {
     // send_message and no declare_done, which is not a court member — the same
     // failure codex had for weeks, arrived at by a different route.
     if ((spec.cli ?? 'claude') === 'agy') this.#writeAgyMcp(name, cwd, role);
+    else if ((spec.cli ?? 'claude') === 'opencode') this.#writeOpenCodeMcp(name, cwd, role);
 
     agent.on('ready', (sid) => {
       this.bus.set(`session:${name}`, sid);
@@ -691,7 +855,7 @@ export class Kingdom extends EventEmitter {
       if (/session limit/i.test(msg)) {
         if (await this.#failoverToken(name)) return;
         this.emit('limited', { name, resetsAt: reset ?? 'unknown' });
-        this.bus.post('orchestrator', this.config.king.name,
+        this.bus.post('orchestrator', this.config.orchestrator.name,
           `"${name}" has hit the account's session limit${reset ? `, which resets ${reset}` : ''}. ` +
           `This is not a fault and retrying will not help. Do not wait on it.`, 'notice');
         return;
@@ -726,7 +890,22 @@ export class Kingdom extends EventEmitter {
       // opts itself out of the cap. Resolve the same way #seedRoles does.
       const def = this.config.peasantDefaults ?? {};
       const spec = { ...def, ...(this.specOf(name) ?? {}) };
-      const cost = u.costUsd || costOf(d, spec.cli, spec.model, tableFrom(this.config)) || 0;
+      const priced = u.costUsd || costOf(d, spec.cli, spec.model, tableFrom(this.config));
+      // price.js returns null to mean "we refuse to invent a number", and this
+      // line used to turn that refusal into 0 — so an unpriced model accrued
+      // nothing forever and maxBudgetUsd/maxKingdomUsd COULD NOT FIRE on it.
+      // That is the same hole price.js was written to close, one layer up: the
+      // agy and opencode model lists have no rate card between them, so
+      // thirteen of the twenty-two selectable models spend without a cap.
+      // Still 0 for the arithmetic — but said out loud, once per member.
+      if (priced === null && !this.bus.get(`unpriced:${name}`)) {
+        this.bus.set(`unpriced:${name}`, '1');
+        this.emit('failure', { name, message:
+          `"${name}" runs ${spec.cli ?? 'claude'}/${spec.model ?? 'default'}, which has no price `
+          + `in the rate card. Its spend cannot be tracked, and maxBudgetUsd/maxKingdomUsd `
+          + `CANNOT stop it. Add a "prices" entry for it in kingdom.config.json.` });
+      }
+      const cost = priced ?? 0;
       const spent = Number(this.bus.get('spentUsd') ?? 0) + cost;
       this.bus.set('spentUsd', String(spent));
       const mine = Number(this.bus.get(`spent:${name}`) ?? 0) + cost;
@@ -745,7 +924,7 @@ export class Kingdom extends EventEmitter {
         { total: spent, tokens, turns: this.#countTurns(), name, ctx, spentByAgent: mine });
 
       // Any member whose context has grown expensive gets recycled — not just
-      // the jester. The king is usually the worst offender.
+      // the briefer. The orchestrator is usually the worst offender.
       //
       // But NEVER on a member's first turn. A single file-reading turn blows
       // past any threshold on its own: measured, the architect ended one turn
@@ -775,7 +954,7 @@ export class Kingdom extends EventEmitter {
         + 'DENY every kingdom tool call. It cannot message anyone, declare_done, or reach '
         + 'the vault. Remove "sandbox" from its config to restore them.';
       this.emit('failure', { name, message: msg });
-      this.bus.post('orchestrator', this.config.king.name,
+      this.bus.post('orchestrator', this.config.orchestrator.name,
         `AWARENESS ONLY — TAKE NO ACTION. ${msg}`, 'notice');
     }
 
@@ -818,7 +997,7 @@ export class Kingdom extends EventEmitter {
    * The system prompt is only sent when a session is created. A resumed member
    * keeps the prompt it was born with, so an edit to Court Instructions or a
    * newly recorded memory would reach nobody until they happened to recycle —
-   * observed: a resumed king answered from the CLI's own private memory store
+   * observed: a resumed orchestrator answered from the CLI's own private memory store
    * because the court's had never been put in front of it.
    *
    * Sent as a notice, so it rides along with the member's next real message
@@ -846,7 +1025,7 @@ export class Kingdom extends EventEmitter {
 
   /**
    * A silently stalled kingdom is the worst failure mode: quota exhaustion or a
-   * dead CLI looks exactly like "still thinking". Tell the king (so it can
+   * dead CLI looks exactly like "still thinking". Tell the orchestrator (so it can
    * re-plan) and the sovereign (so they can act), throttled so an error storm
    * cannot flood either.
    */
@@ -854,14 +1033,14 @@ export class Kingdom extends EventEmitter {
     const now = Date.now();
     if (now - Number(this.bus.get(`failnotify:${name}`) ?? 0) < 60_000) return;
     this.bus.set(`failnotify:${name}`, String(now));
-    if (name !== this.config.king.name) {
-      // A notice, not a message. This is awareness, and the king cannot act on
+    if (name !== this.config.orchestrator.name) {
+      // A notice, not a message. This is awareness, and the orchestrator cannot act on
       // it faster than a notice arrives anyway: notices ride along with the
       // next real traffic, or buy their own turn after NOTICE_HOLD_MS. So the
-      // worst case is unchanged and the common case is free — against a king
+      // worst case is unchanged and the common case is free — against an orchestrator
       // whose turns are 61% of the court's output and whose context reaches
       // 70k+, a full replay to be told "someone died, carry on" is not worth it.
-      this.bus.post('orchestrator', this.config.king.name,
+      this.bus.post('orchestrator', this.config.orchestrator.name,
         `AWARENESS: "${name}" has failed and may be unable to continue. ` +
         `Do not wait on them indefinitely. Error: ${message.slice(0, 300)}`, 'notice');
     }
@@ -888,7 +1067,7 @@ export class Kingdom extends EventEmitter {
     if (perMember && spentByAgent >= perMember) {
       this.emit('budget', { scope: 'member', name, spent: spentByAgent, cap: perMember });
       this.sleep(name);
-      this.bus.post('orchestrator', this.config.king.name,
+      this.bus.post('orchestrator', this.config.orchestrator.name,
         `"${name}" reached its spend ceiling ($${spentByAgent.toFixed(2)} of ` +
         `$${perMember}) and has been stopped. Do not wait on it. The sovereign ` +
         `must raise its budget or reassign the work.`);
@@ -900,7 +1079,7 @@ export class Kingdom extends EventEmitter {
     if (name) this.bus.set(`spent:${name}`, '0');
     else {
       this.bus.set('spentUsd', '0');
-      for (const m of [this.config.king, this.config.jester, ...this.config.peasants]) {
+      for (const m of [this.config.orchestrator, this.config.briefer, ...this.config.peasants]) {
         this.bus.set(`spent:${m.name}`, '0');
       }
     }
@@ -946,6 +1125,16 @@ export class Kingdom extends EventEmitter {
     const s = summarizerSettings(this.config);
     if (!s.enabled || !events.length) return;
 
+    // Each of these spawns a whole `codex exec` child — 1-2s of process startup
+    // before a token moves, holding a 90s timeout. Ten members ending turns
+    // together spawned ten at once, for a one-line caption on a panel.
+    //
+    // DROPPED, not queued: a summary is cosmetic and a late one is worth less
+    // than the process it waits on. The catch below already swallows every
+    // failure, so losing one costs exactly the caption.
+    if (this.summarising >= SUMMARY_CONCURRENCY) return;
+    this.summarising = (this.summarising ?? 0) + 1;
+
     try {
       const line = await summarize(s, { name, role: this.roleOf(name), events }, { cwd: this.repo });
       if (!line) return;
@@ -954,6 +1143,7 @@ export class Kingdom extends EventEmitter {
       this.bus.logEvent(name, 'summary', { text: line });
       this.emit('event', { name, kind: 'summary', payload: { text: line } });
     } catch { /* cosmetic; never surfaces as a failure */ }
+    finally { this.summarising--; }
   }
 
   /** The summariser's settings, as shown and edited from the throne room. */
@@ -967,6 +1157,127 @@ export class Kingdom extends EventEmitter {
     this.#persistConfig();
     this.emit('summarizer', s);
     return s;
+  }
+
+  /**
+   * What shape the court is in — see src/modes.js for the table and the why.
+   *
+   * Persisted, because the shape you were working in yesterday is the shape you
+   * expect to find today; and published two ways, because two very different
+   * things need it. The SSE event drives the UI. The bus key is how every
+   * member's MCP server learns it — the same channel `roster` already travels
+   * on, and the only one that reaches a process the orchestrator does not own.
+   */
+  mode() {
+    return modeName(this.config.mode);
+  }
+
+  /**
+   * Change shape now.
+   *
+   * `queueMode` is the one that waits for idle; this is the immediate form,
+   * used by the sovereign's own switch and by that deferred apply. A flip
+   * deliberately does NOT rewrite anybody's system prompt: `prompt:${name}` is
+   * byte-stable on purpose (see #doSpawn), and the measurement there is that
+   * changing it billed 96% of a $101 session as replay. Live members are TOLD,
+   * which rides along with traffic they were going to pay for anyway.
+   */
+  setMode(name, { why = '', by = 'sovereign' } = {}) {
+    const next = modeName(name);
+    const prev = this.mode();
+    if (next === prev) { this.pendingMode = null; return { mode: next, changed: false }; }
+    // Code is the one mode that edits the repo rather than the vault — with
+    // none attached it has nothing to work on. Thrown, not returned: the
+    // daemon's generic action dispatch already turns a throw into
+    // {ok:false,error} over HTTP, so the toolbar can surface this directly.
+    if (next === 'code' && !this.repo) {
+      throw new Error('Code mode needs a repository — attach one first.');
+    }
+    this.pendingMode = null;
+
+    this.config.mode = next;
+    this.#persistConfig();
+    this.bus.set('mode', next);
+
+    const m = modeOf(next);
+    for (const who of this.agents.keys()) {
+      this.bus.post('orchestrator', who,
+        `The court is now in ${m.label} mode. ${m.blurb}`
+        + (m.merge ? '' : ' Nothing merges in this mode — leave your work on its branch.')
+        + (why ? `\nWhy: ${why}` : ''),
+        'notice');
+    }
+    this.emit('mode', { mode: next, previous: prev, pending: null, why, by });
+    return { mode: next, previous: prev, changed: true };
+  }
+
+  /**
+   * A real directory for one-shot subprocess calls (advisor, argue) that read
+   * text but never write — they just need somewhere valid to run from. `null`
+   * would reach a CLI's `-C <dir>` flag as a literal null arg and fail the
+   * call outright; the workspace home is a real directory even with no repo.
+   */
+  #cwd() {
+    return this.repo ?? kingdomDir(this.repo);
+  }
+
+  /** Is anyone mid-turn? */
+  #anyBusy() {
+    for (const a of this.agents.values()) if (a.busy) return true;
+    return false;
+  }
+
+  /**
+   * Ask for a shape change, but not mid-thought.
+   *
+   * A flip changes which tools exist and whether anything can ever merge. Doing
+   * that to a member that is mid-turn means it began under one set of rules and
+   * finishes under another — it reaches for `request_merge` because it had one
+   * when it started planning, and gets a refusal for a decision it was never
+   * told about. So a flip is HELD and applied from #tick once nobody is busy.
+   * Nothing is cut short, which is the whole point.
+   *
+   * A second request replaces the first rather than queueing behind it: the
+   * newest classification is the one that read the newest message.
+   */
+  queueMode(name, { why = '', by = 'advisor' } = {}) {
+    const next = modeName(name);
+    if (next === this.mode()) {
+      this.pendingMode = null;
+      return { mode: next, changed: false };
+    }
+    // The advisor classifies in the background; it must degrade like every
+    // other advisor failure (mode just doesn't move) rather than throw out of
+    // a call nothing is watching for an exception.
+    if (next === 'code' && !this.repo) return { mode: this.mode(), changed: false };
+    if (!this.#anyBusy()) return this.setMode(next, { why, by });
+
+    this.pendingMode = { mode: next, why, by };
+    this.emit('mode', { mode: this.mode(), pending: next, why, by });
+    return { mode: this.mode(), pending: next, changed: false };
+  }
+
+  /**
+   * Pick a repository from inside the app, instead of on the command line.
+   *
+   * Only meaningful the first time: workspace state (db, config, vault,
+   * goal, roster) already lives at kingdomDir(null) and stays there — this
+   * does not migrate it into a repo-relative .kingdom/<repoName>/. It only
+   * gives Code mode something to point its worktrees at. Attaching a
+   * DIFFERENT repo later still needs a fresh court, same as switching repos
+   * always has (see electron/main.js's "already running" dialog).
+   */
+  async attachRepo(path) {
+    this.base = await assertRepo(path);
+    this.repo = resolve(path);
+    const usesAgy = [this.config.orchestrator, this.config.briefer, ...this.config.peasants]
+      .some((s) => (s?.cli ?? 'claude') === 'agy');
+    if (usesAgy) this.#excludeAgentsDir();
+    this.config.repo = this.repo;
+    this.#persistConfig();
+    this.bus.set('base', this.base);
+    this.emit('repo', { repo: this.repo, base: this.base });
+    return { repo: this.repo, base: this.base };
   }
 
   /** The system prompt a member would be spawned with. Handy when a member is
@@ -1001,7 +1312,7 @@ export class Kingdom extends EventEmitter {
       this.#persistConfig();
       this.bus.set('goal', '');
       this.emit('goal', null);
-      this.bus.post('orchestrator', this.config.king.name,
+      this.bus.post('orchestrator', this.config.orchestrator.name,
         'AWARENESS ONLY — TAKE NO ACTION. The sovereign has cleared the standing goal. '
         + 'Finish what is in flight; do not start anything new towards it.', 'notice');
       return null;
@@ -1019,7 +1330,7 @@ export class Kingdom extends EventEmitter {
     // Told through the BUS, not injected: a goal the court never saw recorded
     // is a goal a successor cannot discover.
     if (patch.text) {
-      this.bus.post('sovereign', this.config.king.name,
+      this.bus.post('sovereign', this.config.orchestrator.name,
         `STANDING GOAL — this is what the court is working towards until I say otherwise:\n\n`
         + `${g.text}\n\n`
         + (out.milestones.length
@@ -1059,16 +1370,16 @@ export class Kingdom extends EventEmitter {
 
   #promptFor(name, role, spec, seedPrompt, orientation = null) {
     const names = this.config.peasants.map((p) => p.name).join(', ');
-    // The king chooses the crew, so it needs to know what each specialist is
+    // The orchestrator chooses the crew, so it needs to know what each specialist is
     // FOR. Names alone and it summons the coder for everything.
     const bench = this.config.peasants
       .map((p) => `  ${p.name}${p.title ? ` (${p.title})` : ''} — ${p.description ?? ''}`)
       .join('\n');
     const common =
-      `You are "${name}" in an agentic kingdom. The king is "${this.config.king.name}", ` +
-      `the jester is "${this.config.jester.name}", and the peasants are: ${names}.\n` +
+      `You are "${name}" in an agentic kingdom. The orchestrator is "${this.config.orchestrator.name}", ` +
+      `the briefer is "${this.config.briefer.name}", and the peasants are: ${names}.\n` +
       `You have kingdom tools. Talk to other members DIRECTLY with send_message ` +
-      `rather than routing everything through the king — that is the point of this court.\n` +
+      `rather than routing everything through the orchestrator — that is the point of this court.\n` +
       `Messages from others arrive in your session prefixed with [MESSAGE FROM ...], ` +
       `sometimes several at once. Answer them.\n` +
       `Keep messages short: they are replayed into the recipient's context and ` +
@@ -1084,7 +1395,7 @@ export class Kingdom extends EventEmitter {
         : '') + '\n';
 
     const byRole = {
-      king:
+      orchestrator:
         `EVERY message you send costs the recipient a full replay of their ` +
         `context, and every peasant you wake costs money for as long as it ` +
         `lives. Summon the SMALLEST crew that can do the job — a design task ` +
@@ -1092,15 +1403,15 @@ export class Kingdom extends EventEmitter {
         `Prefer one message containing everything over three messages. Never ` +
         `broadcast what one member needs to hear.\n\n` +
         `YOUR STANDING COURT — summon by name, and pick the SPECIALIST, not the ` +
-        `generalist. A refactor is the mason's, not the coder's; a mystery bug ` +
-        `is the physician's; research outside the repo is the scout's:\n${bench}\n\n` +
+        `generalist. A refactor is the refactoring-engineer's, not the coder's; a mystery bug ` +
+        `is the debugger's; research outside the repo is the researcher's:\n${bench}\n\n` +
         `If a STATE OF THE KINGDOM or HANDOVER section appears below, you are a ` +
         `successor: continue that work. NEVER ask the sovereign to re-explain ` +
         `what was happening — read_bus, read_diff and vault_search will tell ` +
         `you, and asking wastes their time and money.\n` +
         `You rule. Decompose the sovereign's goal, propose a crew with summon (the ` +
         `sovereign must approve), then assign work. Do NOT read the raw bus by ` +
-        `default — the jester briefs you, which is what keeps your context alive. ` +
+        `default — the briefer briefs you, which is what keeps your context alive. ` +
         `When specialists are needed, call the summon tool immediately; never ask ` +
         `for approval only in prose, because prose does not create an approval card. ` +
         `Do not assign work to a proposed member until the summon tool returns approval. ` +
@@ -1122,9 +1433,9 @@ export class Kingdom extends EventEmitter {
         `that. A done-report whose tests did not run is UNVERIFIED — send_back ` +
         `and ask for the test, do not request_merge on it. Prefer merging a ` +
         `small verified slice now over waiting for a large unverified one.\n\n`,
-      jester:
-        `You watch everything and you are the king's eyes. Use read_events and ` +
-        `read_bus freely — you are cheap and the king is not. Use brief_king to ` +
+      briefer:
+        `You watch everything and you are the orchestrator's eyes. Use read_events and ` +
+        `read_bus freely — you are cheap and the orchestrator is not. Use brief_orchestrator to ` +
         `report what the peasants are actually doing, in detail and in plain ` +
         `language: progress, disagreements, anything blocked or looping. When asked ` +
         `to digest a diff, summarise what changed, why, the test result, and ` +
@@ -1149,8 +1460,16 @@ export class Kingdom extends EventEmitter {
         `There is a SHARED TASK LIST. When you finish something, call finish_task and ` +
         `then claim_task for the next one rather than stopping — unclaimed work is yours ` +
         `to take, and claiming is atomic, so you cannot collide with another peasant. If a ` +
-        `task is claimed into planning it is one the king judged risky: submit_plan and ` +
-        `change NOTHING on disk until it is approved.\n\n` +
+        `task is claimed into planning it is one the orchestrator judged risky: submit_plan and ` +
+        `change NOTHING on disk until it is approved.\n` +
+        // DOCTRINE demands a check "in the project's existing test framework and
+        // directory" and never said what that was, so every fresh peasant spent
+        // a turn discovering it on a cold context — and #onDone then judged the
+        // result "NONE FOUND (treat as unverified)" and sent the work back. The
+        // orchestrator has always known the answer: runTests resolves it. The
+        // ABSENCE is worth more than the command, because a peasant that cannot
+        // find a test runner otherwise claims it tested.
+        this.#testCommandBlock() + '\n' +
         DOCTRINE,
     };
 
@@ -1164,6 +1483,11 @@ export class Kingdom extends EventEmitter {
       (orientation ? `\n\n--- STATE OF THE KINGDOM AT YOUR ACCESSION ---\n${orientation}` : '') +
       brainBlock(this.config.vault, this.config.vaultWriteDir ?? 'Kingdom') +
       skillsBlock(this.config.vault, this.config.vaultWriteDir ?? 'Kingdom') +
+      // What shape the court is in when this member is born. Baked in and
+      // cached with the rest: a member spawned in one mode is not reused in
+      // another, because each mode has its own bench. A LIVE change travels as
+      // a notice instead — see setMode, and the replay cost recorded above.
+      modeBlock(this.mode()) +
       this.#goalBlock();
   }
 
@@ -1177,6 +1501,13 @@ export class Kingdom extends EventEmitter {
     if (this.ticking) return;
     this.ticking = true;
     try {
+      // Before delivery, not after: #deliver hands messages to idle members, and
+      // a message delivered under a mode that is one line away from changing is
+      // a member briefed on rules it will not have.
+      if (this.pendingMode && !this.#anyBusy()) {
+        const p = this.pendingMode;
+        this.setMode(p.mode, { why: p.why, by: p.by });     // clears pendingMode
+      }
       await this.#deliver();
     } finally {
       this.ticking = false;
@@ -1185,22 +1516,45 @@ export class Kingdom extends EventEmitter {
 
   async #deliver() {
     const now = Date.now();
+
+    // The backstop must never be tighter than the window it backs up, or the
+    // window is silently capped and tuning it does nothing. Checked here rather
+    // than at start() because settleMs() reads the environment on every call
+    // and the sovereign can widen the window mid-session — but LATCHED on the
+    // message, because sitting inside the per-member loop it emitted roughly
+    // three errors a second per member for the life of the session. Re-arms
+    // when the numbers change, so a fix is noticed and so is a second mistake.
+    const badTiming = checkTiming(BATCH_MAX_WAIT_MS, settleMs());
+    if (badTiming !== this.timingWarned) {
+      this.timingWarned = badTiming;
+      if (badTiming) this.emit('error', new Error(badTiming));
+    }
+
+    // prune() ran once, at start, and then the log grew for the rest of the
+    // session — while /api/metrics reads it every 5 seconds and JSON.parses
+    // every row it gets back. A day-long court is exactly the case the
+    // retention limit was written for and the only case it never applied to.
+    if (now - (this.lastPrune ?? 0) > PRUNE_EVERY_MS) {
+      this.lastPrune = now;
+      try { this.bus.prune(); } catch (e) { this.emit('error', e); }
+    }
+
     // Approval visibility must not depend on a member delivery succeeding.
     // A failed worktree/agent can otherwise abort this method before the
     // sovereign's approval request is surfaced.
     this.#applyMilestones();
     this.#surfaceApprovals();
 
-    // THE KING FIRST, then the jester, then everyone else.
+    // THE KING FIRST, then the briefer, then everyone else.
     //
     // This loop awaits each member's spawn inline, and waking a peasant means
     // validating its worktree — several git subprocesses, ~100ms each on
     // Windows. `summoned` is restored in whatever order it was saved, which put
-    // the king fifth behind three peasants: measured 3.6s from the sovereign
-    // pressing enter to the king being handed the text, of which 3.3s was
+    // the orchestrator fifth behind three peasants: measured 3.6s from the sovereign
+    // pressing enter to the orchestrator being handed the text, of which 3.3s was
     // waiting for peasants nobody was waiting on. Nothing else in the court has
     // a human sitting in front of it.
-    const rank = (n) => (n === this.config.king.name ? 0 : n === this.config.jester.name ? 1 : 2);
+    const rank = (n) => (n === this.config.orchestrator.name ? 0 : n === this.config.briefer.name ? 1 : 2);
     for (const name of [...this.summoned].sort((a, b) => rank(a) - rank(b))) {
       const pending = this.bus.pending(name);
       if (!pending.length) {
@@ -1214,17 +1568,33 @@ export class Kingdom extends EventEmitter {
       const deliverable = [];
       for (const msg of pending) {
         if (msg.kind === 'approval') continue;
-        if (msg.kind === 'done' && name === this.config.king.name) {
+        if (msg.kind === 'done' && name === this.config.orchestrator.name) {
           // ONCE per declaration. This loop runs before the ripeness gate and
           // before the ack, so a `done` that arrives alongside any other message
           // is re-seen on every 300ms tick until the whole batch ripens.
           // Measured on a real run: one declare_done from the designer ran
           // commitAll + the test suite + two diffs 131 times, and queued 131
-          // digest turns onto the jester. Recorded on the bus, not in memory,
+          // digest turns onto the briefer. Recorded on the bus, not in memory,
           // so a restart between the fire and the ack cannot replay it either.
           if (!this.bus.get(`done:${msg.id}`)) {
             this.bus.set(`done:${msg.id}`, '1');
-            this.#onDone(msg).catch((e) => this.emit('error', e));
+            this.#onDone(msg).catch((e) => {
+              this.emit('error', e);
+              // The guard is set BEFORE the work, which is what stops the tick
+              // storm — but it also means a failure strands the peasant's
+              // finished work forever: no tests, no digest, no done-report, and
+              // the orchestrator is never told the work exists. commitAll's `git add -A`
+              // throws on a .git/index.lock collision, which is routine on
+              // Windows and exactly the transient worth retrying.
+              //
+              // ONE retry, recorded separately, same shape as `retried:`. A
+              // permanently broken worktree must not go back to replaying the
+              // test suite 131 times.
+              if (!this.bus.get(`doneretry:${msg.id}`)) {
+                this.bus.set(`doneretry:${msg.id}`, '1');
+                this.bus.set(`done:${msg.id}`, '');
+              }
+            });
           }
           continue;
         }
@@ -1238,7 +1608,7 @@ export class Kingdom extends EventEmitter {
       // Re-typing the same order means "this still has not happened", not "do
       // it again". When the court stalls the sovereign repeats themselves —
       // observed seven identical "Resume" messages and two "Merge" — and every
-      // one of them was then delivered in a single batch, so the king was told
+      // one of them was then delivered in a single batch, so the orchestrator was told
       // to resume seven times and duly acted on it. Keep the last of any
       // identical run from the same sender; the earlier copies are noise that
       // costs a replay each.
@@ -1250,30 +1620,19 @@ export class Kingdom extends EventEmitter {
       }
 
       // Interrupting a busy agent wastes a whole replay on a partial thought,
-      // so wait for it to finish — but never forever.
+      // so wait for it to finish — but never forever. The decision itself lives
+      // in ripeness.js: it is pure, and the bugs that lived here were only ever
+      // findable by driving states that a real court reaches once an hour.
       const agent = this.agents.get(name);
-      const oldest = deliverable[0].ts;
-      const allNotices = deliverable.every((m) => m.kind === 'notice');
-      const newest = deliverable[deliverable.length - 1].ts;
-      // The settle window exists to coalesce AGENTS talking to each other, where
-      // two replies seconds apart would otherwise cost two full context replays.
-      // A human typing is not that: they are sitting there watching, and making
-      // them wait 15s buys nothing, because they are not about to generate the
-      // burst the window is there to absorb. The sovereign's own messages go on
-      // the next idle tick.
-      const urgent = deliverable.some((m) => m.sender === 'sovereign');
-      // The backstop must never be tighter than the window it backs up, or the
-      // window is silently capped at the backstop and tuning it does nothing.
-      // Cheap to check here, and it fires the moment somebody edits either.
-      if (BATCH_MAX_WAIT_MS <= settleMs()) {
-        this.emit('error', new Error(
-          `BATCH_MAX_WAIT_MS (${BATCH_MAX_WAIT_MS}) must exceed the settle window `
-          + `(${settleMs()}) — batches are being cut short by the backstop.`));
-      }
-      const ripe = allNotices
-        ? now - oldest > NOTICE_HOLD_MS
-        : (!agent?.busy && (urgent || now - newest >= settleMs()))
-          || now - oldest > BATCH_MAX_WAIT_MS;
+      const { ripe } = ripeness(deliverable, {
+        now,
+        awake: Boolean(agent),
+        busy: Boolean(agent?.busy),
+        recycling: Boolean(agent?.recycling),
+        settleMs: settleMs(),
+        backstopMs: BATCH_MAX_WAIT_MS,
+        noticeHoldMs: NOTICE_HOLD_MS,
+      });
       if (!ripe) continue;
 
       // An idle-slept member is revived on demand; its session resumes.
@@ -1282,9 +1641,9 @@ export class Kingdom extends EventEmitter {
       // git subprocesses, ~100ms each on Windows — and this loop runs inside a
       // single `ticking` critical section, so awaiting it here stopped every
       // other member's mail too. Measured before: 3.6s from the sovereign
-      // pressing enter to the king being handed the text, 3.3s of it spent on
-      // peasants nobody was waiting for. Ordering the king first (see `rank`
-      // above) hid that for the king alone; this removes it for everyone.
+      // pressing enter to the orchestrator being handed the text, 3.3s of it spent on
+      // peasants nobody was waiting for. Ordering the orchestrator first (see `rank`
+      // above) hid that for the orchestrator alone; this removes it for everyone.
       //
       // The batch stays UNACKED, so the next tick delivers it once the member
       // is live. That is the whole trick: no state to unwind if the spawn
@@ -1314,7 +1673,7 @@ export class Kingdom extends EventEmitter {
   }
 
   /**
-   * Apply milestone claims the king has posted.
+   * Apply milestone claims the orchestrator has posted.
    *
    * They are addressed to "orchestrator", which is nobody's inbox — no member
    * would ever be delivered them — so they need their own sweep. And the
@@ -1323,8 +1682,13 @@ export class Kingdom extends EventEmitter {
    */
   #applyMilestones() {
     const seen = Number(this.bus.get('milestone:cursor') ?? 0);
-    for (const m of this.bus.history({ since: seen, limit: 50 })) {
-      this.bus.set('milestone:cursor', String(m.id));
+    const rows = this.bus.history({ since: seen, limit: 50 });
+    // Advanced ONCE, after the sweep, not per row before the kind check —
+    // that was up to 50 writes per sweep, twice per tick, 3.3 ticks a second,
+    // to move one integer. Safe because the sweep is idempotent: setMilestone
+    // is, so re-scanning after a crash mid-sweep costs a re-read and nothing else.
+    if (rows.length) this.bus.set('milestone:cursor', String(rows[rows.length - 1].id));
+    for (const m of rows) {
       if (m.kind !== 'milestone') continue;
       let claim;
       try { claim = JSON.parse(m.body); } catch { continue; }
@@ -1333,7 +1697,12 @@ export class Kingdom extends EventEmitter {
       if (!hit) continue;
       this.emit('milestone', { index: claim.index, text: hit.text, by: m.sender, evidence: claim.evidence });
       const left = g.milestones.filter((x) => !x.done).length;
-      this.bus.post('orchestrator', null,
+      // To the KING, not to everyone. `recipient: null` matches every summoned
+      // member in bus.pending(), so one milestone put a full context replay in
+      // front of the whole court to read "TAKE NO ACTION" — while the orchestrator's own
+      // prompt says "Never broadcast what one member needs to hear." Every other
+      // orchestrator notice in this file addresses the orchestrator; this one did not.
+      this.bus.post('orchestrator', this.config.orchestrator.name,
         `AWARENESS ONLY — TAKE NO ACTION. Milestone reached: "${hit.text}". `
         + (left ? `${left} still open.` : 'That was the last one; the goal is complete.'),
         'notice');
@@ -1343,8 +1712,11 @@ export class Kingdom extends EventEmitter {
   /** Surface approval requests to the sovereign exactly once. */
   #surfaceApprovals() {
     const seen = Number(this.bus.get('approvals:cursor') ?? 0);
-    for (const m of this.bus.history({ since: seen, limit: 50 })) {
-      this.bus.set('approvals:cursor', String(m.id));
+    const rows = this.bus.history({ since: seen, limit: 50 });
+    // Once, after the sweep — see #applyMilestones. Idempotent here too: a
+    // re-scan is guarded by `resolved:${m.id}` and by approvals being a Map.
+    if (rows.length) this.bus.set('approvals:cursor', String(rows[rows.length - 1].id));
+    for (const m of rows) {
       if (m.kind !== 'approval') continue;
       if (this.bus.get(`resolved:${m.id}`)) continue;
       const payload = readApproval(m.body);
@@ -1364,7 +1736,7 @@ export class Kingdom extends EventEmitter {
    */
   #maybeIdleSleep(name, now) {
     if (!IDLE_SLEEP_MS) return;
-    if (name === this.config.king.name) return; // the king is the entry point
+    if (name === this.config.orchestrator.name) return; // the orchestrator is the entry point
     const agent = this.agents.get(name);
     if (!agent || agent.busy) return;
     const since = this.lastActive.get(name) ?? now;
@@ -1381,7 +1753,13 @@ export class Kingdom extends EventEmitter {
       const open = this.bus.availableTasks();
       if (open.length) {
         (this.nudged ??= new Set()).add(name);
-        this.bus.post(this.config.king.name, name,
+        // 'orchestrator', not the orchestrator's name. The orchestrator never said this, and
+        // posting it under their name put words in the sovereign's court: it
+        // appears in the bus and the chronicle as the orchestrator speaking, and a
+        // peasant may reply to the orchestrator about a message the orchestrator never sent,
+        // costing a turn on both sides. Every other orchestrator message uses
+        // this sender.
+        this.bus.post('orchestrator', name,
           `You have gone quiet with ${open.length} task${open.length > 1 ? 's' : ''} unclaimed. `
           + `Call claim_task to take the next one, or say what is blocking you. Do not stop with work on the list.`,
           'assignment');
@@ -1409,9 +1787,11 @@ export class Kingdom extends EventEmitter {
    * that can be recovered and work that is silently lost.
    */
   async #rescueWork(name) {
-    if (this.roleOf(name) !== 'peasant') return;
+    // Nothing to rescue without a worktree: a repo-less peasant edits the
+    // vault directly, with no git tracking to fall behind on.
+    if (this.roleOf(name) !== 'peasant' || !this.repo) return;
     if (!(await commitAll(this.repo, name, `WIP: ${name} slept with uncommitted work`))) return;
-    this.bus.post('orchestrator', this.config.king.name,
+    this.bus.post('orchestrator', this.config.orchestrator.name,
       `AWARENESS ONLY — TAKE NO ACTION. "${name}" went idle with uncommitted edits, ` +
       `so the crown committed them as WIP on its branch. Nothing is lost; the work ` +
       `was never declared done, so it has NOT been tested or reviewed.`, 'notice');
@@ -1422,19 +1802,31 @@ export class Kingdom extends EventEmitter {
     const tag = msg.kind === 'assignment' ? 'ORDER FROM'
       : msg.kind === 'notice' ? 'FYI — NO ACTION REQUIRED, FROM'
       : 'MESSAGE FROM';
-    const control = msg.recipient === this.config.king.name && msg.kind === 'assignment'
+    const control = msg.recipient === this.config.orchestrator.name && msg.kind === 'assignment'
       ? '\n\n[COURT CONTROL] If specialist help is needed, call the summon MCP tool now. '
         + 'Do not ask for approval only in prose; prose does not create an approval card.'
       : '';
     return `[${tag} ${msg.sender}]\n${msg.body}${control}`;
   }
 
-  /** peasant done -> run its tests -> hand the diff to the jester to digest. */
+  /** peasant done -> run its tests -> hand the diff to the briefer to digest. */
   async #onDone(msg) {
     const peasant = msg.sender;
-    const wt = worktreePath(this.repo, peasant);
     this.emit('agent', { name: peasant, state: 'verifying' });
 
+    // No repo, no worktree — nothing to commit, test or diff. The deliverable
+    // is whatever vault_write already landed; report the summary straight
+    // through instead of running a verification pipeline that has no target.
+    if (!this.repo) {
+      this.bus.post('orchestrator', this.config.orchestrator.name,
+        `"${peasant}" declared done.\n${msg.body}\n\n` +
+        `No repository is attached, so nothing was committed, tested or diffed — ` +
+        `check the vault for what it wrote.`, 'done-report');
+      this.emit('verified', { peasant, tests: { ran: false, ok: false, output: '' }, stat: '' });
+      return;
+    }
+
+    const wt = worktreePath(this.repo, peasant);
     await commitAll(this.repo, peasant, `kingdom(${peasant}): ${msg.body.split('\n')[0].slice(0, 90)}`);
     const tests = await runTests(wt);
     const [diff, stat] = await Promise.all([
@@ -1446,30 +1838,37 @@ export class Kingdom extends EventEmitter {
 
     const verdict = `TESTS: ${tests.ran ? (tests.ok ? 'PASSED' : 'FAILED') : 'NONE FOUND (treat as unverified)'}`;
 
-    // The digest costs two turns — one for the jester to read, one to brief.
-    // Worth it when several peasants are in flight and the king needs a
-    // filtered view. Pure overhead when one peasant did one thing: the king
+    // The digest costs two turns — one for the briefer to read, one to brief.
+    // Worth it when several peasants are in flight and the orchestrator needs a
+    // filtered view. Pure overhead when one peasant did one thing: the orchestrator
     // can read_diff itself if the summary looks off.
     // AWAKE peasants, not summoned ones. `summoned` carries every peasant
     // inherited from previous sessions — measured: seven of them, all asleep,
     // none doing anything. Counting those made a court where ONE peasant did
-    // ONE thing take the two-turn jester digest anyway, and a jester turn
+    // ONE thing take the two-turn briefer digest anyway, and a briefer turn
     // averaged 1M input tokens. "In flight" means holding a live process.
     const workers = [...this.agents.keys()].filter((n) => this.roleOf(n) === 'peasant').length;
-    const useJester = this.config.jesterDigestAbove ?? 1;
-    if (workers <= useJester) {
-      this.bus.post('orchestrator', this.config.king.name,
+    const useBriefer = this.config.brieferDigestAbove ?? 1;
+    // Do not tell the orchestrator to call a tool this mode does not give it. The
+    // instruction survived into Research and Build otherwise, and an orchestrator that
+    // reaches for a withheld tool spends a turn to be told no.
+    const next = modeOf(this.mode()).merge
+      ? `then request_merge or send_back.`
+      : `The work stays on its branch — nothing merges in this mode. Say whether it is `
+        + `good enough and what is still open.`;
+    if (workers <= useBriefer) {
+      this.bus.post('orchestrator', this.config.orchestrator.name,
         `"${peasant}" declared done.\n${msg.body}\n\n${verdict}\n${tests.output.slice(-1200)}\n\n` +
         `CHANGED:\n${stat}\n\nUse read_diff("${peasant}") if you need the actual changes, ` +
-        `then request_merge or send_back.`, 'done-report');
+        next, 'done-report');
       return;
     }
 
     const truncated = diff.length > DIGEST_DIFF_LIMIT;
-    const jester = this.agents.get(this.config.jester.name);
-    jester?.send(
-      `[ORCHESTRATOR] "${peasant}" declared done. Digest this for the king, then ` +
-      `call brief_king with your digest.\n\n` +
+    const briefer = this.agents.get(this.config.briefer.name);
+    briefer?.send(
+      `[ORCHESTRATOR] "${peasant}" declared done. Digest this for the orchestrator, then ` +
+      `call brief_orchestrator with your digest.\n\n` +
       `THEIR SUMMARY:\n${msg.body}\n\n` +
       `TESTS: ${tests.ran ? (tests.ok ? 'PASSED' : 'FAILED') : 'NONE FOUND (treat as unverified)'}\n` +
       `${tests.output}\n\n` +
@@ -1478,26 +1877,26 @@ export class Kingdom extends EventEmitter {
     );
   }
 
-  recycleJester() {
-    return this.recycleAgent(this.config.jester.name);
+  recycleBriefer() {
+    return this.recycleAgent(this.config.briefer.name);
   }
 
   /**
    * Retire a member whose context has grown too expensive and replace it with a
    * successor carrying a handover note.
    *
-   * Originally jester-only. That was a mistake: the KING accumulates the most
+   * Originally briefer-only. That was a mistake: the KING accumulates the most
    * context of anyone (observed at 227k tokens, replayed on every single turn)
    * and had no recycle at all. Whoever talks most needs this most.
    */
   async recycleAgent(name) {
-    const jester = this.agents.get(name);
-    if (!jester || jester.recycling) return;
-    jester.recycling = true;
+    const briefer = this.agents.get(name);
+    if (!briefer || briefer.recycling) return;
+    briefer.recycling = true;
 
-    const note = await this.#captureHandover(jester);
+    const note = await this.#captureHandover(briefer);
 
-    jester.stop();
+    briefer.stop();
     this.agents.delete(name);
     this.bus.set(`session:${name}`, ''); // fresh session, seeded by the note
     this.bus.set(`ctx:${name}`, '0');
@@ -1546,7 +1945,14 @@ export class Kingdom extends EventEmitter {
       const done = () => {
         clearTimeout(timer);
         agent.off('text', grab);
-        res(last.trim());
+        // The TAIL, and capped. `grab` accumulates every text event of the
+        // retirement turn, not just the note, so a member that thinks out loud
+        // hands its successor the whole monologue — embedded verbatim at the
+        // FRONT of a fresh context, permanently, and compounding down a recycle
+        // chain. The one thing recycling exists to bound was the one thing with
+        // no bound. Tail because the note is what it was asked for and the
+        // reasoning is what came before it, the same choice summarize.js makes.
+        res(last.trim().slice(-HANDOVER_CAP));
       };
       agent.on('text', grab);
       agent.once('turn_end', done);
@@ -1577,11 +1983,11 @@ export class Kingdom extends EventEmitter {
    * `/autocompact 300k` — the compaction window, changed from the throne room
    * instead of by editing kingdom.config.json and restarting.
    *
-   * Typed at the king it sets the court-wide default; typed into a member's own
-   * pane it sets that member's, which is how the jester came to sit at 20k
+   * Typed at the orchestrator it sets the court-wide default; typed into a member's own
+   * pane it sets that member's, which is how the briefer came to sit at 20k
    * while everyone else runs at 80k. Returns the line to show the sovereign, so
    * a mistyped window answers in the throne room rather than being posted to
-   * the king as if it were work.
+   * the orchestrator as if it were work.
    */
   #compactCommand(text, name = null) {
     // Whole word only — see #argueCommand: \b matches before a hyphen, so
@@ -1590,7 +1996,7 @@ export class Kingdom extends EventEmitter {
     if (!m) return null;
 
     const who = name ?? 'the court';
-    const current = this.#recycleThreshold(name ?? this.config.king.name);
+    const current = this.#recycleThreshold(name ?? this.config.orchestrator.name);
     const arg = (m[1] ?? '').trim();
     // A bare `/autocompact` asks rather than sets — the same shape as every
     // other read-only status command, and it costs nothing to get wrong.
@@ -1656,16 +2062,16 @@ export class Kingdom extends EventEmitter {
 
   async #runArgument(question, panel) {
     this.emit('argued', { question, stage: 'start', panel });
-    // Seam: a test must be able to exercise the vault write and the king's
+    // Seam: a test must be able to exercise the vault write and the orchestrator's
     // notice without spawning three real CLIs and spending real money.
     const result = await (this.argueImpl ?? argue)(question, {
       panel,
-      cwd: this.repo,
+      cwd: this.#cwd(),
       onProgress: (p) => this.emit('argued', { question, ...p }),
     });
 
     // The vault, not the bus: a verdict is a decision worth having in six
-    // months, and the bus is pruned. Written before the king is told, so the
+    // months, and the bus is pruned. Written before the orchestrator is told, so the
     // note it is pointed at always exists.
     let path = null;
     if (this.config.vault) {
@@ -1676,10 +2082,10 @@ export class Kingdom extends EventEmitter {
       writeFileSync(path, verdictNote(result, new Date().toISOString().slice(0, 10)));
     }
 
-    // A NOTICE, not a message: the king did not ask for this and does not have
+    // A NOTICE, not a message: the orchestrator did not ask for this and does not have
     // to act on it, so it rides along with real traffic instead of buying a
     // full context replay of its own.
-    this.bus.post('orchestrator', this.config.king.name,
+    this.bus.post('orchestrator', this.config.orchestrator.name,
       `AWARENESS ONLY — the argument court settled a question for the sovereign.\n`
       + `Q: ${question}\n${result.verdict}\n`
       + (path ? `Full argument: ${path}` : ''),
@@ -1696,8 +2102,11 @@ export class Kingdom extends EventEmitter {
 
   /** Every context size this member's turns have actually reported. */
   #contextHistory(name) {
-    return this.bus.events({ agent: name ?? undefined, limit: 100_000 })
-      .filter((e) => e.type === 'turn_end')
+    // Filtered in SQL. events() JSON.parses every row it returns, so asking for
+    // 100,000 and keeping the turn_ends parsed the entire log to read a handful
+    // of integers — the exact waste the `type` parameter was added for, by a
+    // caller that did not get the memo.
+    return this.bus.events({ agent: name ?? undefined, type: 'turn_end', limit: 100_000 })
       .map((e) => e.payload?.ctx ?? 0);
   }
 
@@ -1713,12 +2122,12 @@ export class Kingdom extends EventEmitter {
   #recycleThreshold(name) {
     const spec = this.specOf(name) ?? {};
     // Cost per turn scales with context, so recycling EARLY is cheaper than
-    // letting a member coast to the model's limit. The observed king reached
+    // letting a member coast to the model's limit. The observed orchestrator reached
     // 227k and replayed it every turn; at 70k the average replay is a third of
     // that, and one handover turn per cycle is far cheaper than the difference.
     return spec.recycleAtTokens
       ?? this.config.recycleAtTokens
-      ?? (name === this.config.jester.name ? 50_000 : 70_000);
+      ?? (name === this.config.briefer.name ? 50_000 : 70_000);
   }
 
   // --- sovereign actions ----------------------------------------------
@@ -1771,15 +2180,20 @@ export class Kingdom extends EventEmitter {
     // model is meaningless. Switching models via the dropdown used to strand
     // one here — see the sovereign's own Model Guidance.
     if (NO_EFFORT_MODELS.some((m) => (spec.model ?? '').includes(m))) delete spec.effort;
-    writeFileSync(this.configPath, JSON.stringify(this.config, null, 2));
+    this.#persistConfig();
 
     const cliChanged = (spec.cli ?? 'claude') !== prevCli;
 
     if (this.agents.has(name)) {
       const old = this.agents.get(name);
       // A CLI switch throws the session away. Take a handover first — losing a
-      // member's memory silently is how a king ended up asking the sovereign
+      // member's memory silently is how an orchestrator ended up asking the sovereign
       // what it had been working on.
+      //
+      // Flagged BEFORE the await: capturing a handover takes up to 120s and the
+      // member stays in the roster throughout, so without this the backstop
+      // delivers into it, acks, and stop() takes the batch with it.
+      old.recycling = true;
       const note = cliChanged ? await this.#captureHandover(old) : null;
       old.stop();
       this.agents.delete(name);
@@ -1803,8 +2217,9 @@ export class Kingdom extends EventEmitter {
       effort: spec.effort ?? null, cliChanged };
   }
 
-  /** Wake a peasant directly, without waiting for the king to propose it. */
+  /** Wake a peasant directly, without waiting for the orchestrator to propose it. */
   async wake(name) {
+    this.spawnFailed?.delete(name);   // a sovereign asking again is not the retry storm
     return this.#spawn(name);
   }
 
@@ -1819,8 +2234,8 @@ export class Kingdom extends EventEmitter {
   }
 
   /**
-   * You speak to the king. Routed through the BUS, not straight into the
-   * process: a goal sent directly leaves no record, so a successor king had no
+   * You speak to the orchestrator. Routed through the BUS, not straight into the
+   * process: a goal sent directly leaves no record, so a successor orchestrator had no
    * way to discover what it was supposed to be doing and asked the sovereign
    * to re-explain. Everything the court is told must be reconstructable.
    */
@@ -1838,11 +2253,11 @@ export class Kingdom extends EventEmitter {
     // asleep — they pick it up when they next wake — so there is nothing to
     // wait for, and the advisor is allowed up to 90 seconds to answer. Awaiting
     // it put a minute and a half between the sovereign pressing enter and the
-    // king hearing anything, which is the single worst thing this system can do.
+    // orchestrator hearing anything, which is the single worst thing this system can do.
     if (a.autoModel) this.#autoModelInBackground(a, text);
 
     if (!a.promptEngineer) {
-      this.bus.post('sovereign', this.config.king.name, text, 'assignment');
+      this.bus.post('sovereign', this.config.orchestrator.name, text, 'assignment');
       return { text };
     }
 
@@ -1850,8 +2265,9 @@ export class Kingdom extends EventEmitter {
     // so posting first would race the court against its own brief.
     this.emit('advising', { stage: 'start', text });
     const why = [];
-    const opts = (job) => ({ cwd: this.repo, onFail: (m) => why.push(`${job}: ${m}`) });
-    const rewritten = await engineerPrompt(a, text, opts('prompt engineer')).catch(() => null);
+    const opts = (job) => ({ cwd: this.#cwd(), onFail: (m) => why.push(`${job}: ${m}`) });
+    const advice = await engineerPrompt(a, text, opts('prompt engineer')).catch(() => null);
+    const rewritten = advice?.text ?? null;
     if (why.length) {
       this.#warn(`Advisor (${a.model}) gave no advice — ${why.join('; ')}. `
         + 'Your message went through unchanged.');
@@ -1859,6 +2275,18 @@ export class Kingdom extends EventEmitter {
 
     const applied = [];
     const final = rewritten ?? text;
+
+    // The advisor switches the court without asking, in both directions. That
+    // is safe because switching shape spends nothing — summoning does, and a
+    // summon still raises an approval card exactly as it did before. The mode
+    // decides what is POSSIBLE; the approval still decides what is paid for.
+    // Queued, not applied: a member mid-turn finishes under the rules it began
+    // with. No classification (advisor off, call failed, answer unparseable)
+    // simply leaves the court in the shape it was already in.
+    // Nothing is reported back from here: queueMode emits its own `mode` event,
+    // carrying the previous shape, which is what the toast and its undo need.
+    if (advice?.mode) this.queueMode(advice.mode, { why: text.slice(0, 120), by: 'advisor' });
+
     this.emit('advising', {
       stage: 'done', text, rewritten: rewritten ?? null, models: applied,
     });
@@ -1867,11 +2295,11 @@ export class Kingdom extends EventEmitter {
     // the brief, but a successor reading the bus must be able to see what the
     // sovereign actually said, not only the advisor's paraphrase of it.
     if (rewritten && rewritten !== text) {
-      this.bus.post('sovereign', this.config.king.name,
+      this.bus.post('sovereign', this.config.orchestrator.name,
         `${final}\n\n---\nSovereign's original wording (for reference; the brief above is authoritative):\n${text}`,
         'assignment');
     } else {
-      this.bus.post('sovereign', this.config.king.name, final, 'assignment');
+      this.bus.post('sovereign', this.config.orchestrator.name, final, 'assignment');
     }
     return { text: final, rewritten: rewritten ?? null, models: applied };
   }
@@ -1890,7 +2318,7 @@ export class Kingdom extends EventEmitter {
     // Kept on the instance so a caller that genuinely needs to know when the
     // picks have landed can await it — chiefly tests, which would otherwise
     // have to poll and race. Nothing in the delivery path waits on this.
-    this.autoModelPending = this.#autoModel(a, text, { cwd: this.repo, onFail: (m) => why.push(m) })
+    this.autoModelPending = this.#autoModel(a, text, { cwd: this.#cwd(), onFail: (m) => why.push(m) })
       .then(async (picks) => {
         const applied = [];
         for (const [name, m] of Object.entries(picks ?? {})) {
@@ -1929,7 +2357,7 @@ export class Kingdom extends EventEmitter {
     if (!members.length) return Promise.resolve({});
     return pickModels(a, {
       goal,
-      // The king and jester are the sovereign's own choice of instrument; the
+      // The orchestrator and briefer are the sovereign's own choice of instrument; the
       // selector tunes the workers.
       members: members.map((p) => ({
         name: p.name, title: p.title, description: p.description,
@@ -1955,20 +2383,20 @@ export class Kingdom extends EventEmitter {
     return hit?.text ?? text;
   }
 
-  /** You type into a peasant's pane directly; the king is told so it stays coherent. */
+  /** You type into a peasant's pane directly; the orchestrator is told so it stays coherent. */
   speakTo(name, text) {
-    // Before the king delegation: `/autocompact` in a pane is about THAT
-    // member's window, and routing the king's pane to command() would quietly
+    // Before the orchestrator delegation: `/autocompact` in a pane is about THAT
+    // member's window, and routing the orchestrator's pane to command() would quietly
     // turn it into the court-wide default.
     const local = this.#compactCommand(text, name) ?? this.#argueCommand(text);
     if (local) return { text: local, local: true };
     text = this.#skillCommand(text);
-    if (name === this.config.king.name) return this.command(text);
+    if (name === this.config.orchestrator.name) return this.command(text);
     this.bus.post('sovereign', name, text, 'assignment'); // recorded, like command()
-    if (name !== this.config.king.name) {
+    if (name !== this.config.orchestrator.name) {
       // Framing matters: an earlier version phrased this as a plain report and
-      // the king obediently carried out the peasant's instruction itself.
-      this.bus.post('orchestrator', this.config.king.name,
+      // the orchestrator obediently carried out the peasant's instruction itself.
+      this.bus.post('orchestrator', this.config.orchestrator.name,
         `AWARENESS ONLY — THIS IS NOT AN ORDER TO YOU. TAKE NO ACTION.\n` +
         `The sovereign has spoken directly to "${name}". What they said to ${name} ` +
         `was: "${text}"\nYou are told only so you are not surprised by what ` +
@@ -1986,21 +2414,44 @@ export class Kingdom extends EventEmitter {
     }
 
     if (p.kind === 'summon') {
+      // The bench is the mode's, and this is where that is enforced — not at
+      // the summon tool. A proposal can outlive the mode it was made in: the
+      // card sits in the corner until the sovereign answers it, and a flip in
+      // between would otherwise wake a crew this mode does not have.
+      const barred = p.names.filter((n) => !canSummon(this.mode(), n, this.roleOf(n)));
+      if (barred.length) {
+        this.approvals.delete(id);
+        this.bus.set(`resolved:${id}`, 'rejected');
+        const why = `${barred.join(', ')} ${barred.length === 1 ? 'is' : 'are'} not on the `
+          + `${modeOf(this.mode()).label} bench, so nobody was woken. Propose from this mode's `
+          + `crew, or ask the sovereign to switch modes.`;
+        this.bus.post('orchestrator', this.config.orchestrator.name, why);
+        this.emit('resolved', { id, approved: false });
+        return;
+      }
       // In parallel: each wake is its own git worktree, and they do not touch
       // each other. Serially, an approved crew of six paid for six worktree
       // creations end to end before the sovereign saw anyone wake up.
       await Promise.all(p.names.map((n) => this.#spawn(n)));
       this.approvals.delete(id);
       this.bus.set(`resolved:${id}`, 'approved');
-      this.bus.post('orchestrator', this.config.king.name,
+      this.bus.post('orchestrator', this.config.orchestrator.name,
         `The sovereign approved your summons: ${p.names.join(', ')} are awake. Assign their work.`);
     } else if (p.kind === 'role') {
+      // The sovereign approving a role is not validation — they are ruling on
+      // whether the court needs it, having read a description an LLM wrote. The
+      // NAME becomes a directory under wt/ and a git branch, so a traversal in
+      // it reaches renameSync, `git add -A` and `worktree remove --force`.
+      // Checked here as well as in propose_role because this is the boundary
+      // that actually writes to disk.
+      const bad = badRole(p, { taken: this.config.peasants.map((x) => x.name) });
+      if (bad) throw new Error(`Cannot create that role: ${bad}`);
       this.config.peasants.push({
         name: p.name, cli: p.cli, model: p.model, prompt: p.prompt, description: p.reason,
       });
-      writeFileSync(this.configPath, JSON.stringify(this.config, null, 2));
+      this.#persistConfig();
       this.#publishRoster();
-      this.bus.post('orchestrator', this.config.king.name,
+      this.bus.post('orchestrator', this.config.orchestrator.name,
         `The sovereign approved the new role "${p.name}". It is in the roster permanently.`);
     } else if (p.kind === 'merge') {
       await this.merge(p.peasant);
@@ -2013,28 +2464,44 @@ export class Kingdom extends EventEmitter {
     if (!p) return;
     this.approvals.delete(id);
     this.bus.set(`resolved:${id}`, 'rejected');
-    this.bus.post('orchestrator', this.config.king.name,
+    this.bus.post('orchestrator', this.config.orchestrator.name,
       `The sovereign REJECTED your ${p.kind} proposal. ${why}`);
     this.emit('resolved', { id, approved: false });
   }
 
   async merge(peasant) {
+    // The last gate, and the one that matters. The MCP tool for this is already
+    // withheld outside Code and the prompt already says so, but neither of
+    // those is a guarantee: the tool list is advisory to a model, and the
+    // sovereign's own Merge button reaches this method directly. Research and
+    // Build promise that nothing lands on the base branch, and a promise
+    // enforced only by asking nicely is not one.
+    const m = modeOf(this.mode());
+    if (!m.merge) {
+      const why = `Nothing merges in ${m.label} mode, so "${peasant}"'s work was not merged and `
+        + `${this.base} is untouched. The work is on its own branch — switch to Code mode to `
+        + `land it, or take what you want from the branch by hand.`;
+      this.bus.post('orchestrator', this.config.orchestrator.name, why, 'notice');
+      this.emit('mergeFailed', { peasant, message: why });
+      throw new Error(why);
+    }
+
     let out;
     try {
       out = await mergeWorktree(this.repo, peasant, this.base);
     } catch (e) {
       // Conflicts and dirty trees are expected outcomes, not crashes: tell the
-      // king so it can send the work back, and leave the repo untouched.
-      this.bus.post('orchestrator', this.config.king.name,
+      // orchestrator so it can send the work back, and leave the repo untouched.
+      this.bus.post('orchestrator', this.config.orchestrator.name,
         `The merge of "${peasant}" did NOT happen and nothing was changed.\n${e.message}`);
       this.emit('mergeFailed', { peasant, message: e.message });
       throw e;
     }
 
-    // Confirmation of something the king itself asked for, so it rides along
+    // Confirmation of something the orchestrator itself asked for, so it rides along
     // rather than buying a turn. The FAILURE path above stays a message on
     // purpose: that one needs a decision (send the work back), this one does not.
-    this.bus.post('orchestrator', this.config.king.name,
+    this.bus.post('orchestrator', this.config.orchestrator.name,
       `"${peasant}"'s work is merged into ${this.base}.`, 'notice');
     this.emit('merged', { peasant, output: out });
 
@@ -2047,7 +2514,28 @@ export class Kingdom extends EventEmitter {
   }
 }
 
+/**
+ * This kingdom's own config, copied from the shipped template the first time.
+ *
+ * The fallback used to be the app's own kingdom.config.json — the tracked one —
+ * and every model change, goal edit, advisor toggle and milestone tick then
+ * rewrote it. So the repo carried a 134KB file that produced a diff every
+ * session, held one machine's absolute paths (an Obsidian vault on E:), and was
+ * shared by every court that never happened to have a local copy: two daemons
+ * on two repos read-modify-writing one file, losing each other's edits.
+ *
+ * Copying once makes the tracked file a template that is only ever READ, and
+ * gives each repo its own state. kingdomDir is already gitignored.
+ */
 export function defaultConfigPath(repo) {
   const local = join(kingdomDir(repo), 'kingdom.config.json');
-  return existsSync(local) ? local : join(HERE, '..', 'kingdom.config.json');
+  const template = join(HERE, '..', 'kingdom.config.json');
+  if (existsSync(local)) return local;
+  try {
+    mkdirSync(dirname(local), { recursive: true });
+    copyFileSync(template, local);
+    return local;
+  } catch {
+    return template;   // read-only disk, no template: degrade, never fail to start
+  }
 }

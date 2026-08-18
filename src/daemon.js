@@ -1,14 +1,19 @@
 #!/usr/bin/env node
 // Runs the kingdom and serves the throne room over HTTP + SSE.
 //
-//   node src/daemon.js <repo> [--port 7777] [--config path]
+//   node src/daemon.js [repo] [--port 7777] [--config path]
+//
+// repo is optional: Chat/Research/Build run with none attached, and Code
+// mode is refused (see Kingdom#setMode) until one is picked in the app —
+// POST /api/attachRepo, or a repo attached on a previous run and saved to
+// the workspace config.
 //
 // Deliberately its own process rather than living inside Electron: the
 // orchestrator needs Node 24's node:sqlite, and this way closing the window
 // does not kill the court.
 import { createServer } from 'node:http';
 import { readFile, mkdir, writeFile, readdir, unlink } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join, dirname, resolve, extname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Kingdom, defaultConfigPath } from './kingdom.js';
@@ -23,8 +28,24 @@ const PUBLIC = join(HERE, '..', 'ui');
 
 const argv = process.argv.slice(2);
 const flag = (n, d) => (argv.indexOf(n) !== -1 ? argv[argv.indexOf(n) + 1] : d);
-const repo = resolve(argv.find((a) => !a.startsWith('--') && argv[argv.indexOf(a) - 1] !== '--port'
-  && argv[argv.indexOf(a) - 1] !== '--config') ?? '.');
+const repoArg = argv.find((a) => !a.startsWith('--') && argv[argv.indexOf(a) - 1] !== '--port'
+  && argv[argv.indexOf(a) - 1] !== '--config');
+
+/**
+ * No repo on the command line: look for one attached from inside the app on
+ * a previous run before settling for none at all. Chat/Research/Build don't
+ * need one; Code mode is refused until /api/attachRepo gives it one live.
+ */
+function savedRepo() {
+  try {
+    const cfg = JSON.parse(readFileSync(defaultConfigPath(null), 'utf8'));
+    return cfg.repo && existsSync(join(cfg.repo, '.git')) ? resolve(cfg.repo) : null;
+  } catch {
+    return null;
+  }
+}
+
+const repo = repoArg ? resolve(repoArg) : savedRepo();
 const port = Number(flag('--port', 7777));
 const configPath = flag('--config', defaultConfigPath(repo));
 
@@ -39,7 +60,7 @@ function push(type, data) {
   for (const res of clients) res.write(line);
 }
 
-for (const ev of ['agent', 'event', 'delivered', 'approval', 'verified', 'merged', 'recycled', 'resolved', 'started', 'failure', 'roster', 'failover', 'mergeFailed', 'spend', 'budget', 'limited', 'advising', 'advisor', 'summarizer', 'goal', 'milestone', 'compact', 'argued']) {
+for (const ev of ['agent', 'event', 'delivered', 'approval', 'verified', 'merged', 'recycled', 'resolved', 'started', 'failure', 'roster', 'failover', 'mergeFailed', 'spend', 'budget', 'limited', 'advising', 'advisor', 'summarizer', 'goal', 'milestone', 'mode', 'compact', 'argued', 'repo']) {
   kingdom.on(ev, (d) => push(ev, d ?? {}));
 }
 kingdom.on('error', (e) => push('error', { message: e.message }));
@@ -85,6 +106,8 @@ const ACTIONS = {
   advisor: (b) => kingdom.setAdvisor(b),
   summarizer: (b) => kingdom.setSummarizer(b),
   goal: (b) => kingdom.setGoal(b),
+  mode: (b) => kingdom.setMode(b.mode, { why: b.why ?? '', by: b.by ?? 'sovereign' }),
+  attachRepo: (b) => kingdom.attachRepo(b.path),
   milestone: (b) => kingdom.setMilestone(Number(b.index), Boolean(b.done)),
   wake: (b) => kingdom.wake(b.name),
   sleep: (b) => kingdom.sleep(b.name),
@@ -128,7 +151,7 @@ function metrics() {
     // Via usage.js, like ctx.js and kingdom.js. This was a THIRD hand-rolled
     // copy of the rule and it had drifted the same way the first one did: it
     // knew codex's and Anthropic's names for the cache read but not agy's, so
-    // the throne room's cost panel scored the king — the one member on agy —
+    // the throne room's cost panel scored the orchestrator — the one member on agy —
     // as having replayed nothing at all.
     // The delta rule now lives in usage.js beside the cache rule, because this
     // was the ONLY copy of it: ctx.js and kingdom.js summed raw and reported a
@@ -175,14 +198,19 @@ async function shutdown(code = 0) {
   process.exit(code);
 }
 
-createServer(async (req, res) => {
+// Named, so createServer can wrap the WHOLE thing in one catch. Anything that
+// throws in here is an unhandled rejection, and Node's default for those is to
+// kill the process — so a single malformed request body took the entire court
+// down. One guard where every route passes through beats a try/catch per route
+// that the next route forgets.
+const handle = async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
 
   // How a launching window discovers whether a court is already up, and which
   // repo it is serving — attaching to the wrong repo would be silent and bad.
   if (url.pathname === '/api/ping') {
     return res.writeHead(ready ? 200 : 503, { 'content-type': 'application/json' })
-      .end(JSON.stringify({ ok: ready, starting: !ready, repo, base: kingdom.base, pid: process.pid }));
+      .end(JSON.stringify({ ok: ready, starting: !ready, repo: kingdom.repo, base: kingdom.base, pid: process.pid }));
   }
 
   if (url.pathname === '/stream') {
@@ -196,7 +224,7 @@ createServer(async (req, res) => {
     // Snapshot so a late-joining window is not staring at an empty room.
     res.write(`data: ${JSON.stringify({
       type: 'snapshot',
-      repo,
+      repo: kingdom.repo,
       base: kingdom.base,
       roster: JSON.parse(kingdom.bus.get('roster') ?? '[]'),
       models: kingdom.models(),
@@ -210,6 +238,7 @@ createServer(async (req, res) => {
       skills: kingdom.skills(),
       summarizer: kingdom.summarizer(),
       goal: kingdom.goal(),
+      mode: kingdom.mode(),
       // tail: this is a window repainting itself, so it wants the LAST 400/200,
       // not the first. Without it a reload showed the opening of the session and
       // nothing that had happened since.
@@ -340,19 +369,19 @@ createServer(async (req, res) => {
     const send = (code, o) =>
       res.writeHead(code, { 'content-type': 'application/json' }).end(JSON.stringify(o));
     // roleOf is a CLASSIFIER, not a membership test — it answers "peasant" for
-    // any name that is not the king or the jester, including one that does not
+    // any name that is not the orchestrator or the briefer, including one that does not
     // exist. specOf is the question actually being asked here.
     if (!peasant || !kingdom.specOf(peasant) || kingdom.roleOf(peasant) !== 'peasant') {
       return send(400, { ok: false, error: `"${peasant}" is not a peasant of this court.` });
     }
-    if (!existsSync(worktreePath(repo, peasant))) {
+    if (!existsSync(worktreePath(kingdom.repo, peasant))) {
       return send(200, { ok: true, peasant, none: true, reason: 'This member has no worktree yet.' });
     }
     try {
       const file = url.searchParams.get('file');
       const [stat, diff] = await Promise.all([
-        statOf(repo, peasant, kingdom.base),
-        diffOf(repo, peasant, kingdom.base, file),
+        statOf(kingdom.repo, peasant, kingdom.base),
+        diffOf(kingdom.repo, peasant, kingdom.base, file),
       ]);
       // The diff is the expensive part, and an enormous one helps nobody read
       // it — the panel offers per-file diffs for anything past this.
@@ -365,6 +394,30 @@ createServer(async (req, res) => {
     } catch (e) {
       return send(502, { ok: false, error: e.message });
     }
+  }
+
+  // ---- who has unmerged work waiting ------------------------------------
+  // The overview's "ready to review" block. /api/diff answers this one member
+  // at a time and returns up to 120KB of patch to do it, which is the wrong
+  // shape for a list — the question here is only "who has anything", and the
+  // stat line is enough to answer it. The client parses it with the same
+  // parseStat() the diff panel already uses.
+  if (url.pathname === '/api/changes') {
+    const send = (code, o) =>
+      res.writeHead(code, { 'content-type': 'application/json' }).end(JSON.stringify(o));
+    const names = [...kingdom.summoned].filter((n) => kingdom.roleOf(n) === 'peasant');
+    const changed = [];
+    for (const peasant of names) {
+      if (!existsSync(worktreePath(kingdom.repo, peasant))) continue;
+      try {
+        const stat = await statOf(kingdom.repo, peasant, kingdom.base);
+        if (stat?.trim()) changed.push({ peasant, stat });
+      } catch {
+        // One member's worktree being mid-rebase must not blank the whole
+        // block — degrade, never wedge.
+      }
+    }
+    return send(200, { ok: true, base: kingdom.base, changed });
   }
 
   // ---- the sovereign's vault, from the throne room ---------------------
@@ -488,15 +541,43 @@ createServer(async (req, res) => {
     return;
   }
 
+  // The mode table is SHARED with the browser, not copied into it. The labels,
+  // the blurbs and which blocks each mode drops are all the same table the
+  // orchestrator enforces, and a second copy in ui/ would drift the first time
+  // a crew changed — quietly, because a stale label still renders.
+  if (url.pathname === '/modes.js') {
+    const buf = await readFile(join(HERE, 'modes.js'));
+    return res.writeHead(200, {
+      'content-type': 'text/javascript', 'cache-control': 'no-cache',
+    }).end(buf);
+  }
+
   // static
   const file = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
   try {
     const buf = await readFile(join(PUBLIC, file));
-    res.writeHead(200, { 'content-type': MIME[extname(file)] ?? 'text/plain' }).end(buf);
+    res.writeHead(200, {
+      'content-type': MIME[extname(file)] ?? 'text/plain',
+      // The court has write access to its own config by design, and that config
+      // reaches the DOM. This is the backstop for the whole class: even if some
+      // field is interpolated into markup somewhere, there is no origin that may
+      // run a script but this one, and no inline script may run at all.
+      // 'unsafe-inline' for styles only, which pet.html's <style> block and the
+      // inline style attributes in win.js/assets.js require; it grants no script.
+      'content-security-policy': "default-src 'self'; script-src 'self'; "
+        + "style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self'; "
+        + "connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
+    }).end(buf);
   } catch {
     res.writeHead(404).end('not found');
   }
-}).listen(port, '127.0.0.1', async () => {
+};
+
+createServer((req, res) => handle(req, res).catch((e) => {
+  console.error(e?.stack ?? e);
+  if (!res.headersSent) res.writeHead(500, { 'content-type': 'application/json' });
+  res.end(JSON.stringify({ ok: false, error: String(e?.message ?? e) }));
+})).listen(port, '127.0.0.1', async () => {
   try {
     await kingdom.start();
     ready = true;
@@ -509,3 +590,9 @@ createServer(async (req, res) => {
 });
 
 for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => shutdown(0));
+
+// A court that is mostly working is worth more than a clean exit. Node's
+// default for an unhandled rejection is to kill the process, which takes every
+// live member's session with it over one stray promise — the SSE stream, the
+// summariser and the advisor are all fire-and-forget from here.
+process.on('unhandledRejection', (e) => console.error('unhandled rejection:', e?.stack ?? e));

@@ -23,7 +23,24 @@ export const DEFAULTS = {
     + 'No preamble, no praise, no hedging.',
 };
 
-export const settingsOf = (cfg) => ({ ...DEFAULTS, ...(cfg?.summarizer ?? {}) });
+/**
+ * A key the sovereign has cleared means "use the default", not "use empty".
+ *
+ * A plain spread does not agree: the live config carried `effort: ""` and
+ * `style: ""`, and `""` is falsy, so advisor.js dropped the effort flag
+ * entirely and codex ran the summariser at ITS default — medium reasoning — on
+ * a job the comment above calls "not reasoning work". With `maxWords` at 40
+ * against a default of 16, one cosmetic one-line summary could cost more than
+ * the peasant turn it was describing. Nothing caught it because the test
+ * asserted DEFAULTS.effort rather than the resolved value.
+ */
+export const settingsOf = (cfg) => {
+  const out = { ...DEFAULTS };
+  for (const [k, v] of Object.entries(cfg?.summarizer ?? {})) {
+    if (v !== '' && v !== null && v !== undefined) out[k] = v;
+  }
+  return out;
+};
 
 /** Effort ladders differ per model, and mini does not go to "max". */
 export const EFFORTS = ['none', 'low', 'medium', 'high', 'xhigh'];

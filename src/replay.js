@@ -6,7 +6,7 @@
 // Turn count drives this court's bill, and the settle window is the main knob
 // over it. The temptation is to justify a change by grouping message timestamps
 // and counting clusters — that is easy, and it was 4× wrong: clustering said a
-// 60s window would cut the king from 131 turns to 85, while replaying the same
+// 60s window would cut the orchestrator from 131 turns to 85, while replaying the same
 // traffic through the REAL rule gave 7.6%. The gap is everything clustering
 // leaves out — the sovereign bypasses the window entirely, a busy member's
 // queue already drains as one batch, and all-notice batches wait on their own
@@ -158,19 +158,19 @@ if (process.argv[1]?.endsWith('replay.js') && !process.argv[2]) {
 
   // A quiet log: messages far apart, so no window folds anything and both
   // settings cost one turn each.
-  const spaced = [0, 600_000, 1_200_000].map((ts) => ({ ts, sender: 'coder', recipient: 'king', kind: 'message' }));
+  const spaced = [0, 600_000, 1_200_000].map((ts) => ({ ts, sender: 'coder', recipient: 'orchestrator', kind: 'message' }));
   a.equal(replay(spaced, { settle: 15_000 }).turns, 3, 'messages minutes apart cannot fold');
   a.equal(replay(spaced, { settle: 45_000 }).turns, 3, 'and a wider window cannot invent folding');
 
   // A burst inside the wider window but outside the narrow one: this is the
   // only shape where the change can pay, and it must.
-  const burst = [0, 20_000, 40_000].map((ts) => ({ ts, sender: 'coder', recipient: 'king', kind: 'message' }));
+  const burst = [0, 20_000, 40_000].map((ts) => ({ ts, sender: 'coder', recipient: 'orchestrator', kind: 'message' }));
   const narrow = replay(burst, { settle: 15_000, turnMs: 1_000 }).turns;
   const wide = replay(burst, { settle: 45_000, turnMs: 1_000 }).turns;
   a.ok(wide < narrow, `a wider window must fold a burst it covers (${wide} vs ${narrow})`);
 
   // The sovereign must never wait, at any window.
-  const human = [{ ts: 0, sender: 'sovereign', recipient: 'king', kind: 'assignment' }];
+  const human = [{ ts: 0, sender: 'sovereign', recipient: 'orchestrator', kind: 'assignment' }];
   a.equal(replay(human, { settle: 600_000 }).turns, 1,
     "the sovereign's mail must be delivered regardless of the window");
 
@@ -179,8 +179,8 @@ if (process.argv[1]?.endsWith('replay.js') && !process.argv[2]) {
   // hold and eventually delivers, which is correct behaviour. The claim that
   // matters is that a notice followed by real traffic costs ONE turn, not two.
   const ride = [
-    { ts: 0, sender: 'orchestrator', recipient: 'king', kind: 'notice' },
-    { ts: 60_000, sender: 'coder', recipient: 'king', kind: 'message' },
+    { ts: 0, sender: 'orchestrator', recipient: 'orchestrator', kind: 'notice' },
+    { ts: 60_000, sender: 'coder', recipient: 'orchestrator', kind: 'message' },
   ];
   const together = replay(ride, { settle: 45_000, noticeHold: 180_000, turnMs: 1_000 });
   a.equal(together.turns, 1, `a notice must ride along with the next real message, got ${together.turns} turns`);
@@ -199,13 +199,13 @@ if (process.argv[1]?.endsWith('replay.js') && !process.argv[2]) {
 
   // With no real traffic to ride, it still lands once the hold expires — a
   // notice is delayed, never dropped.
-  const alone = [{ ts: 0, sender: 'orchestrator', recipient: 'king', kind: 'notice' }];
+  const alone = [{ ts: 0, sender: 'orchestrator', recipient: 'orchestrator', kind: 'notice' }];
   a.equal(replay(alone, { noticeHold: 5_000 }).turns, 1, 'a notice is delayed, never dropped');
 
   // The backstop must release a batch even when messages keep arriving inside
   // the window forever, or a chatty pair could starve a member indefinitely.
   const chatty = Array.from({ length: 40 }, (_, i) => (
-    { ts: i * 5_000, sender: 'coder', recipient: 'king', kind: 'message' }));
+    { ts: i * 5_000, sender: 'coder', recipient: 'orchestrator', kind: 'message' }));
   a.ok(replay(chatty, { settle: 45_000, backstop: 150_000, turnMs: 1_000 }).turns >= 1,
     'the backstop must release a batch that the window would hold forever');
 

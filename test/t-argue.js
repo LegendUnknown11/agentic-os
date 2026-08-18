@@ -30,8 +30,8 @@ git('commit', '-qm', 'init');
 const configPath = join(repo, 'kingdom.config.json');
 const write = (models) => writeFileSync(configPath, JSON.stringify({
   models,
-  king: { name: 'king', cli: 'codex' },
-  jester: { name: 'jester', cli: 'codex' },
+  orchestrator: { name: 'orchestrator', cli: 'codex' },
+  briefer: { name: 'briefer', cli: 'codex' },
   peasants: [{ name: 'coder', cli: 'codex' }],
 }));
 
@@ -65,7 +65,7 @@ a.equal(argued.length, 0, 'an empty question must not start a panel');
 
 /* ---------- a real question names its panel before spending anything ---- */
 // Stand in for the three model calls. Everything AFTER the argument — the vault
-// note, the king's notice, the completion event — is what this exercises, and
+// note, the orchestrator's notice, the completion event — is what this exercises, and
 // spawning three real CLIs to reach it would make the suite cost money.
 const vault = mkdtempSync(join(tmpdir(), 'kingdom-vault-'));
 k.config.vault = vault;
@@ -89,7 +89,7 @@ a.match(heard.at(-1), /judged by/, 'the sovereign must see who is arguing and wh
 a.match(heard.at(-1), /three vendors/, 'and how strong that panel is');
 // Nothing an argument produces may be WORK. The verdict notice below is
 // allowed — it rides along with real traffic — but an assignment would buy the
-// king a full context replay for a question it never asked.
+// orchestrator a full context replay for a question it never asked.
 a.equal(k.bus.history({ since: n, limit: 1000 }).filter((x) => x.kind !== 'notice').length, 0,
   'an argument must never post work to the court — only a notice that rides along');
 
@@ -122,7 +122,7 @@ a.match(note, /<details>/, 'the full argument is kept but folded — the verdict
 
 const last = k.bus.history({ limit: 1000 }).at(-1);
 a.equal(last.kind, 'notice',
-  'the king did not ask for this: it must ride along with real traffic, not buy a replay');
+  'the orchestrator did not ask for this: it must ride along with real traffic, not buy a replay');
 a.match(last.body, /VERDICT: keep it/);
 a.match(last.body, /AWARENESS ONLY/);
 
@@ -135,7 +135,7 @@ const after = k.bus.history({ since: m, limit: 1000 });
 // posted its own verdict notice and made up the difference.
 a.equal(after.length, 1);
 a.equal(after[0].kind, 'assignment',
-  'a word that merely STARTS with /argue is an ordinary order to the king — a word '
+  'a word that merely STARTS with /argue is an ordinary order to the orchestrator — a word '
   + 'boundary sits before the hyphen, so \\b matched it and swallowed the message');
 a.match(after[0].body, /is not a command/, 'and the whole message must survive intact');
 

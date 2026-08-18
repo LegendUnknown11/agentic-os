@@ -10,7 +10,12 @@
     <span class="mark" id="mark"></span>
     <span id="repo">—</span>
     <span id="spend" class="num"></span>
-    <nav class="mode" id="mode"></nav>
+    <!-- Two different things, both once called "mode". #court is what the court
+         is DOING (Code / Research / Chat / Build); #layout is only how the
+         panels are arranged. The first one changes what the court can do and
+         sits first because of it. -->
+    <nav class="court-mode" id="court"></nav>
+    <nav class="layout" id="layout"></nav>
     <button class="goalbar" id="goalbar" hidden></button>
     <span class="grow"></span>
     <nav class="tools" id="tools"></nav>
@@ -21,110 +26,26 @@
   <main>
     <aside class="rail" id="rail">
       <div class="rail-head">
-        <span class="engraved">Court</span>
+        <span class="engraved">Team</span>
         <span class="num" id="court-count"></span>
         <span class="grow"></span>
         <button class="chip" id="rail-collapse" title="Collapse">‹</button>
       </div>
-      <button class="summon-btn" id="summon-btn">Summon…</button>
+      <button class="summon-btn" id="summon-btn">Add agent…</button>
       <div class="rail-list" id="rail-list"></div>
       <div class="rail-pet" id="rail-pet"></div>
     </aside>
 
     <div id="stage">
+      <!-- The backdrop, and nothing drawn on top of it.
+           A drawn throne room used to sit here — windows, columns, a dais, a
+           throne. It was removed on the sovereign's instruction. #bg stays:
+           it is the low-contrast wash that gives the glass something to bend,
+           and it is what a wallpaper replaces. -->
       <div id="bg"></div>
 
-      <!-- The hall itself.
-           This is the "throne room, not a dashboard with a crown icon" made
-           literal: a back wall with three lit windows, columns, a dais and the
-           throne on it. Drawn rather than photographed so it costs nothing,
-           scales to any window, and takes its colours from the same tokens as
-           everything else.
-           Deliberately architecture in shadow, not a picture: every fill is
-           under 6% white and the only colour is the light through the glass.
-           It fades back when panels are open (see #stage:has(.win) in app.css)
-           and disappears entirely under a wallpaper, which is a room of its
-           own. aria-hidden because it is scenery — there is nothing here for a
-           screen reader to read. -->
-      <svg id="hall" viewBox="0 0 1200 700" preserveAspectRatio="xMidYMax slice" aria-hidden="true">
-        <defs>
-          <linearGradient id="h-glass" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stop-color="#f0c97d" stop-opacity=".26"/>
-            <stop offset="1" stop-color="#45ecc6" stop-opacity=".06"/>
-          </linearGradient>
-          <linearGradient id="h-beam" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stop-color="#f0c97d" stop-opacity=".085"/>
-            <stop offset="1" stop-color="#f0c97d" stop-opacity="0"/>
-          </linearGradient>
-          <linearGradient id="h-stone" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stop-color="#ffffff" stop-opacity=".055"/>
-            <stop offset="1" stop-color="#ffffff" stop-opacity=".014"/>
-          </linearGradient>
-          <linearGradient id="h-runner" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stop-color="#f0c97d" stop-opacity=".075"/>
-            <stop offset="1" stop-color="#f0c97d" stop-opacity=".012"/>
-          </linearGradient>
-        </defs>
-
-        <!-- light falling through the windows onto the floor -->
-        <g fill="url(#h-beam)">
-          <path d="M235 430h130l105 270H120z"/>
-          <path d="M535 430h130l125 270H410z"/>
-          <path d="M835 430h130l115 270H730z"/>
-        </g>
-
-        <!-- the windows: three arches, the centre one taller -->
-        <g fill="url(#h-glass)" stroke="rgba(255,255,255,.07)" stroke-width="2">
-          <path d="M235 430V185a65 65 0 0 1 130 0v245z"/>
-          <path d="M535 430V150a65 65 0 0 1 130 0v280z"/>
-          <path d="M835 430V185a65 65 0 0 1 130 0v245z"/>
-        </g>
-        <g stroke="rgba(255,255,255,.05)" stroke-width="2" fill="none">
-          <path d="M300 430V125M235 300h130"/>
-          <path d="M600 430V90M535 268h130"/>
-          <path d="M900 430V125M835 300h130"/>
-        </g>
-
-        <!-- banners between the windows -->
-        <g fill="url(#h-glass)" opacity=".55">
-          <path d="M446 118h58v212l-29 26-29-26z"/>
-          <path d="M696 118h58v212l-29 26-29-26z"/>
-        </g>
-
-        <!-- the columns flanking the hall -->
-        <g fill="url(#h-stone)">
-          <path d="M120 96h46v464h-46zM106 70h74v26h-74zM106 548h74v22h-74z"/>
-          <path d="M1034 96h46v464h-46zM1020 70h74v26h-74zM1020 548h74v22h-74z"/>
-        </g>
-
-        <!-- the floor, and the dais rising out of it -->
-        <path d="M0 560h1200" stroke="rgba(255,255,255,.055)" stroke-width="2"/>
-        <g fill="url(#h-stone)" stroke="rgba(255,255,255,.045)" stroke-width="1.5">
-          <path d="M370 560h460v30H370zM410 530h380v30H410zM450 500h300v30H450z"/>
-        </g>
-
-        <!-- the runner, down the steps and out towards the viewer. A carpet is
-             the cheapest thing in the whole drawing and it does more than the
-             columns do: it is what turns three stacked slabs into an approach. -->
-        <path d="M556 500h88l70 200H486z" fill="url(#h-runner)"/>
-
-        <!-- the throne. Drawn as a seat rather than an arch — the first version
-             was a plain pointed panel and read as a second doorway behind the
-             window, which is the one thing in this picture that must not be
-             ambiguous. -->
-        <g fill="url(#h-stone)" stroke="rgba(240,201,125,.16)" stroke-width="1.5">
-          <!-- the high back, with a crown of three points -->
-          <path d="M552 452V352a48 48 0 0 1 96 0v100z"/>
-          <path d="M566 352l14-30 20 26 20-26 14 30z"/>
-          <!-- seat, armrests, and the plinth it stands on -->
-          <path d="M534 452h132v20H534z"/>
-          <path d="M528 472h24v28h-24zM648 472h24v28h-24z"/>
-          <path d="M560 472h80v28h-80z"/>
-        </g>
-      </svg>
-
       <div id="surface"></div>
-      <div id="firstrun" hidden></div>
+      <div id="overview" hidden></div>
       <div id="windows"></div>
       <div id="approvals"></div>
       <div id="toast"></div>
@@ -132,7 +53,7 @@
 
     <aside class="who" id="who">
       <div class="who-head">
-        <span class="engraved">Member</span>
+        <span class="engraved">Selected</span>
         <button class="chip" id="who-collapse" title="Hide">›</button>
       </div>
       <div class="who-body" id="who-body"></div>
@@ -140,7 +61,7 @@
   </main>
 
   <footer>
-    <input id="cmd" placeholder="Speak to the king…" autocomplete="off">
+    <input id="cmd" placeholder="Tell the orchestrator what to do…" autocomplete="off">
     <button class="mic" id="cmd-mic"></button>
   </footer>
 

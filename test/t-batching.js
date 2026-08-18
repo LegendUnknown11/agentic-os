@@ -48,8 +48,8 @@ git('commit', '-qm', 'init');
 
 const configPath = join(repo, 'kingdom.config.json');
 writeFileSync(configPath, JSON.stringify({
-  king: { name: 'king', cli: 'codex' },
-  jester: { name: 'jester', cli: 'codex' },
+  orchestrator: { name: 'orchestrator', cli: 'codex' },
+  briefer: { name: 'briefer', cli: 'codex' },
   peasants: [{ name: 'coder', cli: 'codex' }],
 }));
 
@@ -67,8 +67,8 @@ k.agents.set('coder', coder);
 k.summoned.add('coder');
 
 // --- three messages arriving together must cost ONE turn --------------
-k.bus.post('king', 'coder', 'first thing');
-k.bus.post('king', 'coder', 'second thing');
+k.bus.post('orchestrator', 'coder', 'first thing');
+k.bus.post('orchestrator', 'coder', 'second thing');
 k.bus.post('architect', 'coder', 'third thing');
 await wait(1500);
 
@@ -123,16 +123,16 @@ a.ok(coder.sent[0].includes('and then stop'), 'but distinct messages must surviv
 // Without it, an idle agent takes a turn for the first message and another for
 // the second. With it, a short pause collects both into one.
 coder.sent.length = 0;
-k.bus.post('king', 'coder', 'part one');
+k.bus.post('orchestrator', 'coder', 'part one');
 await wait(150); // inside the 400ms settle window
-k.bus.post('king', 'coder', 'part two');
+k.bus.post('orchestrator', 'coder', 'part two');
 await wait(1500);
 a.equal(coder.sent.length, 1, 'messages arriving within the settle window must cost ONE turn');
 a.ok(coder.sent[0].includes('part one') && coder.sent[0].includes('part two'));
 
 // --- a busy agent is not interrupted ----------------------------------
 coder.busy = true;
-k.bus.post('king', 'coder', 'while busy');
+k.bus.post('orchestrator', 'coder', 'while busy');
 await wait(1500);
 a.equal(coder.sent.length, 1, 'a busy agent must not be interrupted mid-turn');
 
@@ -147,7 +147,7 @@ await wait(1500);
 a.equal(coder.sent.length, 2, 'a lone notice must NOT cost a turn');
 
 // ...but it rides along with the next real message.
-k.bus.post('king', 'coder', 'real work');
+k.bus.post('orchestrator', 'coder', 'real work');
 await wait(1500);
 a.equal(coder.sent.length, 3, 'real traffic must flush the held notice with it');
 a.ok(coder.sent[2].includes('just so you know'), 'the notice must ride along');
@@ -155,7 +155,7 @@ a.ok(coder.sent[2].includes('real work'));
 
 // --- an idle-slept member is revived on demand ------------------------
 k.agents.delete('coder'); // simulate an idle sleep; still summoned
-k.bus.post('king', 'coder', 'wake up');
+k.bus.post('orchestrator', 'coder', 'wake up');
 a.ok(await until(() => k.agents.has('coder')),
   'a summoned-but-slept member must be revived to receive mail');
 
@@ -169,7 +169,7 @@ await k2.start();
 a.ok(k2.summoned.has('coder'), 'a summoned peasant must still be in service after a restart');
 a.ok(!k2.agents.has('coder'), 'it should be asleep, not eagerly respawned');
 
-k2.bus.post('king', 'coder', 'still there?');
+k2.bus.post('orchestrator', 'coder', 'still there?');
 a.ok(await until(() => k2.agents.has('coder')),
   'mail after a restart must revive it, not vanish');
 
@@ -180,14 +180,19 @@ a.ok(await until(() => k2.agents.has('coder')),
 // The stubbed "codex" is plain node given a script that does not exist, so
 // every turn dies with no output — the real failure, end to end.
 {
-  const redelivered = [];
-  k2.on('redelivered', (r) => redelivered.push(r));
-  k2.bus.post('king', 'coder', 'do the important thing');
-  await until(() => redelivered.length > 0);   // deliver, die, rewind, redeliver
+  // Only THIS batch's redeliveries. "still there?" above went to the same
+  // dying stub and has its own deliver-die-rewind-redeliver cycle in flight;
+  // on a loaded machine that cycle lands after this listener is attached, and
+  // counting it read as the retry guard failing when it had not.
+  const all = [];
+  k2.on('redelivered', (r) => all.push(r));
+  const id = k2.bus.post('orchestrator', 'coder', 'do the important thing');
+  const mine = () => all.filter((r) => r.through >= id);
+  await until(() => mine().length > 0);        // deliver, die, rewind, redeliver
   await wait(3000);                            // then long enough to die again
 
-  a.equal(redelivered.length, 1,
-    `a dead turn must be redelivered exactly once, got ${redelivered.length}`);
+  a.equal(mine().length, 1,
+    `a dead turn must be redelivered exactly once, got ${JSON.stringify(all)}`);
   a.equal(k2.bus.pending('coder').length, 0,
     'and after the retry is spent the order must not sit redelivering forever');
 }
@@ -197,16 +202,16 @@ a.ok(await until(() => k2.agents.has('coder')),
 // the ack, so a `done` arriving next to any other message used to be re-seen
 // on every 300ms tick until the batch ripened. Measured on a real run against
 // a Flutter repo: one declare_done ran commit + tests + two diffs 131 times
-// and queued 131 digest turns onto the jester.
-const fakeKing = new FakeAgent();
-fakeKing.busy = true;              // so the batch can never ripen
-k2.agents.get('king')?.stop();
-k2.agents.set('king', fakeKing);
+// and queued 131 digest turns onto the briefer.
+const fakeOrchestrator = new FakeAgent();
+fakeOrchestrator.busy = true;              // so the batch can never ripen
+k2.agents.get('orchestrator')?.stop();
+k2.agents.set('orchestrator', fakeOrchestrator);
 
 let verified = 0;
 k2.on('verified', () => verified++);
-k2.bus.post('coder', 'king', 'I have finished the thing', 'done');
-k2.bus.post('coder', 'king', 'and here is a note about it');
+k2.bus.post('coder', 'orchestrator', 'I have finished the thing', 'done');
+k2.bus.post('coder', 'orchestrator', 'and here is a note about it');
 // Wait for the first verification, THEN sit through ~10 more ticks: the defect
 // was a re-verify on every tick, so the duplicates arrive after the first one.
 await until(() => verified > 0);
@@ -223,7 +228,7 @@ a.equal(verified, 1, `a declare_done must be verified exactly once, got ${verifi
   const errs = [];
   k2.on('error', (e) => errs.push(e));
   process.env.KINGDOM_SETTLE_MS = String(10 * 60_000);   // far above the backstop
-  k2.bus.post('coder', 'king', 'wake the delivery loop');
+  k2.bus.post('coder', 'orchestrator', 'wake the delivery loop');
   await until(() => errs.length > 0);
   process.env.KINGDOM_SETTLE_MS = '400';
 
@@ -233,7 +238,7 @@ a.equal(verified, 1, `a declare_done must be verified exactly once, got ${verifi
 
 // --- awareness must never buy a turn ----------------------------------
 // Nine sites post "AWARENESS ..." to a member; eight passed 'notice' and one
-// did not, so a message whose own text says TAKE NO ACTION bought the king a
+// did not, so a message whose own text says TAKE NO ACTION bought the orchestrator a
 // full context replay to do nothing. Nothing caught it, because each site
 // reads fine on its own — the defect is only visible across all of them.
 {
@@ -275,8 +280,8 @@ a.equal(verified, 1, `a declare_done must be verified exactly once, got ${verifi
   const live = new FakeAgent();
   k2.agents.set('coder', live);
 
-  k2.bus.post('king', 'ghost', 'you do not exist');
-  k2.bus.post('king', 'coder', 'but you do, and this must still arrive');
+  k2.bus.post('orchestrator', 'ghost', 'you do not exist');
+  k2.bus.post('orchestrator', 'coder', 'but you do, and this must still arrive');
   // Both, not just the delivery: the spawn now fails asynchronously, so its
   // error can land after the message it must not have blocked.
   await until(() => live.sent.length > 0

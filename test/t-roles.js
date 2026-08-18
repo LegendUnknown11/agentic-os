@@ -10,6 +10,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Kingdom } from '../src/kingdom.js';
+import { MODES } from '../src/modes.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const dir = mkdtempSync(join(tmpdir(), 'kingdom-roles-'));
@@ -24,8 +25,8 @@ execFileSync('git', ['commit', '-qm', 'init'], { cwd: repo });
 const cfgPath = join(dir, 'kingdom.config.json');
 const base = {
   peasantDefaults: { cli: 'codex', model: 'gpt-5.6-luna', effort: 'high' },
-  king: { name: 'king', cli: 'codex', prompt: 'k' },
-  jester: { name: 'jester', cli: 'codex', prompt: 'j' },
+  orchestrator: { name: 'orchestrator', cli: 'codex', prompt: 'k' },
+  briefer: { name: 'briefer', cli: 'codex', prompt: 'j' },
   peasants: [{ name: 'coder', cli: 'claude', model: 'opus', prompt: 'MY OWN CODER' }],
 };
 const write = (o) => writeFileSync(cfgPath, JSON.stringify(o, null, 2));
@@ -38,11 +39,23 @@ const names = library.map((r) => r.name);
 a.equal(new Set(names).size, names.length, 'duplicate role names');
 for (const r of library) {
   a.ok(r.name && /^[a-z][a-z-]*$/.test(r.name), `bad role name: ${r.name}`);
-  a.ok(r.description?.length > 30, `${r.name} needs a description the king can choose from`);
+  a.ok(r.description?.length > 30, `${r.name} needs a description the orchestrator can choose from`);
   a.ok(r.prompt?.length > 80, `${r.name} needs a real prompt`);
   a.ok(r.title, `${r.name} needs a court title`);
 }
 console.log(`  library: ${library.length} specialists — ${names.join(', ')}`);
+
+/* ---------- every mode's crew is drawn from that library ---------- */
+// A typo in a crew list is not a crash: canSummon just refuses everybody with
+// that name, so the mode quietly offers a bench one member short and the orchestrator
+// is told "not on the Research bench" about a role that was meant to be on it.
+for (const [mode, m] of Object.entries(MODES)) {
+  if (m.crew === 'all') continue;
+  for (const n of m.crew) {
+    a.ok(names.includes(n), `${mode}'s crew names "${n}", which no role in roles.json provides`);
+  }
+}
+console.log('  every mode crews from roles that actually exist');
 
 /* ---------- first run seeds ---------- */
 write(base);
@@ -57,10 +70,10 @@ a.equal(coder.prompt, 'MY OWN CODER', 'a configured role must not be overwritten
 a.equal(coder.model, 'opus', 'nor its model');
 
 // library roles inherit peasantDefaults
-const mason = cfg.peasants.find((p) => p.name === 'mason');
-a.equal(mason.cli, 'codex', 'library roles take the court default cli');
-a.equal(mason.model, 'gpt-5.6-luna', 'and the default model');
-a.ok(mason.prompt.length > 80, 'and keep their own prompt');
+const refactoringEngineer = cfg.peasants.find((p) => p.name === 'refactoring-engineer');
+a.equal(refactoringEngineer.cli, 'codex', 'library roles take the court default cli');
+a.equal(refactoringEngineer.model, 'gpt-5.6-luna', 'and the default model');
+a.ok(refactoringEngineer.prompt.length > 80, 'and keep their own prompt');
 console.log(`  seeded ${cfg.peasants.length}; coder kept the sovereign's prompt`);
 k.bus.close();
 
@@ -72,28 +85,28 @@ console.log('  second launch: no change');
 
 /* ---------- a deleted role STAYS deleted ---------- */
 cfg = read();
-cfg.peasants = cfg.peasants.filter((p) => p.name !== 'treasurer');
+cfg.peasants = cfg.peasants.filter((p) => p.name !== 'strategist');
 write(cfg);
 k = new Kingdom(repo, cfgPath);
-a.equal(read().peasants.find((p) => p.name === 'treasurer'), undefined,
+a.equal(read().peasants.find((p) => p.name === 'strategist'), undefined,
   'a role the sovereign deleted must not come back');
 k.bus.close();
 console.log('  deleted role stayed deleted');
 
-/* ---------- the king is told what each specialist is for ---------- */
+/* ---------- the orchestrator is told what each specialist is for ---------- */
 k = new Kingdom(repo, cfgPath);
-const prompt = k.briefFor('king');
-for (const n of ['mason', 'physician', 'scout', 'sentry']) {
-  a.ok(prompt.includes(n), `the king's brief must name ${n}`);
+const prompt = k.briefFor('orchestrator');
+for (const n of ['refactoring-engineer', 'architect', 'fact-checker', 'devops-engineer']) {
+  a.ok(prompt.includes(n), `the orchestrator's brief must name ${n}`);
 }
-a.ok(prompt.includes('Master of Works'), 'court titles should reach the king');
-a.ok(/refactor/i.test(prompt), "and enough detail to pick the mason over the coder");
+a.ok(prompt.includes('Master of Works'), 'court titles should reach the orchestrator');
+a.ok(/refactor/i.test(prompt), "and enough detail to pick the refactoring-engineer over the coder");
 k.bus.close();
-console.log('  king briefed on the whole bench');
+console.log('  orchestrator briefed on the whole bench');
 
 /* ---------- the build doctrine reaches EVERY worker, not 14 copies ---------- */
 // One block on the shared peasant prompt, so a role added later cannot start
-// out exempt from it. The king gets the enforcement half instead: it judges
+// out exempt from it. The orchestrator gets the enforcement half instead: it judges
 // the work, so it is the one that must refuse an untested done-report.
 {
   k = new Kingdom(repo, cfgPath);
@@ -106,13 +119,13 @@ console.log('  king briefed on the whole bench');
     a.match(b, /SMALLEST THING THAT WORKS/, `${n} must be told to iterate in slices`);
     a.match(b, /NO FAKE COMPLETION/, `${n} must be told not to fake done`);
   }
-  const king = k.briefFor('king');
-  a.match(king, /UNVERIFIED/, 'the king must be told an untested done-report is unverified');
-  a.match(king, /send_back/, 'and what to do about it');
-  a.ok(!/TESTS ARE PART OF THE WORK/.test(king),
-    'but the king does not write code, so it gets the enforcement half only');
+  const orchestrator = k.briefFor('orchestrator');
+  a.match(orchestrator, /UNVERIFIED/, 'the orchestrator must be told an untested done-report is unverified');
+  a.match(orchestrator, /send_back/, 'and what to do about it');
+  a.ok(!/TESTS ARE PART OF THE WORK/.test(orchestrator),
+    'but the orchestrator does not write code, so it gets the enforcement half only');
   k.bus.close();
-  console.log(`  build doctrine on all ${workers.length} workers; king enforces it`);
+  console.log(`  build doctrine on all ${workers.length} workers; orchestrator enforces it`);
 }
 
 /* ---------- domain presets move a whole side of the stack at once ---------- */
@@ -125,7 +138,7 @@ console.log('  king briefed on the whole bench');
   for (const n of d.frontend) a.ok(!d.backend.includes(n), `${n} must not be in both domains`);
   // Cross-cutting roles follow the work, not a layer; sweeping them with a
   // layer choice puts a reviewer on a model nobody chose for it.
-  for (const n of ['tester', 'reviewer', 'scout']) {
+  for (const n of ['tester', 'reviewer', 'fact-checker']) {
     a.ok(!d.frontend.includes(n) && !d.backend.includes(n), `${n} must be in neither domain`);
   }
 

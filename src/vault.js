@@ -219,9 +219,13 @@ function writeIndex(key, files) {
   const target = indexPath(key);
   const tmp = `${target}.${process.pid}.tmp`;
   try {
+    // 0600, because this file is the sovereign's entire vault — every note,
+    // body text included, ~9.7MB of it — sitting in the SHARED system tmpdir
+    // under a name derived from a non-secret hash of the vault path. Default
+    // permissions there are world-readable. rename preserves the mode.
     writeFileSync(tmp, JSON.stringify({
       v: 1, files: [...files].map(([p, { mtime, text }]) => [p, mtime, text]),
-    }));
+    }), { mode: 0o600 });
     renameSync(tmp, target);
   } catch {
     try { rmSync(tmp, { force: true }); } catch {}

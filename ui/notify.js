@@ -42,6 +42,10 @@ function fire(title, body, tag) {
   const now = Date.now();
   if (now - (recent.get(key) ?? 0) < REPEAT_MS) return false;
   recent.set(key, now);
+  // Keyed on the message BODY, so a day of distinct errors is a day of distinct
+  // keys and this map only ever grew. Anything older than the window it exists
+  // to enforce can no longer suppress anything.
+  for (const [k, t] of recent) if (now - t >= REPEAT_MS) recent.delete(k);
   try {
     const n = new Notification(title, { body: String(body ?? '').slice(0, 220), tag, silent: false });
     n.onclick = () => { window.focus(); n.close(); };
@@ -58,7 +62,7 @@ function fire(title, body, tag) {
 export function onEvent(d) {
   switch (d.type) {
     case 'approval':
-      return prefs.approvals && fire('The court is waiting on you',
+      return prefs.approvals && fire('The team is waiting on you',
         `${d.from ?? 'A member'} asks to ${d.kind ?? 'proceed'}.`, 'approval');
 
     case 'failure':
@@ -73,7 +77,7 @@ export function onEvent(d) {
 
     case 'budget':
       return prefs.budget && fire(
-        d.scope === 'kingdom' ? 'Kingdom spend ceiling reached' : `${d.name} hit its ceiling`,
+        d.scope === 'kingdom' ? 'Team spend ceiling reached' : `${d.name} hit its ceiling`,
         `$${(d.spent ?? 0).toFixed(2)} of $${d.cap}. Everyone stopped.`, 'budget');
 
     case 'merged':

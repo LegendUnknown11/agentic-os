@@ -1,4 +1,4 @@
-// Incremental reads. The jester's tools used to default to `since = 0`, so
+// Incremental reads. The briefer's tools used to default to `since = 0`, so
 // every briefing re-injected the whole history — 182k tokens per read on a
 // real kingdom. They must now return only what is new.
 //
@@ -14,7 +14,7 @@ const dir = mkdtempSync(join(tmpdir(), 'kingdom-incr-'));
 const db = join(dir, 'kingdom.db');
 const bus = new Bus(db);
 
-function call(name, args = {}, agent = 'jester', role = 'jester') {
+function call(name, args = {}, agent = 'briefer', role = 'briefer') {
   const rpc = [
     { jsonrpc: '2.0', id: 1, method: 'initialize', params: {
       protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 't', version: '1' } } },
@@ -33,7 +33,7 @@ function call(name, args = {}, agent = 'jester', role = 'jester') {
 }
 
 for (let i = 0; i < 5; i++) {
-  bus.post('coder', 'king', `progress ${i}`);
+  bus.post('coder', 'orchestrator', `progress ${i}`);
   bus.logEvent('coder', 'tool', { name: `Edit${i}` });
 }
 
@@ -66,8 +66,8 @@ a.ok(after.includes('EditAFTER'), 'cursor must still work after a look back');
 a.ok(!after.includes('Edit0'), 'a look back must not reset the cursor');
 
 // --- cursors are per agent --------------------------------------------
-const kingFirst = call('read_bus', {}, 'king', 'king');
-a.ok(kingFirst.includes('progress 0'), "the king's cursor is its own, not the jester's");
+const orchestratorFirst = call('read_bus', {}, 'orchestrator', 'orchestrator');
+a.ok(orchestratorFirst.includes('progress 0'), "the orchestrator's cursor is its own, not the briefer's");
 
 // --- the payload is flattened, not raw JSON ---------------------------
 a.ok(!first.includes('"payload"'), 'events must be flattened, not raw JSON');
@@ -79,7 +79,7 @@ a.ok(!first.includes('"payload"'), 'events must be flattened, not raw JSON');
 // replayed the opening of a session and nothing since — indistinguishable, from
 // the sovereign's chair, from messages not being saved at all.
 for (let i = 0; i < 60; i++) {
-  bus.post('coder', 'king', `line ${i}`);
+  bus.post('coder', 'orchestrator', `line ${i}`);
   bus.logEvent('coder', 'tool', { name: `Tool${i}` });
 }
 

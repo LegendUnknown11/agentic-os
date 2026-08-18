@@ -20,7 +20,9 @@ import {
   insideVault as vaultInside, walkVault, invalidateVault, noteWritten, searchVault, noteOutline, noteSection,
 } from './vault.js';
 import { remember } from './memory.js';
+import { badRole } from './approval.js';
 import { composeSkill, listSkills } from './skills.js';
+import { modeName, modeOf, toolAllowed } from './modes.js';
 
 // Search results are replayed in the member's context on every later turn, so
 // the payload is a token budget, not just a display limit.
@@ -55,7 +57,7 @@ function identityFromCwd() {
 const ID = process.env.KINGDOM_AGENT ? {} : identityFromCwd();
 
 const ME = process.env.KINGDOM_AGENT ?? ID.agent ?? 'unknown';
-const ROLE = process.env.KINGDOM_ROLE ?? ID.role ?? 'peasant'; // peasant | jester | king
+const ROLE = process.env.KINGDOM_ROLE ?? ID.role ?? 'peasant'; // peasant | briefer | orchestrator
 const REPO = process.env.KINGDOM_REPO ?? ID.repo ?? process.cwd();
 /**
  * There may be no kingdom here at all, and that is a normal state.
@@ -126,13 +128,13 @@ const rosterNow = () => {
 /**
  * The member currently holding an office, by role rather than by name.
  *
- * `declare_done` and `brief_king` used to post to the literal string "king".
- * The king's name is configuration — `kingdom.config.json` has `king.name`,
+ * `declare_done` and `brief_orchestrator` used to post to the literal string "orchestrator".
+ * The orchestrator's name is configuration — `kingdom.config.json` has `orchestrator.name`,
  * `roleOf()` compares against it, and `#promptFor` tells every member what it
  * is — and delivery is by recipient (`bus.pending(agent)` matches
- * `recipient = ?`). So renaming the king sent every declare_done and every
- * jester briefing to a recipient nobody reads, while the tool still answered
- * "The king has been notified." Silent, and precisely the failure AGENTS.md
+ * `recipient = ?`). So renaming the orchestrator sent every declare_done and every
+ * briefer briefing to a recipient nobody reads, while the tool still answered
+ * "The orchestrator has been notified." Silent, and precisely the failure AGENTS.md
  * rule 4 is about.
  *
  * Falls back to the literal name if the roster has not been published yet:
@@ -168,7 +170,7 @@ function badRecipient(to) {
 }
 
 /**
- * Incremental reads. These tools defaulted to `since = 0`, so every jester
+ * Incremental reads. These tools defaulted to `since = 0`, so every briefer
  * briefing re-injected the ENTIRE history into its context — measured at 182k
  * tokens per read on a real run. The server now remembers where each agent got
  * to and returns only what is new. An explicit `since` still works for a
@@ -189,9 +191,9 @@ const nothingNew = (from) =>
 
 const TOOLS = {
   send_message: {
-    roles: ['peasant', 'jester', 'king'],
+    roles: ['peasant', 'briefer', 'orchestrator'],
     description:
-      'Message another member directly by name. Prefer this over waiting on the king.',
+      'Message another member directly by name. Prefer this over waiting on the orchestrator.',
     schema: {
       type: 'object',
       properties: { to: str('Recipient name, e.g. "coder"'), body: str('What to say') },
@@ -206,7 +208,7 @@ const TOOLS = {
   },
 
   broadcast: {
-    roles: ['peasant', 'jester', 'king'],
+    roles: ['peasant', 'briefer', 'orchestrator'],
     description:
       'Say something to every member of the court at once. EXPENSIVE — it ' +
       'costs every recipient a turn, so prefer send_message to the one or two ' +
@@ -221,7 +223,7 @@ const TOOLS = {
   },
 
   roster: {
-    roles: ['peasant', 'jester', 'king'],
+    roles: ['peasant', 'briefer', 'orchestrator'],
     description: 'Who is in the court, their role, and whether they are awake.',
     schema: { type: 'object', properties: {} },
     run: () => JSON.parse(bus.get('roster') ?? '[]'),
@@ -230,23 +232,23 @@ const TOOLS = {
   declare_done: {
     roles: ['peasant'],
     description:
-      'Declare your task complete. Tests run automatically and the king reviews your diff.',
+      'Declare your task complete. Tests run automatically and the orchestrator reviews your diff.',
     schema: {
       type: 'object',
       properties: { summary: str('What you changed and why') },
       required: ['summary'],
     },
     run: ({ summary }) => {
-      const king = officer('king', 'king');
-      bus.post(ME, king, summary, 'done');
-      return `Declared done. ${king} has been notified; await review.`;
+      const orchestrator = officer('orchestrator', 'orchestrator');
+      bus.post(ME, orchestrator, summary, 'done');
+      return `Declared done. ${orchestrator} has been notified; await review.`;
     },
   },
 
   read_bus: {
-    roles: ['jester', 'king'],
+    roles: ['briefer', 'orchestrator'],
     description:
-      'New messages since you last looked. King: prefer the jester briefings.',
+      'New messages since you last looked. Orchestrator: prefer the briefer briefings.',
     schema: {
       type: 'object',
       properties: {
@@ -266,7 +268,7 @@ const TOOLS = {
   },
 
   read_events: {
-    roles: ['jester'],
+    roles: ['briefer'],
     description:
       'What the peasants have DONE since you last looked (not what they say).',
     schema: {
@@ -277,7 +279,7 @@ const TOOLS = {
         limit: { type: 'number', description: 'Max rows (default 120)' },
       },
     },
-    // Raw payloads land in the jester's context verbatim, so flatten each event
+    // Raw payloads land in the briefer's context verbatim, so flatten each event
     // to one short line — and only ever return what is new.
     run: ({ since, agent = null, limit = 120 }) => {
       const { from, track } = cursorFor('events', since);
@@ -292,19 +294,19 @@ const TOOLS = {
     },
   },
 
-  brief_king: {
-    roles: ['jester'],
+  brief_orchestrator: {
+    roles: ['briefer'],
     description:
-      'Brief the king in plain language. Flag anything blocked, looping or contradictory.',
+      'Brief the orchestrator in plain language. Flag anything blocked, looping or contradictory.',
     schema: { type: 'object', properties: { summary: str('The briefing') }, required: ['summary'] },
     run: ({ summary }) => {
-      bus.post(ME, officer('king', 'king'), summary, 'brief');
+      bus.post(ME, officer('orchestrator', 'orchestrator'), summary, 'brief');
       return 'Briefing delivered.';
     },
   },
 
   vault_search: {
-    roles: ['peasant', 'jester', 'king'],
+    roles: ['peasant', 'briefer', 'orchestrator'],
     description:
       'Search the sovereign\'s notes (models, conventions, past decisions). ' +
       'Check BEFORE choosing a model, library or approach.',
@@ -346,7 +348,7 @@ const TOOLS = {
   },
 
   skill: {
-    roles: ['peasant', 'jester', 'king'],
+    roles: ['peasant', 'briefer', 'orchestrator'],
     description:
       'Load one of the court\'s named procedures in full — the steps, not the '
       + 'summary. Your prompt lists what exists; this is how you get the body. '
@@ -370,7 +372,7 @@ const TOOLS = {
   },
 
   vault_read: {
-    roles: ['peasant', 'jester', 'king'],
+    roles: ['peasant', 'briefer', 'orchestrator'],
     description:
       'Read a vault note by the path vault_search gave. Small notes come back '
       + 'whole. For a LARGE note you get its headings and are asked which one you '
@@ -422,13 +424,13 @@ const TOOLS = {
   },
 
   vault_write: {
-    roles: ['peasant', 'jester', 'king'],
+    roles: ['peasant', 'briefer', 'orchestrator'],
     description:
       `Record something DURABLE in the sovereign's vault — a decision and its ` +
       `reasoning, a gotcha discovered the hard way, a convention worth keeping. ` +
-      `Not a progress update and not chatter; those belong on the bus. Notes go ` +
-      `under "${VAULT_WRITE_DIR}/" and are visible to the whole court and to ` +
-      `future sessions. Use [[wikilinks]] to connect to existing notes.`,
+      `Not a progress update and not chatter; those belong on the bus. Notes are ` +
+      `visible to the whole court and to future sessions. Use [[wikilinks]] to ` +
+      `connect to existing notes.`,
     schema: {
       type: 'object',
       properties: {
@@ -441,7 +443,18 @@ const TOOLS = {
     },
     run: ({ title, body, links = [], append = false }) => {
       if (!VAULT) return 'No vault is configured for this kingdom.';
-      const dir = join(VAULT, VAULT_WRITE_DIR);
+      // The FOLDER is the mode's, not a slug the model has to spell right.
+      // modeBlock() tells the model its note "goes under Research/" — that was
+      // a promise the tool had no way to keep, so a real research turn wrote
+      // straight into Kingdom/ instead of Kingdom/Research/ and nobody was
+      // told it happened. slug() also strips '/', so even a model that tried
+      // to type "Research/Title" as the title would have landed flat anyway.
+      const writeSub = modeOf(modeNow()).vaultDir;
+      // Two forms on purpose: `join()` for the real path (OS-correct
+      // separators), a literal '/' for anything shown back to a member — every
+      // other vault path in this file and in modeBlock() is written with '/'.
+      const writeDirRel = writeSub ? `${VAULT_WRITE_DIR}/${writeSub}` : VAULT_WRITE_DIR;
+      const dir = writeSub ? join(VAULT, VAULT_WRITE_DIR, writeSub) : join(VAULT, VAULT_WRITE_DIR);
       mkdirSync(dir, { recursive: true });
       const file = join(dir, `${slug(title)}.md`);
       const linkLine = links.length ? `\nRelated: ${links.map((l) => `[[${l}]]`).join(' ')}\n` : '';
@@ -453,16 +466,16 @@ const TOOLS = {
       if (append && existsSync(file)) {
         writeFileSync(file, readFileSync(file, 'utf8') + `\n\n---\n*${ME} · ${stamp}*\n${body}${linkLine}`);
         noteWritten(VAULT, file);
-        return `Appended to ${VAULT_WRITE_DIR}/${slug(title)}.md`;
+        return `Appended to ${writeDirRel}/${slug(title)}.md`;
       }
       writeFileSync(file, `*Recorded by ${ME} · ${stamp}*\n\n${body}${linkLine}`);
       noteWritten(VAULT, file);
-      return `Saved to ${VAULT_WRITE_DIR}/${slug(title)}.md`;
+      return `Saved to ${writeDirRel}/${slug(title)}.md`;
     },
   },
 
   remember: {
-    roles: ['peasant', 'jester', 'king'],
+    roles: ['peasant', 'briefer', 'orchestrator'],
     description:
       `Record ONE durable fact the court should not have to learn twice — a ` +
       `gotcha found the hard way, a convention, a decision and its reasoning, ` +
@@ -493,10 +506,10 @@ const TOOLS = {
   },
 
   read_diff: {
-    roles: ['king', 'jester'],
+    roles: ['orchestrator', 'briefer'],
     description:
       'Read a peasant\'s ACTUAL changes against the base branch. Call this when ' +
-      'the jester\'s digest is vague, surprising, or claims something you want ' +
+      'the briefer\'s digest is vague, surprising, or claims something you want ' +
       'to confirm before merging — do not approve a merge on a summary alone if ' +
       'anything looks off. Omit "file" for the whole diff, or name one file to ' +
       'inspect it closely without pulling everything into your context.',
@@ -524,7 +537,7 @@ const TOOLS = {
   },
 
   assign: {
-    roles: ['king'],
+    roles: ['orchestrator'],
     description: 'Assign a task. Be specific about scope and done-criteria.',
     schema: {
       type: 'object',
@@ -549,7 +562,7 @@ const TOOLS = {
   // bus, where the sovereign can see it and an idle member can pick it up.
 
   add_task: {
-    roles: ['king'],
+    roles: ['orchestrator'],
     description:
       'Put a unit of work on the shared list. Size it so it has ONE clear deliverable — a function, '
       + 'a test file, a review. Too small and the coordination costs more than the work; too large and '
@@ -575,13 +588,19 @@ const TOOLS = {
       const known = new Set(bus.tasks().map((t) => t.id));
       const missing = needs.filter((n) => !known.has(Number(n)));
       if (missing.length) return `No such task: ${missing.map((n) => `#${n}`).join(', ')}. Nothing was added.`;
+      // Capped, because the `tasks` tool's output goes in front of the WHOLE
+      // court, on every listing, for as long as the task is open. One verbose
+      // orchestrator turn would otherwise put an unbounded string in everyone's
+      // context — the same thing memory.js:74 and skills.js:175 cap.
+      title = String(title).slice(0, 200);
+      detail = String(detail).slice(0, 2000);
       const id = bus.addTask({ title, detail, needs, needsPlan: require_plan, by: ME });
       return `Task #${id} added${needs.length ? `, waiting on ${needs.map((n) => `#${n}`).join(', ')}` : ''}.`;
     },
   },
 
   tasks: {
-    roles: ['king', 'jester', 'peasant'],
+    roles: ['orchestrator', 'briefer', 'peasant'],
     description: 'The shared task list: what is outstanding, who holds it, and what is blocked.',
     schema: { type: 'object', properties: {}, required: [] },
     run: () => {
@@ -617,7 +636,7 @@ const TOOLS = {
       const t = r.task;
       return t.state === 'planning'
         ? `Claimed #${t.id}: ${t.title}\n\n${t.detail}\n\nThis task requires an approved plan. `
-          + `Investigate, then call submit_plan — do NOT change any file until the king approves it.`
+          + `Investigate, then call submit_plan — do NOT change any file until the orchestrator approves it.`
         : `Claimed #${t.id}: ${t.title}\n\n${t.detail}`;
     },
   },
@@ -639,11 +658,11 @@ const TOOLS = {
       // prompt: a member cannot close a risky task by deciding its plan was
       // fine. This is the one boundary the orchestrator actually controls.
       if (t.state === 'planning') {
-        return `Task #${id} still needs an approved plan. Call submit_plan and wait for the king.`;
+        return `Task #${id} still needs an approved plan. Call submit_plan and wait for the orchestrator.`;
       }
       bus.updateTask(id, { state: 'done', doneTs: Date.now() });
-      const king = officer('king', 'king');
-      bus.post(ME, king, `Task #${id} (${t.title}) done. ${summary}`, 'done');
+      const orchestrator = officer('orchestrator', 'orchestrator');
+      bus.post(ME, orchestrator, `Task #${id} (${t.title}) done. ${summary}`, 'done');
       const left = bus.tasks().filter((x) => x.state !== 'done').length;
       return `Task #${id} closed. ${left ? `${left} still open — claim_task for the next.` : 'The list is clear.'}`;
     },
@@ -652,7 +671,7 @@ const TOOLS = {
   submit_plan: {
     roles: ['peasant'],
     description:
-      'Send the king your approach for a task that requires approval. You stay read-only until it is approved.',
+      'Send the orchestrator your approach for a task that requires approval. You stay read-only until it is approved.',
     schema: {
       type: 'object',
       properties: { id: { type: 'integer', description: 'Which task' }, plan: str('What you intend to do, and why') },
@@ -664,13 +683,13 @@ const TOOLS = {
       if (t.owner !== ME) return `Task #${id} is not yours.`;
       if (t.state !== 'planning') return `Task #${id} is ${t.state} — it does not need a plan.`;
       bus.updateTask(id, { plan });
-      bus.post(ME, officer('king', 'king'), `Plan for task #${id} (${t.title}):\n\n${plan}`, 'plan');
-      return `Plan sent for #${id}. Do not edit anything until the king approves it.`;
+      bus.post(ME, officer('orchestrator', 'orchestrator'), `Plan for task #${id} (${t.title}):\n\n${plan}`, 'plan');
+      return `Plan sent for #${id}. Do not edit anything until the orchestrator approves it.`;
     },
   },
 
   rule_on_plan: {
-    roles: ['king'],
+    roles: ['orchestrator'],
     description:
       'Approve or reject a peasant\'s plan. Rejecting keeps them read-only and hands back your notes, so say '
       + 'what would make it acceptable rather than only what is wrong.',
@@ -698,7 +717,7 @@ const TOOLS = {
   },
 
   summon: {
-    roles: ['king'],
+    roles: ['orchestrator'],
     description:
       'Propose the crew to wake. The sovereign approves it and reads your reasoning. Wake the fewest that can do the job.',
     schema: {
@@ -738,7 +757,7 @@ const TOOLS = {
   },
 
   goal: {
-    roles: ['king', 'jester', 'peasant'],
+    roles: ['orchestrator', 'briefer', 'peasant'],
     description:
       'The court\'s standing goal and its milestones. Read it when you are '
       + 'unsure whether a piece of work is worth doing.',
@@ -753,10 +772,10 @@ const TOOLS = {
   },
 
   milestone_done: {
-    // The king judges completion — it is the one that reviews the work. A
+    // The orchestrator judges completion — it is the one that reviews the work. A
     // peasant marking its own milestone done is the same failure as a peasant
     // declaring its own tests passed.
-    roles: ['king'],
+    roles: ['orchestrator'],
     description:
       'Mark one of the standing goal\'s milestones finished, by its index from '
       + 'the goal tool. Only do this once you have SEEN the evidence.',
@@ -781,7 +800,7 @@ const TOOLS = {
   },
 
   propose_role: {
-    roles: ['king'],
+    roles: ['orchestrator'],
     description:
       'Propose a brand-new kind of peasant to add to the roster permanently. ' +
       'Requires the sovereign\'s approval.',
@@ -797,13 +816,18 @@ const TOOLS = {
       required: ['name', 'prompt', 'cli', 'reason'],
     },
     run: (spec) => {
+      // Refused HERE as well as at approve(), because the orchestrator can act on this
+      // answer — a rejection at the approval boundary is a card the sovereign
+      // has to read and dismiss, hours later, with no way to tell the orchestrator why.
+      const err = badRole(spec, { taken: rosterNow().map((m) => m.name) });
+      if (err) return `${err} Nothing was proposed.`;
       bus.post(ME, null, JSON.stringify({ kind: 'role', ...spec }), 'approval');
       return 'Role proposed. Await the sovereign\'s decision.';
     },
   },
 
   request_merge: {
-    roles: ['king'],
+    roles: ['orchestrator'],
     description:
       'You have reviewed a peasant\'s work and judge it fit. This surfaces a ' +
       'Merge button to the sovereign, who has the final word.',
@@ -819,7 +843,7 @@ const TOOLS = {
   },
 
   send_back: {
-    roles: ['king'],
+    roles: ['orchestrator'],
     description: 'Reject a peasant\'s work and send it back with notes on what to fix.',
     schema: {
       type: 'object',
@@ -835,7 +859,20 @@ const TOOLS = {
   },
 };
 
-const visible = Object.entries(TOOLS).filter(([, t]) => t.roles.includes(ROLE));
+/**
+ * What shape the court is in, read fresh every time.
+ *
+ * NOT captured at module load. codex runs one process per turn, but a claude
+ * member is one process for its whole life — so a mode flipped an hour into a
+ * session would never reach it, and it would keep holding a merge tool that no
+ * longer does anything. The bus is the only channel that crosses into a process
+ * the orchestrator does not own, and a get is one indexed row.
+ */
+const modeNow = () => modeName(bus?.get('mode'));
+
+const visible = () =>
+  Object.entries(TOOLS).filter(([name, t]) =>
+    t.roles.includes(ROLE) && toolAllowed(modeNow(), name));
 
 const server = new Server(
   { name: 'kingdom', version: '0.1.0' },
@@ -844,7 +881,7 @@ const server = new Server(
 
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
   // No court here means no court tools — an empty list, not a broken server.
-  tools: bus ? visible.map(([name, t]) => ({
+  tools: bus ? visible().map(([name, t]) => ({
     name,
     description: t.description,
     inputSchema: t.schema,
@@ -919,6 +956,15 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
   const tool = TOOLS[req.params.name];
   if (!tool || !tool.roles.includes(ROLE)) {
     return { isError: true, content: [{ type: 'text', text: `No such tool for ${ROLE}.` }] };
+  }
+  // The list above is a hint; THIS is the enforcement. A long-lived member holds
+  // the tool list it was given at connect, so after a flip it will reach for a
+  // tool this mode has withheld — and it must be told why, in a sentence it can
+  // act on, rather than have the call quietly succeed.
+  if (!toolAllowed(modeNow(), req.params.name)) {
+    return { isError: true, content: [{ type: 'text', text:
+      `"${req.params.name}" is not available in ${modeOf(modeNow()).label} mode, so nothing `
+      + `happened. ${modeOf(modeNow()).blurb}` }] };
   }
   try {
     const out = await tool.run(req.params.arguments ?? {});

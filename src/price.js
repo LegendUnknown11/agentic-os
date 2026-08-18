@@ -14,7 +14,7 @@
 // Measured on a real 3-turn session (E:\AI\.kingdom\Sant Dnyaneshwar), 95.2%
 // of all input was cache READ. Counted as tokens that looks like a session
 // paying to re-read itself; priced, those tokens are ~34% of the input bill —
-// the session cost $0.604 on the king's terra, against $3.93 if those same
+// the session cost $0.604 on the orchestrator's terra, against $3.93 if those same
 // tokens had been fresh. Tuning `recycleAtTokens` against the token count
 // therefore optimises the cheapest thing in the system — and pays for it with
 // a handover turn at full context plus a destroyed cache prefix.

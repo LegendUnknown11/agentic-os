@@ -2,28 +2,28 @@
 
 A court of AI agents that work a git repository together. The difference from
 ordinary subagent setups: **the peasants talk to each other directly**, not
-through the king.
+through the orchestrator.
 
 ```
         you (the sovereign)
                │
-             king            ← decides, assigns, reviews. Reads almost nothing raw.
+             orchestrator            ← decides, assigns, reviews. Reads almost nothing raw.
                ↑
-            jester           ← drinks the firehose, briefs the king in detail
+            briefer           ← drinks the firehose, briefs the orchestrator in detail
                ↑
    ┌───────┬───┴───┬───────┐
 architect coder reviewer tester   ← each in its own git worktree, messaging each other
 ```
 
-## Why the jester exists
+## Why the briefer exists
 
-The king's context is the scarcest thing in the kingdom. If every peasant
-message reached it, the king would be incoherent within an hour. So a cheap
+The orchestrator's context is the scarcest thing in the kingdom. If every peasant
+message reached it, the orchestrator would be incoherent within an hour. So a cheap
 model (Haiku) watches *everything* — every message, every tool call — and
-briefs the king on what actually matters. The king keeps a `read_bus` escape
+briefs the orchestrator on what actually matters. The orchestrator keeps a `read_bus` escape
 hatch it should rarely need.
 
-The jester recycles itself: as it nears its context limit it writes a handover
+The briefer recycles itself: as it nears its context limit it writes a handover
 note, dies, and is respawned seeded with that note. A session can run all day.
 
 ## Requirements
@@ -122,14 +122,14 @@ node src/daemon.js /path/to/repo          # then open http://127.0.0.1:7777
 node src/cli.js   /path/to/repo           # pure terminal
 ```
 
-In the CLI: type to speak to the king, `@coder do X` to speak to one member,
+In the CLI: type to speak to the orchestrator, `@coder do X` to speak to one member,
 `/approve <id>`, `/reject <id>`, `/roster`, `/quit`.
 
 ## What you approve
 
 Nothing important happens without you:
 
-| The king proposes | You see |
+| The orchestrator proposes | You see |
 |---|---|
 | `summon` — which peasants to wake, and why | a card with the crew and its reasoning |
 | `propose_role` — a brand-new kind of peasant | the name, prompt, CLI, and rationale; approving writes it into `kingdom.config.json` permanently |
@@ -158,7 +158,7 @@ cannot traverse out of the vault.
 
 **Turns, not messages.** Each delivered turn replays the recipient's entire
 accumulated context, so a session's cost tracks *turn count*. A real run —
-"design my app" — spent 34 turns, 21 of them the king's, and 18 of those were
+"design my app" — spent 34 turns, 21 of them the orchestrator's, and 18 of those were
 retries against a bug. Measure with `node test/dump.js <repo> events`.
 
 **Tokens are not the bill.** Replayed context is billed at a *tenth* of fresh
@@ -185,7 +185,7 @@ The kingdom is built around that fact:
 | **`maxBudgetUsd`** | Per member. **Off unless you set it** — there is no default. |
 
 **The biggest lever is the roster.** That run woke seven agents; a tester doing
-42 tool calls on a design task is pure cost. The king is now told to summon the
+42 tool calls on a design task is pure cost. The orchestrator is now told to summon the
 smallest crew that can do the job — but you approve every summon, so trim the
 crew there.
 
@@ -194,7 +194,7 @@ crew there.
 **Merging never damages your repo.** Conflicts are computed in memory with
 `git merge-tree` *before* anything is checked out. If a peasant conflicts, or
 your base branch has uncommitted changes, the merge is refused and nothing is
-touched — the king is told so it can send the work back. Any surprise
+touched — the orchestrator is told so it can send the work back. Any surprise
 mid-merge is rolled back with `merge --abort`.
 
 **Peasants are confined, to different degrees.** Codex peasants run under a
@@ -230,9 +230,9 @@ member mid-task.
 ```
 peasant → declare_done
    → orchestrator runs the project's real tests in that worktree
-   → jester digests the diff + results
-   → king reviews the digest (raw diff only if suspicious)
-   → king: request_merge, or send_back with notes
+   → briefer digests the diff + results
+   → orchestrator reviews the digest (raw diff only if suspicious)
+   → orchestrator: request_merge, or send_back with notes
    → you click Merge
 ```
 
@@ -265,7 +265,7 @@ model names there rather than editing code:
 
 ## The roster
 
-`kingdom.config.json` — edit by hand any time, or let the king propose
+`kingdom.config.json` — edit by hand any time, or let the orchestrator propose
 additions. Each member picks its own CLI and model:
 
 ```json
@@ -300,7 +300,7 @@ claude.
 | `src/agent.js` | spawns/streams/injects either CLI, normalised to one event shape |
 | `src/mcp.js` | the MCP server every agent gets; toolset varies by role |
 | `src/worktree.js` | git worktrees, test discovery, merging |
-| `src/kingdom.js` | the orchestrator: roster, delivery loop, approvals, jester recycling |
+| `src/kingdom.js` | the orchestrator: roster, delivery loop, approvals, briefer recycling |
 | `src/daemon.js` | HTTP + SSE server |
 | `src/cli.js` | terminal interface |
 | `ui/` | the throne room (no framework) |

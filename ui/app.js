@@ -10,11 +10,16 @@ import * as A from './assets.js';
 import * as P from './panels.js';
 import * as N from './notify.js';
 import * as I from './identity.js';
-import { avatar } from './avatar.js';
+import { statusDot } from './avatar.js';
 import * as PET from './pet.js';
 // The rail-vs-roster rule, apart from the DOM so `npm test` can check it.
 import { inCourt } from './court.js';
 import { cue, soundOn, setSound } from './feel.js';
+import { displayName, agentCount } from './names.js';
+import * as O from './overview.js';
+// Served straight from src/ by the daemon — the SAME table the orchestrator
+// enforces, so the switcher can never offer a shape the court does not have.
+import { MODES, MODE_NAMES, modeOf, canSummon } from '/modes.js';
 
 const $ = (s) => document.querySelector(s);
 
@@ -32,8 +37,8 @@ const LOG_CAP = 400;
 
 const log = new Map();      // name -> [{cls, text}]  kept whether or not a window is open
 const members = new Map();  // name -> {role, cli, model, awake}
-let MODELS = { claude: ['opus', 'sonnet', 'haiku', 'fable'], codex: [], agy: [] };
-let EFFORTS = { claude: ['low', 'medium', 'high'], codex: ['low', 'medium', 'high', 'xhigh', 'max'], agy: ['low', 'medium', 'high'] };
+let MODELS = { claude: ['opus', 'sonnet', 'haiku', 'fable'], codex: [], agy: [], opencode: [] };
+let EFFORTS = { claude: ['low', 'medium', 'high'], codex: ['low', 'medium', 'high', 'xhigh', 'max'], agy: ['low', 'medium', 'high'], opencode: ['low', 'medium', 'high'] };
 let ADVISOR = { cli: 'codex', model: 'gpt-5.6-luna', effort: 'max', promptEngineer: true, autoModel: true, allow: [] };
 // Which members a domain preset moves. Comes from the daemon snapshot.
 let DOMAINS = { frontend: [], backend: [] };
@@ -49,6 +54,11 @@ const LOCAL_COMMANDS = [{
   description: 'two models argue a question, a third judges — verdict to the vault',
 }];
 let GOAL = null;
+// What the court is doing. `PENDING` is a mode chosen but not yet in force
+// because somebody is mid-turn — shown, not hidden, or pressing the button
+// looks like it did nothing.
+let MODE = 'code';
+let PENDING = null;
 let SUMMARIZER = { enabled: true, cli: 'codex', model: 'gpt-5.4-mini', effort: 'none', maxWords: 16, style: '' };
 
 const post = (action, body = {}) =>
@@ -58,12 +68,27 @@ const post = (action, body = {}) =>
     body: JSON.stringify(body),
   }).then((r) => r.json()).catch(() => ({ ok: false }));
 
-function toast(text, bad = false) {
+/**
+ * `action` turns a toast into the only place something can be taken back.
+ *
+ * Used by the automatic mode switch, which happens without asking: the court
+ * changing shape under you is fine as long as putting it back is one click and
+ * you can see the click. The timer is longer with an action for the obvious
+ * reason — six seconds is enough to read a sentence and not enough to decide.
+ */
+function toast(text, bad = false, action = null) {
   const d = document.createElement('div');
   if (bad) d.className = 'bad';
-  d.textContent = text;
+  d.append(text);
+  if (action) {
+    const b = document.createElement('button');
+    b.className = 'undo';
+    b.textContent = action.label;
+    b.onclick = () => { d.remove(); action.run(); };
+    d.append(b);
+  }
   $('#toast').append(d);
-  setTimeout(() => d.remove(), 6000);
+  setTimeout(() => d.remove(), action ? 12000 : 6000);
 }
 onNotice(toast);
 
@@ -86,6 +111,12 @@ function render(el, entry) {
 }
 
 function append(name, cls, text) {
+  // LOG_CAP bounds the number of ENTRIES, not their size, and a member that
+  // cats a file puts the whole file in one of them — 400 of those is a
+  // transcript buffer measured in megabytes, per member, held for the life of
+  // the page whether the panel is open or not. Nothing on screen shows more
+  // than this anyway.
+  if (text.length > 4000) text = `${text.slice(0, 4000)}\n… (${text.length - 4000} more characters)`;
   G.upsertNode(name, members.get(name)?.role);
   const buf = log.get(name) ?? (log.set(name, []), log.get(name));
   const prev = buf[buf.length - 1];
@@ -118,14 +149,17 @@ const body = (name) => W.getWindow(`m:${name}`)?.querySelector('.log');
 function openMember(name) {
   I.select(name);
   const m = members.get(name) ?? {};
+  // The id stays keyed on the real name — it is how the bus, the log map and
+  // every post() find this member. Only what is printed changes.
+  const shown = displayName(name, m.role);
   W.toggle(`m:${name}`, {
-    title: name,
+    title: shown,
     cls: `member role-${m.role ?? 'peasant'} ${m.awake ? '' : 'asleep'}`,
     build(el) {
       const bar = el.querySelector('.slot');
-      // The member's own face, so a board of six cards is scannable without
-      // reading six titles.
-      el.querySelector('.bar').prepend(avatar(name, m.role, 20));
+      // Whether this member is actually running, on its own title bar. The
+      // panel's `.asleep` class is what paints it (.win:not(.asleep)>.bar .av i).
+      el.querySelector('.bar').prepend(statusDot(name, m.role));
 
       // Was a bare ⏻, which said nothing about which way it would go.
       const power = document.createElement('button');
@@ -138,7 +172,7 @@ function openMember(name) {
 
       const sel = document.createElement('select');
       sel.className = 'model';
-      sel.title = 'CLI and model for this member';
+      sel.title = 'CLI and model for this agent';
       fillModels(sel, m.cli ?? 'claude', m.model, m.auto);
       sel.onchange = () => {
         if (sel.value === '__custom__') return askCustomModel(el, sel, name);
@@ -185,10 +219,10 @@ function openMember(name) {
       logEl.className = 'log';
       // An empty transcript is a huge blank rectangle. CSS :empty fills it and
       // gets out of the way the moment the first line lands — no lifecycle.
-      logEl.dataset.who = name;
+      logEl.dataset.who = shown;
       const form = document.createElement('form');
       form.innerHTML = `<div class="row1">
-          <input placeholder="Prompt ${name}…" autocomplete="off">
+          <input placeholder="Message ${shown}…" autocomplete="off">
           <button type="button" class="mic"></button>
           <button type="submit" class="send"></button>
         </div>
@@ -285,7 +319,7 @@ function askCustomModel(win, sel, name) {
     if (!commit || !raw) { sel.value = sel.dataset.current; return; }
     const [cli, ...rest] = raw.split(':');
     if (MODELS[cli.trim()]) applyModel(name, cli.trim(), rest.join(':').trim());
-    else toast(`Unknown CLI "${cli.trim()}". Use claude:, codex: or agy:<model>.`, true);
+    else toast(`Unknown CLI "${cli.trim()}". Use claude:, codex:, agy: or opencode:<model>.`, true);
   };
   input.onkeydown = (e) => {
     if (e.key === 'Enter') finish(true);
@@ -369,6 +403,22 @@ function syncControls(name) {
 
 /* ---------- roster ---------- */
 function applyRoster(roster) {
+  // A row can exist for a name the roster no longer mentions at all — not
+  // "dismissed", just gone (a rename, a deleted role). The loop below only
+  // ever visits names IN `roster`, so a role that vanished from config never
+  // reaches the `!inCourt` branch that would remove its row. Left alone, the
+  // next replayed historical message bearing that name (upsertNode auto-
+  // creates on any rail call) resurrects it as a permanent ghost — this is
+  // what left "king"/"jester" rows on the rail after the roster renamed them
+  // to "orchestrator"/"briefer". Prune first, so the loop below only ever
+  // adds back what the roster actually still says exists.
+  const known = new Set(roster.map((r) => r.name));
+  for (const name of G.names()) {
+    if (known.has(name)) continue;
+    G.remove(name);
+    members.delete(name);
+    I.refresh(name);
+  }
   for (const r of roster) {
     members.set(r.name, {
       role: r.role, cli: r.cli, model: r.model, title: r.title, description: r.description,
@@ -382,7 +432,7 @@ function applyRoster(roster) {
       I.refresh(r.name);
       continue;
     }
-    G.upsertNode(r.name, r.role);
+    G.admit(r.name, r.role);   // the roster is the only thing that may create a row
     G.setState(r.name, r.awake ? 'awake' : 'asleep');
     G.setServing(r.name, r.summoned);
     // Sleeping clears a stuck "limited"/"failed" — that state died with the process.
@@ -390,7 +440,7 @@ function applyRoster(roster) {
     // and wakes on its next message, which is a different thing entirely.
     if (!r.awake) {
       clearSticky(r.name);
-      setStatus(r.name, r.summoned ? 'resting' : 'not summoned');
+      setStatus(r.name, r.summoned ? 'resting' : 'not added');
     }
     else if (!statusOf.has(r.name)) setStatus(r.name, 'idle');
     tip(r.name);
@@ -398,7 +448,7 @@ function applyRoster(roster) {
     I.refresh(r.name);
   }
   paintCourtCount();
-  paintFirstRun();
+  O.paintOverview();
   syncPet();
   // Anything painting from the roster repaints here — the summoning screen is
   // the first, and it must not disagree with the rail about who is in the court.
@@ -419,57 +469,23 @@ function paintCourtCount() {
   const total = [...members.values()].filter((m) => m.role === 'peasant').length;
   const here = [...members.values()].filter((m) => m.role === 'peasant' && m.summoned).length;
   n.textContent = `${here}/${total}`;
-  n.title = `${here} peasant${here === 1 ? '' : 's'} in the court, `
-    + `${total - here} more available to summon`;
+  n.title = `${agentCount(here)} on the team, ${total - here} more available to add`;
 }
 
-const openSummon = () => P.openSummon({ post, toast, roster: () => members });
+const openSummon = () => P.openSummon({
+  post,
+  toast,
+  // The bench belongs to the mode. Offering a role the approval will refuse is
+  // worse than not offering it: the card gets raised, the sovereign says yes,
+  // and the court rejects its own summons for a reason nobody was shown.
+  // Anyone already ON the team stays listed whatever the mode — hiding a live
+  // member from the panel that names the team would be the bigger lie.
+  roster: () => new Map(
+    [...members].filter(([n, m]) => m.summoned || canSummon(MODE, n, m.role))),
+});
 $('#summon-btn').onclick = openSummon;
 
-/**
- * What to do when there is nothing to look at.
- *
- * State-driven, not a one-shot tour: it appears whenever the court has no
- * peasants and no goal, which is true on a first run and true again the day you
- * dismiss everyone. A tutorial you can only ever see once is no help to someone
- * who comes back in a month, and this costs nothing to keep correct.
- *
- * The king and the jester are always present, so they are not the test — an
- * empty court means nobody has been summoned to do the work.
- */
-function paintFirstRun() {
-  const box = $('#firstrun');
-  if (!box) return;
-  const staffed = [...members.values()].some((m) => m.role === 'peasant' && m.summoned);
-  if (staffed || GOAL) { box.hidden = true; return; }
-
-  if (box.dataset.built) { box.hidden = false; return; }
-  box.dataset.built = '1';
-  box.hidden = false;
-
-  const step = (n, label, hint, run) => {
-    const b = document.createElement('button');
-    b.className = 'fr-step';
-    b.append(
-      Object.assign(document.createElement('span'), { className: 'fr-n num', textContent: n }),
-      Object.assign(document.createElement('span'), { className: 'fr-label', textContent: label }),
-      Object.assign(document.createElement('span'), { className: 'fr-hint', textContent: hint }),
-    );
-    b.onclick = run;
-    return b;
-  };
-
-  box.append(
-    Object.assign(document.createElement('h1'), { textContent: 'Your court is empty' }),
-    Object.assign(document.createElement('p'), {
-      textContent: 'The king and the jester are here. Nobody is doing any work yet.',
-    }),
-    step('1', 'Summon someone', 'Pick who joins the court', openSummon),
-    step('2', 'Set a standing goal', 'What everyone is working towards',
-      () => P.openGoal({ post, toast, goal: () => GOAL })),
-    step('3', 'Give the king an order', 'Type it at the bottom', () => $('#cmd').focus()),
-  );
-}
+/* the Overview is wired further down, once statusOf and summaries exist */
 
 /* ---------- bus ---------- */
 const busRows = [];
@@ -511,7 +527,7 @@ function renderMessage(m) {
 
 function openBus() {
   const on = W.toggle('bus', {
-    title: 'Court bus',
+    title: 'Messages',
     build(el) {
       const feed = document.createElement('div');
       feed.className = 'log';
@@ -549,7 +565,7 @@ function renderApproval(a) {
     const r = await post(action, { id: a.id });
     if (!r.ok) {
       buttons.forEach((b) => { b.disabled = false; });
-      toast(r.error ?? 'The court could not record that decision.', true);
+      toast(r.error ?? 'That decision could not be recorded.', true);
       return;
     }
     el.remove();
@@ -593,7 +609,7 @@ function badge() {
   btn.classList.toggle('waiting', n > 0);
   btn.title = n > 0
     ? `Approvals — ${n} waiting on you`
-    : 'Approvals — what the court is asking permission for';
+    : 'Approvals — what the team is asking permission for';
 }
 
 /* ---------- stream ---------- */
@@ -666,7 +682,7 @@ function stat(name, parts) {
 
 /**
  * Hover text. With a bench this size the sovereign will not remember what a
- * "quartermaster" does, and the rail deliberately shows only one word — so
+ * "build-engineer" does, and the rail deliberately shows only one word — so
  * the role's purpose lives here rather than as more text on screen.
  */
 function tip(name) {
@@ -678,17 +694,32 @@ function tip(name) {
   ].filter(Boolean).join('\n'));
 }
 
+/** Render a list where one bad row costs one row, not the rest of the list. */
+function each(list, fn) {
+  for (const item of list ?? []) {
+    try { fn(item); } catch (err) { console.error('dropped a malformed row', err, item); }
+  }
+}
+
 function connect() {
   const es = new EventSource('/stream');
   es.onopen = () => { $('#conn').className = 'conn up'; $('#conn').title = 'connected'; };
   es.onerror = () => { $('#conn').className = 'conn'; $('#conn').title = 'disconnected'; };
   es.onmessage = (e) => {
-    const d = JSON.parse(e.data);
+    try { onStreamEvent(JSON.parse(e.data)); }
+    catch (err) { console.error('dropped a malformed stream event', err, e.data); }
+  };
+
+  function paintRepo(repo, base) {
+    $('#repo').textContent = repo ? `${repo.split(/[\\/]/).pop()}${base ? ' · ' + base : ''}` : 'no repository';
+    $('#repo').title = repo ?? '';
+  }
+
+  function onStreamEvent(d) {
     N.onEvent(d);   // desktop alerts for the few things that stall the court
     switch (d.type) {
       case 'snapshot':
-        $('#repo').textContent = `${d.repo.split(/[\\/]/).pop()}${d.base ? ' · ' + d.base : ''}`;
-        $('#repo').title = d.repo;
+        paintRepo(d.repo, d.base);
         if (d.models) MODELS = d.models;
         if (d.efforts) EFFORTS = d.efforts;
         if (d.advisor) ADVISOR = d.advisor;
@@ -696,13 +727,31 @@ function connect() {
         if (d.skills) SKILLS = d.skills;
         if (d.summarizer) SUMMARIZER = d.summarizer;
         if (d.goal !== undefined) { GOAL = d.goal; paintGoal(); }
+        if (d.mode) { MODE = d.mode; PENDING = null; paintMode(); }
         applyRoster(d.roster);
-        // An empty card on load teaches nothing. Start on the king: it is the
+        // An empty card on load teaches nothing. Start on the orchestrator: it is the
         // one member the sovereign always has.
-        if (!I.selected()) I.select(d.roster.find((r) => r.role === 'king')?.name ?? d.roster[0]?.name);
-        for (const ev of d.events) renderEvent({ name: ev.agent, kind: ev.type, payload: ev.payload }, false);
-        for (const m of d.messages) renderMessage(m);
-        for (const a of d.approvals) renderApproval(a);
+        if (!I.selected()) I.select(d.roster.find((r) => r.role === 'orchestrator')?.name ?? d.roster[0]?.name);
+        // Per ITEM, not per snapshot. The snapshot is roster → ~400 events →
+        // ~200 messages → approvals in one handler, so a single malformed row
+        // threw and everything after it never rendered — no transcript, no
+        // messages, no approvals, and no error on screen to say why. A reload
+        // replays the same bad row, so it stayed broken. daemon.js:230 already
+        // learned this for /api/approvals; the SSE snapshot never did.
+        each(d.events, (ev) => renderEvent({ name: ev.agent, kind: ev.type, payload: ev.payload }, false));
+        each(d.messages, renderMessage);
+        each(d.approvals, renderApproval);
+        // The replay above just called upsertNode for every name any historical
+        // event or message ever mentioned — including names the roster stopped
+        // carrying before this page even loaded. The first applyRoster ran on
+        // an empty rail, so it had nothing to prune; run it again now that
+        // replay has (re)created whatever it was going to create.
+        applyRoster(d.roster);
+        break;
+      // Fires once, when a repo is attached live from the picker — the header
+      // label must not wait for a reload to say what Code mode is now pointed at.
+      case 'repo':
+        paintRepo(d.repo, d.base);
         break;
       case 'agent': {
         G.upsertNode(d.name, d.role);
@@ -761,7 +810,7 @@ function connect() {
         break;
       case 'budget':
         if (d.scope === 'kingdom') {
-          append('king', 't-error',
+          append('orchestrator', 't-error',
             `⛔ KINGDOM SPEND CEILING reached ($${d.spent.toFixed(2)} of $${d.cap}). Everyone stopped.`);
           toast(`Kingdom spend ceiling $${d.cap} reached — everyone stopped`, true);
         } else {
@@ -784,16 +833,16 @@ function connect() {
         if (d.stage === 'start') {
           $('#cmd').classList.add('advising');
           $('#cmd').placeholder = 'the advisor is working on your brief…';
-          setStatus('king', 'briefing');
+          setStatus('orchestrator', 'briefing');
         } else {
           $('#cmd').classList.remove('advising');
           $('#cmd').placeholder = CMD_PLACEHOLDER;
-          clearSticky('king');
+          clearSticky('orchestrator');
           if (d.rewritten && d.rewritten !== d.text) {
-            append('king', 't-sys', `— brief rewritten by the advisor —\nyou said: ${d.text}`);
+            append('orchestrator', 't-sys', `— brief rewritten by the advisor —\nyou said: ${d.text}`);
           }
           if (d.models?.length) {
-            append('king', 't-sys', `— advisor set models: ${d.models.join(', ')} —`);
+            append('orchestrator', 't-sys', `— advisor set models: ${d.models.join(', ')} —`);
             toast(`Models chosen: ${d.models.length} member(s)`);
           }
         }
@@ -804,10 +853,13 @@ function connect() {
         W.getWindow('goal')?.dispatchEvent(new CustomEvent('kd:goal', { detail: GOAL }));
         toast(GOAL ? 'Standing goal set' : 'Standing goal cleared');
         break;
+      case 'mode':
+        onModeChanged(d);
+        break;
       case 'milestone':
         toast(`Milestone reached: ${d.text}`);
         PET.play('cheer');
-        append('king', 't-sys', `— milestone reached: ${d.text}
+        append('orchestrator', 't-sys', `— milestone reached: ${d.text}
 ${d.evidence ?? ''} —`);
         break;
       case 'summarizer':
@@ -830,9 +882,9 @@ ${d.evidence ?? ''} —`);
       }
       case 'recycled': append(d.name, 't-sys', '— recycled, handover carried over —'); break;
       case 'compact': toast(d.message); break;
-      case 'error': append('king', 't-error', d.message); toast(d.message, true); break;
+      case 'error': append('orchestrator', 't-error', d.message); toast(d.message, true); break;
     }
-  };
+  }
 }
 
 /* ---------- boot ---------- */
@@ -863,36 +915,157 @@ else PET.initPet($('#rail-pet'));
  *
  * The internal names stay `board` and `flow`: they are in localStorage under
  * kd.mode and in CSS class names, and renaming them would log every sovereign
- * out of their chosen layout to change a word they never see.
+ * out of their chosen layout to change a word they never see. The FUNCTION and
+ * the element are `layout`, because "mode" now means what the court is doing —
+ * renaming a label is not renaming a state.
  */
-function setMode(m) {
+function setLayout(m) {
   const board = m === 'board';
   localStorage.setItem('kd.mode', m);
   $('#stage').classList.toggle('board', board);
   document.body.classList.toggle('board', board);   // gather/zoom are flow-only
   W.setTiled(board);
-  for (const b of $('#mode').children) b.classList.toggle('on', b.dataset.mode === m);
+  for (const b of $('#layout').children) b.classList.toggle('on', b.dataset.layout === m);
 }
 
-function buildModes() {
-  const nav = $('#mode');
-  // In-world names, plain-English tooltips. "Board" and "Flow" named the
-  // mechanism (a tiling window manager and a canvas); the hall and the grounds
-  // name the place, which is the thing you are actually choosing between.
+function buildLayouts() {
+  const nav = $('#layout');
+  // Named for what they do. These were "Hall" and "Grounds", which named the
+  // place rather than the mechanism and left you guessing which one tiled —
+  // the two words a sovereign has to distinguish under time pressure are
+  // "arranged for me" and "arranged by me".
   for (const [m, label, hint] of [
-    ['board', 'Hall', 'Every open panel assembled in a grid'],
-    ['flow', 'Grounds', 'Place panels yourself on a canvas you can pan and zoom'],
+    ['board', 'Grid', 'Every open panel assembled in a grid'],
+    ['flow', 'Canvas', 'Place panels yourself on a canvas you can pan and zoom'],
   ]) {
     const b = document.createElement('button');
-    b.dataset.mode = m;
+    b.dataset.layout = m;
     b.textContent = label;
     b.title = `${label} — ${hint}  (Alt+L)`;
-    b.onclick = () => setMode(m);
+    b.onclick = () => setLayout(m);
     nav.append(b);
   }
-  setMode(localStorage.getItem('kd.mode') ?? 'board');
+  setLayout(localStorage.getItem('kd.mode') ?? 'board');
 }
-buildModes();
+buildLayouts();
+
+/* ---------- what the court is doing ----------
+ * Four shapes, not four flags: the mode decides whether there is a crew, what
+ * gets a worktree, whether anything may ever merge, and where the deliverable
+ * lands. The table is src/modes.js, served to this page so there is exactly one
+ * of it.
+ *
+ * NOT gold. --crown is the sovereign's alone, and this is the court's state,
+ * not theirs.
+ */
+function paintMode() {
+  for (const b of $('#court').children) {
+    b.classList.toggle('on', b.dataset.mode === MODE);
+    b.classList.toggle('pending', b.dataset.mode === PENDING);
+  }
+  // Everything downstream reads MODE, so it all repaints from here.
+  document.body.dataset.mode = MODE;
+  // The rail's own CTA, which is not in TOOLS and would otherwise be the one
+  // way left to open a panel that this mode has nobody to fill.
+  $('#summon-btn').hidden = !inMode('summon');
+  buildTools();
+  O.paintOverview();
+}
+
+function buildCourtModes() {
+  const nav = $('#court');
+  for (const m of MODE_NAMES) {
+    const b = document.createElement('button');
+    b.dataset.mode = m;
+    b.textContent = MODES[m].label;
+    b.title = `${MODES[m].label} — ${MODES[m].blurb}`;
+    b.onclick = async () => {
+      const r = await post('mode', { mode: m });
+      if (!r.ok) {
+        toast(r.error ?? 'Could not switch mode.', true,
+          /repository/i.test(r.error ?? '') ? { label: 'Choose repo…', run: openRepoPicker } : null);
+      }
+    };
+    nav.append(b);
+  }
+  paintMode();
+}
+
+/**
+ * Code mode has nothing to edit without a repo — asked for here, live, rather
+ * than blocking the whole app behind a picker before it can even open (see
+ * electron/main.js). Electron gets a native folder dialog; the plain-browser
+ * path (no window.kingdomShell — daemon.js served straight to a tab, README's
+ * headless mode) falls back to a path typed into a small panel.
+ */
+async function openRepoPicker() {
+  if (window.kingdomShell?.chooseRepo) {
+    const r = await window.kingdomShell.chooseRepo();
+    if (r.canceled) return;
+    if (r.error) return toast(r.error, true);
+    return attachRepo(r.path);
+  }
+  openRepoPanel();
+}
+
+async function attachRepo(path) {
+  const r = await post('attachRepo', { path });
+  if (!r.ok) return toast(r.error ?? 'Could not attach that repository.', true);
+  W.close('repo-picker');
+  toast('Repository attached — switching to Code mode.');
+  post('mode', { mode: 'code' });
+}
+
+function openRepoPanel() {
+  W.toggle('repo-picker', {
+    title: 'Choose a repository',
+    build(box) {
+      const body = document.createElement('div');
+      body.className = 'log settings';
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.placeholder = 'Path to a git repository…';
+      const go = document.createElement('button');
+      go.textContent = 'Attach';
+      go.onclick = () => { if (input.value.trim()) attachRepo(input.value.trim()); };
+      input.onkeydown = (e) => { if (e.key === 'Enter') go.click(); };
+      body.append(input, go);
+      box.append(body);
+    },
+  });
+}
+// Called from the boot block at the bottom, NOT here: paintMode() repaints the
+// toolbar and the overview, and both `TOOLS` and the overview's wiring are
+// declared further down. Reading a const before its declaration is a
+// temporal-dead-zone ReferenceError that takes the whole module with it.
+
+/**
+ * The advisor switched the court. Say so, and offer it back.
+ *
+ * The sovereign chose "never asks" over "asks first", which is only a fair
+ * trade if the undo is right there and costs nothing. It restores the MODE and
+ * nothing else: the message that triggered the switch has already gone to the
+ * orchestrator, and a button that implied a turn could be recalled would be a lie.
+ */
+function onModeChanged(d) {
+  MODE = d.mode;
+  PENDING = d.pending ?? null;
+  paintMode();
+  if (d.by !== 'advisor') return;
+
+  if (PENDING) {
+    return toast(`${modeOf(PENDING).label} mode next — waiting for the current turn to finish.`);
+  }
+  if (!d.previous || d.previous === d.mode) return;
+  // Short on purpose: the toast has to fit beside its own button in a stage
+  // that may be a third of the window wide. What the mode MEANS is on the
+  // switcher's tooltip; what this has to say is that it moved, and how to
+  // move it back.
+  toast(`Switched to ${modeOf(d.mode).label} mode.`, false, {
+    label: `Back to ${modeOf(d.previous).label}`,
+    run: () => post('mode', { mode: d.previous }),
+  });
+}
 
 /* ---------- the member card ---------- */
 I.initIdentity($('#who-body'), {
@@ -908,6 +1081,7 @@ I.initIdentity($('#who-body'), {
     };
   },
   onOpen: openMember,
+  onDiff(name) { P.openDiff(name, { post, toast }); },
   onPower(name) {
     const action = members.get(name)?.awake ? 'sleep' : 'wake';
     append(name, 't-sys', `— ${action === 'sleep' ? 'sending ' + name + ' to sleep' : 'waking ' + name} —`);
@@ -922,6 +1096,40 @@ $('#windows').addEventListener('pointerdown', (e) => {
   const id = e.target.closest('.win')?.dataset.id;
   if (id?.startsWith('m:')) I.select(id.slice(2));
 }, true);
+
+/* ---------- the overview ----------
+ * The floor of the room.
+ *
+ * This replaces `paintFirstRun`, a three-step tour that hid itself the moment a
+ * goal was set — so on a real boot with an objective and nobody added, the stage
+ * rendered zero panels and zero guidance. The default state of the application
+ * was an empty room. The three steps survive as its empty state; everything
+ * else it says is live.
+ *
+ * Wired HERE and not beside applyRoster, which is where it is painted from:
+ * `statusOf` and `summaries` are const and declared below that point, and
+ * reading them from the init call is a temporal-dead-zone ReferenceError that
+ * takes the whole module with it. */
+O.initOverview($('#overview'), {
+  members: () => members,
+  goal: () => GOAL,
+  mode: () => modeOf(MODE),
+  statusOf: () => statusOf,
+  summaries: () => summaries,
+  // Read off the cards on screen rather than a parallel list, for the reason
+  // badge() already gives: a counter and a DOM can disagree, and the one the
+  // sovereign believes is the one they can see.
+  approvals: () => [...$('#approvals').children].map((c) => ({
+    kind: c.querySelector('summary span')?.textContent?.split(' #')[0] ?? 'REQUEST',
+    who: c.querySelector('summary .who')?.textContent ?? '',
+  })),
+  openGoal: () => P.openGoal({ post, toast, goal: () => GOAL }),
+  openApprovals: () => P.openApprovals({ post, toast }),
+  openSummon,
+  focusCommand: () => $('#cmd').focus(),
+  onOpenMember: openMember,
+  onDiff: (name) => P.openDiff(name, { post, toast }),
+});
 
 /* ---------- the summariser ---------- */
 const saveSummarizer = (patch) => post('summarizer', patch);
@@ -1054,7 +1262,10 @@ function openNotify() {
           const d = document.createElement('label');
           d.className = 'srow';
           const t = document.createElement('span');
-          t.innerHTML = `${label}<em>${hint}</em>`;
+          t.textContent = label;
+          const h = document.createElement('em');
+          h.textContent = hint;
+          t.append(h);
           const i = document.createElement('input');
           i.type = 'checkbox';
           i.checked = s[key];
@@ -1064,9 +1275,9 @@ function openNotify() {
           box.append(d);
         };
 
-        row('approvals', 'Waiting on you', 'A summons or a proposal the court cannot proceed without.');
+        row('approvals', 'Waiting on you', 'A request the team cannot proceed without.');
         row('failures', 'Something broke', 'A member failed, a merge was refused, or an account hit its limit.');
-        row('budget', 'Spend ceiling', 'A member or the whole court was stopped for money.');
+        row('budget', 'Spend ceiling', 'An agent or the whole team was stopped for money.');
         row('done', 'Work merged', 'Off by default — this one is good news, and good news can wait.');
 
         const note = document.createElement('div');
@@ -1165,7 +1376,6 @@ function openWallpaper() {
 
       draw();
       A.onAssets(draw);
-      el.addEventListener('kd:assets', draw);
     },
     onClose: () => A.onAssets(() => {}),
   });
@@ -1300,10 +1510,11 @@ function openMusic() {
 
       A.setQueue(tracks());
       draw();
-      el.addEventListener('kd:assets', draw);
-      el._offMusic = off;
+      // Not `onClose: () => W.getWindow('music')?._offMusic?.()` — close()
+      // removes the window before onClose runs, so that optional chain no-oped
+      // and this ~4Hz subscription outlived every panel it was made for.
+      W.onTeardown('music', off);
     },
-    onClose: () => W.getWindow('music')?._offMusic?.(),
   });
 }
 
@@ -1322,11 +1533,19 @@ function openAdvisor() {
 
       const draw = () => {
         box.innerHTML = '';
+        // textContent, not innerHTML. Every other caller passes a literal, but
+        // the domain rows below pass `domain` and `names` straight out of
+        // kingdom.config — which the court itself has write access to by
+        // design. A domain key of `<img src=x onerror=…>` would then run
+        // same-origin with every /api action, shutdown and merge included.
         const row = (label, hint, control) => {
           const d = document.createElement('label');
           d.className = 'srow';
           const t = document.createElement('span');
-          t.innerHTML = `${label}<em>${hint}</em>`;
+          t.textContent = label;
+          const h = document.createElement('em');
+          h.textContent = hint;
+          t.append(h);
           d.append(t, control);
           box.append(d);
           return control;
@@ -1339,7 +1558,7 @@ function openAdvisor() {
           return i;
         };
 
-        row('Prompt engineer', 'Rewrites what you type before the king reads it.',
+        row('Prompt engineer', 'Rewrites what you type before the orchestrator reads it.',
           check(ADVISOR.promptEngineer)).onchange =
             (e) => saveAdvisor({ promptEngineer: e.target.checked });
 
@@ -1373,7 +1592,7 @@ function openAdvisor() {
         dhead.className = 'shead';
         dhead.innerHTML = 'Model per domain<em>Sets every member of that domain at once — '
           + 'e.g. Claude on the frontend, GPT on the backend. Cross-cutting roles '
-          + '(tester, reviewer, scout…) are in neither and keep their own model.</em>';
+          + '(tester, reviewer, researcher…) are in neither and keep their own model.</em>';
         box.append(dhead);
 
         for (const [domain, names] of Object.entries(DOMAINS)) {
@@ -1450,34 +1669,34 @@ function openAdvisor() {
  * rail opens it, its own title bar wakes it and picks its model.
  */
 const TOOLS = [
-  ['goal', 'Standing goal', 'What the court is working towards', () => P.openGoal({ post, toast, goal: () => GOAL })],
-  ['approve', 'Approvals', 'What the court is asking permission for', () => P.openApprovals({ post, toast })],
-  ['summon', 'Summon', 'Who is in the court, and who could be', () => openSummon()],
-  ['chronicle', 'Chronicle', 'Everything the court did, searchable', () => P.openChronicle({ onOpenMember: openMember })],
-  ['bus', 'Court bus', 'Every message between members', () => openBus()],
-  ['metrics', 'Metrics', 'Turns, tokens and spend', () => P.openMetrics()],
-  ['diff', 'Changes', 'Review a peasant’s work and merge it', () => pickPeasant()],
-  ['vault', 'Vault', 'Search the sovereign’s notes', () => P.openVault()],
+  ['goal', 'Objective', 'What the team is working towards', () => P.openGoal({ post, toast, goal: () => GOAL })],
+  ['approve', 'Approvals', 'What the team is asking permission for', () => P.openApprovals({ post, toast })],
+  ['summon', 'Add agents', 'Who is on the team, and who could be', () => openSummon()],
+  ['chronicle', 'Activity', 'Everything the team did, searchable', () => P.openChronicle({ onOpenMember: openMember })],
+  ['bus', 'Messages', 'Every message between agents', () => openBus()],
+  ['metrics', 'Usage', 'Turns, tokens and spend', () => P.openMetrics()],
+  ['diff', 'Changes', 'Review an agent’s work and merge it', () => pickPeasant()],
+  ['vault', 'Notes', 'Search your notes', () => P.openVault()],
   ['summary', 'Summaries', 'The model that condenses each turn', () => openSummarizer()],
   ['advisor', 'Advisor', 'Prompt engineer and model selector', () => openAdvisor()],
   ['image', 'Wallpaper', 'Background image, dim and blur', () => openWallpaper()],
   ['music', 'Music', 'Upload and play', () => openMusic()],
-  ['bell', 'Notifications', 'What the court may interrupt you for', () => openNotify()],
-  ['who', 'Member card', 'Show or hide who the selected member is', () => I.toggleCollapse()],
-  ['pet', 'Court dog', 'Show or hide HappyDog',
+  ['bell', 'Notifications', 'What the team may interrupt you for', () => openNotify()],
+  ['who', 'Details panel', 'Show or hide who the selected agent is', () => I.toggleCollapse()],
+  ['pet', 'Desk pet', 'Show or hide HappyDog',
     () => toast(PET.toggle() ? 'HappyDog is back.' : 'HappyDog has gone for a walk.')],
-  ['sound', 'Court horns', 'The short cues on summoning and on ruling', () => {
+  ['sound', 'Sounds', 'The short cues when an agent joins and when you decide', () => {
     setSound(!soundOn());
     // The confirmation IS the cue when turning it on: you hear what you just
     // agreed to. Turning it off can only be confirmed in words.
     if (soundOn()) cue('summon');
-    toast(soundOn() ? 'Horns sound again.' : 'The horns are silenced.');
+    toast(soundOn() ? 'Sounds are on.' : 'Sounds are off.');
     buildTools();                    // repaint so the menu row shows the state
   }],
   ['gather', 'Gather panels', 'Bring every open panel back into view', () => W.gather()],
   ['zoom', 'Reset zoom', 'Back to 1:1', () => C.resetZoom()],
-  ['power', 'End the court', 'Stops every member. The court survives this window closing.',
-    () => confirmToolbar('end', 'End the court?', () => { toast('Ending the court…'); post('shutdown'); })],
+  ['power', 'Stop everything', 'Stops every agent. The team survives this window closing.',
+    () => confirmToolbar('end', 'Stop everything?', () => { toast('Stopping…'); post('shutdown'); })],
 ];
 
 /**
@@ -1510,8 +1729,8 @@ function paintGoal() {
   if (!GOAL) {
     bar.classList.add('unset');
     bar.append(icon('goal', 13), Object.assign(
-      document.createElement('span'), { className: 'gtext', textContent: 'Set a standing goal' }));
-    bar.title = 'The court has no standing goal. Click to set what it is working towards.';
+      document.createElement('span'), { className: 'gtext', textContent: 'Set an objective' }));
+    bar.title = 'No objective set. Click to say what the team is working towards.';
     bar.onclick = () => P.openGoal({ post, toast, goal: () => GOAL });
     return;
   }
@@ -1532,7 +1751,7 @@ function paintGoal() {
   bar.title = `${GOAL.text}\n\n${(GOAL.milestones ?? [])
     .map((m) => `[${m.done ? 'x' : ' '}] ${m.text}`).join('\n') || 'No milestones.'}`;
   bar.onclick = () => P.openGoal({ post, toast, goal: () => GOAL });
-  paintFirstRun();      // a goal means the court has a purpose; stand down
+  O.paintOverview();    // the objective block leads the overview; keep it true
 }
 
 /**
@@ -1544,7 +1763,7 @@ function paintGoal() {
  * a shortcut nobody is told about does not exist.
  *
  * Alt-modified on purpose. Bare letters would fire while typing a message to
- * the king, and the footer input is where the sovereign spends most of their
+ * the orchestrator, and the footer input is where the sovereign spends most of their
  * time.
  */
 const KEYS = {
@@ -1554,13 +1773,33 @@ const KEYS = {
   pet: 'k', gather: 'j', zoom: '0',
 };
 
-const LAST_PRIMARY = TOOLS.filter(([ico]) => PRIMARY.has(ico)).at(-1)?.[0];
+/**
+ * Tools that are not reachable concepts in every shape.
+ *
+ * Keyed by what the tool NEEDS rather than by which modes may have it, so a new
+ * mode gets the right toolbar without editing this, and a new tool declares its
+ * own requirement once. In Chat there is nobody to approve, nobody to add and
+ * no worktree to diff — three buttons that could only ever say "nothing here".
+ */
+const NEEDS = { approve: 'crew', summon: 'crew', diff: 'worktrees' };
+const inMode = (ico) => {
+  const m = modeOf(MODE);
+  const need = NEEDS[ico];
+  if (!need) return true;
+  return need === 'crew' ? m.crew === 'all' || m.crew.length > 0 : Boolean(m[need]);
+};
 
 function buildTools() {
   const nav = $('#tools');
   const menu = $('#menu');
   nav.textContent = '';
   menu.textContent = '';
+
+  // Recomputed per build, not once at module load: the overflow button is
+  // anchored to the last VISIBLE primary, and in Chat the static last primary
+  // ('diff') is not rendered at all — which left the menu with nothing to hang
+  // off and made every secondary tool unreachable.
+  const lastPrimary = TOOLS.filter(([ico]) => PRIMARY.has(ico) && inMode(ico)).at(-1)?.[0];
 
   const tip = (label, hint, ico) => {
     const key = KEYS[ico];
@@ -1579,6 +1818,7 @@ function buildTools() {
     // dismiss; a toggle here would claim to control something that is not in
     // this window at all.
     if (ico === 'pet' && ELECTRON) continue;
+    if (!inMode(ico)) continue;
     if (ico === 'power' || PRIMARY.has(ico)) {
       const b = document.createElement('button');
       b.className = 'tool';
@@ -1599,7 +1839,7 @@ function buildTools() {
       // the overflow button and the destructive one. It is an attribute rather
       // than a selector in app.css naming a tool, because the last primary
       // changes whenever PRIMARY does and CSS cannot know which one that is.
-      if (ico === LAST_PRIMARY) { b.dataset.edge = ''; nav.append(moreButton()); }
+      if (ico === lastPrimary) { b.dataset.edge = ''; nav.append(moreButton()); }
       continue;
     }
     const row = document.createElement('button');
@@ -1638,17 +1878,24 @@ function moreButton() {
     menu.hidden = !menu.hidden;
     b.classList.toggle('on', !menu.hidden);
   };
-  // Any click elsewhere dismisses it. A menu you have to hit the same button
-  // twice to close is the one everyone leaves open by accident.
-  window.addEventListener('pointerdown', (e) => {
-    if (!$('#menu').hidden && !e.target.closest('#menu, .tool.more')) closeMenu();
-  });
   return b;
 }
 
+// Any click elsewhere dismisses it. A menu you have to hit the same button
+// twice to close is the one everyone leaves open by accident.
+//
+// Registered once at module load, not inside moreButton(): the Sound toggle
+// calls buildTools() to repaint itself, which builds a fresh more button and
+// used to add another permanent window listener every time it was flipped.
+window.addEventListener('pointerdown', (e) => {
+  if (!$('#menu').hidden && !e.target.closest('#menu, .tool.more')) closeMenu();
+});
+
 function initKeys() {
+  // Keyed by icon, not by run: which tools apply changes with the mode, and a
+  // shortcut that still fired would open a panel the toolbar had just removed.
   const byKey = new Map();
-  for (const [ico, , , run] of TOOLS) if (KEYS[ico]) byKey.set(KEYS[ico], run);
+  for (const [ico, , , run] of TOOLS) if (KEYS[ico]) byKey.set(KEYS[ico], [ico, run]);
 
   window.addEventListener('keydown', (e) => {
     // Escape always closes the frontmost panel, even from inside a field —
@@ -1660,16 +1907,16 @@ function initKeys() {
       return;
     }
     if (!e.altKey || e.ctrlKey || e.metaKey) return;
-    // Layout is a mode, not a panel, so it is not in TOOLS — but it is the one
-    // thing you flip most often, so it gets a key anyway.
+    // Layout is not a panel, so it is not in TOOLS — but it is the one thing
+    // you flip most often, so it gets a key anyway.
     if (e.key.toLowerCase() === 'l') {
       e.preventDefault();
-      return setMode(localStorage.getItem('kd.mode') === 'flow' ? 'board' : 'flow');
+      return setLayout(localStorage.getItem('kd.mode') === 'flow' ? 'board' : 'flow');
     }
-    const run = byKey.get(e.key.toLowerCase());
-    if (!run) return;
+    const hit = byKey.get(e.key.toLowerCase());
+    if (!hit || !inMode(hit[0])) return;
     e.preventDefault();
-    run();
+    hit[1]();
   });
 
   // The one bare key worth taking: "/" focuses the command bar, as it does in
@@ -1698,7 +1945,7 @@ function confirmToolbar(key, question, fn) {
 /** Which peasant's changes? A one-shot list rather than a permanent panel. */
 function pickPeasant() {
   const peasants = [...members].filter(([, m]) => m.role === 'peasant').map(([n]) => n);
-  if (!peasants.length) return toast('No peasants in the court.', true);
+  if (!peasants.length) return toast('No agents on the team.', true);
   W.toggle('pick-diff', {
     title: 'Review changes',
     build(el) {
@@ -1792,7 +2039,7 @@ function attachSkills(input) {
       return paint();
     }
     // Enter and Tab both commit, and both must stop here — Enter would
-    // otherwise send `/desi` as an order to the king.
+    // otherwise send `/desi` as an order to the orchestrator.
     if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); e.stopPropagation(); return choose(at); }
     if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); }
   }, true);   // capture: the send handler is on the same element
@@ -1814,6 +2061,9 @@ cmd.addEventListener('keydown', (e) => {
 // calling it earlier hits the temporal dead zone. Function declarations hoist;
 // the array they read does not.
 buildTools();
+// Same reason, one level further out: this paints the toolbar and the overview,
+// so it can only run once both exist.
+buildCourtModes();
 initKeys();
 
 // The header's cost readout is painted by the `spend` event, which does not
@@ -1822,7 +2072,7 @@ initKeys();
 $('#spend').textContent = '0 turns';
 
 /**
- * Open the king on a first run.
+ * Open the orchestrator on a first run.
  *
  * An empty canvas is the worst first impression this app can make: a wallpaper
  * and nothing else, with no hint that the rail on the left is how you get in.
@@ -1831,9 +2081,13 @@ $('#spend').textContent = '0 turns';
  */
 if (!localStorage.getItem('kd.seen')) {
   localStorage.setItem('kd.seen', '1');
-  setTimeout(() => openMember('king'), 400);
+  setTimeout(() => openMember('orchestrator'), 400);
 }
 badge();
 connect();
 syncApprovals();
-setInterval(syncApprovals, 2500);
+// SSE already delivers `approval` and `resolved` as they happen; this is the
+// net for a dropped event, not the delivery path. At 2.5s it was a poll —
+// 1,440 an hour, each one scanning 2000 bus messages and JSON.parsing every
+// candidate server-side, for an event that arrives on the stream anyway.
+setInterval(syncApprovals, 30_000);

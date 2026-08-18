@@ -1,6 +1,6 @@
 // A successor must never have to ask the sovereign what was happening.
 //
-// Real failure: after switching the king's CLI from the dropdown, the new king
+// Real failure: after switching the orchestrator's CLI from the dropdown, the new orchestrator
 // replied "I don't have a record of what we were working on... what was the
 // task?". Three causes: the CLI switch discarded the session with no handover,
 // the sovereign's goal was sent straight to the process so nothing recorded it,
@@ -31,8 +31,8 @@ git('commit', '-qm', 'init');
 const configPath = join(repo, 'kingdom.config.json');
 writeFileSync(configPath, JSON.stringify({
   models: { claude: ['haiku'], codex: ['gpt-5.6-luna'] },
-  king: { name: 'king', cli: 'codex' },
-  jester: { name: 'jester', cli: 'codex' },
+  orchestrator: { name: 'orchestrator', cli: 'codex' },
+  briefer: { name: 'briefer', cli: 'codex' },
   peasants: [{ name: 'coder', cli: 'codex' }],
   // This suite is about accession, not advice. Left on, every command() would
   // spawn two real model calls before the goal reached the bus.
@@ -57,7 +57,7 @@ const neuter = (agent, handover) => {
 
 const k = new Kingdom(repo, configPath);
 await k.start();
-neuter(k.agents.get('king'), 'Tier 1 merged; coverage run still pending.');
+neuter(k.agents.get('orchestrator'), 'Tier 1 merged; coverage run still pending.');
 
 // --- the sovereign's goal must be RECORDED, not just delivered --------
 k.command('Ship tier 1 of the Habitable onboarding flow.');
@@ -68,16 +68,16 @@ a.match(recorded.body, /tier 1/i);
 
 await k.wake('coder');
 neuter(k.agents.get('coder'), 'n/a');
-k.bus.post('king', 'coder', 'Implement the onboarding screens.');
+k.bus.post('orchestrator', 'coder', 'Implement the onboarding screens.');
 await wait(600);
 
 // --- switching CLI must take a handover before discarding the session -
-const before = k.bus.get('session:king');
-await k.setModel('king', { cli: 'claude', model: 'haiku' });
+const before = k.bus.get('session:orchestrator');
+await k.setModel('orchestrator', { cli: 'claude', model: 'haiku' });
 
-const successor = k.agents.get('king');
-a.ok(successor, 'a successor king must exist');
-a.equal(k.bus.get('session:king') === before, false, 'the old session must be discarded');
+const successor = k.agents.get('orchestrator');
+a.ok(successor, 'a successor orchestrator must exist');
+a.equal(k.bus.get('session:orchestrator') === before, false, 'the old session must be discarded');
 a.match(successor.spec.prompt, /HANDOVER FROM YOUR PREDECESSOR/,
   'a CLI switch must capture a handover, not silently wipe memory');
 a.match(successor.spec.prompt, /coverage run still pending/i);
@@ -92,14 +92,14 @@ a.match(successor.spec.prompt, /Do NOT ask the sovereign/i);
 await k.stop();
 const k2 = new Kingdom(repo, configPath);
 await k2.start();
-k2.bus.set('session:king', ''); // simulate a king with no resumable session
-k2.agents.get('king')?.stop();
-k2.agents.delete('king');
-await k2.wake('king');
+k2.bus.set('session:orchestrator', ''); // simulate an orchestrator with no resumable session
+k2.agents.get('orchestrator')?.stop();
+k2.agents.delete('orchestrator');
+await k2.wake('orchestrator');
 
-const revived = k2.agents.get('king');
+const revived = k2.agents.get('orchestrator');
 a.match(revived.spec.prompt, /STATE OF THE KINGDOM AT YOUR ACCESSION/,
-  'a king with no session must still be oriented');
+  'an orchestrator with no session must still be oriented');
 a.match(revived.spec.prompt, /Ship tier 1/i,
   'the standing goal must survive a restart — this is the actual bug');
 
@@ -123,7 +123,7 @@ a.match(revived.spec.prompt, /Ship tier 1/i,
   k2.config.vault = vault;
   k2.config.vaultWriteDir = 'Kingdom';
 
-  for (const who of ['king', 'jester', 'coder']) {
+  for (const who of ['orchestrator', 'briefer', 'coder']) {
     const brief = k2.briefFor(who);
     a.match(brief, /STANDING INSTRUCTIONS FROM THE SOVEREIGN/, `${who} must be given the instructions`);
     a.match(brief, /Never push without being asked/, `${who} must get their actual words`);
@@ -143,14 +143,14 @@ a.match(revived.spec.prompt, /Ship tier 1/i,
   // file exercises the goal through the BUS, which leaves config.goal unset,
   // so without this the ordering check would silently compare against -1.
   k2.setGoal({ text: 'Ship tier 1' });
-  const b = k2.briefFor('king');
+  const b = k2.briefFor('orchestrator');
   a.ok(b.includes('STANDING GOAL'), 'sanity: the goal block must actually be present');
   a.ok(b.lastIndexOf('STANDING GOAL') > b.lastIndexOf('WHAT THE COURT ALREADY KNOWS'),
     'the brain must not push the standing goal out of last place');
 
   // A RESUMED member never gets a new system prompt — for codex the persona
   // rides only the first turn — so an edit to the instructions would otherwise
-  // reach nobody until they recycled. Observed for real: a resumed king
+  // reach nobody until they recycled. Observed for real: a resumed orchestrator
   // answered from the CLI's own private memory store instead of the court's.
   {
     const { writeFileSync: w2 } = await import('node:fs');
@@ -182,7 +182,7 @@ a.match(revived.spec.prompt, /Ship tier 1/i,
   delete k2.config.vault;
   a.ok(!k2.briefFor('coder').includes('STANDING INSTRUCTIONS'),
     'no vault means no brain block, not a crash');
-  console.log('  brain: instructions and memory titles reach king, jester and peasants');
+  console.log('  brain: instructions and memory titles reach orchestrator, briefer and peasants');
 }
 
 await k2.stop();

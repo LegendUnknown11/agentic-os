@@ -2,7 +2,7 @@
 //
 // Both guard failures seen in a live run: a $5 cap that let a session reach
 // $41 (because --max-budget-usd counts per process, and every restart reset
-// it), and a king whose context reached 227k tokens with no recycle at all.
+// it), and an orchestrator whose context reached 227k tokens with no recycle at all.
 //
 //   node test/t-budget.js
 import { strict as a } from 'node:assert';
@@ -30,8 +30,8 @@ writeFileSync(configPath, JSON.stringify({
   maxBudgetUsd: 1,
   maxKingdomUsd: 10,
   recycleAtTokens: 100000,
-  king: { name: 'king', cli: 'codex' },
-  jester: { name: 'jester', cli: 'codex' },
+  orchestrator: { name: 'orchestrator', cli: 'codex' },
+  briefer: { name: 'briefer', cli: 'codex' },
   peasants: [{ name: 'coder', cli: 'codex' }],
 }));
 
@@ -92,14 +92,14 @@ a.equal(Number(k2.bus.get('spent:coder')), spentBefore,
 k2.clearSpend('coder');
 a.equal(Number(k2.bus.get('spent:coder')), 0, 'clearSpend must reset it');
 
-// --- ANY member recycles on context, not just the jester --------------
-const king = neuter(k2.agents.get('king'), { answerHandover: true });
+// --- ANY member recycles on context, not just the briefer --------------
+const orchestrator = neuter(k2.agents.get('orchestrator'), { answerHandover: true });
 
 const recycled = [];
 k2.on('recycled', (e) => recycled.push(e));
 
 // One turn whose replayed context is over the 100k threshold.
-const bigTurn = () => king.emit('turn_end', {
+const bigTurn = () => orchestrator.emit('turn_end', {
   usage: { cache_read_input_tokens: 95000, input_tokens: 12000 },
   costUsd: 0.01,
 });
@@ -120,18 +120,18 @@ a.equal(recycled.length, 0, 'a member must not be recycled after a single turn')
 // CLI, so it has to go through usage.js.
 a.equal(Number(k2.bus.get('tokens')) - tokensBefore, 107_000,
   'a claude turn must count its cache read too, not just the uncached remainder');
-a.equal(Number(k2.bus.get('tokens:king')) > 0, true, 'and to the member who spent them');
+a.equal(Number(k2.bus.get('tokens:orchestrator')) > 0, true, 'and to the member who spent them');
 
 bigTurn();
 await wait(600);
 
-a.equal(recycled.length, 1, 'the KING must recycle on context, not only the jester');
-a.equal(recycled[0].name, 'king');
+a.equal(recycled.length, 1, 'the KING must recycle on context, not only the briefer');
+a.equal(recycled[0].name, 'orchestrator');
 a.match(recycled[0].note, /Coverage still pending/, 'the handover note must be captured');
-a.equal(king.stopped, true, 'the exhausted king must be retired');
+a.equal(orchestrator.stopped, true, 'the exhausted orchestrator must be retired');
 
-const successor = k2.agents.get('king');
-a.ok(successor && successor !== king, 'a successor king must be spawned');
+const successor = k2.agents.get('orchestrator');
+a.ok(successor && successor !== orchestrator, 'a successor orchestrator must be spawned');
 a.match(successor.spec.prompt, /HANDOVER FROM YOUR PREDECESSOR/,
   'the successor must inherit the note');
 a.match(successor.spec.prompt, /Coverage still pending/);
@@ -160,11 +160,11 @@ writeFileSync(cfg3, JSON.stringify({
   // one and the differencing below was never exercised.
   maxBudgetUsd: 3,
   recycleAtTokens: 10_000_000,          // not what is under test here
-  king: { name: 'king', cli: 'codex', model: 'gpt-5.6-luna' },
-  jester: { name: 'jester', cli: 'codex', model: 'gpt-5.6-luna' },
+  orchestrator: { name: 'orchestrator', cli: 'codex', model: 'gpt-5.6-luna' },
+  briefer: { name: 'briefer', cli: 'codex', model: 'gpt-5.6-luna' },
   peasants: [
     { name: 'coder', cli: 'codex', model: 'gpt-5.6-luna' },
-    { name: 'mason', cli: 'codex', model: 'gpt-9-unreleased' },
+    { name: 'refactoring-engineer', cli: 'codex', model: 'gpt-9-unreleased' },
   ],
 }));
 
@@ -197,14 +197,14 @@ a.equal(Number(k3.bus.get('tokens:coder')), 3e6 + 10,
 
 // A model with no published price spends nothing rather than an invented
 // amount — a cap enforced against a guess is worse than no cap.
-await k3.wake('mason');
-const unpriced = neuter(k3.agents.get('mason'));
+await k3.wake('refactoring-engineer');
+const unpriced = neuter(k3.agents.get('refactoring-engineer'));
 unpriced.emit('turn_end', {
   usage: { input_tokens: 10, cached_input_tokens: 0, output_tokens: 9e6 },
   costUsd: 0,
 });
 await wait(300);
-a.equal(Number(k3.bus.get('spent:mason') ?? 0), 0,
+a.equal(Number(k3.bus.get('spent:refactoring-engineer') ?? 0), 0,
   'an unpriced model must not have a price invented for it');
 a.equal(capped.length, 1, 'and must not be stopped on the strength of one');
 a.equal(unpriced.stopped, false);

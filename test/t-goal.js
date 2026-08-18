@@ -29,8 +29,8 @@ git('commit', '-qm', 'init');
 
 const cfg = join(repo, 'kingdom.config.json');
 writeFileSync(cfg, JSON.stringify({
-  king: { name: 'king', cli: 'codex' },
-  jester: { name: 'jester', cli: 'codex' },
+  orchestrator: { name: 'orchestrator', cli: 'codex' },
+  briefer: { name: 'briefer', cli: 'codex' },
   peasants: [{ name: 'coder', cli: 'codex', description: 'writes code' }],
   rolesSeeded: true,
   advisor: { promptEngineer: false, autoModel: false },
@@ -56,7 +56,7 @@ try {
   a.ok(g.setAt, 'a goal is stamped when it is set');
   a.equal(goals.length, 1, 'the change is announced exactly once');
 
-  for (const who of ['king', 'jester', 'coder']) {
+  for (const who of ['orchestrator', 'briefer', 'coder']) {
     const brief = k.briefFor(who);
     a.ok(brief.includes('STANDING GOAL'), `${who} must be told the goal`);
     a.ok(brief.includes('Ship Habitable Tier 2'), `${who} must be told what it IS`);
@@ -86,17 +86,17 @@ try {
   a.ok(brief.includes('Already done: schema migration'), 'done milestones are separated from open');
   a.ok(!brief.includes('- schema migration'), 'a finished milestone is not still "open"');
 
-  /* ---------- 4. the king's claim, through the bus ---------- */
+  /* ---------- 4. the orchestrator's claim, through the bus ---------- */
   // The MCP server cannot write the config — the orchestrator owns it, and two
-  // writers would lose updates. The king posts a claim; the orchestrator applies.
+  // writers would lose updates. The orchestrator posts a claim; the orchestrator applies.
   const reached = [];
   k.on('milestone', (m) => reached.push(m));
-  k.bus.post('king', 'orchestrator', JSON.stringify({ index: 1, evidence: 'tests green' }), 'milestone');
+  k.bus.post('orchestrator', 'orchestrator', JSON.stringify({ index: 1, evidence: 'tests green' }), 'milestone');
   await wait(600);
 
   a.equal(reached.length, 1, 'the claim must be applied exactly once');
   a.equal(reached[0].text, 'flutter gates');
-  a.equal(reached[0].by, 'king');
+  a.equal(reached[0].by, 'orchestrator');
   a.equal(k.goal().milestones[1].done, true, 'and it must actually land in the config');
 
   // A second tick must NOT re-apply it.
@@ -104,8 +104,8 @@ try {
   a.equal(reached.length, 1, 'the cursor must stop a claim being applied twice');
 
   // A malformed claim changes nothing rather than throwing.
-  k.bus.post('king', 'orchestrator', 'not json', 'milestone');
-  k.bus.post('king', 'orchestrator', JSON.stringify({ index: 99 }), 'milestone');
+  k.bus.post('orchestrator', 'orchestrator', 'not json', 'milestone');
+  k.bus.post('orchestrator', 'orchestrator', JSON.stringify({ index: 99 }), 'milestone');
   await wait(500);
   a.equal(reached.length, 1, 'garbage and out-of-range claims are ignored');
   await k.stop();
@@ -117,7 +117,7 @@ try {
   const back = k2.goal();
   a.equal(back.text, 'Ship Habitable Tier 2 with green tests.', 'the goal outlives the process');
   a.equal(back.milestones.filter((m) => m.done).length, 2, 'and so does the progress');
-  a.ok(k2.briefFor('king').includes('Ship Habitable Tier 2'),
+  a.ok(k2.briefFor('orchestrator').includes('Ship Habitable Tier 2'),
     'a restarted court still knows what it is for');
   // The bus copy is what the MCP tools read; it must be refreshed on start.
   a.match(k2.bus.get('goal') ?? '', /Habitable Tier 2/,
@@ -126,14 +126,14 @@ try {
   /* ---------- 6. clearing ---------- */
   a.equal(k2.setGoal({ text: null }), null);
   a.equal(k2.goal(), null);
-  a.ok(!k2.briefFor('king').includes('STANDING GOAL'));
+  a.ok(!k2.briefFor('orchestrator').includes('STANDING GOAL'));
   a.equal(JSON.parse(readFileSync(cfg, 'utf8')).goal, undefined,
     'a cleared goal is removed from the config, not left as an empty husk');
   await k2.stop();
 
   console.log('  goal reaches every prompt, last, and is recorded on the bus');
   console.log('  milestones normalise, split open/done, and survive a restart');
-  console.log('  the king claims through the bus; the orchestrator applies once');
+  console.log('  the orchestrator claims through the bus; the orchestrator applies once');
   console.log('t-goal.js OK — the court remembers what it is for');
 } finally {
   for (const d of [repo, kingdomDir(repo)]) {

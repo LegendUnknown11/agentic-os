@@ -47,8 +47,8 @@ git('commit', '-qm', 'init');
 
 const configPath = join(repo, 'kingdom.config.json');
 writeFileSync(configPath, JSON.stringify({
-  king: { name: 'king', cli: 'codex' },
-  jester: { name: 'jester', cli: 'codex' },
+  orchestrator: { name: 'orchestrator', cli: 'codex' },
+  briefer: { name: 'briefer', cli: 'codex' },
   peasants: [{ name: 'coder', cli: 'codex' }],
 }));
 
@@ -70,7 +70,7 @@ const mail = () => k.bus.history({ limit: 500 }).filter((m) => m.recipient === '
 try {
   /* ---------- 1. work on the list: nudged, not slept ---------- */
   {
-    k.bus.addTask({ title: 'the thing nobody claimed', detail: 'still open', by: 'king' });
+    k.bus.addTask({ title: 'the thing nobody claimed', detail: 'still open', by: 'orchestrator' });
     const coder = new FakeAgent();
     k.agents.set('coder', coder);
     k.summoned.add('coder');
@@ -103,7 +103,7 @@ try {
     // Every task claimed, so there is genuinely nothing to pick up. The sleep
     // is a cost control and must still fire — a nudge that fires on an empty
     // list would keep the whole court awake for nothing.
-    for (const t of k.bus.availableTasks()) k.bus.claimTask('mason', t.id);
+    for (const t of k.bus.availableTasks()) k.bus.claimTask('refactoring-engineer', t.id);
     a.equal(k.bus.availableTasks().length, 0);
 
     const coder = new FakeAgent();

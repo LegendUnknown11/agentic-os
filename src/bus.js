@@ -59,7 +59,6 @@ export class Bus {
     } catch {}
     this.db.exec('pragma synchronous = NORMAL');
     this.db.exec(SCHEMA);
-    this.watchers = new Set();
   }
 
   // --- messages -------------------------------------------------------
@@ -70,9 +69,7 @@ export class Bus {
     const { lastInsertRowid } = this.db
       .prepare('insert into messages (ts, sender, recipient, kind, body) values (?,?,?,?,?)')
       .run(ts, sender, recipient, kind, body);
-    const msg = { id: Number(lastInsertRowid), ts, sender, recipient, kind, body };
-    for (const w of this.watchers) w(msg);
-    return msg.id;
+    return Number(lastInsertRowid);
   }
 
   /**
@@ -80,15 +77,24 @@ export class Bus {
    * never receives its own messages. Cursor-based so broadcast delivery is
    * exactly-once per agent without a deliveries table.
    */
-  pending(agent) {
+  /**
+   * `limit` because the caller concatenates the whole result into ONE turn.
+   *
+   * A member asleep across a long stretch of broadcasts woke to every message
+   * at once, in a single prompt, with no cap — the orchestrator's own posts
+   * bypass the 4000-char limit mcp.js puts on member messages, so nothing else
+   * bounded it. The oldest are taken first, so the remainder simply rides the
+   * next tick: 300ms later, and in order.
+   */
+  pending(agent, limit = 200) {
     const cursor = Number(this.get(`cursor:${agent}`) ?? 0);
     return this.db
       .prepare(
         `select * from messages
           where id > ? and sender != ? and (recipient = ? or recipient is null)
-          order by id`
+          order by id limit ?`
       )
-      .all(cursor, agent, agent);
+      .all(cursor, agent, agent, limit);
   }
 
   ack(agent, messageId) {
@@ -96,7 +102,7 @@ export class Bus {
   }
 
   /**
-   * Full log for the jester, or the king's escape hatch.
+   * Full log for the briefer, or the orchestrator's escape hatch.
    *
    * `tail` decides WHICH end the limit cuts from, and the two callers want
    * opposite ends. A cursor reader ("what is new since id 40, 60 rows please")
@@ -119,7 +125,7 @@ export class Bus {
     ).all(...args);
   }
 
-  // --- raw agent events (jester firehose + UI replay) -----------------
+  // --- raw agent events (briefer firehose + UI replay) -----------------
 
   logEvent(agent, type, payload) {
     this.db
@@ -154,7 +160,7 @@ export class Bus {
 
   // --- the shared task list -------------------------------------------
   //
-  // Before this, the king assigned by message and nothing tracked the result.
+  // Before this, the orchestrator assigned by message and nothing tracked the result.
   // An assignment that a peasant never acted on left no trace: not in a queue,
   // not in a count, nowhere the sovereign could see it. So the court could not
   // answer "what is still outstanding" — the single question an orchestrator
@@ -183,20 +189,32 @@ export class Bus {
    * opposite failure — "teammates sometimes fail to mark tasks as completed,
    * which blocks dependent tasks" — as a live limitation.
    */
-  tasks({ state = null, owner = null } = {}) {
-    const rows = this.db.prepare('select * from tasks order by id').all();
-    const done = new Set(rows.filter((t) => t.state === 'done').map((t) => t.id));
-    const out = rows.map((t) => {
+  tasks({ state = null, owner = null, id = null } = {}) {
+    // Filter in SQL, not in JS. This ran `select *` and discarded the rest —
+    // so idx_task_state was never used, and every caller (availableTasks, both
+    // halves of updateTask, claimTask inside its own transaction, /api/tasks)
+    // paid a full scan and a JSON.parse per row to look at a handful.
+    // `done` still needs the whole set, but only the ids, and only from the
+    // rows that can block anything.
+    const done = new Set(this.db.prepare("select id from tasks where state = 'done'")
+      .all().map((t) => t.id));
+    const where = [], args = [];
+    if (state) { where.push('state = ?'); args.push(state); }
+    if (owner) { where.push('owner = ?'); args.push(owner); }
+    if (id != null) { where.push('id = ?'); args.push(Number(id)); }
+    const rows = this.db.prepare(
+      `select * from tasks${where.length ? ` where ${where.join(' and ')}` : ''} order by id`
+    ).all(...args);
+    return rows.map((t) => {
       let needs = [];
       try { needs = JSON.parse(t.needs); } catch { /* a corrupt dep list blocks nothing */ }
       return {
         ...t,
         needs,
         needsPlan: !!t.needs_plan,
-        blockedBy: needs.filter((id) => !done.has(id)),
+        blockedBy: needs.filter((n) => !done.has(n)),
       };
     });
-    return out.filter((t) => (!state || t.state === state) && (!owner || t.owner === owner));
   }
 
   /** Unclaimed, unblocked, oldest first — what an idle member could pick up. */
@@ -213,9 +231,16 @@ export class Bus {
    * for opposite behaviour from the member reading them.
    */
   claimTask(owner, id = null) {
-    this.db.exec('begin immediate');
+    // `began`, because the rollback used to be unconditional. If `begin
+    // immediate` ITSELF throws — SQLITE_BUSY past the busy_timeout, which is
+    // the precise contention this transaction exists for — no transaction is
+    // open, so the rollback threw too and replaced the real error with
+    // "cannot rollback - no transaction is active".
+    let began = false;
     try {
-      const t = id == null ? this.availableTasks()[0] : this.tasks().find((x) => x.id === Number(id));
+      this.db.exec('begin immediate');
+      began = true;
+      const t = id == null ? this.availableTasks()[0] : this.task(id);
       if (!t) { this.db.exec('commit'); return { ok: false, why: id == null ? 'No task is available.' : `No task #${id}.` }; }
       if (t.owner) { this.db.exec('commit'); return { ok: false, why: `Task #${t.id} is already ${t.owner}'s.` }; }
       if (t.state !== 'pending') { this.db.exec('commit'); return { ok: false, why: `Task #${t.id} is ${t.state}.` }; }
@@ -228,9 +253,14 @@ export class Bus {
       this.db.exec('commit');
       return { ok: true, task: { ...t, owner, state } };
     } catch (e) {
-      this.db.exec('rollback');
+      if (began) { try { this.db.exec('rollback'); } catch {} }
       throw e;
     }
+  }
+
+  /** One task by id, with the same computed fields as tasks(). */
+  task(id) {
+    return this.tasks({ id: Number(id) })[0] ?? null;
   }
 
   /** Returns the updated row, or null if there is no such task. */
@@ -240,10 +270,12 @@ export class Bus {
     for (const [k, col] of Object.entries(cols)) {
       if (fields[k] !== undefined) { set.push(`${col} = ?`); args.push(fields[k]); }
     }
-    if (!set.length) return this.tasks().find((t) => t.id === Number(id)) ?? null;
+    // Was a full table scan plus a JSON.parse of every row, TWICE, to return
+    // one task.
+    if (!set.length) return this.task(id);
     args.push(Number(id));
     this.db.prepare(`update tasks set ${set.join(', ')} where id = ?`).run(...args);
-    return this.tasks().find((t) => t.id === Number(id)) ?? null;
+    return this.task(id);
   }
 
   // --- kv state (session ids, roster, cursors) ------------------------
@@ -259,7 +291,7 @@ export class Bus {
   /**
    * Keep the newest `keep` rows of each log. A day-long session accumulates
    * tens of thousands of tool events; nothing reads that far back, and the
-   * jester's read_events would happily drag it all into context.
+   * briefer's read_events would happily drag it all into context.
    * Messages are kept longer than events — they are the kingdom's record.
    */
   prune({ keepMessages = 5000, keepEvents = 20000 } = {}) {
@@ -270,14 +302,21 @@ export class Bus {
     this.db.prepare(
       'delete from messages where id <= (select max(id) - ? from messages)'
     ).run(keepMessages);
+    // Per-message state keys: `done:<id>`, `doneretry:<id>`, `retried:<id>`,
+    // `resolved:<id>`. Each is a one-shot flag guarding work on ONE message, so
+    // once that message is pruned the flag can never be read again — but it was
+    // never deleted, so `state` grew by several rows per message forever while
+    // the logs above stayed bounded. Drop the ones whose message is gone.
+    const oldest = this.db.prepare('select min(id) m from messages').get().m;
+    if (oldest != null) {
+      this.db.prepare(
+        "delete from state where instr(k, ':') > 0"
+        + " and substr(k, 1, instr(k, ':') - 1) in ('done','doneretry','retried','resolved')"
+        + ' and cast(substr(k, instr(k, \':\') + 1) as integer) < ?'
+      ).run(oldest);
+    }
     const after = this.db.prepare('select count(*) c from events').get().c;
     return before - after;
-  }
-
-  /** Live tap for the orchestrator/UI. Returns an unsubscribe fn. */
-  watch(fn) {
-    this.watchers.add(fn);
-    return () => this.watchers.delete(fn);
   }
 
   close() {
@@ -295,10 +334,10 @@ if (process.argv[1]?.endsWith('bus.js')) {
   const { strict: a } = await import('node:assert');
   const b = new Bus(':memory:');
 
-  b.post('king', 'coder', 'build the thing');
+  b.post('orchestrator', 'coder', 'build the thing');
   b.post('coder', null, 'i have started');
 
-  // coder sees the king's order but not its own broadcast
+  // coder sees the orchestrator's order but not its own broadcast
   const forCoder = b.pending('coder');
   a.equal(forCoder.length, 1);
   a.equal(forCoder[0].body, 'build the thing');
@@ -335,17 +374,28 @@ if (process.argv[1]?.endsWith('bus.js')) {
   b.set('session:coder', 'def');
   a.equal(b.get('session:coder'), 'def');
 
-  let seen = 0;
-  const off = b.watch(() => seen++);
-  b.post('king', null, 'hear ye');
-  off();
-  b.post('king', null, 'unheard');
-  a.equal(seen, 1);
+  // Per-message one-shot flags must not outlive their message. `state` was the
+  // one table with no bound at all: several rows per message, forever, while
+  // the logs they refer to were being trimmed out from under them.
+  {
+    const p = new Bus(':memory:');
+    const keep = [];
+    for (let i = 0; i < 30; i++) keep.push(p.post('orchestrator', 'coder', `m${i}`));
+    for (const id of keep) { p.set(`done:${id}`, '1'); p.set(`resolved:${id}`, 'approved'); }
+    p.set('session:coder', 'not-a-message-key');
+    p.prune({ keepMessages: 10, keepEvents: 10 });
+    a.equal(p.get(`done:${keep[0]}`), undefined, 'a flag for a pruned message must go with it');
+    a.equal(p.get(`resolved:${keep[0]}`), undefined, 'both prefixes, not just the first');
+    a.equal(p.get(`done:${keep.at(-1)}`), '1', 'but a live message keeps its flag');
+    a.equal(p.get('session:coder'), 'not-a-message-key',
+      'and a key that is not per-message must be untouched — sessions live across prunes');
+    p.close();
+  }
 
   // --- the task list ---------------------------------------------------
-  const t1 = b.addTask({ title: 'write the parser', by: 'king' });
-  const t2 = b.addTask({ title: 'test the parser', needs: [t1], by: 'king' });
-  const t3 = b.addTask({ title: 'risky migration', needsPlan: true, by: 'king' });
+  const t1 = b.addTask({ title: 'write the parser', by: 'orchestrator' });
+  const t2 = b.addTask({ title: 'test the parser', needs: [t1], by: 'orchestrator' });
+  const t3 = b.addTask({ title: 'risky migration', needsPlan: true, by: 'orchestrator' });
 
   a.deepEqual(b.availableTasks().map((t) => t.id), [t1, t3],
     'a task waiting on an unfinished one is not available to claim');
@@ -354,14 +404,14 @@ if (process.argv[1]?.endsWith('bus.js')) {
   a.equal(first.task.id, t1, 'the next available task is the oldest unblocked one');
   a.equal(first.task.state, 'active');
 
-  a.equal(b.claimTask('mason', t1).ok, false, 'two members must not hold one task');
-  a.match(b.claimTask('mason', t1).why, /already coder's/);
+  a.equal(b.claimTask('refactoring-engineer', t1).ok, false, 'two members must not hold one task');
+  a.match(b.claimTask('refactoring-engineer', t1).why, /already coder's/);
 
-  a.equal(b.claimTask('mason', t2).ok, false, 'and a blocked task cannot be claimed at all');
-  a.match(b.claimTask('mason', t2).why, new RegExp(`waits on #${t1}`),
+  a.equal(b.claimTask('refactoring-engineer', t2).ok, false, 'and a blocked task cannot be claimed at all');
+  a.match(b.claimTask('refactoring-engineer', t2).why, new RegExp(`waits on #${t1}`),
     'the refusal must name what it is waiting for, or the member cannot act on it');
 
-  a.equal(b.claimTask('mason', t3).task.state, 'planning',
+  a.equal(b.claimTask('refactoring-engineer', t3).task.state, 'planning',
     'a task that needs a plan is claimed into planning, not straight into work');
 
   b.updateTask(t1, { state: 'done', doneTs: Date.now() });

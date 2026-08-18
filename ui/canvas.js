@@ -4,7 +4,15 @@
 // surface it was drawn on is the good part — so it lives here on its own, at
 // about a quarter of the size, and knows nothing about what is placed on it.
 const load = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } };
-const save = (k, v) => localStorage.setItem(k, JSON.stringify(v));
+// Debounced, because the callers are gesture handlers: one wheel gesture is
+// 60-120 events, each of which was a JSON.stringify plus a synchronous
+// localStorage write interleaved with the transform that has to stay smooth.
+// Only the last position of a gesture is worth persisting anyway.
+const timers = new Map();
+const save = (k, v) => {
+  clearTimeout(timers.get(k));
+  timers.set(k, setTimeout(() => localStorage.setItem(k, JSON.stringify(v)), 250));
+};
 
 let surface;                       // the element that receives pan/zoom gestures
 // kd.view2, not kd.view: the graph-era view was saved in a different frame of

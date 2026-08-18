@@ -25,7 +25,7 @@
 //     T* = c0 + sqrt( 2·g·c0·(1 + 12.5b) )
 //
 // Note what is NOT in it: the price level cancels. A luna peasant and a terra
-// king have the same optimal threshold. Only c0, g, and whether writes are
+// orchestrator have the same optimal threshold. Only c0, g, and whether writes are
 // billed matter — which also means this cannot be tuned per-model, only
 // per-growth-rate.
 //
@@ -232,8 +232,8 @@ if (process.argv[1]?.endsWith('recycle.js') && process.argv[2]) {
   for (const p of [resolve(repo, 'kingdom.config.json'), defaultConfigPath(repo)]) {
     try { cfg = JSON.parse(readFileSync(p, 'utf8')); break; } catch { /* try the next */ }
   }
-  const cli = process.argv[3] ?? cfg.king?.cli ?? 'codex';
-  const model = process.argv[4] ?? cfg.king?.model ?? 'gpt-5.6-luna';
+  const cli = process.argv[3] ?? cfg.orchestrator?.cli ?? 'codex';
+  const model = process.argv[4] ?? cfg.orchestrator?.model ?? 'gpt-5.6-luna';
   console.log(`modelled for ${cli}/${model}\n`);
   console.log(report(sequences(db), {
     cli, model, current: cfg.recycleAtTokens, table: tableFrom(cfg),

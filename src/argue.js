@@ -2,7 +2,7 @@
 //
 // The court's ordinary failure mode on a contested question is agreement. Every
 // peasant runs the same CLI on the same model with the same house prompt, so
-// asking two of them produces one opinion twice — and the king, reading two
+// asking two of them produces one opinion twice — and the orchestrator, reading two
 // confident answers that match, treats a coin-flip as settled. Independent
 // samples of one model are not independent evidence.
 //
@@ -14,7 +14,7 @@
 // These are not court members. They have no worktree, no inbox, no MCP tools
 // and no session — they are one-shot text calls through the same `ask()` the
 // advisor and summariser use, and they are gone when the verdict is written.
-// A permanent pair of debating peasants would cost prompt tokens in the king's
+// A permanent pair of debating peasants would cost prompt tokens in the orchestrator's
 // bench forever for something asked a few times a week.
 import { ask } from './advisor.js';
 

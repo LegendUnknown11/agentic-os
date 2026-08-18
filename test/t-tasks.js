@@ -1,9 +1,9 @@
 // The shared task list, driven through the real MCP servers.
 //
-// The court could not answer "what is still outstanding". The king assigned by
+// The court could not answer "what is still outstanding". The orchestrator assigned by
 // message, and a message is sent and then gone: an assignment a peasant never
 // acted on left no trace in any queue, count, or panel. This exercises the list
-// end to end through three separate MCP processes — one king, two peasants —
+// end to end through three separate MCP processes — one orchestrator, two peasants —
 // because the race that matters (two members claiming one task) only exists
 // across processes, and a single-process test would prove nothing about it.
 //
@@ -22,9 +22,9 @@ const db = join(dir, 'bus.db');
 
 const seed = new Bus(db);
 seed.set('roster', JSON.stringify([
-  { name: 'sovereign-regent', role: 'king' },
+  { name: 'sovereign-regent', role: 'orchestrator' },
   { name: 'coder', role: 'peasant' },
-  { name: 'mason', role: 'peasant' },
+  { name: 'refactoring-engineer', role: 'peasant' },
 ]));
 seed.close();
 
@@ -73,33 +73,33 @@ function member(name, role) {
   };
 }
 
-const king = await member('sovereign-regent', 'king').start();
+const orchestrator = await member('sovereign-regent', 'orchestrator').start();
 const coder = await member('coder', 'peasant').start();
-const mason = await member('mason', 'peasant').start();
+const refactoringEngineer = await member('refactoring-engineer', 'peasant').start();
 
 try {
   /* ---------- 1. the tools reach the right roles ---------- */
   {
-    const k = await king.tools(), c = await coder.tools();
-    a.ok(k.includes('add_task') && k.includes('rule_on_plan'), 'the king stocks the list and rules on plans');
-    a.ok(!k.includes('claim_task'), 'and does not claim work — a king that codes stops coordinating');
+    const k = await orchestrator.tools(), c = await coder.tools();
+    a.ok(k.includes('add_task') && k.includes('rule_on_plan'), 'the orchestrator stocks the list and rules on plans');
+    a.ok(!k.includes('claim_task'), 'and does not claim work — an orchestrator that codes stops coordinating');
     a.ok(c.includes('claim_task') && c.includes('finish_task') && c.includes('submit_plan'));
     a.ok(!c.includes('add_task'), 'a peasant does not write its own assignments');
     a.ok(k.includes('tasks') && c.includes('tasks'), 'but the LIST is shared, so both must see it');
-    console.log('  tools: king stocks and rules, peasants claim, both read the same list');
+    console.log('  tools: orchestrator stocks and rules, peasants claim, both read the same list');
   }
 
   /* ---------- 2. tasks, and dependencies that actually block ---------- */
   {
-    a.match(await king.call('add_task', { title: 'write the parser', detail: 'src/parse.js' }), /#1 added/);
-    a.match(await king.call('add_task', { title: 'test the parser', detail: 'a failing case first', needs: [1] }),
+    a.match(await orchestrator.call('add_task', { title: 'write the parser', detail: 'src/parse.js' }), /#1 added/);
+    a.match(await orchestrator.call('add_task', { title: 'test the parser', detail: 'a failing case first', needs: [1] }),
       /#2 added, waiting on #1/);
-    a.match(await king.call('add_task', { title: 'drop the old table', detail: 'irreversible', require_plan: true }),
+    a.match(await orchestrator.call('add_task', { title: 'drop the old table', detail: 'irreversible', require_plan: true }),
       /#3 added/);
 
-    a.match(await king.call('add_task', { title: 'x', detail: 'y', needs: [99] }), /No such task: #99/,
+    a.match(await orchestrator.call('add_task', { title: 'x', detail: 'y', needs: [99] }), /No such task: #99/,
       'a dependency on a task that does not exist must be refused, not stored as permanently blocked');
-    a.ok(!(await king.call('tasks')).includes(' x'), 'and the refused task must not be on the list');
+    a.ok(!(await orchestrator.call('tasks')).includes(' x'), 'and the refused task must not be on the list');
     console.log('  add_task: dependencies validated, a bad one refused rather than stored');
   }
 
@@ -109,7 +109,7 @@ try {
     // agent teams handle with a file lock; here it is one `begin immediate`
     // transaction, and the point of the test is that the loser is TOLD, not
     // silently handed the same work.
-    const [one, two] = await Promise.all([coder.call('claim_task'), mason.call('claim_task')]);
+    const [one, two] = await Promise.all([coder.call('claim_task'), refactoringEngineer.call('claim_task')]);
     const claimed = [one, two].filter((t) => t.includes('Claimed #1'));
     a.equal(claimed.length, 1, `exactly one member may hold task #1, got:\n${one}\n---\n${two}`);
     const loser = [one, two].find((t) => !t.includes('Claimed #1'));
@@ -120,34 +120,34 @@ try {
 
   /* ---------- 4. a blocked task cannot be claimed, and says why ---------- */
   {
-    const r = await mason.call('claim_task', { id: 2 });
+    const r = await refactoringEngineer.call('claim_task', { id: 2 });
     a.match(r, /waits on #1/, 'the refusal must name the blocker, or the member cannot act on it');
     console.log('  blocked: #2 refused, and the refusal names what it waits for');
   }
 
   /* ---------- 5. the plan gate is enforced, not requested ---------- */
   {
-    const held = (await king.call('tasks')).includes('#3 planning');
-    if (!held) await mason.call('claim_task', { id: 3 });
-    const owner = (await king.call('tasks')).match(/#3 planning \[(\w+)\]/)?.[1];
+    const held = (await orchestrator.call('tasks')).includes('#3 planning');
+    if (!held) await refactoringEngineer.call('claim_task', { id: 3 });
+    const owner = (await orchestrator.call('tasks')).match(/#3 planning \[([\w-]+)\]/)?.[1];
     a.ok(owner, 'a task that requires a plan must be claimed into planning, not into work');
 
-    const worker = owner === 'coder' ? coder : mason;
+    const worker = owner === 'coder' ? coder : refactoringEngineer;
     a.match(await worker.call('finish_task', { id: 3, summary: 'done, trust me' }),
       /still needs an approved plan/,
       'a member must not be able to close a risky task by deciding its own plan was fine');
-    a.ok(!(await king.call('tasks')).includes('#3 done'));
+    a.ok(!(await orchestrator.call('tasks')).includes('#3 done'));
 
-    a.match(await king.call('rule_on_plan', { id: 3, approve: true, notes: 'go' }), /has not submitted a plan/,
-      'and the king must not be able to approve a plan that was never written');
+    a.match(await orchestrator.call('rule_on_plan', { id: 3, approve: true, notes: 'go' }), /has not submitted a plan/,
+      'and the orchestrator must not be able to approve a plan that was never written');
 
     a.match(await worker.call('submit_plan', { id: 3, plan: 'back it up first, then drop' }), /Plan sent/);
-    a.match(await king.call('rule_on_plan', { id: 3, approve: false, notes: 'name the backup path' }),
+    a.match(await orchestrator.call('rule_on_plan', { id: 3, approve: false, notes: 'name the backup path' }),
       /sent back to/);
     a.match(await worker.call('finish_task', { id: 3, summary: 'still done' }), /still needs an approved plan/,
       'rejection must leave the gate CLOSED — that is the whole point of rejecting');
 
-    await king.call('rule_on_plan', { id: 3, approve: true, notes: 'better' });
+    await orchestrator.call('rule_on_plan', { id: 3, approve: true, notes: 'better' });
     a.match(await worker.call('finish_task', { id: 3, summary: 'dropped, backup at /tmp' }), /closed/);
     console.log('  plan gate: cannot self-approve, cannot approve nothing, rejection keeps it shut');
   }
@@ -156,10 +156,10 @@ try {
   {
     // Which of the two won section 3's race is genuinely undecided, so read
     // the owner rather than assuming it. An earlier draft of this test assumed
-    // coder and passed until the scheduler handed the task to mason instead.
-    const holder = (await king.call('tasks')).match(/#1 active \[(\w+)\]/)?.[1];
+    // coder and passed until the scheduler handed the task to refactoringEngineer instead.
+    const holder = (await orchestrator.call('tasks')).match(/#1 active \[([\w-]+)\]/)?.[1];
     a.ok(holder, 'task #1 must still be held by whoever won the race');
-    const [owner, other] = holder === 'coder' ? [coder, mason] : [mason, coder];
+    const [owner, other] = holder === 'coder' ? [coder, refactoringEngineer] : [refactoringEngineer, coder];
 
     a.match(await other.call('finish_task', { id: 1, summary: 'not mine' }), /not yours/,
       'only the owner may close a task');
@@ -173,12 +173,12 @@ try {
     a.deepEqual(done.sort(), [1, 3]);
     a.equal(bus.availableTasks().length, 0, 'and nothing is left unclaimed');
     // finish_task reports to whoever holds the office, not to the literal
-    // string "king" — this court's king is named sovereign-regent.
+    // string "orchestrator" — this court's orchestrator is named sovereign-regent.
     const reports = bus.history({ limit: 200 }).filter((m) => m.kind === 'done');
     a.ok(reports.length >= 2 && reports.every((m) => m.recipient === 'sovereign-regent'),
-      `completions must reach the king by office, got ${JSON.stringify(reports.map((m) => m.recipient))}`);
+      `completions must reach the orchestrator by office, got ${JSON.stringify(reports.map((m) => m.recipient))}`);
     bus.close();
-    console.log('  ownership honoured, dependents unblocked, completions reached the king by office');
+    console.log('  ownership honoured, dependents unblocked, completions reached the orchestrator by office');
   }
 
   console.log('t-tasks.js OK — a shared list two processes cannot both claim, with a plan gate that holds');
@@ -187,7 +187,7 @@ try {
   // open: on Windows a killed child still holds the file for a moment, and
   // rmSync throws EPERM on the WAL. Cleaning a temp directory is not what this
   // suite is testing, so a failure to do so must not fail it.
-  await Promise.all([king, coder, mason].map((m) => new Promise((done) => {
+  await Promise.all([orchestrator, coder, refactoringEngineer].map((m) => new Promise((done) => {
     m.child.once('exit', done);
     m.child.kill();
   })));

@@ -21,7 +21,7 @@ const VERBS = {
 // Kingdom tools are worth naming individually — "messaging" lighting up is the
 // whole point of this court.
 const KINGDOM_VERBS = {
-  send_message: 'messaging', broadcast: 'messaging', brief_king: 'briefing',
+  send_message: 'messaging', broadcast: 'messaging', brief_orchestrator: 'briefing',
   vault_search: 'consulting', vault_read: 'consulting', vault_write: 'recording',
   read_bus: 'catching up', read_events: 'catching up', roster: 'catching up',
   read_diff: 'reviewing', request_merge: 'proposing', send_back: 'rejecting',

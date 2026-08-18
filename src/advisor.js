@@ -3,7 +3,7 @@
 // no worktree. Two features ride on it:
 //
 //   * the prompt engineer, which rewrites what the sovereign typed before the
-//     king ever sees it;
+//     orchestrator ever sees it;
 //   * the model selector, which picks each member's model and effort.
 //
 // Both are advisory: if the call fails, times out, or answers with nonsense,
@@ -11,6 +11,7 @@
 // stop the court, so every failure here returns null rather than throwing.
 import { spawn } from 'node:child_process';
 import { resolveCli, AGY_EFFORTS } from './agent.js';
+import { MODE_NAMES } from './modes.js';
 
 const TIMEOUT_MS = 90_000;
 
@@ -28,7 +29,11 @@ export function ask(spec, prompt, { cwd = process.cwd(), timeoutMs = TIMEOUT_MS,
   // need no tools at all, which is exactly the part of agy that works headless.
   // It also bills against a different quota from codex, so moving the
   // per-turn summariser here takes that load off the court's own budget.
-  const args = cli === 'agy'
+  const args = cli === 'opencode'
+    ? ['run', prompt, '--format', 'json', '--auto',
+      ...(spec.model ? ['--model', spec.model] : []),
+      ...(spec.effort ? ['--effort', spec.effort] : [])]
+    : cli === 'agy'
     ? ['--print', '--output-format', 'stream-json',
       ...(spec.model ? ['--model', spec.model] : []),
       ...(spec.effort && AGY_EFFORTS.has(spec.effort) ? ['--effort', spec.effort] : []),
@@ -101,6 +106,11 @@ export function ask(spec, prompt, { cwd = process.cwd(), timeoutMs = TIMEOUT_MS,
         else if (o.type === 'assistant') {
           for (const c of o.message?.content ?? []) if (c.type === 'text') out += c.text ?? '';
         }
+        // opencode: text, message, or part text
+        else if (o.type === 'text' && o.text) out += o.text;
+        else if (o.type === 'message' && typeof o.content === 'string') out += o.content;
+        else if (o.part?.type === 'text' && o.part?.text) out += o.part.text;
+        else if (o.result?.response) out = o.result.response;
       }
     });
     proc.stderr.setEncoding('utf8');
@@ -154,17 +164,45 @@ directly actionable. Rules:
   ambiguous points as an explicit open question at the end instead of guessing.
 - If the message is already clear, return it close to unchanged.
 - Never invent file paths, versions, or acceptance criteria.
-Reply with ONLY the rewritten brief. No preamble, no commentary, no code fences.`;
 
-/** Rewrites the sovereign's message. Returns the original on any failure. */
+Then classify what the sovereign is actually asking for, as exactly one of:
+- "code"     — write, change, fix, test or review code in this repository
+- "research" — find something out: investigate, compare, explain, read up on it
+- "chat"     — talk it through; a question about this court itself; thinking out loud
+- "build"    — extend the court: a new skill, a note, standing instructions, configuration
+When it is genuinely both, pick the one the sovereign wants FIRST.
+
+Reply with ONLY this JSON object and nothing else:
+{"mode":"code|research|chat|build","brief":"the rewritten brief"}`;
+
+/**
+ * Rewrite the sovereign's message, and say what kind of work it is.
+ *
+ * Classification rides on the rewrite rather than taking a call of its own. The
+ * rewrite already blocks — it changes the words the court acts on, so it must
+ * land before the message posts — and a second blocking call would put a second
+ * model's latency between pressing enter and the orchestrator hearing anything. This
+ * costs one more line of output on a call that was happening regardless.
+ *
+ * Returns `{text, mode}`, or null if there is nothing usable. `mode` is null
+ * whenever the model did not answer with one of the four — an unclassified
+ * message leaves the court in the shape it was already in, which is the same
+ * thing that happens when the advisor is off.
+ */
 export async function engineerPrompt(spec, text, opts = {}) {
   const out = await ask(spec, `${ENGINEER}\n\n--- SOVEREIGN'S MESSAGE ---\n${text}`, opts);
   if (!out) return null;
+  // A model that ignored the schema still produced a usable rewrite, and taking
+  // its raw text is precisely what this function did before modes existed. Only
+  // the classification is lost, and losing it costs nothing but a manual switch.
+  const json = parseJson(out);
+  const brief = typeof json?.brief === 'string' && json.brief.trim() ? json.brief.trim() : out;
+  const mode = MODE_NAMES.includes(json?.mode) ? json.mode : null;
   // A "rewrite" many times the original is the model answering the request
   // instead of restating it. Rather than feed the court a hallucinated plan,
   // fall back to what the sovereign actually typed.
-  if (out.length > Math.max(1200, text.length * 6)) return null;
-  return out;
+  if (brief.length > Math.max(1200, text.length * 6)) return null;
+  return { text: brief, mode };
 }
 
 /**

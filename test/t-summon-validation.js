@@ -14,7 +14,7 @@ const dir = mkdtempSync(join(tmpdir(), 'kingdom-summon-'));
 const db = join(dir, 'bus.db');
 const seed = new Bus(db);
 seed.set('roster', JSON.stringify([
-  { name: 'king', role: 'king' },
+  { name: 'orchestrator', role: 'orchestrator' },
   { name: 'coder', role: 'peasant' },
   { name: 'tester', role: 'peasant' },
 ]));
@@ -22,7 +22,7 @@ seed.close();
 
 const child = spawn(process.execPath, [join(HERE, '..', 'src', 'mcp.js')], {
   cwd: join(HERE, '..'),
-  env: { ...process.env, KINGDOM_AGENT: 'king', KINGDOM_ROLE: 'king', KINGDOM_DB: db },
+  env: { ...process.env, KINGDOM_AGENT: 'orchestrator', KINGDOM_ROLE: 'orchestrator', KINGDOM_DB: db },
   stdio: ['pipe', 'pipe', 'ignore'],
 });
 let buffer = '';
@@ -78,7 +78,7 @@ try {
   a.match(resultText(await tool(9, 'send_message', { to: 'code', body: 'hi' })),
     /Did you mean: coder/, 'a near miss must suggest the real name');
 
-  // send_back is the king's other addressed tool and had the same hole.
+  // send_back is the orchestrator's other addressed tool and had the same hole.
   a.match(resultText(await tool(10, 'send_back', { peasant: 'ghost', notes: 'redo it' })),
     /No member named "ghost"/, 'send_back must validate too');
 
@@ -92,27 +92,27 @@ try {
   const approvals = check.history({ limit: 20 }).filter((m) => m.kind === 'approval');
   a.equal(approvals.length, 1, 'only the valid summon may post an approval');
   a.deepEqual(JSON.parse(approvals[0].body).names, ['coder', 'tester']);
-  // Exactly one message left the king: the one addressed to a real member.
-  const sent = check.history({ limit: 50 }).filter((m) => m.sender === 'king' && m.kind !== 'approval');
+  // Exactly one message left the orchestrator: the one addressed to a real member.
+  const sent = check.history({ limit: 50 }).filter((m) => m.sender === 'orchestrator' && m.kind !== 'approval');
   a.deepEqual(sent.map((m) => m.recipient), ['coder'],
     'refused messages must not be on the bus at all');
   check.close();
   try { rmSync(dir, { recursive: true, force: true }); } catch {}
 }
 
-// --- the king is whoever the roster says, not the string "king" ---------
-// declare_done and brief_king posted to the literal name "king". The king's
-// name is configuration (`kingdom.config.json` king.name), delivery is by
+// --- the orchestrator is whoever the roster says, not the string "orchestrator" ---------
+// declare_done and brief_orchestrator posted to the literal name "orchestrator". The orchestrator's
+// name is configuration (`kingdom.config.json` orchestrator.name), delivery is by
 // recipient, and kingdom.js only treats a `done` as a completion when it
-// reaches the king — so renaming the king silently threw every completion
+// reaches the orchestrator — so renaming the orchestrator silently threw every completion
 // and every briefing away while the tool answered that it had been notified.
 {
   const dir2 = mkdtempSync(join(tmpdir(), 'kingdom-office-'));
   const db2 = join(dir2, 'bus.db');
   const seed2 = new Bus(db2);
   seed2.set('roster', JSON.stringify([
-    { name: 'sovereign-regent', role: 'king' },
-    { name: 'fool', role: 'jester' },
+    { name: 'sovereign-regent', role: 'orchestrator' },
+    { name: 'fool', role: 'briefer' },
     { name: 'coder', role: 'peasant' },
   ]));
   seed2.close();
@@ -136,14 +136,14 @@ try {
   };
 
   a.match(once('coder', 'peasant', 'declare_done', { summary: 'built it' }),
-    /sovereign-regent has been notified/, 'declare_done must name the real king');
-  once('fool', 'jester', 'brief_king', { summary: 'all quiet' });
+    /sovereign-regent has been notified/, 'declare_done must name the real orchestrator');
+  once('fool', 'briefer', 'brief_orchestrator', { summary: 'all quiet' });
 
   const check2 = new Bus(db2);
   const done = check2.history({ limit: 20 }).find((m) => m.kind === 'done');
-  a.equal(done.recipient, 'sovereign-regent', 'a completion must be addressed to the real king');
+  a.equal(done.recipient, 'sovereign-regent', 'a completion must be addressed to the real orchestrator');
   const brief = check2.history({ limit: 20 }).find((m) => m.kind === 'brief');
-  a.equal(brief.recipient, 'sovereign-regent', 'a briefing must be addressed to the real king');
+  a.equal(brief.recipient, 'sovereign-regent', 'a briefing must be addressed to the real orchestrator');
   check2.close();
   try { rmSync(dir2, { recursive: true, force: true }); } catch {}
 }

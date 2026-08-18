@@ -1,4 +1,4 @@
-// The king's real MCP summon call must travel through the bus into the
+// The orchestrator's real MCP summon call must travel through the bus into the
 // Kingdom approval flow before the designer joins the standing crew.
 //
 //   node test/t-mcp-chain.js
@@ -14,7 +14,7 @@ const dir = mkdtempSync(join(tmpdir(), 'kingdom-mcp-chain-'));
 const repo = join(dir, 'repo');
 let kingdom;
 
-function invokeKingMcp(db) {
+function invokeOrchestratorMcp(db) {
   const rpc = [
     { jsonrpc: '2.0', id: 1, method: 'initialize', params: {
       protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 't-mcp-chain', version: '1' } } },
@@ -29,12 +29,12 @@ function invokeKingMcp(db) {
   const r = spawnSync(process.execPath, [join(import.meta.dirname, '..', 'src', 'mcp.js')], {
     input: rpc,
     encoding: 'utf8',
-    env: { ...process.env, KINGDOM_AGENT: 'king', KINGDOM_ROLE: 'king', KINGDOM_DB: db },
+    env: { ...process.env, KINGDOM_AGENT: 'orchestrator', KINGDOM_ROLE: 'orchestrator', KINGDOM_DB: db },
   });
   const messages = r.stdout.split(/\r?\n/).filter(Boolean).map((line) => {
     try { return JSON.parse(line); } catch { return null; }
   }).filter(Boolean);
-  a.equal(r.status, 0, `king MCP exited ${r.status}. stderr: ${r.stderr.slice(0, 400)}`);
+  a.equal(r.status, 0, `orchestrator MCP exited ${r.status}. stderr: ${r.stderr.slice(0, 400)}`);
   return {
     tools: messages.find((m) => m.id === 2),
     summon: messages.find((m) => m.id === 3),
@@ -51,8 +51,8 @@ execFileSync('git', ['commit', '-qm', 'init'], { cwd: repo });
 
 const configPath = join(dir, 'kingdom.config.json');
 writeFileSync(configPath, JSON.stringify({
-  king: { name: 'king', cli: 'codex' },
-  jester: { name: 'jester', cli: 'codex' },
+  orchestrator: { name: 'orchestrator', cli: 'codex' },
+  briefer: { name: 'briefer', cli: 'codex' },
   peasants: [{ name: 'designer', cli: 'codex' }],
   rolesSeeded: true,
   advisor: { promptEngineer: false, autoModel: false },
@@ -70,14 +70,14 @@ try {
   });
 
   await kingdom.start();
-  const { tools, summon, assign } = invokeKingMcp(dbPath(repo));
+  const { tools, summon, assign } = invokeOrchestratorMcp(dbPath(repo));
   a.ok(tools?.result?.tools?.some((t) => t.name === 'summon'),
-    'the king MCP tool list must expose summon');
+    'the orchestrator MCP tool list must expose summon');
   a.equal(summon?.result?.isError, undefined,
-    `king summon failed: ${summon?.result?.content?.[0]?.text ?? 'no reply'}`);
+    `orchestrator summon failed: ${summon?.result?.content?.[0]?.text ?? 'no reply'}`);
   a.match(summon?.result?.content?.[0]?.text ?? '', /Proposal sent to the sovereign/);
   a.match(assign?.result?.content?.[0]?.text ?? '', /not summoned/,
-    'the king must not assign work before summon approval');
+    'the orchestrator must not assign work before summon approval');
 
   const approval = await approvalPromise;
   a.equal(kingdom.approvals.get(approval.id)?.kind, 'summon',
@@ -95,7 +95,7 @@ try {
   a.ok(kingdom.summoned.has('designer'), 'a woken designer must remain summoned');
   a.ok(kingdom.agents.has('designer'), 'a summoned designer must be wakeable');
 
-  console.log('t-mcp-chain.js OK — king MCP summon, approval, summon, and wake');
+  console.log('t-mcp-chain.js OK — orchestrator MCP summon, approval, summon, and wake');
 } finally {
   try { await kingdom?.stop(); } catch {}
   for (const target of [repo, kingdomDir(repo), dir]) {

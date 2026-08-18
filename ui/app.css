@@ -85,15 +85,13 @@
      Sitka Display is Microsoft's display serif and is the reason this works at
      all: Georgia alone at 13px on a dark ground goes muddy, Sitka does not. */
   --display:"Sitka Display","Constantia",Cambria,Georgia,"Palatino Linotype",serif;
-  /* Six steps, not one. Everything used to be within a point of 12.5px, so
-     nothing announced itself as a heading, a name or a footnote — the eye had
-     no order to follow and every screen read as one undifferentiated block. */
-  --t-micro:10.5px; --t-sm:12px; --t-base:13px; --t-md:14px; --t-lg:16px; --t-xl:20px;
+  /* Seven steps for robust hierarchy. Added --t-xxl for dominant member title on right card. */
+  --t-micro:10.5px; --t-sm:12px; --t-base:13px; --t-md:14px; --t-lg:16px; --t-xl:20px; --t-xxl:26px;
 
-  --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:24px; --s6:32px;
-  --r-sm:6px; --r-md:8px; --r-lg:10px; --r-xl:12px;
+  --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:24px; --s6:32px; --s7:40px;
+  --r-sm:6px; --r-md:8px; --r-lg:10px; --r-xl:14px; /* measured 14px gives glass panes true slab presence */
 
-  --ease:cubic-bezier(.22,1,.36,1);
+  --ease:cubic-bezier(.16,1,.3,1); /* snappier attack curve with smooth settle */
   --fast:140ms; --base:240ms; --slow:420ms;
 }
 
@@ -122,23 +120,25 @@ main{flex:1;display:flex;min-height:0}
 header,footer{flex:none;display:flex;align-items:center;gap:var(--s2);
   background:var(--glass-strong);backdrop-filter:var(--frost);
   -webkit-backdrop-filter:var(--frost);position:relative;z-index:20}
-header{padding:var(--s2) var(--s3);border-bottom:1px solid var(--gold-edge);
+header{padding:var(--s2) var(--s4);border-bottom:1px solid var(--gold-edge);
   box-shadow:var(--sheen),0 10px 26px -18px rgba(0,0,0,.9)}
-footer{padding:var(--s2) var(--s3);border-top:1px solid var(--edge);box-shadow:var(--sheen)}
+footer{padding:var(--s2) var(--s4);border-top:1px solid var(--edge);box-shadow:var(--sheen),0 -6px 20px -12px rgba(0,0,0,.7)}
 
 .mark{color:var(--crown);display:flex;flex:none;
-  filter:drop-shadow(0 0 7px rgba(240,201,125,.45))}
+  filter:drop-shadow(0 0 8px rgba(240,201,125,.5))}
 /* Header overflow is fought in one place: everything is `flex:none` and the
    goal bar is the only thing allowed to shrink. Before this the whole row
    competed — the repo path ellipsised to four characters, "0 turns" wrapped
    onto two lines and pushed the header 6px taller, and the goal read
    "Set a sta...". Squeeze belongs on the one element that can survive it. */
 #repo{flex:none;color:var(--dim);font-size:11.5px;white-space:nowrap;overflow:hidden;
-  text-overflow:ellipsis;max-width:20ch}
-#spend{flex:none;color:var(--dim);font-size:11.5px;white-space:nowrap;opacity:.9}
+  text-overflow:ellipsis;max-width:24ch;transition:color var(--fast) var(--ease)}
+#repo:hover{color:var(--ink)}
+#spend{flex:none;color:var(--dim);font-size:11.5px;white-space:nowrap;opacity:.95;
+  padding:2px 8px;background:var(--glass-raised);border-radius:99px;border:1px solid var(--edge)}
 .grow{flex:1}
-.conn{width:7px;height:7px;border-radius:50%;background:var(--danger);flex:none;
-  transition:background var(--base) var(--ease);box-shadow:0 0 8px currentColor}
+.conn{width:8px;height:8px;border-radius:50%;background:var(--danger);flex:none;
+  transition:background var(--base) var(--ease),box-shadow var(--base) var(--ease);box-shadow:0 0 8px currentColor}
 .conn.up{background:var(--accent)}
 /* Under ~1040px there is genuinely not room for identity AND purpose AND
    tools. The repo path is stable knowledge you learn once; the standing goal
@@ -160,14 +160,15 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-r
 /* ---------- the word (footer) ----------
    Where the sovereign speaks. A pill, not a strip: a bare underline in a bar
    does not look like something you type into. */
-footer input{flex:1;background:rgba(0,0,0,.3);border:1px solid var(--edge);
-  border-radius:999px;color:var(--ink);font:inherit;font-size:var(--t-sm);
+footer input{flex:1;background:rgba(0,0,0,.32);border:1px solid var(--edge);
+  border-radius:999px;color:var(--ink);font:inherit;font-size:var(--t-base);
   padding:var(--s2) var(--s4);outline:none;user-select:text;
-  transition:border-color var(--fast) var(--ease),background var(--fast) var(--ease)}
-footer input:focus{border-color:var(--edge-strong);background:rgba(0,0,0,.42)}
+  transition:border-color var(--fast) var(--ease),background var(--fast) var(--ease),box-shadow var(--fast) var(--ease)}
+footer input:focus{border-color:var(--edge-strong);background:rgba(0,0,0,.45);box-shadow:0 0 0 1px rgba(255,255,255,.08)}
 input::placeholder{color:var(--faint)}
-.mic{color:var(--faint);padding:var(--s2);border-radius:var(--r-sm)}
-.mic:hover{color:var(--ink)}
+.mic{color:var(--faint);padding:var(--s2);border-radius:var(--r-sm);
+  transition:color var(--fast) var(--ease),background var(--fast) var(--ease)}
+.mic:hover{color:var(--ink);background:var(--glass-raised)}
 .mic.on,.mic.thinking{color:var(--accent)}
 .mic.on{animation:breathe 1.5s var(--ease) infinite}
 .mic.thinking{opacity:.55}
@@ -197,13 +198,15 @@ footer:has(#cmd.advising) input{border-color:var(--accent);
   padding:var(--s3) var(--s3) var(--s2)}
 .rail-list{flex:1;overflow-y:auto;padding:0 var(--s2) var(--s3)}
 
-.rail-row{display:flex;align-items:center;gap:var(--s3);width:100%;
-  padding:var(--s2);border-radius:var(--r-md);
+.rail-row{display:flex;align-items:center;gap:var(--s3);width:100%;min-height:36px;
+  padding:var(--s2) var(--s3);border-radius:var(--r-md);
   font-size:12.5px;color:var(--dim);text-align:left;position:relative;
-  transition:background var(--fast) var(--ease),opacity var(--fast) var(--ease)}
+  transition:background var(--fast) var(--ease),opacity var(--fast) var(--ease),transform var(--fast) var(--ease)}
+.rail-row:hover{transform:translateX(1px)}
 .rail-row:hover,.rail-row.open{background:var(--glass-raised);color:var(--ink)}
 .rail-row.open::before{content:"";position:absolute;left:2px;top:50%;translate:0 -50%;
-  width:2px;height:15px;border-radius:2px;background:var(--accent)}
+  width:2px;height:18px;border-radius:2px;background:var(--accent);
+  box-shadow:0 0 8px var(--accent)}
 /* Names are set in the display serif. This is the change that stops the rail
    reading as a list of strings: a member is a person at court, and the one
    thing on the row that names them should not be the same face as the byte
@@ -222,36 +225,30 @@ footer:has(#cmd.advising) input{border-color:var(--accent);
   white-space:nowrap}
 .rail-row .st.tone-bad{color:var(--danger);opacity:1}
 
-/* One dot carries asleep / awake / busy / failed. Kept for anything drawn
-   without an avatar; the avatar's own corner light is the usual carrier. */
-.dot{flex:none;width:7px;height:7px;border-radius:50%;background:#3a4553}
-.rail-row.awake .dot{background:var(--accent);box-shadow:0 0 7px var(--accent)}
-.rail-row.busy .dot{animation:blip 1.5s var(--ease) infinite}
-.rail-row.dead .dot{background:var(--danger);box-shadow:0 0 7px var(--danger)}
-@keyframes blip{50%{opacity:.35}}
-/* Three states, not two. A court of seven quietly resting looked identical to
-   a court of none, because "in service, idle-slept" and "never summoned"
-   shared one grey dot. Resting is a hollow ring — present, not lit. */
-.rail-row.serving:not(.awake) .dot{background:transparent;
-  box-shadow:inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 55%, transparent)}
+/* A `.dot` class used to live here carrying the same four states as `.av i`,
+   for "anything drawn without an avatar". Nothing in ui/ has produced one since
+   the avatar landed, so it was two copies of one state machine and only one of
+   them was reachable. Deleted with the avatar disc; `.av i` is the single
+   carrier now and it lives with the rest of its states further down. */
 .rail-row.serving:not(.awake) .st{color:var(--faint)}
 
 /* Group headings are engraved into the wall: small caps trailing off into a
    hairline rule, the way a chapter divider does. */
 .rail-group{display:flex;align-items:center;gap:var(--s2);
-  padding:var(--s4) var(--s2) var(--s1);
+  padding:var(--s5) var(--s2) var(--s1);
   font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;
   color:var(--faint);opacity:.8}
 .rail-group::after{content:"";flex:1;height:1px;
-  background:linear-gradient(90deg,var(--edge),transparent)}
+  background:linear-gradient(90deg,var(--edge),transparent 90%)}
 .rail-group.king{color:var(--crown);opacity:.95}
-.rail-group.king::after{background:linear-gradient(90deg,var(--gold-edge),transparent)}
+.rail-group.king::after{background:linear-gradient(90deg,var(--gold-edge),transparent 90%)}
 
 /* The rail's second line: what each member is actually doing, without opening
    anything. Two lines is the most a 214px rail can carry legibly. */
 .rail-row.two-line{align-items:flex-start;flex-wrap:wrap}
-.rail-row.two-line .dot{margin-top:5px}
-.rail-row.two-line .av{margin-top:1px}
+/* A two-line row starts its children at the top, so the light has to be pushed
+   down onto the name's baseline or it floats above the first letter. */
+.rail-row.two-line .av{margin-top:5px}
 .rail-row .sum{flex-basis:100%;min-width:0;max-width:100%;font-size:var(--t-micro);
   line-height:1.35;color:var(--faint);margin-top:2px;
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
@@ -317,19 +314,10 @@ body.rail-collapsed #rail-collapse{rotate:180deg}
                     rgba(255,255,255,.11) 68%, transparent) 0 89% / 100% 1px no-repeat,
     radial-gradient(122% 96% at 50% 34%, transparent 52%, rgba(0,0,0,.46) 100%)}
 
-/* The hall, drawn in index.html.
-   Anchored to the bottom of the stage and cropped at the sides (the SVG's
-   preserveAspectRatio is xMidYMax slice), so the floor always meets the footer
-   and the throne always sits on the centre line however the window is shaped.
-   It is scenery: when there is work on the stage it recedes rather than
-   competing with it, and it never appears over a wallpaper, which is already
-   somebody's chosen room. */
-#hall{position:absolute;inset:0;width:100%;height:100%;z-index:0;
-  pointer-events:none;opacity:1;
-  transition:opacity var(--slow) var(--ease)}
-#stage:has(.win) #hall{opacity:.3}
-body.has-bg #hall{display:none}
-@media (prefers-reduced-motion:reduce){#hall{transition:none}}
+/* A drawn hall used to sit over this backdrop — a `#hall` SVG of windows,
+   columns, a dais and a throne, faded back when panels were open and hidden
+   entirely under a wallpaper. Removed on the sovereign's instruction, along
+   with its rule in AGENTS.md. The wash above is the whole backdrop now. */
 
 /* With a wallpaper up, the room would fight the image, so it steps aside. */
 body.has-bg #bg{background-image:var(--wall);background-repeat:no-repeat;
@@ -363,16 +351,17 @@ body.has-bg #bg::after{opacity:var(--bg-dim,.5)}
   /* A 430x320 panel in a 1226x810 stage is a postage stamp — 14% of the
      surface, with the transcript scrolling in a slot six lines tall. */
   min-width:340px;min-height:200px;
-  transition:border-color var(--fast) var(--ease);
-  animation:materialize var(--base) var(--ease)}
+  transition:border-color var(--fast) var(--ease),box-shadow var(--fast) var(--ease),transform var(--fast) var(--ease);
+  animation:materialize var(--slow) var(--ease)}
 @keyframes materialize{from{opacity:0;scale:.985;translate:0 8px}}
 .win:hover{border-color:var(--edge-strong)}
 .win.asleep{opacity:.72}
 .win.role-king{border-color:rgba(240,201,125,.28)}
 /* Focused pane: the accent edge reads THROUGH the glass rather than being
    swallowed by an opaque fill. */
-.win.focus{border-color:color-mix(in srgb,var(--accent) 34%,var(--edge-strong));
-  box-shadow:var(--lift),var(--sheen),0 0 0 1px color-mix(in srgb,var(--accent) 14%,transparent)}
+.win.focus{border-color:color-mix(in srgb,var(--accent) 40%,var(--edge-strong));
+  box-shadow:var(--lift),var(--sheen),0 0 0 1px color-mix(in srgb,var(--accent) 18%,transparent);
+  transform:translateY(-1px)}
 
 /* Working: a light travelling along the pane's top edge, for as long as the
    member is mid-turn. Indeterminate on purpose — a turn has no percentage, and
@@ -380,22 +369,22 @@ body.has-bg #bg::after{opacity:var(--bg-dim,.5)}
    "is anything happening", which is the question you ask of a court of six from
    across the room while doing something else. The status word beside the name
    still says WHAT, in text, for anyone reading rather than glancing. */
-.win.working::after{content:"";position:absolute;top:0;left:0;right:0;height:2px;
-  pointer-events:none;z-index:2;
+.win.working::after{content:"";position:absolute;top:0;left:0;right:0;height:2.5px;
+  pointer-events:none;z-index:2;backdrop-filter:blur(2px);
   background:linear-gradient(90deg,transparent,var(--accent),transparent) no-repeat;
   background-size:38% 100%;
-  animation:sweep 1.9s linear infinite;opacity:.85}
+  animation:sweep 1.9s linear infinite;opacity:.9}
 @keyframes sweep{from{background-position:-45% 0}to{background-position:145% 0}}
 
 /* The titlebar catches the light — a diagonal sweep rather than a flat wash,
    which is what stops a row of panes looking like printed rectangles. */
 .win>.bar{flex:none;display:flex;align-items:center;gap:var(--s1);
-  min-height:42px;padding:0 var(--s2) 0 var(--s4);
+  min-height:46px;padding:0 var(--s2) 0 var(--s4);
   border-bottom:1px solid var(--edge);cursor:move;
-  background:linear-gradient(150deg,rgba(255,255,255,.10),rgba(255,255,255,.02) 55%)}
+  background:linear-gradient(145deg,rgba(255,255,255,.10),rgba(255,255,255,.02) 65%)}
 /* The king's plaque is gilded. Nothing else in the app gets this. */
 .win.role-king>.bar{border-bottom-color:var(--gold-edge);
-  background:linear-gradient(150deg,rgba(240,201,125,.13),rgba(255,255,255,.02) 58%)}
+  background:linear-gradient(145deg,rgba(240,201,125,.14),rgba(255,255,255,.02) 65%)}
 /* The titlebar is a plaque, not a strip: the name is cut into it in the
    display serif, and the band is tall enough to be read as a nameplate on the
    front of the pane rather than as a row of controls above it. */
@@ -410,7 +399,7 @@ body.has-bg #bg::after{opacity:var(--bg-dim,.5)}
 .win.role-king>.bar::before{background:var(--crown);box-shadow:0 0 6px var(--crown)}
 .win.member>.bar::before{display:none}
 .win>.bar .av{margin-right:var(--s1)}
-.win .stat{font-family:var(--mono);font-size:10px;color:var(--faint);
+.win .stat{font-family:var(--mono);font-size:var(--t-micro);color:var(--faint);
   letter-spacing:-.01em;white-space:nowrap;opacity:.75}
 /* Close is created with the frame but build() appends its buttons afterwards,
    so in DOM order close comes first. It belongs last — rightmost, as in every
@@ -424,7 +413,7 @@ body.has-bg #bg::after{opacity:var(--bg-dim,.5)}
 
 /* Body. Air on all four sides, and a faint floor of its own so body text is
    not fighting the wallpaper directly. */
-.win .log{flex:1;overflow-y:auto;padding:var(--s4) var(--s5) var(--s4) var(--s4);
+.win .log{flex:1;overflow-y:auto;padding:var(--s4);
   font:400 12.5px/1.65 var(--mono);user-select:text;scrollbar-width:thin;
   scrollbar-color:rgba(255,255,255,.14) transparent;
   background:linear-gradient(rgba(0,0,0,.10),rgba(0,0,0,.22))}
@@ -433,7 +422,7 @@ body.has-bg #bg::after{opacity:var(--bg-dim,.5)}
 /* A card the size of the stage containing nothing at all was the single most
    damning thing in the first screenshot that ever rendered. */
 .win .log:empty{display:flex;align-items:center;justify-content:center}
-.win .log:empty::after{content:"Nothing from " attr(data-who) " yet — prompt them below.";
+.win .log:empty::after{content:"Nothing from " attr(data-who) " yet — message them below.";
   color:var(--faint);font:400 var(--t-sm)/1.6 var(--ui);text-align:center;
   max-width:34ch;opacity:.8}
 
@@ -507,24 +496,25 @@ body.has-bg #bg::after{opacity:var(--bg-dim,.5)}
 .model.custom{max-width:150px}
 .model option,.model optgroup{background:#141a24;color:var(--ink)}
 
-/* ---------- a face per member ----------
-   Colour comes from the name, so it is stable everywhere and free. Before this
-   every member was a grey word beside a grey dot, and the roster read as a list
-   of strings rather than as people. */
-.av{--av:22px;position:relative;flex:none;width:var(--av);height:var(--av);
-  border-radius:calc(var(--av) * .3);display:grid;place-items:center;
-  font:600 calc(var(--av) * .44)/1 var(--ui);letter-spacing:.02em;
-  color:hsl(var(--h) 62% 80%);background:hsl(var(--h) 40% 24%);
-  box-shadow:inset 0 0 0 1px hsl(var(--h) 42% 36%)}
-.av.crown{color:#2a1e07;background:var(--crown);
-  box-shadow:inset 0 0 0 1px rgba(255,255,255,.25),0 0 12px -2px rgba(240,201,125,.5)}
-/* State rides the face: one element, both questions answered. */
-.av i{position:absolute;right:-2px;bottom:-2px;width:8px;height:8px;border-radius:50%;
+/* ---------- the state light per member ----------
+   This used to be a hue-derived monogram disc with the state dot pinned to its
+   corner. The disc was removed on the sovereign's instruction; the dot was
+   never decoration and stays. It is now the whole element rather than a badge
+   on one, so the offsets and the ring that lifted it off the disc are gone —
+   but every state rule below is untouched, because each answers a question the
+   rail cannot answer any other way. */
+.av{flex:none;position:relative;width:8px;height:8px}
+.av i{position:absolute;inset:0;border-radius:50%;
   background:#39414f;box-shadow:0 0 0 2px var(--glass);
   transition:background var(--base) var(--ease),box-shadow var(--base) var(--ease)}
 .rail-row.awake .av i,.win:not(.asleep)>.bar .av i,.who-id.awake .av i{
   background:var(--accent);box-shadow:0 0 0 2px var(--glass),0 0 7px var(--accent)}
-.rail-row.serving:not(.awake) .av i{background:transparent;
+/* Resting is "in the crew, not awake, not broken" — a hollow ring, present but
+   unlit. `:not(.dead)` is load-bearing: a member that died is still `serving`,
+   and this selector carries one more class than the dead rule below, so it won
+   the tie and painted a failed member as quietly resting. Measured in the
+   renderer: class `rail-row serving dead` resolved to the ring, not to red. */
+.rail-row.serving:not(.awake):not(.dead) .av i{background:transparent;
   box-shadow:0 0 0 2px var(--glass),inset 0 0 0 1.5px color-mix(in srgb,var(--accent) 60%,transparent)}
 .rail-row.dead .av i{background:var(--danger);box-shadow:0 0 0 2px var(--glass),0 0 7px var(--danger)}
 /* Busy is the one state worth animating: it is the difference between waiting
@@ -546,7 +536,7 @@ body.has-bg #bg::after{opacity:var(--bg-dim,.5)}
 .approval{background:rgba(12,16,24,.86);backdrop-filter:var(--frost);
   -webkit-backdrop-filter:var(--frost);border:1px solid var(--edge-strong);
   border-radius:var(--r-lg);padding:var(--s3) var(--s4);box-shadow:var(--lift),var(--sheen);
-  animation:rise var(--base) var(--ease)}
+  animation:rise var(--slow) var(--ease)}
 .approval summary{cursor:pointer;font-size:var(--t-sm);list-style:none}
 .approval summary::-webkit-details-marker{display:none}
 .approval summary .who{color:var(--crown)}
@@ -555,7 +545,7 @@ body.has-bg #bg::after{opacity:var(--bg-dim,.5)}
   margin-top:var(--s2);max-height:180px;overflow:auto;white-space:pre-wrap}
 .approval .btns{display:flex;gap:var(--s2);margin-top:var(--s3)}
 .approval button{border:1px solid var(--edge-strong);border-radius:var(--r-sm);
-  padding:var(--s1) var(--s3);font-size:var(--t-sm)}
+  padding:var(--s2) var(--s4);font-size:var(--t-sm);font-weight:600}
 .approval .go{color:var(--accent);border-color:rgba(69,236,198,.45)}
 .approval .go:hover{background:rgba(69,236,198,.12)}
 .approval .no{color:var(--dim)}
@@ -563,12 +553,26 @@ body.has-bg #bg::after{opacity:var(--bg-dim,.5)}
 
 /* ---------- toast ---------- */
 #toast{position:absolute;left:50%;translate:-50% 0;bottom:var(--s4);z-index:40;
-  display:flex;flex-direction:column;gap:var(--s2);align-items:center;pointer-events:none}
-#toast div{background:rgba(12,16,24,.86);backdrop-filter:var(--frost-lite);
+  display:flex;flex-direction:column;gap:var(--s2);align-items:center;pointer-events:none;max-width:480px}
+#toast div{background:rgba(12,16,24,.88);backdrop-filter:var(--frost-lite);
   -webkit-backdrop-filter:var(--frost-lite);border:1px solid var(--edge);
-  border-radius:999px;padding:var(--s2) var(--s4);font-size:var(--t-sm);
+  border-radius:999px;padding:var(--s2) var(--s5);font-size:var(--t-sm);
   box-shadow:var(--lift),var(--sheen);animation:rise var(--base) var(--ease)}
-#toast div.bad{border-color:rgba(255,133,133,.45);color:var(--danger)}
+#toast div.bad{border-color:rgba(255,133,133,.45);color:var(--danger);
+  box-shadow:var(--lift),var(--sheen),0 0 16px -4px rgba(255,133,133,.3)}
+/* A toast carrying an action is the only clickable one, so the whole strip has
+   to accept the pointer again — #toast itself is pointer-events:none so that a
+   notice never eats a click meant for the canvas underneath.
+   And it stops being a pill. The 999px radius above is right for one line of
+   text; with a sentence and a button beside it the toast wraps, and a 999px
+   radius on a five-line box draws a circle with the words crushed inside it. */
+#toast div:has(.undo){pointer-events:auto;border-radius:var(--r-xl);
+  display:flex;align-items:center;gap:var(--s3);padding:var(--s2) var(--s3) var(--s2) var(--s4);
+  text-align:left}
+#toast .undo{flex:none;color:var(--accent);font-size:var(--t-sm);
+  padding:3px var(--s3);border-radius:999px;white-space:nowrap;
+  box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent) 40%,transparent)}
+#toast .undo:hover{background:color-mix(in srgb,var(--accent) 16%,transparent)}
 @keyframes rise{from{opacity:0;translate:0 8px}}
 
 /* ---------- command palette ---------- */
@@ -595,14 +599,16 @@ body.has-bg #bg::after{opacity:var(--bg-dim,.5)}
 .win .log.settings{font-family:var(--ui);font-size:var(--t-sm);line-height:1.55;
   padding:var(--s4) var(--s5) var(--s4) var(--s4)}
 .srow{display:flex;align-items:center;justify-content:space-between;gap:var(--s3);
-  padding:var(--s3) 0;border-bottom:1px solid var(--edge);cursor:pointer}
+  padding:var(--s3) var(--s2);border-bottom:1px solid var(--edge);cursor:pointer;
+  border-radius:var(--r-sm);transition:background var(--fast) var(--ease)}
+.srow:hover{background:var(--glass-raised)}
 .srow:last-child{border-bottom:0}
 .srow>span{display:flex;flex-direction:column;gap:2px;min-width:0}
 .srow em{font-style:normal;font-size:var(--t-micro);color:var(--faint);line-height:1.4}
 .srow.tick>span{font-family:var(--mono);font-size:var(--t-micro);color:var(--dim)}
-.srow input[type=checkbox]{flex:none;width:16px;height:16px;accent-color:var(--accent);cursor:pointer}
+.srow input[type=checkbox]{flex:none;width:18px;height:18px;accent-color:var(--accent);cursor:pointer}
 .srow select{flex:none;max-width:52%}
-.shead{margin-top:var(--s4);padding-bottom:var(--s2);border-bottom:1px solid var(--edge-strong);
+.shead{margin-top:var(--s5);padding-bottom:var(--s2);border-bottom:1px solid var(--edge-strong);
   font-weight:600;display:flex;flex-direction:column;gap:2px}
 .shead em{font-style:normal;font-weight:400;font-size:var(--t-micro);color:var(--faint);line-height:1.4}
 
@@ -666,18 +672,20 @@ body.has-bg #bg::after{opacity:var(--bg-dim,.5)}
 ::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,.24);background-clip:content-box}
 
 /* ---------- metrics ---------- */
-.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(84px,1fr));
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(88px,1fr));
   gap:var(--s2);padding:var(--s2) 0 var(--s3)}
 .stat-cell{background:var(--glass-raised);border:1px solid var(--edge);
-  border-radius:var(--r-md);padding:var(--s3) var(--s3) var(--s2);min-width:0}
+  border-radius:var(--r-md);padding:var(--s4) var(--s3) var(--s3);min-width:0;
+  transition:border-color var(--fast) var(--ease),transform var(--fast) var(--ease)}
+.stat-cell:hover{border-color:var(--edge-strong);transform:translateY(-1px)}
 .stat-cell .v{font:600 var(--t-lg)/1.1 var(--mono);color:var(--ink);
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .stat-cell .k{font-size:var(--t-micro);color:var(--faint);letter-spacing:.06em;
-  text-transform:uppercase;margin-top:3px}
+  text-transform:uppercase;margin-top:4px}
 .stat-cell .sub{font-size:var(--t-micro);color:var(--dim);margin-top:2px;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
-.meter{height:4px;border-radius:99px;background:var(--glass-raised);overflow:hidden;
+.meter{height:5px;border-radius:99px;background:var(--glass-raised);overflow:hidden;
   margin-bottom:var(--s2)}
 .meter i{display:block;height:100%;background:var(--accent);border-radius:99px;
   transition:width var(--base) var(--ease)}
@@ -787,7 +795,10 @@ pre.diff .del{background:rgba(255,133,133,.08)}
 .tool[data-tool="power"]{margin-left:var(--s1);border-left:1px solid var(--edge);
   padding-left:var(--s3);border-radius:0 var(--r-sm) var(--r-sm) 0}
 .tool[data-tool="power"]:hover{color:var(--danger)}
-/* Armed: the next click ends the court. Red and pulsing, not subtle. */
+/* Armed: the next click ends the court. Red and pulsing, not subtle.
+   `blip` used to be declared beside the rail's `.dot`, which is gone — it lives
+   here now, with its only remaining user. */
+@keyframes blip{50%{opacity:.35}}
 .tool.arm{color:var(--danger);background:rgba(255,133,133,.14);
   animation:blip .8s var(--ease) infinite}
 /* Approvals are the sovereign's own business, so the badge is gold. */
@@ -822,7 +833,9 @@ pre.diff .del{background:rgba(255,133,133,.08)}
   flex:0 1 auto;min-width:8ch;max-width:38ch;
   padding:var(--s1) var(--s3);border-radius:99px;
   border:1px solid var(--gold-edge);background:var(--gold-wash);
-  color:var(--dim);font-size:var(--t-sm)}
+  backdrop-filter:var(--frost-lite);-webkit-backdrop-filter:var(--frost-lite);
+  box-shadow:inset 0 1px 0 rgba(240,201,125,.15);
+  color:var(--dim);font-size:var(--t-sm);transition:border-color var(--fast) var(--ease),color var(--fast) var(--ease)}
 /* `display:flex` above outranks the UA's [hidden] rule, so with no goal set an
    empty 26px pill sat in the header doing nothing. */
 .goalbar[hidden]{display:none}
@@ -841,6 +854,12 @@ pre.diff .del{background:rgba(255,133,133,.08)}
    truncated when it was not. Quieter ink says the same thing without lying. */
 .goalbar.unset .gtext{color:var(--faint)}
 .goalbar.unset:hover .gtext{color:var(--dim)}
+
+.goal-progress{display:flex;align-items:center;gap:var(--s3);margin:var(--s2) 0 var(--s3)}
+.gp-bar{flex:1;height:6px;background:rgba(255,255,255,.08);border-radius:99px;overflow:hidden}
+.gp-bar i{display:block;height:100%;background:linear-gradient(90deg,var(--crown),var(--accent));
+  border-radius:99px;transition:width var(--base) var(--ease)}
+.gp-label{font-size:var(--t-micro);color:var(--faint);white-space:nowrap}
 
 .srow.ms .mtext{overflow-wrap:anywhere}
 .srow.ms.done .mtext{color:var(--faint);text-decoration:line-through}
@@ -908,12 +927,25 @@ input.msnew:focus{border-color:var(--accent)}
    inline styles are the thing being overridden), so switching back restores
    the arrangement untouched. The class name stays `board` for the same reason
    the localStorage key does: renaming a label is not renaming a state. */
-.mode{display:flex;align-items:center;gap:2px;padding:2px;border-radius:var(--r-md);
+.layout,.court-mode{display:flex;align-items:center;gap:2px;padding:2px;border-radius:var(--r-md);
   background:rgba(0,0,0,.24);border:1px solid var(--edge);flex:none}
-.mode button{font-size:11px;color:var(--faint);padding:3px var(--s3);border-radius:var(--r-sm);
-  letter-spacing:.01em}
-.mode button:hover{color:var(--ink)}
-.mode button.on{color:var(--ink);background:var(--glass-raised);box-shadow:var(--sheen)}
+.layout button,.court-mode button{font-size:11px;color:var(--faint);
+  padding:3px var(--s3);border-radius:var(--r-sm);letter-spacing:.01em}
+.layout button:hover,.court-mode button:hover{color:var(--ink)}
+.layout button.on,.court-mode button.on{color:var(--ink);background:var(--glass-raised);
+  box-shadow:var(--sheen)}
+
+/* What the court is doing carries more weight than how the panels are stacked,
+   so the selected one is tinted rather than only lifted — but with --accent and
+   never --crown, which is the sovereign's alone. */
+.court-mode button.on{color:var(--accent);
+  background:color-mix(in srgb,var(--accent) 14%,var(--glass-raised))}
+/* Chosen but not yet in force: a member is mid-turn and the flip is held until
+   it finishes. Shown rather than hidden, because otherwise pressing the button
+   appears to do nothing. */
+.court-mode button.pending{color:var(--accent);opacity:.62;
+  box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent) 45%,transparent)}
+.court-mode button.pending::after{content:'…';margin-left:2px}
 
 #stage.board #surface{pointer-events:none;cursor:default}
 #stage.board #windows{position:absolute;inset:0;
@@ -928,19 +960,17 @@ input.msnew:focus{border-color:var(--accent)}
   width:auto!important;height:auto!important;
   min-width:0;min-height:0;resize:none}
 #stage.board .win>.bar{cursor:default}
-/* An empty hall must say so — an empty grid is indistinguishable from a broken
-   one. `white-space:normal` and a max-width are load-bearing: as a single
-   unwrapped line in a 360px grid column the sentence was clipped mid-word
-   ("Pick a member from the"). */
-#stage.board #windows:empty::after{
-  content:"The hall is yours. Open a member from the court, or summon someone new.";
-  grid-column:1/-1;align-self:end;justify-self:center;margin-bottom:4vh;
-  max-width:34ch;white-space:normal;text-align:center;line-height:1.7;
-  color:var(--faint);font:400 var(--t-base)/1.7 var(--display);letter-spacing:.01em}
+/* An empty grid used to carry a sentence here telling you to pick someone. The
+   Overview says the same thing and answers four more questions besides, so the
+   sentence went and the layer behind shows through instead — but only if this
+   stops swallowing clicks. In Grid mode #windows covers the whole stage and
+   takes pointer events, which sat on top of the Overview at z-index 0 and made
+   every row in it dead. Empty grid, no grid. */
+#stage.board #windows:empty{pointer-events:none}
 
 /* ---------- who: the member card on the right ----------
    The rail says a member exists. This says what it is for. */
-.who{flex:none;width:264px;display:flex;flex-direction:column;min-height:0;
+.who{flex:none;width:280px;display:flex;flex-direction:column;min-height:0;
   background:rgba(9,12,18,.76);backdrop-filter:var(--frost);
   -webkit-backdrop-filter:var(--frost);
   border-left:1px solid var(--edge);position:relative;z-index:15}
@@ -951,18 +981,28 @@ body.who-collapsed .who{display:none}
 .who-empty{color:var(--faint);font-size:var(--t-sm);line-height:1.6;padding:var(--s3) 0}
 
 .who-id{display:flex;align-items:center;gap:var(--s3);
-  font:600 var(--t-xl)/1.15 var(--display);letter-spacing:.01em}
+  font:600 var(--t-xxl)/1.15 var(--display);letter-spacing:.01em;flex-wrap:wrap}
 .who-id .rl{margin-left:auto;font:600 10.5px/1 var(--display);letter-spacing:.2em;
   text-transform:uppercase;color:var(--faint)}
+.who-cat{width:100%;font:600 9.5px/1 var(--mono);padding:4px 9px;border-radius:99px;
+  background:rgba(255,255,255,.08);color:var(--dim);border:1px solid var(--edge);
+  letter-spacing:.03em;text-transform:uppercase;margin-top:2px}
+.who-cat[data-cat="discovery"]{background:rgba(69,180,236,.12);color:#70cbf8;border-color:rgba(69,180,236,.25)}
+.who-cat[data-cat="craft"]{background:rgba(69,236,198,.12);color:var(--accent);border-color:rgba(69,236,198,.25)}
+.who-cat[data-cat="verification"]{background:rgba(240,201,125,.12);color:var(--crown);border-color:rgba(240,201,125,.25)}
+.who-cat[data-cat="security-ops"]{background:rgba(255,133,133,.12);color:var(--danger);border-color:rgba(255,133,133,.25)}
+.who-cat[data-cat="knowledge"]{background:rgba(180,140,240,.12);color:#c8a4f8;border-color:rgba(180,140,240,.25)}
 .who-id.role-king{color:var(--crown)}
 .who-id.role-king .rl{color:rgba(240,201,125,.7)}
-.who-id.awake .dot{background:var(--accent);box-shadow:0 0 7px var(--accent)}
-.who-id.role-king.awake .dot{background:var(--crown);box-shadow:0 0 7px var(--crown)}
+/* The awake case is already covered by the shared `.who-id.awake .av i` rule.
+   Only the throne's gold is special here — the one place the crown's colour
+   still lands now that the gilded disc is gone. */
+.who-id.role-king.awake .av i{background:var(--crown);box-shadow:0 0 7px var(--crown)}
 .who-title{font-size:var(--t-sm);color:var(--faint);margin-top:var(--s2)}
 .who-desc{font-size:var(--t-sm);color:var(--dim);line-height:1.6;margin-top:var(--s3);
   padding-top:var(--s3);border-top:1px solid var(--edge);overflow-wrap:anywhere}
 
-.who-facts{display:grid;grid-template-columns:auto 1fr;gap:var(--s2) var(--s3);
+.who-facts{display:grid;grid-template-columns:auto 1fr;gap:var(--s3) var(--s4);
   margin-top:var(--s3);padding-top:var(--s3);border-top:1px solid var(--edge);
   font-size:var(--t-micro);align-items:baseline}
 .who-facts dt{color:var(--faint);letter-spacing:.04em;white-space:nowrap}
@@ -1064,68 +1104,74 @@ body.rail-collapsed .summon-btn::after{content:"+";font-size:15px;line-height:1}
    width the grid gives it — a viewport media query would be measuring the
    wrong box. */
 .win.summon .log{padding:0 0 var(--s2);font-family:var(--ui);container-type:inline-size}
-/* Under ~380px the model name is what breaks the row: it holds a fixed ~90px
-   of column 2, which squeezed "accessibility-engineer" into two lines and its
-   title down to "A…". A recruit screen is scanned by name and skill; which
-   model the role happens to run on is the last thing you need here. */
-@container (max-width:380px){.sum-model{display:none}}
+.sum-cat-tabs{display:flex;gap:var(--s1);padding:var(--s2) var(--s3);overflow-x:auto;
+  border-bottom:1px solid var(--edge);background:rgba(0,0,0,.18);flex-wrap:wrap}
+.sum-cat-tab{font:500 11px/1.4 var(--ui);color:var(--faint);background:none;border:1px solid transparent;
+  padding:4px 10px;border-radius:99px;cursor:pointer;transition:all var(--fast) var(--ease)}
+.sum-cat-tab:hover{color:var(--ink);background:var(--glass-raised)}
+.sum-cat-tab.on{color:var(--crown);background:var(--gold-wash);border-color:var(--gold-edge);font-weight:600}
+
+@container (max-width:420px){.sum-model{display:none}}
 .sum-row{
-  display:grid;grid-template-columns:1fr auto;gap:2px var(--s3);
-  width:100%;text-align:left;padding:var(--s2) var(--s3);
+  display:grid;grid-template-columns:auto 1fr auto;gap:var(--s2) var(--s3);align-items:center;
+  width:100%;text-align:left;padding:var(--s3) var(--s4);
   background:none;border:0;border-radius:var(--r-md);color:var(--dim);
-  cursor:pointer;transition:background var(--fast) var(--ease);
+  cursor:pointer;transition:background var(--fast) var(--ease),transform var(--fast) var(--ease);
 }
-.sum-row:hover{background:var(--glass-raised);color:var(--ink)}
-.sum-main{display:flex;align-items:baseline;gap:var(--s2);min-width:0}
-/* Clipped, never wrapped. Every role name in the stock config is hyphenated
-   ("ai-safety-officer"), and a wrapping name breaks at every hyphen — three
-   lines for one name, so a list of twenty is unscannable. */
+.sum-row:hover{background:var(--glass-raised);color:var(--ink);transform:translateX(2px)}
+.sum-row.in{border-left:2px solid var(--accent)}
+.sum-content{min-width:0;display:flex;flex-direction:column;gap:2px}
+.sum-main{display:flex;align-items:baseline;gap:var(--s2);min-width:0;flex-wrap:wrap}
 .sum-name{color:var(--ink);font:600 var(--t-md)/1.25 var(--display);letter-spacing:.01em;
-  flex:0 1 auto;min-width:7ch;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sum-row.in .sum-name{color:var(--accent)}
-.sum-title{color:var(--faint);font-size:var(--t-sm);white-space:nowrap;
-  overflow:hidden;text-overflow:ellipsis}
-/* Two lines of description, then clipped. The roster's descriptions run to a
-   paragraph and a recruit list has to stay scannable. */
-.sum-desc{
-  grid-column:1;color:var(--faint);font-size:var(--t-sm);line-height:1.4;
-  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden
-}
-.sum-meta{grid-column:2;grid-row:1 / span 2;display:flex;align-items:center;gap:var(--s2)}
+.sum-title{color:var(--faint);font-size:var(--t-sm);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sum-cat{font:600 9.5px/1 var(--mono);padding:2px 6px;border-radius:99px;
+  background:rgba(255,255,255,.07);color:var(--dim);border:1px solid var(--edge);text-transform:uppercase}
+.sum-desc{color:var(--faint);font-size:var(--t-sm);line-height:1.4;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.sum-meta{display:flex;align-items:center;gap:var(--s2);flex:none}
 .sum-model{color:var(--faint);font-size:var(--t-micro);font-family:var(--mono)}
-/* The verb only appears under the cursor: 105 rows each shouting "Summon" is
-   the same wallpaper problem the rail had, one word further along. */
 .sum-act{
   font-size:var(--t-micro);font-weight:600;letter-spacing:.04em;text-transform:uppercase;
-  padding:3px var(--s2);border-radius:var(--r-sm);
+  padding:4px var(--s2);border-radius:var(--r-sm);
   border:1px solid var(--edge-strong);color:var(--faint);
-  opacity:0;transition:opacity var(--fast) var(--ease);
+  opacity:0;transform:scale(.95);
+  transition:opacity var(--fast) var(--ease),background var(--fast) var(--ease),transform var(--fast) var(--ease);
 }
-.sum-row:hover .sum-act{opacity:1;color:var(--accent-ink);background:var(--accent);border-color:transparent}
-.sum-row.in:hover .sum-act{color:var(--accent-ink);background:var(--danger)}
-/* A click that has been sent but not yet confirmed by the server. Reads as
-   "heard you", never as "done". */
+.sum-row:hover .sum-act{opacity:1;transform:scale(1);color:var(--accent-ink);background:var(--accent);border-color:transparent}
+.sum-row.in:hover .sum-act{color:#fff;background:var(--danger)}
 .sum-row.pending{opacity:.6;cursor:default}
-.sum-row.pending .sum-act{opacity:1;background:none;border-color:var(--edge-strong);color:var(--faint)}
+.sum-row.pending .sum-act{opacity:1;transform:scale(1);background:none;border-color:var(--edge-strong);color:var(--faint)}
 
-/* ---------- the empty court ----------
- * Shown whenever nobody is summoned and no goal is set. Sits behind the panels
- * rather than over them: it is guidance, not a modal, and it must never be a
- * thing you have to dismiss before you can work. */
-#firstrun{
+/* ---------- the overview: the floor of the room ----------
+ * Sits behind the panels rather than over them: it is the ground you land on
+ * when nothing is open, never a thing you have to dismiss before you can work.
+ * Two states share the layer — the three-step empty state (centred, flex) and
+ * the five live blocks (a grid) — because both answer the same question and
+ * only one of them can be true at a time.
+ *
+ * In Grid mode it steps aside once a panel is open: the grid fills the stage
+ * and covers most of it anyway, and a half-visible Overview under an opaque
+ * grid reads as a rendering fault. In Canvas mode it stays — #windows there is
+ * pointer-events:none, so the floor keeps working under floating panels. */
+#overview{
   position:absolute;inset:0;display:flex;flex-direction:column;
   align-items:center;justify-content:center;gap:var(--s2);
   pointer-events:none;z-index:0;padding:var(--s6);text-align:center;
 }
-#firstrun[hidden]{display:none}
-#firstrun h1{
-  font:600 32px/1.15 var(--display);color:var(--ink);letter-spacing:.005em;
+#overview[hidden]{display:none}
+#stage.board:has(.win) #overview{display:none}
+#overview h1{
+  font:600 32px/1.15 var(--display);color:var(--ink);letter-spacing:-.01em;
   margin-bottom:var(--s2);
   /* The one place gold is used at size: this is the throne addressing you. */
   background:linear-gradient(180deg,var(--ink),rgba(240,201,125,.85));
   -webkit-background-clip:text;background-clip:text;color:transparent;
 }
-#firstrun p{color:var(--faint);font-size:var(--t-base);margin-bottom:var(--s4)}
+/* Scoped to the empty state: the live blocks have their own paragraphs, and a
+   16px bottom margin under every one of them opened gaps inside the cards. */
+#overview:not(.ov) p{color:var(--faint);font-size:var(--t-base);margin-bottom:var(--s4)}
 .fr-step{
   pointer-events:auto;                 /* the text is scenery, the steps are not */
   display:grid;grid-template-columns:auto 1fr;gap:0 var(--s3);
@@ -1138,7 +1184,7 @@ body.rail-collapsed .summon-btn::after{content:"+";font-size:15px;line-height:1}
   transition:border-color var(--fast) var(--ease),transform var(--fast) var(--ease),
              box-shadow var(--fast) var(--ease);
 }
-.fr-step:hover{border-color:var(--edge-strong);transform:translateY(-2px);
+.fr-step:hover{border-color:var(--edge-strong);transform:translateY(-3px);
   box-shadow:var(--sheen),0 14px 30px -18px rgba(0,0,0,.9)}
 .fr-n{
   grid-row:1 / span 2;align-self:center;
@@ -1148,6 +1194,66 @@ body.rail-collapsed .summon-btn::after{content:"+";font-size:15px;line-height:1}
 }
 .fr-label{color:var(--ink);font-weight:600}
 .fr-hint{color:var(--faint);font-size:var(--t-sm)}
+
+/* The five live blocks. Deliberately NOT built from the glass recipe: they are
+   the floor, and panels are the things that float in front of it. Given the
+   same fill and blur as a .win they competed with the panels for depth and the
+   room lost its front-to-back order. A hairline top rule and an engraved
+   heading is enough structure — the readability comes from the scrim
+   assets.js already maintains under the wallpaper. */
+#overview.ov{display:block;overflow-y:auto;
+  padding:var(--s5) var(--s5) var(--s6);text-align:left;scrollbar-width:thin}
+.ov-grid{display:grid;gap:var(--s5) var(--s5);align-content:start;
+  max-width:1080px;margin:0 auto;
+  grid-template-columns:repeat(auto-fit,minmax(min(280px,100%),1fr))}
+/* The objective is the thing everything else is in service of, so it gets the
+   full width and the top of the page rather than a quarter of a row. */
+.ov-objective{grid-column:1/-1}
+.ov-block{
+  pointer-events:auto;                 /* the layer is scenery, the blocks are not */
+  display:flex;flex-direction:column;gap:var(--s2);min-width:0;
+  padding-top:var(--s2);border-top:1px solid var(--edge);
+  max-height:40vh;overflow-y:auto;scrollbar-width:thin;
+}
+.ov-head{display:flex;align-items:baseline;gap:var(--s2);margin-bottom:var(--s1)}
+.ov-count{color:var(--accent);font-size:var(--t-sm)}
+.ov-empty{color:var(--faint);font-size:var(--t-sm);line-height:1.6;max-width:44ch}
+.ov-note,.ov-more{color:var(--faint);font-size:var(--t-sm);opacity:.8}
+.ov-cta{align-self:flex-start;padding:var(--s2) var(--s3);border-radius:var(--r-sm);
+  border:1px solid var(--edge-strong);color:var(--dim);cursor:pointer}
+.ov-cta:hover{color:var(--accent);border-color:var(--accent)}
+.ov-goal{font:400 var(--t-lg)/1.4 var(--display);color:var(--ink);cursor:pointer;max-width:60ch}
+.ov-goal:hover{color:var(--crown)}
+.ov-next{color:var(--dim);font-size:var(--t-sm)}
+
+/* One row shape for all four lists: a grid rather than flex so the state word
+   and the name line up down the column instead of tracking the text above. */
+.ov-task,.ov-agent,.ov-ask,.ov-change{
+  display:grid;grid-template-columns:auto 1fr auto;align-items:baseline;
+  gap:var(--s1) var(--s3);width:100%;text-align:left;
+  padding:var(--s2) 0;border-bottom:1px solid rgba(255,255,255,.05);
+  color:var(--dim);font-size:var(--t-sm);
+}
+.ov-agent,.ov-ask,.ov-change{cursor:pointer}
+.ov-agent:hover,.ov-ask:hover,.ov-change:hover{color:var(--ink)}
+.ov-task-state,.ov-agent-status,.ov-ask-kind{
+  font-size:var(--t-sm);letter-spacing:.06em;text-transform:uppercase;
+  font-family:var(--mono);color:var(--faint)}
+.state-blocked .ov-task-state{color:var(--danger)}
+.state-active .ov-task-state,.state-planning .ov-task-state{color:var(--accent)}
+.ov-task-title,.ov-agent-name{color:var(--ink);min-width:0;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ov-agent-name,.ov-change-who{font-family:var(--display)}
+.ov-task-who,.ov-change-files{color:var(--faint);font-size:var(--t-sm)}
+/* The summary spans the whole row underneath: at 214px in the rail it is a
+   fragment, and this is the one place with room for the sentence. */
+.ov-agent-sum{grid-column:1/-1;color:var(--faint);font-size:var(--t-sm);line-height:1.5}
+.ov-ask-kind{color:var(--crown)}          /* an approval is the sovereign's alone */
+.ov-ask.failed .ov-ask-kind{color:var(--danger)}
+.ov-ask-what,.ov-change-who{color:var(--ink)}
+.ov-change .ch{font-family:var(--mono);font-size:var(--t-sm);white-space:nowrap}
+.ov-change .ch .add{color:var(--accent);font-style:normal}
+.ov-change .ch .del{color:var(--danger);font-style:normal;margin-left:6px}
 
 /* ---------- fallbacks ---------- */
 /* backdrop-filter IS the effect. Without it every pane would be a

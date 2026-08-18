@@ -96,19 +96,35 @@ async function pick(reply, allowed) {
 
 /* ---------- 3. the rewrite must never replace the order with an answer ---- */
 {
-  says('Fix the login redirect on /auth/callback.');
+  says(JSON.stringify({ mode: 'code', brief: 'Fix the login redirect on /auth/callback.' }));
   const { engineerPrompt } = await import(`../src/advisor.js?e=${Math.random()}`);
   const short = await engineerPrompt({ cli: 'codex' }, 'login redirect broken', { cwd: dir });
-  a.equal(short, 'Fix the login redirect on /auth/callback.');
+  a.deepEqual(short, { text: 'Fix the login redirect on /auth/callback.', mode: 'code' });
 
   // A model that answers instead of rewriting produces something far longer
-  // than what it was given. Feeding that to the king as if the sovereign said
+  // than what it was given. Feeding that to the orchestrator as if the sovereign said
   // it would put an invented plan in their mouth.
   says('x'.repeat(4000));
   const { engineerPrompt: e2 } = await import(`../src/advisor.js?e2=${Math.random()}`);
   a.equal(await e2({ cli: 'codex' }, 'login redirect broken', { cwd: dir }), null,
     'a runaway rewrite must fall back to the original');
-  console.log('  rewrite accepted when brief, refused when it runs away');
+
+  // The schema is a request, not a guarantee. A model that answers in plain
+  // prose must still get its rewrite used — losing the classification costs a
+  // manual switch, losing the rewrite would put the wrong words in the court.
+  says('Fix the login redirect on /auth/callback.');
+  const { engineerPrompt: e3 } = await import(`../src/advisor.js?e3=${Math.random()}`);
+  a.deepEqual(await e3({ cli: 'codex' }, 'login redirect broken', { cwd: dir }),
+    { text: 'Fix the login redirect on /auth/callback.', mode: null },
+    'plain prose still rewrites; only the mode is lost');
+
+  // A mode nobody has heard of must not reach setMode.
+  says(JSON.stringify({ mode: 'yolo', brief: 'Fix it.' }));
+  const { engineerPrompt: e4 } = await import(`../src/advisor.js?e4=${Math.random()}`);
+  a.equal((await e4({ cli: 'codex' }, 'fix it', { cwd: dir })).mode, null,
+    'an invented mode is dropped, not passed on');
+
+  console.log('  rewrite accepted when brief, refused when it runs away; mode classified');
 }
 
 /* ---------- 4. a dead advisor must not stop the sovereign ---------------- */
@@ -126,7 +142,7 @@ async function pick(reply, allowed) {
   console.log('  crash and hang both degrade to "no advice" quickly');
 }
 
-/* ---------- 5. the money path: what actually reaches the king ------------ */
+/* ---------- 5. the money path: what actually reaches the orchestrator ------------ */
 // Everything above tests the advisor in isolation. This tests the only thing
 // that matters — that command() puts the RIGHT text on the bus.
 {
@@ -146,8 +162,8 @@ async function pick(reply, allowed) {
   const write = (advisor, auto = false) => writeFileSync(cfg, JSON.stringify({
     models: { codex: ['gpt-5.6-luna'] },
     efforts: { codex: ['low', 'medium'], byModel: { 'gpt-5.6-luna': ['low', 'medium'] } },
-    king: { name: 'king', cli: 'codex' },
-    jester: { name: 'jester', cli: 'codex' },
+    orchestrator: { name: 'orchestrator', cli: 'codex' },
+    briefer: { name: 'briefer', cli: 'codex' },
     peasants: [{ name: 'coder', cli: 'codex', description: 'writes code', ...(auto && { auto: true }) }],
     rolesSeeded: true,
     advisor,
@@ -156,7 +172,7 @@ async function pick(reply, allowed) {
   const sovereignSaid = (k) =>
     k.bus.history({ limit: 50 }).filter((m) => m.sender === 'sovereign').pop();
 
-  // (a) rewrite ON — the king reads the brief, but the original survives.
+  // (a) rewrite ON — the orchestrator reads the brief, but the original survives.
   says('Fix the double-charge race in the payment webhook handler.');
   write({ cli: 'codex', model: 'gpt-5.6-luna', promptEngineer: true, autoModel: false, allow: [] });
   let k = new Kingdom(repo, cfg);
@@ -164,7 +180,7 @@ async function pick(reply, allowed) {
   await k.start();
   await k.command('the payment thing charges twice sometimes');
   let posted = sovereignSaid(k);
-  a.match(posted.body, /double-charge race/, 'the king must receive the engineered brief');
+  a.match(posted.body, /double-charge race/, 'the orchestrator must receive the engineered brief');
   a.match(posted.body, /charges twice sometimes/,
     "the sovereign's own wording must still be on the bus for a successor to find");
   await k.stop();
@@ -204,7 +220,7 @@ async function pick(reply, allowed) {
 
   // Model selection no longer blocks the order — it only ever changes sleeping
   // members, and awaiting it put the advisor's 90s timeout between the
-  // sovereign pressing enter and the king hearing anything. So its complaint
+  // sovereign pressing enter and the orchestrator hearing anything. So its complaint
   // lands after command() has already returned. Wait for it rather than racing.
   await k.autoModelPending;   // deterministic: no polling, no race
   a.equal(warned.length, 2, 'each failing advisor job must complain exactly once');

@@ -44,40 +44,40 @@ writeFileSync(cfg, JSON.stringify({
   vault,
   maxKingdomUsd: 75,
   maxBudgetUsd: 5,
-  king: { name: 'king', cli: 'codex' },
-  jester: { name: 'jester', cli: 'codex' },
+  orchestrator: { name: 'orchestrator', cli: 'codex' },
+  briefer: { name: 'briefer', cli: 'codex' },
   peasants: [{ name: 'coder', cli: 'codex' }],
   rolesSeeded: true,
   advisor: { promptEngineer: false, autoModel: false },
 }));
 
 /* ---------- seed turn_end events BEFORE the daemon opens the bus ---------- */
-// Two threads' worth for the king: the counter climbs, then DROPS when the
+// Two threads' worth for the orchestrator: the counter climbs, then DROPS when the
 // session restarts. A sum would report 30+60+90+25+50 = 255k. The truth is
 // 90k from the first thread plus 50k from the second = 140k.
 {
   const bus = new Bus(dbPath(repo));
   const turn = (agent, input, ctx) => bus.logEvent(agent, 'turn_end',
     { usage: { input_tokens: input, output_tokens: Math.round(input / 100), cached_input_tokens: 0 }, ctx });
-  turn('king', 30_000, 10_000);
-  turn('king', 60_000, 20_000);
-  turn('king', 90_000, 30_000);
-  turn('king', 25_000, 8_000);     // <- recycled: a fresh thread, counter resets
-  turn('king', 50_000, 14_000);
+  turn('orchestrator', 30_000, 10_000);
+  turn('orchestrator', 60_000, 20_000);
+  turn('orchestrator', 90_000, 30_000);
+  turn('orchestrator', 25_000, 8_000);     // <- recycled: a fresh thread, counter resets
+  turn('orchestrator', 50_000, 14_000);
   turn('coder', 40_000, 12_000);
   bus.set('spentUsd', '3.50');
-  bus.set('spent:king', '2.00');
+  bus.set('spent:orchestrator', '2.00');
   // One good approval and two the throne room cannot render. The UI does
   // `TITLES[a.kind] ?? a.kind.toUpperCase()`, so an entry with no `kind` threw
   // and took the whole approvals pass down with it — including the pending one
   // the sovereign was waiting on. A bad row must cost only itself.
-  bus.post('king', null, JSON.stringify({ kind: 'summon', names: ['coder'], reason: 'work' }), 'approval');
-  bus.post('king', null, 'this is not json at all', 'approval');
-  bus.post('king', null, JSON.stringify({ reason: 'parses, but has no kind' }), 'approval');
+  bus.post('orchestrator', null, JSON.stringify({ kind: 'summon', names: ['coder'], reason: 'work' }), 'approval');
+  bus.post('orchestrator', null, 'this is not json at all', 'approval');
+  bus.post('orchestrator', null, JSON.stringify({ reason: 'parses, but has no kind' }), 'approval');
   // A task list the sovereign can see. #2 waits on #1, so the panel must be
   // able to distinguish "nobody has taken this" from "nobody CAN take it yet".
-  const t1 = bus.addTask({ title: 'write the parser', by: 'king' });
-  bus.addTask({ title: 'test the parser', needs: [t1], by: 'king' });
+  const t1 = bus.addTask({ title: 'write the parser', by: 'orchestrator' });
+  bus.addTask({ title: 'test the parser', needs: [t1], by: 'orchestrator' });
   bus.claimTask('coder', t1);
   bus.close();
 }
@@ -105,23 +105,23 @@ try {
   {
     const m = await get('/api/metrics');
     a.ok(m.ok);
-    const king = m.members.find((x) => x.name === 'king');
+    const orchestrator = m.members.find((x) => x.name === 'orchestrator');
 
-    a.equal(king.turns, 5, 'every turn is counted');
-    a.equal(king.in, 140_000,
+    a.equal(orchestrator.turns, 5, 'every turn is counted');
+    a.equal(orchestrator.in, 140_000,
       'input must be the sum of DELTAS (90k first thread + 50k after the restart), not 255k');
-    a.notEqual(king.in, 255_000, 'the naive sum is the bug this test exists for');
-    a.equal(king.ctx, 14_000, 'context is the LATEST reading, never a total');
-    a.equal(king.perTurn, 28_000, '140k over 5 turns');
-    a.equal(king.role, 'king');
-    a.equal(king.spent, 2);
+    a.notEqual(orchestrator.in, 255_000, 'the naive sum is the bug this test exists for');
+    a.equal(orchestrator.ctx, 14_000, 'context is the LATEST reading, never a total');
+    a.equal(orchestrator.perTurn, 28_000, '140k over 5 turns');
+    a.equal(orchestrator.role, 'orchestrator');
+    a.equal(orchestrator.spent, 2);
 
-    a.equal(m.total.turns, 6, 'king 5 + coder 1');
+    a.equal(m.total.turns, 6, 'orchestrator 5 + coder 1');
     a.equal(m.total.in, 180_000, '140k + 40k');
     a.equal(m.spent, 3.5);
     a.equal(m.cap, 75);
     a.equal(m.perMemberCap, 5);
-    console.log(`  metrics: king 5 turns -> ${king.in} in (a sum would have said 255000)`);
+    console.log(`  metrics: orchestrator 5 turns -> ${orchestrator.in} in (a sum would have said 255000)`);
   }
 
   /* ---------- 2. diff of real work ---------- */
@@ -152,12 +152,12 @@ try {
     a.match(one.diff, /new\.js/);
     a.ok(!one.diff.includes('const c = 3'), 'a single-file diff must not carry other files');
 
-    // Only peasants have worktrees; the king must not be diffable.
-    const k = await get('/api/diff?peasant=king');
+    // Only peasants have worktrees; the orchestrator must not be diffable.
+    const k = await get('/api/diff?peasant=orchestrator');
     a.equal(k.ok, false);
     const ghost = await get('/api/diff?peasant=nobody');
     a.equal(ghost.ok, false);
-    console.log('  diff: stat + patch, per-file view, king and unknowns refused');
+    console.log('  diff: stat + patch, per-file view, orchestrator and unknowns refused');
   }
 
   /* ---------- 2b. the chronicle ---------- */
@@ -170,9 +170,9 @@ try {
     bus.logEvent('tester', 'summary', { text: 'Ran the suite; two gates still red.' });
     bus.logEvent('coder', 'error', { message: 'ENOENT reading fixtures.json' });
     bus.post('coder', 'tester', 'Try the suite again now.');
-    bus.post('coder', 'king', 'Webhook work is finished.', 'done');
-    bus.post('king', null, 'ignore me', 'notice');        // machinery, not narrative
-    bus.post('king', null, '{"kind":"summon"}', 'approval');
+    bus.post('coder', 'orchestrator', 'Webhook work is finished.', 'done');
+    bus.post('orchestrator', null, 'ignore me', 'notice');        // machinery, not narrative
+    bus.post('orchestrator', null, '{"kind":"summon"}', 'approval');
     bus.close();
 
     const all = await get('/api/chronicle');

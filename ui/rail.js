@@ -7,30 +7,47 @@
 //
 // Same job, so the same shape of API the graph exposed: upsert, state, status,
 // size. Nothing here knows about the canvas.
-import { avatar } from './avatar.js';
+import { statusDot } from './avatar.js';
 import { arrive, depart, pulse } from './feel.js';
+import { displayName, roleGroup } from './names.js';
 
 const rows = new Map();     // name -> {el, role, state, status, ctx}
 let listEl, onOpen;
-const ORDER = { king: 0, jester: 1, peasant: 2 };
-const GROUP = { king: 'Throne', jester: 'Watch', peasant: 'Court' };
+const ORDER = { orchestrator: 0, briefer: 1, peasant: 2 };
 
 export function initRail(el, opts = {}) {
   listEl = el;
   onOpen = opts.onOpen ?? (() => {});
 }
 
+// Names the roster has said are NOT in the court.
+//
+// applyRoster removes them, and then the snapshot replays ~400 events and ~200
+// messages, every one of which calls upsertNode — so a dismissed peasant was
+// recreated within the same tick that removed it, and a reload put all 105
+// configured roles back in the rail. That is the exact regression the removal
+// feature exists to prevent (105 rows, 4,179px of scroll). Only the roster
+// speaks to this, through admit().
+const dismissed = new Set();
+
+/** The roster's word: this member belongs in the rail. */
+export function admit(name, role) {
+  dismissed.delete(name);
+  return upsertNode(name, role);
+}
+
 export function upsertNode(name, role) {
   let r = rows.get(name);
   if (!r) {
-    // Only default on CREATE. Defaulting on every call is how the king once
+    if (dismissed.has(name)) return null;   // a transcript replay is not a summons
+    // Only default on CREATE. Defaulting on every call is how the orchestrator once
     // got quietly demoted to a peasant by a caller that only had a name.
     role ??= 'peasant';
     const el = document.createElement('button');
-    el.className = `rail-row ${role === 'king' ? 'king' : ''}`;
+    el.className = `rail-row ${role === 'orchestrator' ? 'orchestrator' : ''}`;
     el.innerHTML = '<span class="nm"></span><span class="st"></span>';
-    el.prepend(avatar(name, role));
-    el.querySelector('.nm').textContent = name;
+    el.prepend(statusDot(name, role));
+    el.querySelector('.nm').textContent = displayName(name, role);
     el.onclick = () => onOpen(name);
     r = { el, role, state: 'asleep', status: '', ctx: 0 };
     rows.set(name, r);
@@ -39,8 +56,10 @@ export function upsertNode(name, role) {
     arrive(el);          // after resort(): it moves the node, which cancels it
   } else if (role && role !== r.role) {
     r.role = role;
-    r.el.classList.toggle('king', role === 'king');
-    r.el.querySelector('.av')?.classList.toggle('crown', role === 'king');
+    // The printed name can depend on the role — `orchestrator` shows as Orchestrator
+    // only while it IS the orchestrator — so a promotion has to repaint it.
+    r.el.querySelector('.nm').textContent = displayName(name, role);
+    r.el.classList.toggle('orchestrator', role === 'orchestrator');
     resort();
   }
   return r;
@@ -53,16 +72,26 @@ function resort() {
 
   listEl.textContent = '';
   let group = null;
-  for (const [, r] of sorted) {
+  for (const [name, r] of sorted) {
     if (r.role !== group) {
       group = r.role;
-      const h = document.createElement('div');
-      // The role goes on the class so the throne's heading can wear gold. The
-      // rule trailing off to the right is drawn by ::after, so the text node
-      // has to stay the only child.
-      h.className = `rail-group ${group}`;
-      h.textContent = GROUP[group] ?? 'Court';
-      listEl.append(h);
+      const heading = roleGroup(group);
+      // A heading over a single row that already says the same word is noise.
+      // The orchestrator and the monitor are singletons whose printed name IS
+      // the role, so "Orchestrator / Orchestrator" was stacked twice. A named
+      // one ("Rex") still gets its heading, because then it says something.
+      const members = sorted.filter(([, x]) => x.role === group);
+      const redundant = members.length === 1
+        && displayName(members[0][0], group) === heading;
+      if (!redundant) {
+        const h = document.createElement('div');
+        // The role goes on the class so the throne's heading can wear gold. The
+        // rule trailing off to the right is drawn by ::after, so the text node
+        // has to stay the only child.
+        h.className = `rail-group ${group}`;
+        h.textContent = heading;
+        listEl.append(h);
+      }
     }
     listEl.append(r.el);
   }
@@ -83,6 +112,7 @@ function resort() {
  */
 export function setState(name, state) {
   const r = upsertNode(name);
+  if (!r) return;   // dismissed: the roster has said this one holds no row
   const woke = state !== r.state && (state === 'awake' || state === 'busy');
   r.state = state;
   // A member coming to life is the one transition worth a ring. Only on the
@@ -99,6 +129,7 @@ export function setState(name, state) {
 /** In the crew, whether or not it currently has a process. */
 export function setServing(name, serving) {
   const r = upsertNode(name);
+  if (!r) return;   // dismissed: the roster has said this one holds no row
   r.serving = serving;
   r.el.classList.toggle('serving', Boolean(serving));
   refreshTip(name);
@@ -108,16 +139,19 @@ const STATE_WORD = (r) =>
   r.state === 'dead' ? 'failed'
     : r.state === 'awake' || r.state === 'busy' ? 'awake'
     : r.serving ? 'resting — wakes on its next message'
-    : 'not summoned';
+    : 'not added';
 
 export function setStatus(name, word, tone = 'busy') {
   const r = upsertNode(name);
+  if (!r) return;   // dismissed: the roster has said this one holds no row
   r.status = word;
   const st = r.el.querySelector('.st');
-  // "not summoned" printed beside twelve of fourteen rows is not information,
-  // it is wallpaper — and it drowned the two rows that had something to say.
-  // Absence is carried by the row's own dimming instead.
-  st.textContent = word === 'idle' || word === 'not summoned' ? '' : word;
+  // "not added" printed beside twelve of fourteen rows is not information, it
+  // is wallpaper — and it drowned the two rows that had something to say.
+  // Absence is carried by the row's own dimming instead. Matched on the word
+  // app.js:399 emits: these two strings have to agree, and when they did not
+  // the placeholder came back on every row.
+  st.textContent = word === 'idle' || word === 'not added' ? '' : word;
   st.className = `st tone-${tone}`;
   // "Busy" is the one thing worth animating: it is the difference between
   // waiting for a member and waiting for nothing.
@@ -131,6 +165,7 @@ export function setStatus(name, word, tone = 'busy') {
  */
 export function setSummary(name, text) {
   const r = upsertNode(name);
+  if (!r) return;   // dismissed: the roster has said this one holds no row
   r.summary = text;
   let s = r.el.querySelector('.sum');
   if (!s) {
@@ -145,12 +180,14 @@ export function setSummary(name, text) {
 
 export function setSize(name, ctxTokens) {
   const r = upsertNode(name);
+  if (!r) return;   // dismissed: the roster has said this one holds no row
   r.ctx = ctxTokens;
   refreshTip(name);
 }
 
 export function setTip(name, lines) {
   const r = upsertNode(name);
+  if (!r) return;   // dismissed: the roster has said this one holds no row
   r.tip = lines;
   refreshTip(name);
 }
@@ -193,6 +230,7 @@ export function setOpen(openIds) {
  * dismissed member leaves the list.
  */
 export function remove(name) {
+  dismissed.add(name);
   const r = rows.get(name);
   if (!r) return;
   // Dropped from `rows` immediately, removed from the DOM when the collapse
