@@ -1,4 +1,4 @@
-# Handoff — Agentic OS (Kingdom) — 2026-08-18
+# Handoff — Agentic OS (Kingdom) — 2026-08-19
 
 ## Goal & status
 
@@ -9,295 +9,199 @@ message each other **directly over MCP** rather than routing through the
 orchestrator. They run the Claude Code CLI, the Codex CLI, Antigravity
 (`agy`), or opencode.
 
-**This session finished "repo becomes optional" — the working tree is no
-longer a mandatory launch argument.** Chat, Research and Build now run with
-no repo attached at all; only Code mode needs one, and it can be picked from
-inside the running app (a native folder dialog in Electron, or a plain
-text-input panel over the browser) instead of on the command line. **Fully
-implemented, tested (`node test/run-all.js` → 50 suites, all green), and
-manually verified end-to-end in a live browser session** — which caught and
-fixed two real bugs the automated suite could not see (both were client-side
-crashes that only happen when a page actually loads with `repo: null`).
+This is a standing `/loop` session with an open-ended mandate: keep optimizing
+the app for API cost/token efficiency and fix bugs as found, until the user
+says stop. There is no terminal condition — every session under this loop
+should update this file rather than assume a successor.
 
-This builds directly on two other finished, still-uncommitted efforts sitting
-in the same working tree: the **Four Modes** work (Code/Research/Chat/Build
-mode table, advisor auto-classification, idle-gated mode flips) and a
-**role rename** (king/jester → orchestrator/briefer, plus twelve flavor-role
-renames, propagated into the Obsidian vault). All of that predates this
-session and is also done and tested.
-
-**Nothing from any of this is committed.** The working tree has been
-accumulating uncommitted work across several sessions now — as of this
-writing, `git status --porcelain` reports 73 lines (62 modified, 11
-untracked) on top of HEAD `db202f7`, and there is still no git remote
-configured. Deciding how to stage and commit this is the single largest open
-item — see *Next steps* #1.
+**This session shipped three things, all committed and tested:**
+citations on recall/vault answers, document upload so the court can reference
+files, and quota-aware usage accounting for subscription-billed CLIs (codex
+under a ChatGPT plan) that have no real $/token. `node test/run-all.js` → **55
+suites, all green**, run just now as part of writing this handoff (not
+recalled from earlier). Working tree is clean except one untracked stray file
+— see *Open questions*.
 
 ## Current state (what exists now)
 
 ### Verified as of this writing
 
-- **`node test/run-all.js` → 50 suites, 4-wide, ~45–53s, all passed.** Run
-  twice this session (once before, once after the two live-testing fixes
-  below), both green.
-- **The full repo-optional flow was driven live in the Browser pane**, not
-  just unit-tested: booted the daemon with no CLI argument and no saved repo
-  → confirmed `repo: null` in `/api/ping` and in the SSE snapshot → switched
-  through Chat/Research/Build with no worktree created → clicked Code →
-  got the "Code mode needs a repository — attach one first." toast with a
-  "Choose repo…" action → opened the browser-path picker panel (a plain text
-  input, since Electron's native dialog can't be driven remotely) → attached
-  this repo (`E:\AI\Agentic OS`) → Code mode became active immediately, no
-  restart, header updated live. Then killed that daemon and rebooted with
-  **no CLI argument again** → it found the previously-attached repo in the
-  saved workspace config and came up already in Code mode against it
-  (`throne room: http://127.0.0.1:7777  (repo: E:\AI\Agentic OS)`).
-- **Explicit-repo launch still works unchanged** (regression check): a fresh
-  temp repo passed as `node src/daemon.js <repo> --port 7778` booted and
-  reported that exact repo over `/api/ping`. This is the pre-existing launch
-  path and it was not touched by this feature beyond making the argument
-  optional.
-- `git log --oneline -1` → still `db202f7`, branch `main`, **no remote
-  configured**.
-- No daemon process is currently running on 7777 or 7778 — both were stopped
-  after verification (confirmed via `Get-NetTCPConnection -State Listen`).
+- `git log --oneline -2` → HEAD `a9dd393` ("court: a subscription has no
+  price per token, so stop pretending one"), parent `0ff79f4` ("court: cite
+  the note, read the file, ask when only the sovereign knows"). Branch
+  `main`, no remote configured.
+- `git status --porcelain` → only `?? Background.jpg`. Everything else is
+  committed.
+- `node test/run-all.js` → **55 suites, 4-wide, ~51s, all passed.** Just run
+  as part of this handoff, not carried over from memory.
 
-### Two bugs found only by loading the real page, both fixed this session
+### Feature: citations on recall/vault answers
 
-Neither was caught by `test/run-all.js` — both are client-side, only trigger
-when a page actually connects with `repo: null`, and the first one silently
-swallowed itself (caught by `es.onmessage`'s own try/catch, logged, nothing
-visibly wrong beyond a roster that never populated).
+Recall and vault answers now cite their source note as a `vault:` markdown
+link, so an answer's claim can be traced back to the note it came from
+instead of taken on faith. Landed in `0ff79f4`.
 
-1. **[ui/app.js](ui/app.js) — snapshot handler crashed on a null repo.**
-   `$('#repo').textContent = d.repo.split(...)` threw
-   `TypeError: Cannot read properties of null (reading 'split')` on *every*
-   SSE `snapshot` event when `d.repo` was `null`, which aborted all the code
-   after it in that switch case — roster, goal, models, efforts, advisor
-   settings, skills, the whole snapshot replay never applied. Fixed by
-   extracting a `paintRepo(repo, base)` helper that renders `"no repository"`
-   when `repo` is falsy.
-2. **[src/daemon.js](src/daemon.js) — the `'repo'` event was never forwarded
-   over SSE.** `Kingdom#attachRepo` emits `this.emit('repo', {repo, base})`,
-   but daemon.js's list of events it re-broadcasts to the browser didn't
-   include `'repo'`, so after a live attach the header's repo label stayed
-   stuck on "no repository" until a manual page reload. Fixed by adding
-   `'repo'` to that forwarded-events list and adding a `case 'repo':` in
-   `ui/app.js`'s `onStreamEvent` switch that calls the same `paintRepo`
-   helper.
+### Feature: document upload
 
-### New / touched files this session
+The court can now be handed documents, not just images/audio — extending the
+existing `/api/assets` upload flow to cover documents so a member can
+reference an uploaded file mid-task. Verified this session via the MCP
+`list_uploads` round-trip and a live browser upload/list/delete cycle against
+a running daemon, in addition to the automated suite. Landed in `0ff79f4`.
 
-| Path | What changed |
-|---|---|
-| `src/worktree.js` | `kingdomDir(repo)` falls back to `~/.kingdom/workspace/` when `repo` is falsy, instead of requiring one. `dbPath`/`worktreePath` inherit this for free. |
-| `src/kingdom.js` | Constructor/`start()` accept `repo: null`; new `attachRepo(path)`; `setMode`/`queueMode` refuse/degrade Code mode without a repo; `#doSpawn`'s worktree condition now requires `Boolean(this.repo)` too; new `#cwd()` helper so a null repo never reaches a spawned CLI's argv as a literal `null`; `#onDone`/`#rescueWork` gained repo-less early-return branches. |
-| `src/daemon.js` | CLI repo argument is now optional — falls back to a previously-saved repo in the workspace config, then to `null`; new `POST /api/attachRepo`; `/api/ping` and the SSE snapshot report the *live* `kingdom.repo`, not the boot-time value; `'repo'` added to the forwarded SSE event list (bug fix #2 above). |
-| `electron/main.js` | No longer blocks app launch behind a native folder-picker dialog; repo is optional at spawn; new `ipcMain.handle('repo:choose', ...)` for on-demand picking. |
-| `electron/court-preload.cjs` | **New.** Bridges `window.kingdomShell.chooseRepo()` to the `repo:choose` IPC handler, mirroring the existing `pet-preload.cjs` pattern. |
-| `ui/app.js` | Mode-switch buttons now check the result and show a toast + "Choose repo…" action on refusal; new `openRepoPicker()`/`attachRepo()`/`openRepoPanel()`; new `paintRepo()` helper (bug fix #1 above); new `case 'repo':` in the SSE handler (bug fix #2 above). |
-| `test/t-repo-optional.js` | **New.** Covers null-repo construction, `setMode`/`queueMode` gating, worktree-skipping for a repo-less worktrees:true mode, and a live `attachRepo` call — registered in `test/run-all.js`. |
-| `.claude/launch.json` | **New "daemon" entry** — `node src/daemon.js --port 7777` with no repo argument, for driving the daemon from the Browser pane tool without Electron's native dialog in the way. The pre-existing `"start"` entry (`npm run start`, i.e. Electron, port 3000) is unchanged. |
+### Feature: quota-aware usage accounting
 
-### Side effects of manual testing (real state, not a mistake, but worth knowing)
+**The gap.** `src/price.js`'s `PRICES` table only has $/token rates for
+metered API keys. A CLI running under a flat subscription/quota plan (codex
+under a ChatGPT plan, for instance) has no real marginal dollar cost, but
+does consume a hard, resettable token allowance — and the existing Usage
+panel had no way to represent that. `costOf()` correctly returns `null` when
+no rate exists at all, but nothing distinguished "no rate because this is a
+subscription" from "no rate because pricing is simply missing."
 
-- **`~/.kingdom/workspace/kingdom.config.json` now exists on this machine for
-  the first time** (created because the repo-less daemon was actually
-  booted). Because the live-attach test used this project's own repo as its
-  target, that file now holds `mode: "code"` and
-  `repo: "E:\\AI\\Agentic OS"`. Practical effect: **the next time anyone runs
-  `node src/daemon.js` with no argument on this machine, it will boot straight
-  into Code mode against this repo**, not into a clean no-repo state. To
-  re-test the true first-ever-launch experience, delete that file (or its
-  `repo` key) first.
-- **A second, separate config home for this same repo already existed before
-  this session**: `E:\AI\.kingdom\Agentic OS\kingdom.config.json` (created by
-  an earlier session's explicit `node src/daemon.js "E:\AI\Agentic OS"`
-  launch, per the previous handoff). This feature does not touch or migrate
-  that file — it is unrelated, still live, and used whenever the repo is
-  passed explicitly on the command line. The two configs now coexist and can
-  drift independently; that is expected, not a bug, per this session's
-  explicit design decision (see *Decisions*).
-- A leftover daemon process (PID 18768) was found already running on :7777
-  from an earlier session's wallpaper testing (repo `E:\AI\Agentic OS`
-  attached) and was stopped to free the port for this session's testing.
-- `Background.jpg` sits **untracked at the repo root**
-  (`E:\AI\Agentic OS\Background.jpg`) — the user's own wallpaper test image
-  from an earlier part of this session, never cleaned up or gitignored. The
-  app's own asset store (inside `kingdomDir/assets`) has its own copy; this
-  root-level file is just the original drop.
+**What was built** (`src/daemon.js`'s `metrics()`): a `byCli` Map, built
+inside the function's existing per-turn `turn_end` delta loop (no new event
+reading), attributes each turn's deltaed tokens to the member's `cli` via the
+existing `kingdom.specOf(name)`. A new `quotas` array is computed from
+`kingdom.config.quotas` (user-supplied `{cli: {label, limitTokens}}` entries)
+and returned alongside the existing `members/total/spent/cap` fields — for
+each configured cli, how many tokens were burned against the plan's stated
+allowance, as a percentage. `ui/panels.js`'s `openMetrics()` renders one
+meter bar per configured quota, reusing the existing `.meter`/`.note` CSS
+classes verbatim (no new stylesheet rules). Test coverage extends the
+existing `test/t-panels.js` fixture with a `quotas: {codex: {...}}` config
+entry and asserts the aggregated `used`/`limit`/`pct` match hand-derived
+numbers from the seeded events. Landed in `a9dd393`.
+
+**Explicit limitations, told to the user directly rather than oversold:**
+quota size is user-supplied, not queried from any real OpenAI/Anthropic
+account API (no such API is being called); this is tracking only — nothing
+pauses or throttles a member that exceeds its quota.
 
 ## Decisions made, and why
 
-**Worktree isolation is now gated on `mode.worktrees && Boolean(this.repo)`,
-not `mode.worktrees` alone.** `src/modes.js` gives Research and Build
-`worktrees: true` deliberately — a git worktree is the *mechanism* that makes
-"can't touch the real repo" true, since only one of the four CLIs has its own
-sandbox flag. That's still correct when a repo is open. But a worktree
-protects a repo; with none attached there is nothing to protect, so there is
-nothing to isolate. Resolved by asking the user directly rather than
-guessing — their answer: *"Chat + Research + Build as Chat mode doesnt edit
-anything, research mode saves it to the vault, build mode edits the
-fundamentals of this application (like skills, vault, etc.) so only code
-needs a repo."*
+**Quota tracking is a separate `quotas` field, not folded into the existing
+`spent` dollar figure.** The alternative — inventing a $/token guess for a
+subscription CLI so it fits the existing pricing table — would silently
+misrepresent a genuinely free-at-the-margin resource as a cost, which is
+worse than not showing a number at all. Keeping it as its own labeled
+"tokens burned / plan allowance" metric is honest about what is actually
+known.
 
-**Attaching a repo does NOT migrate workspace state.** The db, config, vault
-pointer, goal and roster stay at `kingdomDir(null)` (the workspace home)
-permanently, even after `attachRepo()` runs — only `kingdom.repo`/`base`
-change, pointing Code mode's worktrees somewhere new. The alternative
-(copying state into a repo-relative `.kingdom/<repoName>/` on attach) would
-require hot-swapping a live sqlite connection mid-session for no real
-benefit, since goal/roster/vault/research notes are workspace-level concepts
-per the user's own framing above, not repo-level ones. Switching to a
-genuinely *different* repo later still needs a fresh court, exactly as
-before.
+**Quota aggregation reuses the exact same per-turn delta loop `metrics()`
+already runs for per-agent stats**, rather than a second pass over
+`turn_end` events. `deltaOf()` already exists specifically to avoid
+overcounting codex's cumulative-per-thread usage reporting (codex reports
+running totals per thread, not per-turn deltas, unlike claude/agy) — a
+second naive summation would have reintroduced that exact bug for the new
+feature.
 
-**Code mode's refusal is a thrown error, not a special response shape.** The
-daemon's existing generic `/api/*` dispatch already turns any thrown error
-into `{ok:false, error: message}` over HTTP — `setMode` just throws
-`'Code mode needs a repository — attach one first.'` and the toolbar surfaces
-it directly, no new API contract needed. `queueMode` (the advisor's
-background auto-classifier) degrades silently instead — it must never throw
-out of a call nothing is watching for an exception.
-
-**The browser-path picker is a plain text input, not a fake file browser.**
-Electron's native `dialog.showOpenDialog` can't be driven by the remote
-Browser-pane test tool, and a plain-browser launch (`node src/daemon.js` +
-any browser, the documented headless path) has no native dialog available at
-all — so the fallback had to work without one regardless. A text input over
-the existing `W.toggle` panel primitive (same one `openMetrics` already uses)
-was the smallest thing that covers both cases.
+**This feature was designed only after investigating a real cost anomaly**
+the user raised: a Kingdom-orchestrated redesign of an unrelated app
+("Habitable") cost roughly 3x more than in-app estimates suggested. Queried
+that project's own `kingdom.db` cost ledger directly via `node:sqlite`
+(`DatabaseSync`, read-only) rather than reconstructing cost from CLI session
+logs — the ledger's precomputed `costUsd` field is authoritative and avoids
+re-deriving from raw cumulative usage. The user supplied the resolution
+themselves: a meaningful fraction of that gap was codex quota consumption
+under a flat plan, invisible to a $-only ledger. That is the direct origin
+of this feature — it is not speculative work.
 
 ## Dead ends — don't retry these
 
-**Clicking a mode-switch button via the `computer` tool's `ref` targeting
-intermittently no-oped after the roster re-rendered** (no network request
-sent, no visible error) during this session's manual verification, even
-though the button element, its `onclick` handler, and its on-screen
-coordinates all checked out fine under direct inspection. Switching to
-`javascript_tool` with a direct `element.click()` call fired reliably every
-time. This looks like a `ref`-to-DOM-node mapping going stale across a
-re-render inside the Browser pane tool itself, not an app bug — if a click
-via `computer`+`ref` seems to do nothing, verify with a direct JS click
-before concluding the app is broken.
+**`better-sqlite3` is not an installed dependency of this project** — do not
+reach for it to query a `kingdom.db` file directly. Use Node's built-in
+`node:sqlite` (`DatabaseSync`, `{readOnly: true}` for inspection), which is
+what `src/bus.js` itself uses and requires no dependency at all.
+
+**Summing raw historical `in`/`out` usage values across a codex member's
+turns overcounts massively** (one investigation this session hit ~593M
+tokens against a real total far smaller) — codex reports usage cumulatively
+per thread, not per-turn, unlike claude/agy. Always go through
+`deltaOf()`/`totalsOf()` in `src/usage.js`, never sum raw values for codex.
+
+**An ESM `import` of an absolute Windows path throws
+`ERR_UNSUPPORTED_ESM_URL_SCHEME`** (e.g. `import ... from 'E:/AI/Agentic
+OS/src/bus.js'` from a scratch script elsewhere). Fix: write the scratch
+script inside the target module's own directory tree and import relatively,
+run it from there, delete it after.
 
 ## Next steps
 
-1. **Decide how to stage and commit the working tree.** `git status
-   --porcelain` shows 73 lines (62 modified, 11 untracked) covering at least
-   three separate, independently-finished efforts layered on top of each
-   other in the same files: the 2026-08-17 code-review pass, the Four
-   Modes + role-rename work, and this session's repo-optional feature.
-   Answering "one commit, everything" unblocks immediately; answering
-   "separate them" means a hunk-by-hunk pass, as commit `db202f7` already did
-   once for a similar tangle. **There is no remote configured**, and pushing
-   needs a fresh, explicit instruction for the specific commit regardless of
-   any past authorization (see *Watch out for*).
-2. **Phase 5 (fix the Add-agents category bug) and Phases 3/4/6/7 (approvals
-   consolidation, turn cards, settings consolidation, accessibility)** are
-   still open on the original UI/UX redesign plan and were **not** touched
-   this session or the one before it. Don't start them without the user
-   re-raising — they are unrelated to repo-optionality.
-3. **Decide what to do with `Background.jpg` at the repo root** — remove it,
-   gitignore it, or leave it; it's not referenced by any code path (the app
-   reads its own copy from `kingdomDir/assets`).
-4. **Load the app in Electron itself at least once** (`npm start`). This
-   session's verification was entirely through the daemon + Browser pane,
-   because Electron's native repo-picker dialog can't be driven remotely —
-   the `repo:choose` IPC handler and `court-preload.cjs` bridge (the actual
-   Electron-only code path) have not been exercised in a real Electron
-   window this session.
+1. **Decide what to do with `Background.jpg`** at the repo root — it is
+   still untracked, still not referenced by any code path (the app's asset
+   store keeps its own copy under `kingdomDir/assets`), and was flagged to
+   the user twice this session with no resolution given yet. Remove it,
+   gitignore it, or leave it — any of the three is fine, it's currently just
+   unresolved.
+2. **The `/loop` cost/efficiency mandate continues** — no specific next
+   optimization is queued. Natural candidates surfaced this session but not
+   started: wiring quota *enforcement* (pausing a member that exceeds its
+   configured allowance, not just displaying it) if the user wants it, and
+   the "structured question UI" plan captured separately (see *Pointers* —
+   `ask_question` MCP tool letting any court member pose a multi-choice
+   question to the sovereign through the existing approval pipeline). Ask
+   the user before starting either, since neither was explicitly requested
+   yet this session.
+3. **No committed work is queued for a push** — there is still no git remote
+   configured, so nothing can be pushed by accident.
 
 ## Watch out for
 
-**Two live config homes now exist for this one repo, and they can drift
-independently — this is intentional, not a bug to "fix" by merging them.**
-`E:\AI\.kingdom\Agentic OS\kingdom.config.json` (predates this session, used
-when the repo is passed explicitly on the command line) and
-`~/.kingdom/workspace/kingdom.config.json` (new this session, used when the
-daemon boots with no argument). Editing one and expecting the other's daemon
-to see it will not work — check which launch path is in play first.
+**Never invent a $/token rate for a subscription-billed CLI.** If a new CLI
+or billing mode shows up that has no real per-token price, follow this
+session's pattern: track it against a user-supplied quota/allowance, don't
+force it into `src/price.js`'s metered-rate table.
 
-**`~/.kingdom/workspace/kingdom.config.json` currently has `repo` pre-filled
-with this project's own path**, as a side effect of this session's testing
-(see *Current state*). A repo-less daemon boot on this machine will attach it
-automatically unless that key is cleared first.
+**This machine has historically run low on memory during `npm test`** — not
+re-observed this session (the full suite ran clean), but nothing has changed
+to fix the underlying cause either. If an unexplained test failure shows up,
+check free memory before assuming a real regression.
 
-**This machine runs out of memory, and that is what most `npm test` failures
-here turn out to be** — not re-observed this session, but nothing has changed
-to fix it either. 8.36GB total RAM, historically down to 0.4–0.9GB free under
-load; at that level `spawn` itself starts failing with `UNKNOWN` and
-neighbouring test suites die with `0xC0000409`. Check free memory before
-investigating any unexplained failure.
-
-**`npm test` (`node test/run-all.js`) runs four suites at a time and retries
-a failure alone; one that then passes prints `flaky (failed in the pool,
-passed alone)`** — that's the runner working as designed, not a false pass.
-`KINGDOM_TEST_WIDTH=1` forces the old serial run when isolating something. A
-hung suite is killed and reported at 180s rather than hanging the run
-forever.
-
-**`agy` updates itself, and 1.1.11 changed `--print` from a boolean to a flag
-that takes the prompt as its value.** Passing the prompt as a trailing
-positional makes agy's Go flag parser read the *next* flag as the prompt,
-and the member emits no JSONL while exiting 0. If a member on `agy` ever goes
-silent with exit 0, check `agy --help` before anything else.
-
-**`electron/pet-preload.cjs` and the new `electron/court-preload.cjs` must
-keep the `.cjs` extension** — `package.json` declares `"type": "module"`, and
-a sandboxed Electron preload script cannot be ESM.
+**Never push to `main` without a fresh, explicit "push" instruction for that
+specific commit.** A prior push authorization does not carry forward to a
+new commit, even within the same session. No remote is configured today.
 
 **Never put a token in `kingdom.config.json`.** The real token store lives
 outside the repo, at `<repoParent>/.kingdom/<repoName>/tokens.json` (or the
-new workspace home when no repo is attached).
-
-**Never push to `main` without a fresh, explicit "push" instruction for that
-specific commit.** A prior push authorization does not carry forward to a new
-commit, even within the same session. There is currently no remote
-configured, so nothing can be pushed by accident today.
-
-**Screenshots and DOM inspection through the Claude Code Browser pane only
-work while the pane is displayed** — otherwise `computer{action:"screenshot"}`
-returns "the Browser pane is not displayed, so the page is not compositing
-frames." `read_console_messages` also appears to return a buffered history
-that can include stale entries from before a reload — confirm a fix landed
-by checking DOM/network state directly (e.g. `document.getElementById(...)`
-via `javascript_tool`), not by trusting the console log alone.
+workspace home when no repo is attached).
 
 ## Open questions for the user
 
-1. **How should the working tree be split into commits?** Three
-   independently-finished efforts (the Aug-17 code review, Four Modes +
-   role rename, and this session's repo-optional feature) are interleaved
-   across the same 62 modified files. "One commit, everything" unblocks
-   immediately; "separate them" means a hunk-by-hunk pass.
-2. **Should `Background.jpg` be removed from the repo root, gitignored, or
-   left as-is?** It's inert either way — not read by any code path — but it
-   is currently an untracked stray file.
-3. **Pick up Phase 5 / Phases 3-4-6-7 of the older UI/UX redesign plan next,
-   or leave them shelved?** They're unrelated to repo-optionality and were
-   not touched this session.
-4. **Which product shape — A, B or C?** See `docs/PLAN-saas.md`. Carried
-   forward unanswered from the 2026-08-17 handoff; nothing in its Phase 1 can
-   start without it. The recommendation there was B: host the control plane,
-   keep execution on the customer's machine.
+1. **What should happen to `Background.jpg`?** Untracked at the repo root,
+   inert either way, flagged twice with no answer yet.
+2. **Is the exact scale of the Habitable cost gap worth chasing further?**
+   The user's own estimate moved from "~$40" to "maybe $120, maybe $300" of
+   quota-plan usage during this session's conversation, and that number was
+   never independently re-derived past the initial ~30%-of-plan figure the
+   user supplied. The new quota-tracking feature will make future runs
+   self-documenting; going back to precisely reconcile this one specific
+   past run was not requested.
+3. **Pick up the "ask the sovereign a structured question" feature next, or
+   leave it shelved?** A full implementation plan exists (see *Pointers*)
+   but was not started this session — unrelated to the citations/upload/quota
+   work that was.
 
 ## Pointers
 
-- Project root: `E:\AI\Agentic OS`; branch `main`, HEAD `db202f7`, **no
-  remote**, working tree dirty (62 modified, 11 untracked)
-- Run the tests: `node test/run-all.js` (50 suites) —
-  `KINGDOM_TEST_WIDTH=1` to serialize
-- Run the app in Electron: `npm start`
-- Run just the daemon for browser-driven testing (no repo required):
-  `node src/daemon.js --port 7777`, or `.claude/launch.json`'s `"daemon"`
-  entry via the Browser pane tool's `preview_start{name:"daemon"}`
-- Attach a repo live once the daemon is running:
-  `POST /api/attachRepo {"path": "..."}`, or the throne room's "Choose
-  repo…" toast action after a refused Code-mode switch
+- Project root: `E:\AI\Agentic OS`; branch `main`, HEAD `a9dd393`, no
+  remote, working tree clean except `Background.jpg` (untracked).
+- Run the tests: `node test/run-all.js` (55 suites) —
+  `KINGDOM_TEST_WIDTH=1` to serialize.
+- Run the app in Electron: `npm start`. Run just the daemon for
+  browser-driven testing: `node src/daemon.js --port 7777` (or
+  `.claude/launch.json`'s `"daemon"` entry).
+- Quota config shape (new this session): `kingdom.config.json` →
+  `quotas: {"<cli>": {"label": "...", "limitTokens": N}}`. Surfaced at
+  `GET /api/metrics` → `quotas: [{cli, label, used, limit, pct}]` and
+  rendered in the Usage panel (`ui/panels.js`'s `openMetrics()`).
+- A saved implementation plan for the "structured question" feature
+  (an `ask_question` MCP tool reusing the existing approval pipeline) sits
+  at `C:\Users\mayur\.claude\plans\plan-out-a-complete-logical-turing.md` —
+  not started, not committed to any file in this repo.
 - Codebase rules: `AGENTS.md`. Four rules govern every change: tests ship
   with the change and must fail without it; never trust a measurement you
   did not take; comments carry the evidence, not the intent; degrade, never
   wedge.
 - Global Claude rules: `C:\Users\mayur\.claude\CLAUDE.md` (only includes
-  `RTK.md`, a token-proxy CLI reference)
+  `RTK.md`, a token-proxy CLI reference).
