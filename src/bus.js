@@ -73,6 +73,21 @@ export class Bus {
   }
 
   /**
+   * Drop `recipient`'s still-undelivered notices whose body starts with
+   * `prefix`, so a rapid run of the same kind of notice (a mode flipped five
+   * times before anyone was awake to read it) collapses to just the latest
+   * instead of queuing every intermediate one into that member's next turn.
+   * A message already past the recipient's cursor is left alone — it may
+   * already be mid-delivery.
+   */
+  supersede(recipient, prefix) {
+    const cursor = Number(this.get(`cursor:${recipient}`) ?? 0);
+    this.db.prepare(
+      `delete from messages where id > ? and recipient = ? and kind = 'notice' and substr(body, 1, ?) = ?`
+    ).run(cursor, recipient, prefix.length, prefix);
+  }
+
+  /**
    * Everything addressed to `agent` (or broadcast) since its cursor, and it
    * never receives its own messages. Cursor-based so broadcast delivery is
    * exactly-once per agent without a deliveries table.
@@ -156,6 +171,35 @@ export class Bus {
   /** How many messages there are. Counting them by loading every body is not that. */
   countMessages() {
     return this.db.prepare('select count(*) as n from messages').get().n;
+  }
+
+  /**
+   * Substring search across everything the court has said or done: event
+   * text/tool/summary payloads and posted messages, merged and ranked by
+   * recency. This IS the "remembers everything" system — events/messages
+   * already are a complete log, so recall is a read, not a new capture
+   * pipeline. Retrieval stays pull-based (searched on demand, here and via
+   * the `recall` MCP tool) rather than injected into every prompt, matching
+   * memoryIndex()'s index/search-don't-inject approach in memory.js.
+   */
+  recall(query, { limit = 20 } = {}) {
+    const like = `%${query}%`;
+    const events = this.db.prepare(
+      `select ts, agent as who, type as kind, payload from events
+        where type in ('text','tool','summary','error','workflow_run') and payload like ?
+        order by id desc limit ?`
+    ).all(like, limit).map((r) => {
+      const p = JSON.parse(r.payload);
+      const text = r.kind === 'tool' ? `${p.name} ${JSON.stringify(p.input ?? p)}`
+        : r.kind === 'workflow_run' ? `workflow "${p.name}" ${p.ok ? 'succeeded' : `failed: ${p.error}`}`
+        : (p.text ?? p.message ?? JSON.stringify(p));
+      return { ts: r.ts, who: r.who, kind: r.kind, text, source: 'event' };
+    });
+    const messages = this.db.prepare(
+      `select ts, sender as who, kind, body as text from messages
+        where body like ? order by id desc limit ?`
+    ).all(like, limit).map((r) => ({ ...r, source: 'message' }));
+    return [...events, ...messages].sort((a, b) => b.ts - a.ts).slice(0, limit);
   }
 
   // --- the shared task list -------------------------------------------
@@ -353,6 +397,22 @@ if (process.argv[1]?.endsWith('bus.js')) {
   b.post('reviewer', null, 'looks wrong');
   a.deepEqual(b.pending('coder').map((m) => m.body), ['looks wrong']);
 
+  // supersede: a run of the same undelivered notice collapses to the latest.
+  b.post('orchestrator', 'coder', 'mode: research', 'notice');
+  b.post('orchestrator', 'coder', 'other notice', 'notice');
+  b.supersede('coder', 'mode: ');
+  b.post('orchestrator', 'coder', 'mode: build', 'notice');
+  a.deepEqual(b.pending('coder').filter((m) => m.kind === 'notice').map((m) => m.body),
+    ['other notice', 'mode: build'],
+    'only the superseded-prefix notice is dropped, and only the stale one');
+  // A message already delivered (past the cursor) is untouched by a later supersede.
+  const delivered = b.post('orchestrator', 'coder', 'mode: delivered', 'notice');
+  b.ack('coder', delivered);
+  b.supersede('coder', 'mode: ');
+  a.equal(b.history({ agent: 'coder' }).some((m) => m.body === 'mode: delivered'), true,
+    'supersede must never rewrite history, only trim what has not been read yet');
+  b.pending('coder').forEach((m) => b.ack('coder', m.id));
+
   b.logEvent('coder', 'tool', { name: 'Edit' });
   a.equal(b.events({ agent: 'coder' })[0].payload.name, 'Edit');
 
@@ -368,6 +428,21 @@ if (process.argv[1]?.endsWith('bus.js')) {
   // Counting messages must not mean loading every body.
   a.equal(b.countMessages(), b.history({ limit: 100_000 }).length,
     'count(*) must agree with the old load-and-measure it replaces');
+
+  // recall: finds a hit in event text, in a tool call, and in a message body —
+  // and ranks the most recent hit first regardless of which table it came from.
+  b.logEvent('coder', 'text', { text: 'the parser handles nested quotes now' });
+  b.logEvent('coder', 'tool', { name: 'Grep', input: { pattern: 'quotes' } });
+  b.post('reviewer', 'coder', 'nested quotes broke the old parser', 'message');
+  const hits = b.recall('quotes');
+  a.equal(hits.length, 3, 'all three mentions across events and messages are found');
+  a.equal(hits[0].text.includes('quotes') || hits[0].text.includes('Grep'), true);
+  a.equal(b.recall('quotes', { limit: 1 }).length, 1, 'limit is honored after merging sources');
+  a.equal(b.recall('nothing-anyone-said').length, 0);
+
+  // workflow runs are recorded as events too, and recall finds them by name
+  b.logEvent('workflow:deploy', 'workflow_run', { name: 'nightly deploy', ok: true, steps: 4 });
+  a.equal(b.recall('nightly deploy')[0].text, 'workflow "nightly deploy" succeeded');
 
   b.set('session:coder', 'abc');
   a.equal(b.get('session:coder'), 'abc');

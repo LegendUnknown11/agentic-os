@@ -80,7 +80,7 @@ try {
   a.deepEqual([...k.agents.keys()], before, 'a flip must not respawn anybody');
 
   const notices = k.bus.history({ limit: 50, tail: true })
-    .filter((m) => m.kind === 'notice' && m.body.includes('Build mode'));
+    .filter((m) => m.kind === 'notice' && /BUILD MODE/i.test(m.body));
   a.ok(notices.length >= before.length,
     'every live member must be told, on the bus, rather than have its prompt rewritten');
   a.ok(notices.some((m) => m.body.includes('writing a skill')), 'and told why');
@@ -90,6 +90,20 @@ try {
   const quiet = k.bus.countMessages();
   a.equal(k.setMode('build').changed, false);
   a.equal(k.bus.countMessages(), quiet, 'a no-op flip must not spam the bus');
+
+  // A live flip must carry the SAME substance a fresh spawn's prompt gets —
+  // not just the label — or a member mid-session is worse-informed than one
+  // spawned after the flip. Measured failure without this: an orchestrator
+  // live-flipped into Automate mode did not know it owned workflow_save and
+  // tried to delegate the work to a nonexistent "coder" peasant instead.
+  k.setMode('automate');
+  const automateNotices = k.bus.history({ limit: 50, tail: true })
+    .filter((m) => m.kind === 'notice' && /AUTOMATE MODE/i.test(m.body));
+  a.ok(automateNotices.some((m) => m.body.includes('workflow_save')),
+    'a live flip into Automate must carry the node/trigger vocabulary, not just the label');
+  a.ok(automateNotices.some((m) => /no crew/i.test(m.body)),
+    'and must say there is no crew to delegate to');
+  k.setMode('build');   // restore, so the sections below see the mode they expect
 
   /* ---------- 4. nothing merges outside Code ------------------------------- */
   // Not the MCP tool gate — this is the sovereign's own Merge button, which

@@ -457,7 +457,10 @@ export function openApprovals({ post, toast }) {
         if (!pending.length) {
           body.append(el('div', 'empty', 'Nothing is waiting on you.'));
         } else {
-          body.append(el('div', 'note', `${pending.length} waiting`));
+          const head = el('div', 'note', `${pending.length} waiting`);
+          body.append(head);
+          const bulk = pending.length > 1 ? bulkRow(pending) : null;
+          if (bulk) body.append(bulk);
           for (const a of pending) body.append(card(a, true));
         }
 
@@ -467,6 +470,30 @@ export function openApprovals({ post, toast }) {
           body.append(h);
           for (const a of done.slice(0, 40)) body.append(card(a, false));
         }
+      };
+
+      // Several requests queue up whenever a wave of peasants finish at once —
+      // deciding them one dialog at a time is the busywork, not the decision.
+      // A question is excluded: approve()/reject() have no idea what "approved"
+      // means for one (see the card() comment below), so bulk-approving a mixed
+      // batch would silently eat any question in it.
+      const bulkRow = (pending) => {
+        const actionable = pending.filter((a) => a.kind !== 'question');
+        if (actionable.length < 2) return null;
+        const row = el('div', 'btns');
+        const act = (verb, cls, label) => {
+          const b = el('button', cls, label);
+          b.onclick = async () => {
+            cue(verb);
+            row.querySelectorAll('button').forEach((x) => (x.disabled = true));
+            for (const a of actionable) await post(verb, { id: a.id });
+            toast(`${verb === 'approve' ? 'Approved' : 'Rejected'} ${actionable.length}.`);
+            draw();
+          };
+          return b;
+        };
+        row.append(act('approve', 'go', `Approve all ${actionable.length}`), act('reject', 'no', 'Reject all'));
+        return row;
       };
 
       const card = (a, live) => {
@@ -483,6 +510,18 @@ export function openApprovals({ post, toast }) {
         const what = a.names?.length ? a.names.join(', ') : (a.peasant ?? a.name ?? '');
         if (what) d.append(el('div', 'what', what));
         if (a.reason) d.append(el('div', 'why', a.reason));
+
+        // approve()/reject() only know summon/role/merge — a question answers
+        // with CHOSEN OPTIONS, not a yes/no, and its reply must go back to
+        // whoever asked (kingdom.js#answerQuestion), not the orchestrator.
+        // Approve/Reject here would either silently drop the reply or send it
+        // to the wrong agent. Point at the real interview card instead of
+        // reimplementing it a second time in this panel.
+        if (a.kind === 'question') {
+          for (const q of a.questions ?? []) d.append(el('div', 'what', q.question));
+          if (live) d.append(el('div', 'note', 'Answer this from its card in the conversation — it needs your actual choices, not an approve/reject.'));
+          return d;
+        }
 
         if (live) {
           const btns = el('div', 'btns');
@@ -530,8 +569,10 @@ export const ROLE_CATEGORIES = {
 /**
  * Who is in the court, and who could be.
  *
- * This screen categorizes the 14-specialist standing court by lifecycle domain
- * with rich visual cues, instant category filters, and fast recruitment.
+ * This screen categorizes the roster by lifecycle domain, with instant
+ * category filters and fast recruitment. Only a fraction of the roster has a
+ * named category (ROLE_CATEGORIES) — anything else falls into 'Other' rather
+ * than disappearing when a filter tab is active.
  *
  * @param roster () => Map<name, {role, title, description, cli, model, summoned}>
  */
@@ -547,7 +588,13 @@ export function openSummon({ post, toast, roster }) {
       search.append(input);
 
       const catTabs = el('div', 'sum-cat-tabs');
-      const categories = ['All', 'Discovery', 'Craft', 'Verification', 'Security & Ops', 'Knowledge'];
+      // ROLE_CATEGORIES only names the 17 roles the last redesign proposed keeping
+      // (docs/PLAN-court.md) — the roster itself still has 107. Every unmapped name
+      // fell through to `undefined`, which matched no category tab, so ~90 agents
+      // were unreachable except through "All" or search. 'Other' is the fallback
+      // that keeps every category tab a true partition of the full roster.
+      const categories = ['All', 'Discovery', 'Craft', 'Verification', 'Security & Ops', 'Knowledge', 'Other'];
+      const categoryOf = (name) => ROLE_CATEGORIES[name] ?? 'Other';
       let activeCat = 'All';
 
       for (const cat of categories) {
@@ -576,10 +623,7 @@ export function openSummon({ post, toast, roster }) {
         main.append(el('span', 'sum-name', m.name));
         if (m.title && m.title !== m.name) main.append(el('span', 'sum-title', m.title));
 
-        const cat = ROLE_CATEGORIES[m.name];
-        if (cat) {
-          main.append(el('span', 'sum-cat', cat));
-        }
+        main.append(el('span', 'sum-cat', categoryOf(m.name)));
         content.append(main);
 
         if (m.description) {
@@ -617,7 +661,7 @@ export function openSummon({ post, toast, roster }) {
           .sort((a, b) => a.name.localeCompare(b.name));
 
         body.textContent = '';
-        const matchCat = (m) => activeCat === 'All' || ROLE_CATEGORIES[m.name] === activeCat;
+        const matchCat = (m) => activeCat === 'All' || categoryOf(m.name) === activeCat;
         const here = all.filter((m) => m.summoned && matchesQuery(m, q) && matchCat(m));
         const rest = all.filter((m) => !m.summoned && matchesQuery(m, q) && matchCat(m));
 
@@ -655,8 +699,245 @@ export function openSummon({ post, toast, roster }) {
   });
 }
 
-export function openVault() {
-  W.toggle('vault', {
+/* ================= recall: everything the court remembers ================= */
+/**
+ * One search box over both memories: the bus's own history (what was said or
+ * done — recall) and the sovereign's curated notes (vault_search). They stay
+ * two sections rather than one merged list because they answer different
+ * questions — "what happened" vs. "what did I write down" — but one query
+ * against both is the actual "remembers everything" the search is for.
+ */
+export function openRecall() {
+  W.toggle('recall', {
+    title: 'Memory',
+    build(box) {
+      const search = el('div', 'searchbar');
+      const input = el('input');
+      input.placeholder = 'Search everything the court remembers…';
+      input.autocomplete = 'off';
+      search.append(input);
+      const body = el('div', 'log settings');
+      box.append(search, body);
+
+      const showNote = async (path) => {
+        const r = await get(`/api/vault?path=${encodeURIComponent(path)}`);
+        body.textContent = '';
+        const back = el('button', 'link', '‹ back');
+        back.onclick = () => run(input.value.trim());
+        body.append(back, el('div', 'note-title', path));
+        body.append(el('pre', 'note-body', r.ok ? r.body : (r.error ?? 'Could not read it.')));
+      };
+
+      const seq = sequencer();
+      const run = async (q) => {
+        const mine = seq.next();
+        body.textContent = '';
+        if (!q) { body.append(el('div', 'empty', 'Type to search history, tool calls and notes together.')); return; }
+        const [recall, vault] = await Promise.all([get(`/api/recall?q=${encodeURIComponent(q)}`), get(`/api/vault?q=${encodeURIComponent(q)}`)]);
+        if (!seq.current(mine)) return;   // a newer search already painted
+        body.textContent = '';
+
+        body.append(el('div', 'shead', 'History'));
+        if (!recall.ok || !recall.hits.length) {
+          body.append(el('div', 'empty', 'Nothing matches in what the court has said or done.'));
+        } else {
+          for (const h of recall.hits) {
+            const item = el('div', 'chron');
+            const head = el('div', 'ch');
+            head.append(el('span', 'cwho', displayName(h.who)),
+              el('span', 'ctime num', new Date(h.ts).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })));
+            item.append(head, el('div', 'ctext', h.text));
+            body.append(item);
+          }
+        }
+
+        if (vault.configured) {
+          body.append(el('div', 'shead', 'Notes'));
+          if (!vault.notes.length) {
+            body.append(el('div', 'empty', 'Nothing matches in your notes.'));
+          } else {
+            for (const n of vault.notes) {
+              const row = el('button', 'note-row');
+              row.append(el('span', 'p', n.path));
+              if (n.lines?.length) {
+                const ctx = el('span', 'ctx');
+                for (const l of n.lines) ctx.append(el('i', null, l.text));
+                row.append(ctx);
+              }
+              row.onclick = () => showNote(n.path);
+              body.append(row);
+            }
+          }
+        }
+      };
+
+      let t;
+      input.oninput = () => { clearTimeout(t); t = setTimeout(() => run(input.value.trim()), 220); };
+      input.onkeydown = (e) => { if (e.key === 'Escape') { input.value = ''; run(''); } };
+      run('');
+      setTimeout(() => input.focus(), 30);
+    },
+  });
+}
+
+/* ================= automation workflows, n8n-style ================= */
+/**
+ * List, run, and edit the court's own automations.
+ *
+ * The node graph itself is edited as JSON in a textarea rather than a visual
+ * builder — a drag-and-drop graph editor is a project of its own, and the
+ * engine's node types (http/delay/log/set/condition/bus/transform/foreach)
+ * are already a small, readable JSON shape. Add a visual editor later if
+ * hand-writing the graph turns out to be the actual friction.
+ */
+export function openWorkflows({ post, toast }) {
+  W.toggle('workflows', {
+    title: 'Automations',
+    build(box) {
+      const body = el('div', 'log settings');
+      box.append(body);
+
+      const TRIGGERS = ['manual', 'interval', 'daily', 'webhook', 'bus'];
+
+      const summarize = (t) => {
+        if (t?.type === 'interval') return `every ${Math.round((t.everyMs ?? 0) / 1000)}s`;
+        if (t?.type === 'daily') return `daily at ${t.at ?? '?'}`;
+        if (t?.type === 'bus') return `on message containing “${t.pattern ?? ''}”`;
+        if (t?.type === 'webhook') return 'webhook';
+        return 'manual';
+      };
+
+      const list = async () => {
+        body.textContent = '';
+        const add = el('button', 'primary', '+ New automation');
+        add.onclick = () => editor(null);
+        body.append(add);
+
+        const r = await get('/api/workflows');
+        if (!r.ok || !r.workflows.length) {
+          body.append(el('div', 'empty', 'No automations yet.'));
+          return;
+        }
+        for (const wf of r.workflows) {
+          const runs = await get(`/api/workflows/runs?id=${encodeURIComponent(wf.id)}`);
+          const last = runs.ok ? runs.runs.at(-1) : null;
+
+          const row = el('div', 'note-row');
+          const main = el('button', 'link');
+          main.append(el('span', 'p', wf.name), el('span', 'ctx', summarize(wf.trigger)));
+          main.onclick = () => editor(wf);
+          row.append(main);
+
+          if (last) {
+            const when = new Date(last.ts).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+            row.append(el('div', 'note', `Last run ${when} — ${last.payload.ok ? 'ok' : `failed: ${last.payload.error}`}`));
+          }
+          if (wf.enabled === false) row.append(el('div', 'note', 'disabled'));
+
+          const act = el('div', 'btns');
+          const run = el('button', null, 'Run now');
+          run.onclick = async () => {
+            run.disabled = true;
+            const r2 = await post('workflows/run', { id: wf.id });
+            toast(r2.ok ? (r2.result.ok ? 'Ran successfully.' : `Ran with an error: ${r2.result.steps.find((s) => !s.ok)?.error}`) : (r2.error ?? 'Could not run it.'), !r2.ok || !r2.result?.ok);
+            list();
+          };
+          const del = el('button', null, 'Delete');
+          del.onclick = async () => {
+            if (del.dataset.armed !== '1') { del.dataset.armed = '1'; del.textContent = 'Confirm delete'; return; }
+            await post('workflows/delete', { id: wf.id });
+            toast(`Deleted ${wf.name}.`);
+            list();
+          };
+          act.append(run, del);
+          row.append(act);
+          body.append(row);
+        }
+      };
+
+      const editor = (wf) => {
+        body.textContent = '';
+        const back = el('button', 'link', '‹ back');
+        back.onclick = list;
+        body.append(back);
+
+        const name = document.createElement('input');
+        name.className = 'msnew';
+        name.placeholder = 'Automation name';
+        name.value = wf?.name ?? '';
+        body.append(el('div', 'note', 'Name'), name);
+
+        const triggerType = document.createElement('select');
+        for (const t of TRIGGERS) {
+          const o = document.createElement('option');
+          o.value = t; o.textContent = t;
+          if (wf?.trigger?.type === t) o.selected = true;
+          triggerType.append(o);
+        }
+        const triggerDetail = document.createElement('input');
+        triggerDetail.className = 'msnew';
+        const paintDetail = () => {
+          if (triggerType.value === 'interval') { triggerDetail.hidden = false; triggerDetail.placeholder = 'Every N seconds'; triggerDetail.value = wf?.trigger?.everyMs ? String(wf.trigger.everyMs / 1000) : ''; }
+          else if (triggerType.value === 'daily') { triggerDetail.hidden = false; triggerDetail.placeholder = 'Time of day, e.g. 09:00'; triggerDetail.value = wf?.trigger?.at ?? ''; }
+          else if (triggerType.value === 'bus') { triggerDetail.hidden = false; triggerDetail.placeholder = 'Fire when a message contains…'; triggerDetail.value = wf?.trigger?.pattern ?? ''; }
+          else triggerDetail.hidden = true;
+        };
+        triggerType.onchange = paintDetail;
+        paintDetail();
+        body.append(el('div', 'note', 'Trigger'), triggerType, triggerDetail);
+        if (wf?.id && wf.trigger?.type === 'webhook') {
+          body.append(el('div', 'note', `POST ${location.origin}/api/workflows/hook?id=${encodeURIComponent(wf.id)}`));
+        }
+
+        const nodes = document.createElement('textarea');
+        nodes.className = 'style';
+        nodes.rows = 14;
+        nodes.spellcheck = false;
+        nodes.value = JSON.stringify(wf?.nodes ?? [
+          { id: 'a', type: 'log', config: { message: 'hello from a new automation' } },
+        ], null, 2);
+        body.append(el('div', 'note', 'Nodes — a small JSON graph: http, delay, log, set, '
+          + 'condition, bus, transform, foreach. Each has an id, a type, config, and next.'), nodes);
+
+        const act = el('div', 'act');
+        const save = el('button', 'primary', wf ? 'Save' : 'Create');
+        save.onclick = async () => {
+          let parsed;
+          try { parsed = JSON.parse(nodes.value); } catch { return toast('Nodes must be valid JSON.', true); }
+          if (!name.value.trim()) return toast('Give it a name.', true);
+          if (triggerType.value === 'daily' && !/^\d{1,2}:\d{2}$/.test(triggerDetail.value.trim())) {
+            return toast('Time of day must look like "09:00".', true);
+          }
+          const trigger = triggerType.value === 'interval' ? { type: 'interval', everyMs: Math.max(1, Number(triggerDetail.value) || 60) * 1000 }
+            : triggerType.value === 'daily' ? { type: 'daily', at: triggerDetail.value.trim() }
+            : triggerType.value === 'bus' ? { type: 'bus', pattern: triggerDetail.value.trim() }
+            : { type: triggerType.value };
+          const r = await post('workflows', { id: wf?.id, name: name.value.trim(), trigger, nodes: parsed, enabled: wf?.enabled !== false });
+          if (!r.ok) return toast(r.error ?? 'Could not save it.', true);
+          toast(wf ? 'Saved.' : 'Created.');
+          list();
+        };
+        act.append(save);
+        body.append(act);
+      };
+
+      list();
+    },
+  });
+}
+
+export function openVault(openPath) {
+  // A citation click (openPath set) must always land on that note, even if
+  // the panel is already open — toggle() would close it instead, and open()
+  // alone would leave an already-open panel sitting wherever it was. Both
+  // the toolbar button (no path) and a citation click go through the same
+  // build() below; only which one they call differs.
+  if (openPath) {
+    const existing = W.getWindow('vault');
+    if (existing) { existing._showVaultPath?.(openPath); W.open('vault', {}); return; }
+  }
+  const opener = openPath ? W.open : W.toggle;
+  opener('vault', {
     title: 'Notes',
     build(box) {
       const search = el('div', 'searchbar');
@@ -675,6 +956,7 @@ export function openVault() {
         body.append(back, el('div', 'note-title', path));
         body.append(el('pre', 'note-body', r.ok ? r.body : (r.error ?? 'Could not read it.')));
       };
+      box._showVaultPath = show;
 
       const seq = sequencer();
       const list = async (q) => {
@@ -709,7 +991,7 @@ export function openVault() {
       let t;
       input.oninput = () => { clearTimeout(t); t = setTimeout(() => list(input.value.trim()), 220); };
       input.onkeydown = (e) => { if (e.key === 'Escape') { input.value = ''; list(''); } };
-      list('');
+      if (openPath) show(openPath); else list('');
       setTimeout(() => input.focus(), 30);
     },
   });

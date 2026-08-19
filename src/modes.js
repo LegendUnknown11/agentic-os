@@ -73,6 +73,33 @@ export const MODES = {
     tasks: true,
     vaultDir: null,
   },
+  automate: {
+    label: 'Automate',
+    blurb: 'Describe an automation in plain language — the orchestrator builds, wires up a trigger, and runs it.',
+    crew: [],
+    worktrees: false,
+    merge: false,
+    tasks: false,
+    vaultDir: null,
+    workflows: true,
+    pipeline:
+      `You build and edit automations by calling workflow_save — translate what the ` +
+      `sovereign describes into a small JSON node graph plus a trigger, and save it ` +
+      `yourself; do not make them write the JSON. Node types: http (call a URL), ` +
+      `delay (wait ms), log (record a line), set (write literal values into the ` +
+      `run's context), condition (branch next to "then" or "else" on a value), bus ` +
+      `(post a message onto the court's own bus), transform (filter+pick over an ` +
+      `array), foreach (repeat a small sub-chain over an array). Each node has an ` +
+      `id, a type, a config, and next (another node's id, or {then,else} after a ` +
+      `condition). Use "{{path.into.ctx}}" inside any config string to read a value ` +
+      `written earlier in the run. Triggers, pick whichever the request implies: ` +
+      `manual (fires only from workflow_run), interval (config: everyMs), daily ` +
+      `(config: at, "HH:MM" local time, fires once per day), webhook ` +
+      `(fires on POST /api/workflows/hook?id=<id>; the request body becomes ` +
+      `ctx.input), bus (fires when a bus message's body contains trigger.pattern; ` +
+      `that message becomes ctx.input). After saving, call workflow_run to prove it ` +
+      `actually works and report the real outcome, not just that you saved it.`,
+  },
 };
 
 export const MODE_NAMES = Object.keys(MODES);
@@ -125,6 +152,7 @@ const GATED = {
   crew:  ['summon', 'assign', 'propose_role'],
   tasks: ['add_task', 'tasks', 'claim_task', 'finish_task', 'submit_plan', 'rule_on_plan'],
   merge: ['request_merge', 'send_back'],
+  workflows: ['workflow_list', 'workflow_get', 'workflow_save', 'workflow_delete', 'workflow_run'],
 };
 
 export function toolAllowed(mode, tool) {
@@ -132,6 +160,7 @@ export function toolAllowed(mode, tool) {
   if (GATED.crew.includes(tool) && !(m.crew === 'all' || m.crew.length)) return false;
   if (GATED.tasks.includes(tool) && !m.tasks) return false;
   if (GATED.merge.includes(tool) && !m.merge) return false;
+  if (GATED.workflows.includes(tool) && !m.workflows) return false;
   return true;
 }
 
@@ -178,7 +207,7 @@ if (typeof process !== 'undefined' && process.argv?.[1]?.endsWith('modes.js')) {
   const a = assert.default ?? assert;
 
   // --- the table itself ---
-  a.deepEqual(MODE_NAMES, ['code', 'research', 'chat', 'build']);
+  a.deepEqual(MODE_NAMES, ['code', 'research', 'chat', 'build', 'automate']);
   for (const n of MODE_NAMES) {
     const m = MODES[n];
     a.ok(m.label && m.blurb, `${n} needs a label and a blurb — both reach the UI`);
@@ -192,6 +221,10 @@ if (typeof process !== 'undefined' && process.argv?.[1]?.endsWith('modes.js')) {
   a.equal(MODES.build.worktrees, true);
   a.deepEqual(MODES.chat.crew, [], 'chat is the orchestrator alone');
   a.equal(MODES.chat.worktrees, false, 'nobody to give a worktree to');
+  a.deepEqual(MODES.automate.crew, [], 'automate is the orchestrator alone');
+  a.equal(MODES.automate.merge, false);
+  a.equal(MODES.automate.workflows, true);
+  a.equal(MODES.code.workflows, undefined, 'workflow tools are automate-only');
 
   // --- modeOf never returns undefined ---
   a.equal(modeOf('code'), MODES.code);
@@ -223,6 +256,9 @@ if (typeof process !== 'undefined' && process.argv?.[1]?.endsWith('modes.js')) {
   a.equal(toolAllowed('chat', 'summon'), false, 'nobody to summon');
   a.equal(toolAllowed('chat', 'add_task'), false, 'no task list in chat');
   a.equal(toolAllowed('research', 'add_task'), true);
+  a.equal(toolAllowed('automate', 'workflow_save'), true);
+  a.equal(toolAllowed('code', 'workflow_save'), false, 'workflow tools are automate-only');
+  a.equal(toolAllowed('automate', 'summon'), false, 'nobody to summon');
   // The report survives everywhere; only the merge after it is withheld.
   for (const n of MODE_NAMES) {
     a.equal(toolAllowed(n, 'declare_done'), true, `${n} must still be able to report work`);
@@ -238,7 +274,8 @@ if (typeof process !== 'undefined' && process.argv?.[1]?.endsWith('modes.js')) {
   a.match(modeBlock('build'), /NOTHING MERGES/);
   a.doesNotMatch(modeBlock('code'), /NOTHING MERGES/);
   a.match(modeBlock('chat'), /no crew|nobody to propose/i);
+  a.match(modeBlock('automate'), /workflow_save/, 'automate must be told how to build a workflow');
   a.match(modeBlock('nonsense'), /CODE MODE/, 'an unknown mode still produces a usable block');
 
-  console.log('modes ok — 4 shapes, merge withheld in 2, chat summons nobody');
+  console.log('modes ok — 5 shapes, merge withheld in 3, chat and automate summon nobody');
 }

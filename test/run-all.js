@@ -20,6 +20,7 @@ import { dirname, join } from 'node:path';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const suites = [
   ['bus self-check', join(HERE, '..', 'src', 'bus.js')],
+  ['workflow engine', join(HERE, '..', 'src', 'workflows.js')],
   ['context audit', join(HERE, '..', 'src', 'ctx.js')],
   ['usage accounting', join(HERE, '..', 'src', 'usage.js')],
   ['turn pricing', join(HERE, '..', 'src', 'price.js')],
@@ -54,6 +55,7 @@ const suites = [
   ['repo creation', join(HERE, 't-ensure-repo.js')],
   ['turn batching', join(HERE, 't-batching.js')],
   ['obsidian vault', join(HERE, 't-vault.js')],
+  ['ai turn markdown', join(HERE, 't-markdown.js')],
   ['budget + recycling', join(HERE, 't-budget.js')],
   ['incremental reads', join(HERE, 't-incremental.js')],
   ['accession briefing', join(HERE, 't-accession.js')],
@@ -64,9 +66,11 @@ const suites = [
   ['standing court roles', join(HERE, 't-roles.js')],
   ['approvals and resting crew', join(HERE, 't-approvals.js')],
   ['real MCP approval chain', join(HERE, 't-mcp-chain.js')],
+  ['ask_question interview flow', join(HERE, 't-questions.js')],
   ['summon payload validation', join(HERE, 't-summon-validation.js')],
   ['advisor: prompt engineer + model selector', join(HERE, 't-advisor.js')],
   ['wallpaper and music assets', join(HERE, 't-assets.js')],
+  ['uploaded documents surfaced to the court', join(HERE, 't-uploads.js')],
   ['metrics, diff and vault panels', join(HERE, 't-panels.js')],
   ['antigravity (agy) backend', join(HERE, 't-agy.js')],
   ['opencode backend', join(HERE, 't-opencode.js')],
@@ -76,6 +80,10 @@ const suites = [
   // The repo becomes optional on top of the four modes: Chat/Research/Build
   // must run with none attached, and only Code may ever require one.
   ['repo becomes optional', join(HERE, 't-repo-optional.js')],
+  // A repo attached live must survive a daemon restart in the same
+  // workspace home it was attached in — see kingdom.js's this.dbPath and
+  // daemon.js's homeRepo for the bug this guards against.
+  ['a live-attached repo survives a restart', join(HERE, 't-daemon-boot.js')],
   ['skill set + observation masking', join(HERE, 't-skills.js')],
   ['panel teardown', join(HERE, 't-win.js')],
   ['a claude that dies mid-turn', join(HERE, 't-claude-death.js')],

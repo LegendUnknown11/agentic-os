@@ -18,7 +18,7 @@ writeFileSync(join(vault, '.obsidian', 'workspace.json'), '{"secret":"config"}')
 writeFileSync(join(vault, '.trash', 'Deleted.md'), 'deleted pricing note');
 
 // Drive the MCP server the way a CLI does: JSON-RPC over stdio.
-function callTool(name, args) {
+function callTool(name, args, extraEnv = {}) {
   const rpc = [
     { jsonrpc: '2.0', id: 1, method: 'initialize', params: {
       protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 't', version: '1' } } },
@@ -34,6 +34,7 @@ function callTool(name, args) {
       KINGDOM_AGENT: 'coder', KINGDOM_ROLE: 'peasant',
       KINGDOM_DB: join(vault, 'test.db'),
       KINGDOM_VAULT: vault, KINGDOM_VAULT_DIR: 'Kingdom',
+      ...extraEnv,
     },
   });
   const reply = r.stdout.split('\n').filter(Boolean)
@@ -379,6 +380,39 @@ a.equal(existsSync(join(vault, '..', 'escaped.md')), false, 'title must not trav
 
   rmSync(join(vault, 'Kingdom', 'Churn Probe.md'), { force: true });
   console.log('  the index is written at most once a minute by the whole court, not once per member');
+}
+
+// --- a project with an attached repo gets its own mirror of what the court
+// wrote about it, so that project's .kingdom folder is never missing what
+// the shared vault knows, even though the vault itself stays put -----------
+{
+  const { kingdomDir } = await import('../src/worktree.js');
+  const repo = mkdtempSync(join(tmpdir(), 'kingdom-mirror-repo-'));
+
+  const saved = callTool('vault_write',
+    { title: 'Mirror Probe', body: 'mirror-token-2291' },
+    { KINGDOM_REPO: repo });
+  a.match(saved, /Kingdom[\/\\]/);
+  const mirrored = join(kingdomDir(repo), 'vault', 'Kingdom', 'Mirror Probe.md');
+  a.ok(existsSync(mirrored), 'a vault write for an attached repo must be mirrored into its .kingdom folder');
+  a.match(readFileSync(mirrored, 'utf8'), /mirror-token-2291/, 'the mirror must carry the real content');
+
+  const remembered = callTool('remember',
+    { title: 'Mirror remember probe', body: 'discovered the hard way' },
+    { KINGDOM_REPO: repo });
+  a.match(remembered, /Remembered:/);
+  const mirroredMemory = join(kingdomDir(repo), 'vault', 'Kingdom', 'Memories', 'Mirror remember probe.md');
+  a.ok(existsSync(mirroredMemory), 'a remember() call for an attached repo must be mirrored too');
+
+  // No repo attached: a write must NOT touch the shared homedir workspace —
+  // that would be silent pollution of the machine's real state on every test run.
+  const { homedir } = await import('node:os');
+  const workspaceVault = join(homedir(), '.kingdom', 'workspace', 'vault', 'Kingdom', 'Reframe route needs SSRF guard.md');
+  a.ok(!existsSync(workspaceVault), 'a repo-less write must not fall back to mirroring the real homedir workspace');
+
+  try { rmSync(kingdomDir(repo), { recursive: true, force: true }); } catch {}
+  try { rmSync(repo, { recursive: true, force: true }); } catch {}
+  console.log('  a repo\'s own .kingdom folder mirrors what the shared vault just learned about it');
 }
 
 try { rmSync(vault, { recursive: true, force: true }); } catch {}

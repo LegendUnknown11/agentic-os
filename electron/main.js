@@ -327,8 +327,7 @@ app.whenReady().then(async () => {
 
   // Someone may already be holding the port — usually this court, re-opened.
   // A conflict only exists when BOTH sides actually name a repo and they
-  // differ: a bare relaunch (no repo) or a court that hasn't attached one yet
-  // just reuses whatever is already running.
+  // differ: a bare relaunch (no repo) reuses whatever is already running.
   let running = await courtOnPort();
   if (running && repo && running.repo && resolve(running.repo) !== repo) {
     const { response } = await dialog.showMessageBox({
@@ -349,6 +348,19 @@ app.whenReady().then(async () => {
       dialog.showErrorBox('The kingdom could not rise', e.message);
       return app.quit();
     }
+  } else if (repo && !running.repo) {
+    // A court is already up but has not attached a repo yet (e.g. a bare
+    // relaunch from earlier). Without this, a repo named on THIS launch's
+    // command line was silently dropped — the window opened, but Code mode
+    // stayed unattached and nothing told the user why.
+    try {
+      const r = await fetch(`${ORIGIN}/api/attachRepo`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ path: repo }),
+      }).then((res) => res.json());
+      if (r.ok) running = { ...running, repo };
+    } catch { /* best-effort: the window still opens either way */ }
   }
 
   // Dictation needs the microphone. Grant it only to the throne room itself —

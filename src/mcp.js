@@ -13,14 +13,16 @@ import {
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, statSync, existsSync } from 'node:fs';
-import { join, resolve, relative, extname } from 'node:path';
+import { join, dirname, resolve, relative, extname } from 'node:path';
 import { Bus } from './bus.js';
 import { diffOf, statOf } from './worktree.js';
+import { listWorkflows, saveWorkflow, deleteWorkflow, runWorkflow, logRun } from './workflows.js';
 import {
   insideVault as vaultInside, walkVault, invalidateVault, noteWritten, searchVault, noteOutline, noteSection,
+  mirrorToProject,
 } from './vault.js';
 import { remember } from './memory.js';
-import { badRole } from './approval.js';
+import { badRole, badQuestions } from './approval.js';
 import { composeSkill, listSkills } from './skills.js';
 import { modeName, modeOf, toolAllowed } from './modes.js';
 
@@ -59,6 +61,11 @@ const ID = process.env.KINGDOM_AGENT ? {} : identityFromCwd();
 const ME = process.env.KINGDOM_AGENT ?? ID.agent ?? 'unknown';
 const ROLE = process.env.KINGDOM_ROLE ?? ID.role ?? 'peasant'; // peasant | briefer | orchestrator
 const REPO = process.env.KINGDOM_REPO ?? ID.repo ?? process.cwd();
+// Distinct from REPO above: that one falls back to cwd so diffing/testing
+// always has SOME path to work against. Mirroring must not — a fallback here
+// would mirror into a random directory's .kingdom instead of correctly
+// mirroring nowhere when no repo is attached.
+const MIRROR_REPO = process.env.KINGDOM_REPO || null;
 /**
  * There may be no kingdom here at all, and that is a normal state.
  *
@@ -78,6 +85,19 @@ const REPO = process.env.KINGDOM_REPO ?? ID.repo ?? process.cwd();
  */
 const DB = process.env.KINGDOM_DB ?? ID.db;
 const bus = DB ? new Bus(DB) : null;
+// Same directory daemon.js schedules and serves workflows from. Derived from
+// DB rather than REPO: the kingdom's home directory is fixed for the court's
+// life (kingdom.js), but REPO can change live when a repo is attached after
+// boot (Kingdom#attachRepo) — using REPO here would silently point at a
+// different, empty directory the moment that happens.
+const WORKFLOWS_DIR = DB ? join(dirname(DB), 'workflows') : null;
+// Same reasoning, same directory daemon.js uploads into and serves from.
+const ASSETS_DIR = DB ? join(dirname(DB), 'assets') : null;
+// Must track daemon.js's DOCUMENT set — the extensions it will actually
+// accept an upload for. Duplicated rather than shared: five extensions in a
+// server-only file and a five-extension Set here are cheaper kept in sync by
+// eye than by a new module built to hold one constant.
+const DOCUMENT_EXT = new Set(['.pdf', '.txt', '.md', '.csv', '.json']);
 if (!bus) {
   process.stderr.write(
     'kingdom MCP: no court in this directory — starting with no tools.\n'
@@ -267,6 +287,45 @@ const TOOLS = {
     },
   },
 
+  recall: {
+    roles: ['peasant', 'briefer', 'orchestrator'],
+    description:
+      'Search everything said or done in this court, all history, not just ' +
+      'recent turns: agent text, tool calls, summaries, and messages.',
+    schema: {
+      type: 'object',
+      properties: {
+        query: str('Words to look for, e.g. "auth bug" or a file name'),
+        limit: { type: 'number', description: 'Max results (default 20)' },
+      },
+      required: ['query'],
+    },
+    run: ({ query, limit = 20 }) => {
+      const hits = bus.recall(query, { limit });
+      if (!hits.length) return `Nothing recalled for "${query}".`;
+      return hits.map((h) =>
+        `[${new Date(h.ts).toISOString()}] ${h.who} (${h.kind}): ` +
+        String(h.text).replace(/\s+/g, ' ').slice(0, 200)).join('\n');
+    },
+  },
+
+  list_uploads: {
+    roles: ['peasant', 'briefer', 'orchestrator'],
+    description:
+      'List documents the sovereign has uploaded (pdf, txt, md, csv, json) for ' +
+      'the court to read. Each entry gives the real file path — open it with ' +
+      'your own file-reading tool, the same as any other file on disk.',
+    schema: { type: 'object', properties: {}, required: [] },
+    run: () => {
+      if (!ASSETS_DIR) return 'No court home directory — nothing to list.';
+      let files;
+      try { files = readdirSync(ASSETS_DIR); } catch { files = []; }
+      const docs = files.filter((f) => DOCUMENT_EXT.has(extname(f).toLowerCase()));
+      if (!docs.length) return 'No documents uploaded.';
+      return docs.map((f) => `${f} — ${join(ASSETS_DIR, f)}`).join('\n');
+    },
+  },
+
   read_events: {
     roles: ['briefer'],
     description:
@@ -309,7 +368,9 @@ const TOOLS = {
     roles: ['peasant', 'briefer', 'orchestrator'],
     description:
       'Search the sovereign\'s notes (models, conventions, past decisions). ' +
-      'Check BEFORE choosing a model, library or approach.',
+      'Check BEFORE choosing a model, library or approach. To cite a hit when ' +
+      'answering the sovereign, link it as [title](vault:path) — spaces as %20 ' +
+      '— and it renders as a click-through to the real note, not a dead link.',
     schema: {
       type: 'object',
       properties: { query: str('Words to look for, e.g. "effort levels" or "pricing"') },
@@ -466,10 +527,12 @@ const TOOLS = {
       if (append && existsSync(file)) {
         writeFileSync(file, readFileSync(file, 'utf8') + `\n\n---\n*${ME} · ${stamp}*\n${body}${linkLine}`);
         noteWritten(VAULT, file);
+        mirrorToProject(MIRROR_REPO, VAULT, file);
         return `Appended to ${writeDirRel}/${slug(title)}.md`;
       }
       writeFileSync(file, `*Recorded by ${ME} · ${stamp}*\n\n${body}${linkLine}`);
       noteWritten(VAULT, file);
+      mirrorToProject(MIRROR_REPO, VAULT, file);
       return `Saved to ${writeDirRel}/${slug(title)}.md`;
     },
   },
@@ -498,6 +561,7 @@ const TOOLS = {
       try {
         const at = remember(VAULT, { title, body, tags, by: ME, dir: VAULT_WRITE_DIR });
         noteWritten(VAULT, join(VAULT, at));   // searchable by the next call
+        mirrorToProject(MIRROR_REPO, VAULT, join(VAULT, at));
         return `Remembered: ${at}`;
       } catch (e) {
         return `Could not remember that: ${e.message}`;
@@ -826,6 +890,54 @@ const TOOLS = {
     },
   },
 
+  ask_question: {
+    roles: ['orchestrator', 'briefer', 'peasant'],
+    description:
+      'Ask the sovereign one or more structured, multiple-choice questions when you are blocked ' +
+      'on a decision only they can make. Returns immediately — the answer arrives later as a bus ' +
+      'message. Do not use for anything you can reasonably decide yourself.',
+    schema: {
+      type: 'object',
+      properties: {
+        questions: {
+          type: 'array',
+          minItems: 1,
+          maxItems: 4,
+          items: {
+            type: 'object',
+            properties: {
+              question: str('The full question'),
+              header: str('Very short label, under 12 chars, e.g. "Auth method"'),
+              multiSelect: { type: 'boolean', description: 'Allow picking more than one option' },
+              options: {
+                type: 'array',
+                minItems: 2,
+                maxItems: 4,
+                items: {
+                  type: 'object',
+                  properties: {
+                    label: str('Short choice text'),
+                    description: str('What this choice means'),
+                  },
+                  required: ['label'],
+                },
+              },
+            },
+            required: ['question', 'header', 'options'],
+          },
+        },
+      },
+      required: ['questions'],
+    },
+    run: ({ questions }) => {
+      const err = badQuestions({ questions });
+      if (err) return `${err} Nothing was asked.`;
+      bus.post(ME, null, JSON.stringify({ kind: 'question', questions }), 'approval');
+      return 'Question(s) posted to the sovereign. Their answer will arrive as a bus message — '
+        + 'continue other work or end your turn.';
+    },
+  },
+
   request_merge: {
     roles: ['orchestrator'],
     description:
@@ -855,6 +967,86 @@ const TOOLS = {
       if (err) return err;
       bus.post(ME, peasant, `Your work was sent back. ${notes}`, 'assignment');
       return `Sent back to ${peasant}.`;
+    },
+  },
+
+  // --- automate mode: the orchestrator builds workflows instead of a crew ---
+
+  workflow_list: {
+    roles: ['orchestrator'],
+    description: 'List every saved automation, with its trigger and node count.',
+    schema: { type: 'object', properties: {}, required: [] },
+    run: async () => {
+      const all = await listWorkflows(WORKFLOWS_DIR);
+      if (!all.length) return 'No automations saved yet.';
+      return all.map((w) =>
+        `${w.id} "${w.name}" — trigger:${w.trigger?.type ?? 'manual'}, ${w.nodes?.length ?? 0} nodes` +
+        (w.enabled === false ? ' (disabled)' : '')).join('\n');
+    },
+  },
+
+  workflow_get: {
+    roles: ['orchestrator'],
+    description: 'Read one automation\'s full node graph and trigger, to edit or debug it.',
+    schema: { type: 'object', properties: { id: str('Workflow id') }, required: ['id'] },
+    run: async ({ id }) => {
+      const wf = (await listWorkflows(WORKFLOWS_DIR)).find((w) => w.id === id);
+      return wf ? JSON.stringify(wf, null, 2) : `No workflow "${id}".`;
+    },
+  },
+
+  workflow_save: {
+    roles: ['orchestrator'],
+    description:
+      'Create or overwrite an automation. Omit id to create a new one; pass an ' +
+      'existing id to edit it in place. See the mode instructions for the node ' +
+      'and trigger vocabulary.',
+    schema: {
+      type: 'object',
+      properties: {
+        id: str('Existing workflow id to overwrite (optional — a new one is generated if omitted)'),
+        name: str('Short human name'),
+        nodes: {
+          type: 'array',
+          description: 'The node graph, first entry is the start node',
+          items: { type: 'object' },
+        },
+        trigger: {
+          type: 'object',
+          description: '{type: "manual"|"interval"|"webhook"|"bus", ...its own config}',
+        },
+        enabled: { type: 'boolean', description: 'Default true; set false to save without scheduling it' },
+      },
+      required: ['name', 'nodes', 'trigger'],
+    },
+    run: async ({ id, name, nodes, trigger, enabled }) => {
+      const wf = { id: id || `wf-${Date.now()}`, name, nodes, trigger, ...(enabled === undefined ? {} : { enabled }) };
+      await saveWorkflow(WORKFLOWS_DIR, wf);
+      return `Saved ${wf.id} "${wf.name}" (trigger: ${wf.trigger?.type}, ${wf.nodes.length} nodes).`;
+    },
+  },
+
+  workflow_delete: {
+    roles: ['orchestrator'],
+    description: 'Delete an automation permanently.',
+    schema: { type: 'object', properties: { id: str('Workflow id') }, required: ['id'] },
+    run: async ({ id }) => {
+      await deleteWorkflow(WORKFLOWS_DIR, id);
+      return `Deleted ${id}.`;
+    },
+  },
+
+  workflow_run: {
+    roles: ['orchestrator'],
+    description: 'Run an automation now, regardless of its trigger, and report what actually happened.',
+    schema: { type: 'object', properties: { id: str('Workflow id') }, required: ['id'] },
+    run: async ({ id }) => {
+      const wf = (await listWorkflows(WORKFLOWS_DIR)).find((w) => w.id === id);
+      if (!wf) return `No workflow "${id}".`;
+      const result = await runWorkflow(wf, { bus });
+      if (bus) logRun(bus, wf, result);
+      const lines = result.steps.map((s) => `  ${s.ok ? 'ok' : 'FAIL'} ${s.id}${s.error ? `: ${s.error}` : ''}`);
+      return `${result.ok ? 'Succeeded' : 'Failed'} (${result.steps.length} steps):\n${lines.join('\n')}`;
     },
   },
 };

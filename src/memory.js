@@ -84,9 +84,21 @@ export function memoryIndex(vault, dir = 'Kingdom', { limit = 40, maxChars = 300
   const rows = [];
   for (const f of files) {
     try {
-      // stat only — the body is never shown here, so reading it would be work
-      // thrown away on every spawn.
-      rows.push({ name: f.replace(/\.md$/, ''), at: statSync(join(d, f)).mtimeMs });
+      const full = join(d, f);
+      // A note without `type: memory` in its frontmatter was not written by
+      // `remember()` — a hand-authored index, a table of contents, someone's
+      // scratch note dropped in this folder — and its filename is not a fact,
+      // so it does not belong in what every member is told "the court
+      // already knows". A real Kingdom/Memories/Index.md landed in this exact
+      // index as "- Index" until this check existed.
+      // Only the leading frontmatter is read (400 chars, `type:` is always
+      // one of its first lines) — no need to find the closing `---`, which
+      // could sit past the slice on a note with a long tag list.
+      const head = readFileSync(full, 'utf8').slice(0, 400);
+      if (!/^---[\s\S]*?\n\s*type:\s*memory\s*(\r?\n|$)/.test(head)) continue;
+      // stat only past the frontmatter peek — the rest of the body is never
+      // shown here, so reading it would be work thrown away on every spawn.
+      rows.push({ name: f.replace(/\.md$/, ''), at: statSync(full).mtimeMs });
     } catch { /* a note that vanished mid-read is not worth failing over */ }
   }
   rows.sort((a, b) => b.at - a.at);
@@ -224,6 +236,15 @@ if (process.argv[1]?.endsWith('memory.js')) {
     `a traversing title must stay inside Memory/, got ${evil}`);
   a.ok(existsSync(abs), 'and must still have been written, not silently dropped');
   a.ok(!existsSync(resolve(v, '..', 'etc')), 'and nothing may appear outside the vault');
+
+  // A hand-authored note in the same folder — an index, a README — is not a
+  // `remember()`-authored fact and must not show up as if it were one.
+  const before = memoryIndex(v).length;
+  writeFileSync(join(v, 'Kingdom', MEMORY_DIR, 'Index.md'),
+    '---\ntype: index\nstatus: active\n---\n\n# Table of contents\n');
+  const withStray = memoryIndex(v);
+  a.equal(withStray.length, before, 'the stray index note must not join the memory index');
+  a.ok(!withStray.some((l) => l.includes('Index')), 'and must not appear under any title');
 
   // The index is capped, and drops the OLDEST rather than truncating a line.
   for (let i = 0; i < 60; i++) remember(v, { title: `mem ${i}`, body: 'x'.repeat(400) });

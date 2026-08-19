@@ -17,6 +17,7 @@ import { inCourt } from './court.js';
 import { cue, soundOn, setSound } from './feel.js';
 import { displayName, agentCount } from './names.js';
 import * as O from './overview.js';
+import { mdToHtml } from './markdown.js';
 // Served straight from src/ by the daemon — the SAME table the orchestrator
 // enforces, so the switcher can never offer a shape the court does not have.
 import { MODES, MODE_NAMES, modeOf, canSummon } from '/modes.js';
@@ -95,19 +96,65 @@ onNotice(toast);
 /* ---------- transcripts ---------- */
 const atBottom = (el) => el.scrollHeight - el.scrollTop - el.clientHeight < 40;
 
+// Only what a model actually WROTE gets markdown — a status line like
+// "— switching to codex —" or a tool-call summary is the app's own voice,
+// plain by design, and running it through the same renderer would let a
+// literal "*" in a file path turn into stray emphasis.
+const MD_CLASSES = new Set(['t-text', 't-sum']);
+const setBody = (d, cls, text) => {
+  if (MD_CLASSES.has(cls)) d.innerHTML = mdToHtml(text);
+  else d.textContent = text;
+};
+
+// A vault: link (see markdown.js) is a citation, not a real href — it never
+// gets an <a target> of its own. One delegated listener catches every one of
+// them, in every transcript, present or future, rather than an onclick wired
+// per rendered link.
+document.addEventListener('click', (e) => {
+  const a = e.target.closest('.vault-link');
+  if (!a) return;
+  e.preventDefault();
+  const [rawPath] = (a.dataset.vault || '').split('#');
+  let path; try { path = decodeURIComponent(rawPath); } catch { path = rawPath; }
+  if (path) P.openVault(path);
+});
+
 function render(el, entry) {
   const d = document.createElement('div');
   d.className = entry.cls;
   if (entry.text.length > 700) {
-    d.textContent = entry.text.slice(0, 700);
+    setBody(d, entry.cls, entry.text.slice(0, 700));
     const more = document.createElement('span');
     more.className = 'more';
     more.textContent = ` …+${entry.text.length - 700}`;
-    more.onclick = () => { d.textContent = entry.text; };
+    more.onclick = () => setBody(d, entry.cls, entry.text);
     d.append(more);
-  } else d.textContent = entry.text;
-  el.append(d);
+  } else setBody(d, entry.cls, entry.text);
+
+  // Group everything between two turn_end boundaries into one card, so the
+  // transcript reads as a sequence of turns instead of one seamless stream.
+  // `_openCard` lives on the log element itself so live append() and the
+  // full-buffer replay on panel reopen (below) use the exact same logic.
+  let card = el._openCard;
+  if (!card) {
+    card = document.createElement('div');
+    card.className = 'turn';
+    el.append(card);
+    el._openCard = card;
+  }
+  card.append(d);
+  if (entry.cls === 't-end') el._openCard = null;
   return d;
+}
+
+/** Undo one render() — the counterpart LOG_CAP trimming needs. */
+function unrender(el) {
+  const card = el.firstElementChild;
+  card?.firstElementChild?.remove();
+  if (card && !card.childElementCount) {
+    card.remove();
+    if (el._openCard === card) el._openCard = null;
+  }
 }
 
 function append(name, cls, text) {
@@ -126,19 +173,20 @@ function append(name, cls, text) {
     prev.n = (prev.n ?? 1) + 1;
     prev.text = `→ ${prev.first} +${prev.n - 1} more`;
     const el = body(name);
-    if (el) el.lastElementChild.textContent = prev.text;
+    if (el) el._openCard.lastElementChild.textContent = prev.text;
     return;
   }
 
   const entry = { cls, text, first: text.replace(/^→ /, '') };
   buf.push(entry);
-  if (buf.length > LOG_CAP) buf.shift();
+  const overflowed = buf.length > LOG_CAP;
+  if (overflowed) buf.shift();
 
   const el = body(name);
   if (el) {
     const stick = atBottom(el);
     render(el, entry);
-    while (el.children.length > LOG_CAP) el.firstChild.remove();
+    if (overflowed) unrender(el);
     if (stick) el.scrollTop = el.scrollHeight;
   }
 }
@@ -192,6 +240,8 @@ function openMember(name) {
       // reference they sit as small chips under the prompt, which is where
       // they belong: they are properties of the next message, not of the
       // window. The title bar keeps only actions.
+      const modelChip = pillChip(sel, 'command', 'Model');
+      const effortChip = pillChip(eff, 'target', 'Effort');
       bar.append(power);
       el.querySelector('.stat').textContent = stats.get(name) ?? '';
 
@@ -233,7 +283,7 @@ function openMember(name) {
       // shapes the next turn, in one row you can read without opening a menu.
       const chips = form.querySelector('.chips');
       const sep = () => { const s = document.createElement('span'); s.className = 'sep'; return s; };
-      chips.append(sel, sep(), eff, sep(), quiet);
+      chips.append(modelChip, effortChip, sep(), quiet);
 
       const input = form.querySelector('input');
       setIcon(form.querySelector('.mic'), 'mic', 'Dictate');
@@ -257,6 +307,18 @@ function openMember(name) {
       applyQuiet();
     },
   });
+}
+
+/** A <select> alone reads as a form control; wrapped with a leading icon in a
+ * rounded pill it reads as what it is — a property of the next turn you can
+ * tap to change, the same shape the model and effort pickers use in the
+ * reference this panel is styled after. */
+function pillChip(selectEl, iconName, label) {
+  const chip = document.createElement('label');
+  chip.className = 'chip';
+  chip.append(icon(iconName), selectEl);
+  chip.title = label;
+  return chip;
 }
 
 /* ---------- model picker ---------- */
@@ -541,10 +603,11 @@ function openBus() {
 }
 
 /* ---------- approvals ---------- */
-const TITLES = { summon: 'SUMMON', role: 'NEW ROLE', merge: 'MERGE' };
+const TITLES = { summon: 'SUMMON', role: 'NEW ROLE', merge: 'MERGE', question: 'QUESTION' };
 
 function renderApproval(a) {
   if (document.getElementById(`ap-${a.id}`)) return;
+  if (a.kind === 'question') return renderQuestion(a);
   const el = document.createElement('details');
   el.className = 'approval';
   el.id = `ap-${a.id}`;
@@ -574,6 +637,98 @@ function renderApproval(a) {
   };
   el.querySelector('.go').onclick = () => decide('approve');
   el.querySelector('.no').onclick = () => decide('reject');
+  $('#approvals').append(el);
+  badge();
+}
+
+/**
+ * The interview-style card for ask_question: one block per question, options
+ * as pill buttons (radio behavior, or checkbox behavior under multiSelect),
+ * plus an always-present "Other" free-text fallback — same shape as Claude's
+ * own AskUserQuestion. Selection state lives in `picked` (one Set per
+ * question), not the DOM, mirroring pillChip's approach elsewhere in this file.
+ */
+function renderQuestion(a) {
+  const el = document.createElement('details');
+  el.className = 'approval question';
+  el.id = `ap-${a.id}`;
+  el.open = true;
+  el.dataset.id = String(a.id);
+  el.innerHTML = `<summary><span></span><span class="who"></span></summary>
+    <div class="qlist"></div><div class="btns"><button class="go submit">Submit</button></div>`;
+  el.querySelector('summary span').textContent = `${TITLES.question} #${a.id}`;
+  el.querySelector('summary .who').textContent = a.from ? `from ${a.from}` : '';
+
+  const qlist = el.querySelector('.qlist');
+  const picked = a.questions.map(() => new Set());
+  a.questions.forEach((q, i) => {
+    const block = document.createElement('div');
+    block.className = 'q';
+    const head = document.createElement('span');
+    head.className = 'qhead';
+    head.textContent = q.header;
+    const text = document.createElement('div');
+    text.className = 'qtext';
+    text.textContent = q.question;
+    const opts = document.createElement('div');
+    opts.className = 'opts';
+    for (const o of q.options ?? []) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'opt';
+      const b = document.createElement('b');
+      b.textContent = o.label;
+      btn.append(b);
+      if (o.description) {
+        const small = document.createElement('small');
+        small.textContent = o.description;
+        btn.append(small);
+      }
+      btn.onclick = () => {
+        if (picked[i].has(o.label)) {
+          picked[i].delete(o.label);
+          btn.classList.remove('picked');
+        } else {
+          if (!q.multiSelect) {
+            picked[i].clear();
+            opts.querySelectorAll('.opt').forEach((x) => x.classList.remove('picked'));
+          }
+          picked[i].add(o.label);
+          btn.classList.add('picked');
+        }
+      };
+      opts.append(btn);
+    }
+    const other = document.createElement('input');
+    other.className = 'other';
+    other.placeholder = 'Other…';
+    block.append(head, text, opts, other);
+    qlist.append(block);
+  });
+
+  const submit = el.querySelector('.submit');
+  submit.onclick = async () => {
+    const answers = a.questions.map((q, i) => {
+      const chosen = [...picked[i]];
+      const other = qlist.children[i].querySelector('.other').value.trim();
+      return other ? [...chosen, other] : chosen;
+    });
+    if (answers.some((ans) => !ans.length)) {
+      toast('Answer every question before submitting.', true);
+      return;
+    }
+    submit.disabled = true;
+    const r = await post('answerQuestion', { id: a.id, answers });
+    if (!r.ok) {
+      submit.disabled = false;
+      toast(r.error ?? 'That answer could not be recorded.', true);
+      return;
+    }
+    el.remove();
+    badge();
+    syncApprovals();
+  };
+
   $('#approvals').append(el);
   badge();
 }
@@ -864,12 +1019,12 @@ ${d.evidence ?? ''} —`);
         break;
       case 'summarizer':
         SUMMARIZER = d;
-        W.getWindow('summarizer')?.dispatchEvent(new Event('kd:summarizer'));
+        W.getWindow('settings')?.dispatchEvent(new Event('kd:summarizer'));
         toast(`Summaries ${d.enabled ? 'on' : 'off'} · ${d.model} · ${d.maxWords} words`);
         break;
       case 'advisor':
         ADVISOR = d;
-        W.getWindow('advisor')?.dispatchEvent(new Event('kd:advisor'));
+        W.getWindow('settings')?.dispatchEvent(new Event('kd:advisor'));
         toast(`Advisor: ${d.model}${d.effort ? '/' + d.effort : ''}`
           + ` · rewrite ${d.promptEngineer ? 'on' : 'off'} · auto-model ${d.autoModel ? 'on' : 'off'}`);
         break;
@@ -1005,34 +1160,29 @@ async function openRepoPicker() {
     if (r.error) return toast(r.error, true);
     return attachRepo(r.path);
   }
-  openRepoPanel();
+  openSettings('repo');
 }
 
 async function attachRepo(path) {
   const r = await post('attachRepo', { path });
   if (!r.ok) return toast(r.error ?? 'Could not attach that repository.', true);
-  W.close('repo-picker');
+  W.close('settings');
   toast('Repository attached — switching to Code mode.');
   post('mode', { mode: 'code' });
 }
 
-function openRepoPanel() {
-  W.toggle('repo-picker', {
-    title: 'Choose a repository',
-    build(box) {
-      const body = document.createElement('div');
-      body.className = 'log settings';
-      const input = document.createElement('input');
-      input.type = 'text';
-      input.placeholder = 'Path to a git repository…';
-      const go = document.createElement('button');
-      go.textContent = 'Attach';
-      go.onclick = () => { if (input.value.trim()) attachRepo(input.value.trim()); };
-      input.onkeydown = (e) => { if (e.key === 'Enter') go.click(); };
-      body.append(input, go);
-      box.append(body);
-    },
-  });
+function buildRepoSection(el) {
+  const body = document.createElement('div');
+  body.className = 'log settings';
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.placeholder = 'Path to a git repository…';
+  const go = document.createElement('button');
+  go.textContent = 'Attach';
+  go.onclick = () => { if (input.value.trim()) attachRepo(input.value.trim()); };
+  input.onkeydown = (e) => { if (e.key === 'Enter') go.click(); };
+  body.append(input, go);
+  el.append(body);
 }
 // Called from the boot block at the bottom, NOT here: paintMode() repaints the
 // toolbar and the overview, and both `TOOLS` and the overview's wiring are
@@ -1134,13 +1284,10 @@ O.initOverview($('#overview'), {
 /* ---------- the summariser ---------- */
 const saveSummarizer = (patch) => post('summarizer', patch);
 
-function openSummarizer() {
-  W.toggle('summarizer', {
-    title: 'Summaries',
-    build(el) {
+function buildSummarySection(pane, panel) {
       const box = document.createElement('div');
       box.className = 'log settings';
-      el.append(box);
+      pane.append(box);
 
       const draw = () => {
         const s = SUMMARIZER;
@@ -1224,19 +1371,14 @@ function openSummarizer() {
       };
 
       draw();
-      el.addEventListener('kd:summarizer', draw);
-    },
-  });
+      panel.addEventListener('kd:summarizer', draw);
 }
 
 /* ---------- notifications ---------- */
-function openNotify() {
-  W.toggle('notify', {
-    title: 'Notifications',
-    build(el) {
+function buildNotifySection(pane) {
       const box = document.createElement('div');
       box.className = 'log settings';
-      el.append(box);
+      pane.append(box);
 
       const draw = () => {
         const s = N.settings();
@@ -1287,18 +1429,13 @@ function openNotify() {
       };
 
       draw();
-    },
-  });
 }
 
 /* ---------- wallpaper ---------- */
-function openWallpaper() {
-  W.toggle('wallpaper', {
-    title: 'Wallpaper',
-    build(el) {
+function buildWallpaperSection(pane) {
       const box = document.createElement('div');
       box.className = 'log settings';
-      el.append(box);
+      pane.append(box);
 
       const draw = () => {
         const bg = A.background();
@@ -1376,9 +1513,7 @@ function openWallpaper() {
 
       draw();
       A.onAssets(draw);
-    },
-    onClose: () => A.onAssets(() => {}),
-  });
+      return () => A.onAssets(() => {});
 }
 
 /** Labelled slider that reports live and saves as you drag. */
@@ -1397,13 +1532,10 @@ function range(label, value, min, max, step, unit, apply) {
 }
 
 /* ---------- music ---------- */
-function openMusic() {
-  W.toggle('music', {
-    title: 'Music',
-    build(el) {
+function buildMusicSection(pane) {
       const box = document.createElement('div');
       box.className = 'log settings';
-      el.append(box);
+      pane.append(box);
 
       const tracks = () => A.list().filter((x) => x.kind === 'audio').map((x) => x.name);
 
@@ -1510,12 +1642,73 @@ function openMusic() {
 
       A.setQueue(tracks());
       draw();
-      // Not `onClose: () => W.getWindow('music')?._offMusic?.()` — close()
-      // removes the window before onClose runs, so that optional chain no-oped
-      // and this ~4Hz subscription outlived every panel it was made for.
-      W.onTeardown('music', off);
-    },
-  });
+      return off;
+}
+
+/* ---------- documents ---------- */
+// Source material the sovereign feeds the court, distinct from the vault
+// (notes the court writes itself). Same upload/list/delete plumbing as
+// wallpaper and music — daemon.js's asset store just also accepts pdf, txt,
+// md, csv and json now — but no player state, so the panel is the plain
+// upload+list+delete shape music uses minus the transport.
+function buildDocumentsSection(pane) {
+      const box = document.createElement('div');
+      box.className = 'log settings';
+      pane.append(box);
+
+      const draw = () => {
+        box.innerHTML = '';
+
+        const act = document.createElement('div');
+        act.className = 'act';
+        const up = document.createElement('button');
+        up.className = 'primary';
+        up.append(icon('upload'), document.createTextNode('Upload document'));
+        up.onclick = async () => {
+          const files = await A.pick('.pdf,.txt,.md,.csv,.json');
+          for (const f of files) {
+            const r = await A.upload(f);
+            if (!r.ok) toast(`${f.name}: ${r.error ?? 'upload failed'}`, true);
+          }
+          draw();
+        };
+        act.append(up);
+        box.append(act);
+
+        const docs = A.list().filter((x) => x.kind === 'document');
+        if (!docs.length) {
+          const e = document.createElement('div');
+          e.className = 'empty';
+          e.textContent = 'Nothing here yet. Upload a pdf, txt, md, csv or json file for the court to read.';
+          box.append(e);
+          return;
+        }
+
+        const note = document.createElement('div');
+        note.className = 'note';
+        note.textContent = 'Any court member can find and read these with list_uploads.';
+        box.append(note);
+
+        const ul = document.createElement('div');
+        ul.className = 'tracks';
+        for (const d of docs) {
+          const r = document.createElement('div');
+          r.className = 'trk';
+          const n = document.createElement('span');
+          n.textContent = d.name;
+          const kill = document.createElement('button');
+          kill.className = 'kill';
+          setIcon(kill, 'close', `Delete ${d.name}`);
+          kill.onclick = async (e) => { e.stopPropagation(); await A.remove(d.name); draw(); };
+          r.append(n, kill);
+          ul.append(r);
+        }
+        box.append(ul);
+      };
+
+      draw();
+      A.onAssets(draw);
+      return () => A.onAssets(() => {});
 }
 
 /* ---------- the advisor ---------- */
@@ -1523,13 +1716,10 @@ function openMusic() {
 // be confusing to configure the same thing in two places.
 const saveAdvisor = (patch) => post('advisor', patch);
 
-function openAdvisor() {
-  W.toggle('advisor', {
-    title: 'Advisor',
-    build(el) {
+function buildAdvisorSection(pane, panel) {
       const box = document.createElement('div');
       box.className = 'log settings';
-      el.append(box);
+      pane.append(box);
 
       const draw = () => {
         box.innerHTML = '';
@@ -1656,9 +1846,52 @@ function openAdvisor() {
       };
 
       draw();
-      el.addEventListener('kd:advisor', draw);
+      panel.addEventListener('kd:advisor', draw);
+}
+
+/* ---------- settings (consolidated) ---------- */
+// Six panels that were each "configuration you touch once" (Wallpaper, Music,
+// Advisor, Summaries, Notifications, Repository) merged into one window with a
+// tab strip, reusing the summon panel's category-tab styling rather than
+// inventing new CSS for it.
+const SETTINGS_SECTIONS = [
+  ['repo', 'Repository', buildRepoSection],
+  ['summary', 'Summaries', buildSummarySection],
+  ['advisor', 'Advisor', buildAdvisorSection],
+  ['image', 'Wallpaper', buildWallpaperSection],
+  ['music', 'Music', buildMusicSection],
+  ['document', 'Documents', buildDocumentsSection],
+  ['bell', 'Notifications', buildNotifySection],
+];
+
+let settingsTeardown = null;
+
+function openSettings(section) {
+  const panel = W.open('settings', {
+    title: 'Settings',
+    build(el) {
+      const nav = document.createElement('div');
+      nav.className = 'sum-cat-tabs';
+      const pane = document.createElement('div');
+      el.append(nav, pane);
+      el._settingsPane = pane;
+      for (const [key, label] of SETTINGS_SECTIONS) {
+        const btn = document.createElement('button');
+        btn.className = 'sum-cat-tab';
+        btn.textContent = label;
+        btn.dataset.key = key;
+        btn.onclick = () => openSettings(key);
+        nav.append(btn);
+      }
     },
+    onClose: () => { settingsTeardown?.(); settingsTeardown = null; },
   });
+  settingsTeardown?.();
+  panel.querySelectorAll('.sum-cat-tab').forEach((b) => b.classList.toggle('on', b.dataset.key === section));
+  const pane = panel._settingsPane;
+  pane.innerHTML = '';
+  const entry = SETTINGS_SECTIONS.find(([key]) => key === section) ?? SETTINGS_SECTIONS[0];
+  settingsTeardown = entry[2](pane, panel) ?? null;
 }
 
 /* ---------- the toolbar ----------
@@ -1677,11 +1910,14 @@ const TOOLS = [
   ['metrics', 'Usage', 'Turns, tokens and spend', () => P.openMetrics()],
   ['diff', 'Changes', 'Review an agent’s work and merge it', () => pickPeasant()],
   ['vault', 'Notes', 'Search your notes', () => P.openVault()],
-  ['summary', 'Summaries', 'The model that condenses each turn', () => openSummarizer()],
-  ['advisor', 'Advisor', 'Prompt engineer and model selector', () => openAdvisor()],
-  ['image', 'Wallpaper', 'Background image, dim and blur', () => openWallpaper()],
-  ['music', 'Music', 'Upload and play', () => openMusic()],
-  ['bell', 'Notifications', 'What the team may interrupt you for', () => openNotify()],
+  ['recall', 'Memory', 'Search everything the court remembers — history and notes together', () => P.openRecall()],
+  ['workflows', 'Automations', 'The court’s n8n-style automations', () => P.openWorkflows({ post, toast })],
+  ['summary', 'Summaries', 'The model that condenses each turn', () => openSettings('summary')],
+  ['advisor', 'Advisor', 'Prompt engineer and model selector', () => openSettings('advisor')],
+  ['image', 'Wallpaper', 'Background image, dim and blur', () => openSettings('image')],
+  ['music', 'Music', 'Upload and play', () => openSettings('music')],
+  ['document', 'Documents', 'Upload something for the court to read', () => openSettings('document')],
+  ['bell', 'Notifications', 'What the team may interrupt you for', () => openSettings('bell')],
   ['who', 'Details panel', 'Show or hide who the selected agent is', () => I.toggleCollapse()],
   ['pet', 'Desk pet', 'Show or hide HappyDog',
     () => toast(PET.toggle() ? 'HappyDog is back.' : 'HappyDog has gone for a walk.')],
@@ -1768,7 +2004,7 @@ function paintGoal() {
  */
 const KEYS = {
   goal: 'g', approve: 'a', bus: 'b', chronicle: 'c', metrics: 'm', diff: 'd', vault: 'v',
-  summon: 'e',
+  summon: 'e', recall: 'r', workflows: 'f',
   summary: 's', advisor: 'i', image: 'w', music: 'u', bell: 'n', who: 'p', sound: 'h',
   pet: 'k', gather: 'j', zoom: '0',
 };

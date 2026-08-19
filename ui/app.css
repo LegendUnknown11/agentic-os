@@ -419,36 +419,61 @@ body.has-bg #bg::after{opacity:var(--bg-dim,.5)}
   background:linear-gradient(rgba(0,0,0,.10),rgba(0,0,0,.22))}
 .win .log>div{margin-bottom:5px;white-space:pre-wrap;word-break:break-word}
 .win .log>div:last-child{margin-bottom:0}
+/* One card per turn: a run of entries between two turn_end boundaries gets a
+   seam above it, so the transcript reads as a sequence of turns rather than
+   one continuous, undifferentiated stream. */
+.win .log .turn{margin-bottom:var(--s4);padding-top:var(--s3);border-top:1px solid var(--edge)}
+.win .log .turn:first-child{margin-top:0;padding-top:0;border-top:none}
+.win .log .turn>div{margin-bottom:5px;white-space:pre-wrap;word-break:break-word}
+.win .log .turn>div:last-child{margin-bottom:0}
 /* A card the size of the stage containing nothing at all was the single most
    damning thing in the first screenshot that ever rendered. */
-.win .log:empty{display:flex;align-items:center;justify-content:center}
-.win .log:empty::after{content:"Nothing from " attr(data-who) " yet — message them below.";
-  color:var(--faint);font:400 var(--t-sm)/1.6 var(--ui);text-align:center;
-  max-width:34ch;opacity:.8}
+.win .log:empty{display:flex;align-items:center;justify-content:center;padding:var(--s5)}
+/* A headline, not a caption — same weight the reference gives its empty
+   composer, in the court's own display serif rather than a borrowed font. */
+.win .log:empty::after{content:"What should " attr(data-who) " work on?";
+  color:var(--dim);font:600 var(--t-xl)/1.3 var(--display);text-align:center;
+  max-width:22ch;opacity:.9}
 
 /* The prompt: its own band, input on its own line, small chips underneath.
    The reference never puts model pickers in a title bar and neither does this. */
 .win form{flex:none;display:flex;flex-direction:column;align-items:stretch;gap:0;
-  padding:0;border-top:1px solid var(--edge-strong);background:rgba(0,0,0,.22)}
-.win form .row1{display:flex;align-items:center;gap:var(--s2);
-  padding:var(--s2) var(--s2) var(--s1) var(--s4)}
+  padding:var(--s3) var(--s3) var(--s3);border-top:1px solid var(--edge-strong);
+  background:rgba(0,0,0,.22)}
+/* The input band is its own pill, like the reference's composer, so the
+   mic and send controls read as part of ONE control instead of three
+   separate ones sharing a strip. */
+.win form .row1{display:flex;align-items:center;gap:var(--s1);
+  background:var(--glass-raised);border:1px solid var(--edge);border-radius:999px;
+  padding:var(--s1) var(--s1) var(--s1) var(--s3);margin-bottom:var(--s2)}
 .win form input{flex:1;background:none;border:0;color:var(--ink);font:inherit;
   font-size:12.5px;padding:var(--s2) 0;outline:none;user-select:text}
 .win form input::placeholder{color:var(--faint);opacity:.85}
-.win form .chips{display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap;
-  padding:0 var(--s3) var(--s3) var(--s4)}
+.win form .chips{display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap;padding:0}
+/* Model and effort as pills — a leading icon plus the value, the same shape
+   as a chip anywhere else in the app, rather than a bare <select>. */
+.win form .chips .chip{display:inline-flex;align-items:center;gap:5px;
+  background:var(--glass-raised);border:1px solid var(--edge);border-radius:999px;
+  padding:3px var(--s2) 3px 7px;cursor:pointer;color:var(--faint);flex:0 1 auto;min-width:0}
+.win form .chips .chip:hover{color:var(--ink);border-color:var(--edge-strong)}
+.win form .chips .chip svg{flex:none;width:12px;height:12px;opacity:.85}
 /* A <select> reports scrollWidth from its WIDEST option, not its shown value,
    so a long model name made the chip overflow its own box. text-overflow does
    nothing on a select; the fix is to let it shrink and clip cleanly. */
-.win form .chips select{background:none;border:0;color:var(--faint);
-  font:400 10.5px/1 var(--ui);padding:3px 4px;border-radius:var(--r-sm);
-  cursor:pointer;outline:none;max-width:15ch;
+.win form .chips .chip select{background:none;border:0;color:inherit;
+  font:400 10.5px/1 var(--ui);padding:0;border-radius:0;
+  cursor:pointer;outline:none;max-width:14ch;
   text-overflow:ellipsis;overflow:hidden;white-space:nowrap;min-width:0;flex:0 1 auto}
-.win form .chips select:hover{color:var(--ink);background:rgba(255,255,255,.06)}
-.win form .chips select:focus{color:var(--ink)}
 .win form .chips .sep{width:1px;height:10px;background:var(--edge);flex:none;opacity:.6}
-.win form .send{flex:none;color:var(--faint);padding:6px;border-radius:var(--r-sm)}
-.win form .send:hover{color:var(--accent);background:rgba(255,255,255,.06)}
+/* The send button is the one filled control in the panel — every other
+   action reads as glass, this one reads as "go", same as the reference's
+   solid circular arrow. */
+.win form .send{flex:none;color:var(--accent-ink);background:var(--accent);
+  width:26px;height:26px;padding:0;border-radius:50%;
+  display:flex;align-items:center;justify-content:center}
+.win form .send:hover{opacity:.88;background:var(--accent)}
+.win form .send svg{width:13px;height:13px}
+.win form .mic{border-radius:50%}
 
 .power{font-size:var(--t-micro);color:var(--faint);padding:2px var(--s2);
   border:1px solid var(--edge);border-radius:var(--r-sm)}
@@ -470,6 +495,24 @@ body.has-bg #bg::after{opacity:var(--bg-dim,.5)}
   padding-left:var(--s2);margin-left:-2px}
 .t-end{height:var(--s3)}
 .more{color:var(--accent);cursor:pointer}
+
+/* What mdToHtml (ui/markdown.js) produces inside a .t-text/.t-sum line. Every
+   CLI answers in markdown, so this is what "the AI's own formatting" looks
+   like once it is actually rendered instead of shown as raw asterisks. */
+.t-text p,.t-sum p{margin:0 0 var(--s2)}
+.t-text p:last-child,.t-sum p:last-child{margin-bottom:0}
+.t-text code,.t-sum code{font-family:var(--mono);font-size:.92em;
+  background:var(--glass-raised);border:1px solid var(--edge);border-radius:4px;
+  padding:1px 5px}
+.t-text pre,.t-sum pre{font-family:var(--mono);font-size:var(--t-sm);line-height:1.5;
+  background:var(--glass-strong);border:1px solid var(--edge);border-radius:var(--r-sm);
+  padding:var(--s2) var(--s3);margin:var(--s2) 0;overflow-x:auto;white-space:pre}
+.t-text pre code,.t-sum pre code{background:none;border:0;padding:0}
+.t-text ul,.t-text ol,.t-sum ul,.t-sum ol{margin:0 0 var(--s2);padding-left:1.4em}
+.t-text li,.t-sum li{margin-bottom:2px}
+.t-text a,.t-sum a{color:var(--accent);text-decoration:underline;text-underline-offset:2px}
+.t-text a:hover,.t-sum a:hover{opacity:.85}
+.t-text strong,.t-sum strong{font-weight:650}
 
 /* The line the cheap model wrote. Given the accent and a rule, because in
    summary-only mode it is the entire content of the panel. */
@@ -550,6 +593,27 @@ body.has-bg #bg::after{opacity:var(--bg-dim,.5)}
 .approval .go:hover{background:rgba(69,236,198,.12)}
 .approval .no{color:var(--dim)}
 .approval .no:hover{color:var(--danger);border-color:rgba(255,133,133,.45)}
+
+.approval.question .qlist{display:flex;flex-direction:column;gap:var(--s4);margin-top:var(--s2)}
+.approval.question .q{display:flex;flex-direction:column;gap:var(--s2)}
+.approval.question .qhead{display:inline-flex;align-self:flex-start;
+  background:var(--glass-raised);border:1px solid var(--edge);border-radius:999px;
+  padding:2px var(--s2);font:600 var(--t-micro)/1.4 var(--ui);color:var(--faint);
+  text-transform:uppercase;letter-spacing:.04em}
+.approval.question .qtext{font-size:var(--t-sm);color:var(--ink)}
+.approval.question .opts{display:flex;flex-wrap:wrap;gap:var(--s2)}
+.approval.question .opt{display:flex;flex-direction:column;gap:1px;text-align:left;
+  background:var(--glass-raised);border:1px solid var(--edge);border-radius:var(--r-md);
+  padding:var(--s2) var(--s3);max-width:100%}
+.approval.question .opt:hover{border-color:var(--edge-strong)}
+.approval.question .opt b{font:600 var(--t-sm)/1.3 var(--ui);color:var(--ink)}
+.approval.question .opt small{font:400 var(--t-micro)/1.3 var(--ui);color:var(--faint)}
+.approval.question .opt.picked{border-color:rgba(69,236,198,.45);background:rgba(69,236,198,.1)}
+.approval.question .opt.picked b{color:var(--accent)}
+.approval.question .other{width:100%;background:var(--glass-raised);border:1px solid var(--edge);
+  border-radius:var(--r-sm);color:var(--ink);font:400 var(--t-sm)/1.4 var(--ui);
+  padding:var(--s2) var(--s3);outline:none}
+.approval.question .other::placeholder{color:var(--faint)}
 
 /* ---------- toast ---------- */
 #toast{position:absolute;left:50%;translate:-50% 0;bottom:var(--s4);z-index:40;

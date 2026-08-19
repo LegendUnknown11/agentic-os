@@ -49,6 +49,8 @@ const P = {
   // A horn: the cone, the bell, and two calls leaving it.
   sound: 'M2.6 6.2h2.4L8.4 3.4v9.2L5 9.8H2.6zM10.8 6a2.8 2.8 0 0 1 0 4M12.8 4a5.4 5.4 0 0 1 0 8',
   diff: 'M4.2 2.8v7.4M4.2 13.2a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zM4.2 5.8a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zM11.8 5.8v4.4M11.8 13.2a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zM11.8 5.8a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zM5.7 4.3h4.6',
+  // A page with a folded corner, and two lines of text.
+  document: 'M4.5 2.6h4.8l2.2 2.2v8.2a.6.6 0 0 1-.6.6h-6.4a.6.6 0 0 1-.6-.6V3.2a.6.6 0 0 1 .6-.6ZM9.3 2.6v2.2h2.2M5.6 8.4h4.8M5.6 10.6h4.8',
 };
 
 /** @returns {SVGSVGElement} 16x16, inherits colour, no fill. */

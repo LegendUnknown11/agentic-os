@@ -8,9 +8,11 @@
 // containment check to get wrong.
 import {
   readdirSync, readFileSync, statSync, writeFileSync, renameSync, rmSync, watch,
+  mkdirSync, copyFileSync,
 } from 'node:fs';
-import { join, resolve, relative, extname } from 'node:path';
+import { join, resolve, relative, extname, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
+import { kingdomDir } from './worktree.js';
 
 /**
  * Resolve a vault-relative path, or null if it escapes.
@@ -144,6 +146,37 @@ export function noteWritten(root, abs) {
   } catch {
     c.files.delete(abs);                // it was a delete
   }
+}
+
+/**
+ * Copy a note the court just wrote into THIS PROJECT's own .kingdom mirror.
+ *
+ * The vault is shared across every project the sovereign runs a court in —
+ * that is deliberate, it is how a decision made here is still visible from
+ * another repo next month. But it also means a single project's .kingdom
+ * folder, on its own, is missing everything the court has ever learned about
+ * it. This keeps a same-shaped copy under kingdomDir(repo)/vault/ so that
+ * folder is self-sufficient too, without changing where the real vault lives.
+ *
+ * No repo, no mirror: Chat/Research/Build can run before any repo is
+ * attached, and their state already lives at the single shared workspace
+ * home (kingdomDir(null)) — mirroring there would just be writing the
+ * sovereign's real homedir on every vault write in every repo-less session
+ * and every test that does not set one up, for no project to actually own it.
+ *
+ * Best-effort otherwise: the vault write already succeeded by the time this
+ * runs, so a mirror failure (disk full, permissions) must not be treated as
+ * the note itself having failed to save.
+ */
+export function mirrorToProject(repo, root, abs) {
+  if (!root || !repo) return;
+  const rel = relative(resolve(root), abs);
+  if (!rel || rel.split(/[\\/]/)[0] === '..') return; // outside the vault; nothing to mirror
+  try {
+    const dest = join(kingdomDir(repo), 'vault', rel);
+    mkdirSync(dirname(dest), { recursive: true });
+    copyFileSync(abs, dest);
+  } catch { /* mirroring is a courtesy copy, not the source of truth */ }
 }
 
 /** Drop the cached corpus for a root. The blunt instrument; prefer noteWritten. */

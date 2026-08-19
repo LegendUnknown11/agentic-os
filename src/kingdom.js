@@ -20,11 +20,12 @@ import { readApproval, badRole } from './approval.js';
 import { parseWindow, autoWindow, fmtTokens } from './compact.js';
 import { ripeness, checkTiming } from './ripeness.js';
 import { argue, pickPanel, verdictNote } from './argue.js';
-import { modeOf, modeName, modeBlock, canSummon } from './modes.js';
+import { modeOf, modeName, modeBlock, canSummon, crewFor } from './modes.js';
 import {
   assertRepo, ensureRepo, behindBase, commitAll, createWorktree, dbPath, diffOf, statOf, kingdomDir,
   globalTokenStore, mergeWorktree, removeWorktree, runTests, testCommand, worktreePath,
 } from './worktree.js';
+import { mirrorToProject } from './vault.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const MCP_PATH = join(HERE, 'mcp.js');
@@ -166,7 +167,12 @@ export class Kingdom extends EventEmitter {
       try { renameSync(configPath, `${configPath}.broken`); } catch { /* nothing to keep */ }
     }
     this.#seedRoles();
-    this.bus = new Bus(dbPath(repo));
+    // Fixed for the instance's life, like this.bus below — attachRepo() mutates
+    // this.repo afterward, but the Bus (and every member's KINGDOM_DB) must keep
+    // pointing at whatever db the daemon actually opened, not wherever repo
+    // later points.
+    this.dbPath = dbPath(repo);
+    this.bus = new Bus(this.dbPath);
     this.agents = new Map(); // name -> Agent (awake, has a live process)
     this.summoned = new Set(); // members in service; may be idle-slept and revived
     this.lastActive = new Map(); // name -> ts, for idle sleep
@@ -452,7 +458,7 @@ export class Kingdom extends EventEmitter {
       writeFileSync(join(cwd, '.agents', 'kingdom-id.json'), JSON.stringify({
         agent: name,
         role,
-        db: dbPath(this.repo),
+        db: this.dbPath,
         repo: this.repo,
         ...(this.config.vault
           ? { vault: this.config.vault, vaultDir: this.config.vaultWriteDir ?? 'Kingdom' }
@@ -479,7 +485,7 @@ export class Kingdom extends EventEmitter {
             environment: {
               KINGDOM_AGENT: name,
               KINGDOM_ROLE: role,
-              KINGDOM_DB: dbPath(this.repo),
+              KINGDOM_DB: this.dbPath,
               KINGDOM_REPO: this.repo,
               ...(this.config.vault
                 ? { KINGDOM_VAULT: this.config.vault, KINGDOM_VAULT_DIR: this.config.vaultWriteDir ?? 'Kingdom' }
@@ -665,8 +671,8 @@ export class Kingdom extends EventEmitter {
         console.warn(`kingdom: approval #${m.id} from ${m.sender} is unreadable — skipped`);
         continue;
       }
-      this.approvals.set(m.id, p);
-      this.emit('approval', { id: m.id, ...p });
+      this.approvals.set(m.id, { ...p, from: m.sender });
+      this.emit('approval', { id: m.id, from: m.sender, ...p });
     }
   }
 
@@ -818,7 +824,7 @@ export class Kingdom extends EventEmitter {
           env: {
             KINGDOM_AGENT: name,
             KINGDOM_ROLE: role,
-            KINGDOM_DB: dbPath(this.repo),
+            KINGDOM_DB: this.dbPath,
             // read_diff needs the repo, not the worktree — omitted entirely
             // rather than passed as null, so mcp.js's own cwd-derived fallback
             // (identityFromCwd) still works when no repo is attached.
@@ -1201,10 +1207,19 @@ export class Kingdom extends EventEmitter {
 
     const m = modeOf(next);
     for (const who of this.agents.keys()) {
+      // A member asleep through several flips only needs the CURRENT mode —
+      // superseding avoids queuing every intermediate one into its next turn.
+      this.bus.supersede(who, '--- THIS COURT IS IN ');
+      // modeBlock(), not a hand-rolled label+blurb: a live flip used to send
+      // only those two things, dropping the crew-empty line and the pipeline
+      // vocabulary (Automate's node/trigger syntax, Research's fact-checker
+      // nudge) that a freshly-spawned member gets baked into its prompt.
+      // Measured effect: a live-flipped orchestrator in Automate mode did not
+      // know it owned workflow_save, delegated the request to a "coder"
+      // peasant that does not exist in this mode, and needed three rounds of
+      // the sovereign hand-writing the exact tool call before it worked.
       this.bus.post('orchestrator', who,
-        `The court is now in ${m.label} mode. ${m.blurb}`
-        + (m.merge ? '' : ' Nothing merges in this mode — leave your work on its branch.')
-        + (why ? `\nWhy: ${why}` : ''),
+        modeBlock(next).trim() + (why ? `\nWhy: ${why}` : ''),
         'notice');
     }
     this.emit('mode', { mode: next, previous: prev, pending: null, why, by });
@@ -1369,10 +1384,17 @@ export class Kingdom extends EventEmitter {
   }
 
   #promptFor(name, role, spec, seedPrompt, orientation = null) {
-    const names = this.config.peasants.map((p) => p.name).join(', ');
+    // crewFor, not the raw roster: a mode with crew:[] (Chat, Automate) or a
+    // shortlist (Research, Build) summons nobody outside it, so the rest of the
+    // bench is dead weight baked into every member's cached system prompt —
+    // measured at ~4.5K tokens for the full 107-peasant roster, repriced at the
+    // cache-WRITE rate on every respawn, for a crew that was never reachable.
+    const crew = crewFor(this.mode(), this.config.peasants.map((p) => p.name));
+    const roster = this.config.peasants.filter((p) => crew.includes(p.name));
+    const names = roster.length ? roster.map((p) => p.name).join(', ') : 'none in this mode';
     // The orchestrator chooses the crew, so it needs to know what each specialist is
     // FOR. Names alone and it summons the coder for everything.
-    const bench = this.config.peasants
+    const bench = roster
       .map((p) => `  ${p.name}${p.title ? ` (${p.title})` : ''} — ${p.description ?? ''}`)
       .join('\n');
     const common =
@@ -1432,7 +1454,14 @@ export class Kingdom extends EventEmitter {
         `called done while it is mocked or unverified. Judge their work against ` +
         `that. A done-report whose tests did not run is UNVERIFIED — send_back ` +
         `and ask for the test, do not request_merge on it. Prefer merging a ` +
-        `small verified slice now over waiting for a large unverified one.\n\n`,
+        `small verified slice now over waiting for a large unverified one.\n\n` +
+        `YOU ALWAYS CALL remember. The bus is pruned and a peasant's worktree is ` +
+        `deleted once merged — anything durable you learn or decide (a scope ` +
+        `change and why, a convention this project uses, a gotcha a peasant hit, ` +
+        `a decision the sovereign made) is GONE once that happens unless you ` +
+        `record it with remember before moving on. Do this as it happens, not ` +
+        `at the end of a session — call remember the moment you know something ` +
+        `is worth keeping, not just when you happen to remember to.\n\n`,
       briefer:
         `You watch everything and you are the orchestrator's eyes. Use read_events and ` +
         `read_bus freely — you are cheap and the orchestrator is not. Use brief_orchestrator to ` +
@@ -1724,8 +1753,8 @@ export class Kingdom extends EventEmitter {
         console.warn(`kingdom: approval #${m.id} from ${m.sender} is unreadable — skipped`);
         continue;
       }
-      this.approvals.set(m.id, payload);
-      this.emit('approval', { id: m.id, ...payload });
+      this.approvals.set(m.id, { ...payload, from: m.sender });
+      this.emit('approval', { id: m.id, from: m.sender, ...payload });
     }
   }
 
@@ -2080,6 +2109,7 @@ export class Kingdom extends EventEmitter {
       const name = question.replace(/[\\/:*?"<>|]/g, '-').replace(/\s+/g, ' ').trim().slice(0, 80);
       path = join(dir, `${name || 'argument'}.md`);
       writeFileSync(path, verdictNote(result, new Date().toISOString().slice(0, 10)));
+      mirrorToProject(this.repo, this.config.vault, path);
     }
 
     // A NOTICE, not a message: the orchestrator did not ask for this and does not have
@@ -2467,6 +2497,23 @@ export class Kingdom extends EventEmitter {
     this.bus.post('orchestrator', this.config.orchestrator.name,
       `The sovereign REJECTED your ${p.kind} proposal. ${why}`);
     this.emit('resolved', { id, approved: false });
+  }
+
+  /**
+   * A question can come from any role, unlike summon/role/merge which are
+   * always the orchestrator's — so the reply goes to whoever actually asked
+   * (`p.from`, carried through by #surfaceApprovals), not a hardcoded name.
+   */
+  answerQuestion(id, answers) {
+    const p = this.approvals.get(id);
+    if (!p) throw new Error(`No pending question ${id}`);
+    if (p.kind !== 'question') throw new Error(`Approval ${id} is not a question`);
+    this.approvals.delete(id);
+    this.bus.set(`resolved:${id}`, 'answered');
+    const text = p.questions.map((q, i) =>
+      `${q.question}\n${(answers[i] ?? []).join(', ') || '(no answer)'}`).join('\n\n');
+    this.bus.post(p.from, p.from, `The sovereign answered:\n\n${text}`);
+    this.emit('resolved', { id, approved: true });
   }
 
   async merge(peasant) {

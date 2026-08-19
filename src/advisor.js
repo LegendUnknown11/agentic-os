@@ -170,10 +170,11 @@ Then classify what the sovereign is actually asking for, as exactly one of:
 - "research" — find something out: investigate, compare, explain, read up on it
 - "chat"     — talk it through; a question about this court itself; thinking out loud
 - "build"    — extend the court: a new skill, a note, standing instructions, configuration
+- "automate" — build or change a saved automation/workflow that runs on its own (a trigger, a schedule, a webhook)
 When it is genuinely both, pick the one the sovereign wants FIRST.
 
 Reply with ONLY this JSON object and nothing else:
-{"mode":"code|research|chat|build","brief":"the rewritten brief"}`;
+{"mode":"code|research|chat|build|automate","brief":"the rewritten brief"}`;
 
 /**
  * Rewrite the sovereign's message, and say what kind of work it is.
@@ -185,7 +186,7 @@ Reply with ONLY this JSON object and nothing else:
  * costs one more line of output on a call that was happening regardless.
  *
  * Returns `{text, mode}`, or null if there is nothing usable. `mode` is null
- * whenever the model did not answer with one of the four — an unclassified
+ * whenever the model did not answer with one of the modes — an unclassified
  * message leaves the court in the shape it was already in, which is the same
  * thing that happens when the advisor is off.
  */

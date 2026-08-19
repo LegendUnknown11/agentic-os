@@ -73,14 +73,22 @@ try {
     console.log('  upload -> list -> serve round-trips, spaces and all');
   }
 
-  /* ---------- 2. only media ---------- */
+  /* ---------- 2. only media and documents ---------- */
   {
-    for (const bad of ['payload.js', 'notes.txt', 'x.exe', 'no-extension', '.env']) {
+    for (const bad of ['payload.js', 'x.exe', 'no-extension', '.env', 'archive.zip']) {
       const r = await put(bad, Buffer.from('x'));
       a.equal(r.ok, false, `${bad} must be refused`);
     }
     a.equal((await put('song.mp3', Buffer.from('x'))).kind, 'audio');
-    console.log('  non-media names refused; audio accepted');
+    a.equal((await put('notes.txt', Buffer.from('x'))).kind, 'document',
+      'a document upload is how the court gets something to read, not just look at or hear');
+    a.equal((await put('report.pdf', Buffer.from('x'))).kind, 'document');
+    for (const del of ['notes.txt', 'report.pdf']) {
+      await fetch(`${base}/api/assets/delete`, {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: del }),
+      });
+    }
+    console.log('  non-media, non-document names refused; audio and documents both accepted');
   }
 
   /* ---------- 3. a hostile name cannot escape the assets directory ------- */
@@ -129,7 +137,9 @@ try {
       body: JSON.stringify({ name }),
     }).then((r) => r.json());
 
-    a.equal((await del('../../../kingdom.config.json')).ok, false, 'a non-media name is refused');
+    // .json is a supported document extension now (see DOCUMENT in daemon.js),
+    // so this can no longer prove refusal — .ini still isn't in any whitelist.
+    a.equal((await del('../../../kingdom.config.ini')).ok, false, 'a non-media, non-document name is refused');
     await del('../../kingdom.db');
     a.ok(existsSync(cfg), 'the config survived');
     a.ok(existsSync(join(kingdomDir(repo), 'kingdom.db')), 'the database survived');

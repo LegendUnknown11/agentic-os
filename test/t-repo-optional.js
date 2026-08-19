@@ -97,6 +97,12 @@ try {
   a.equal(existsSync(dbPath(repo)), false,
     'state must NOT migrate into a repo-relative .kingdom dir — it stays at the workspace home');
 
+  /* ---------- 5b. attachRepo must not move the live db out from under the bus */
+  a.equal(k2.dbPath, dbPath(null),
+    'the db this.bus already opened is fixed at construction — attachRepo must not repoint it');
+  a.notEqual(k2.dbPath, dbPath(repo),
+    'dbPath(repo) and dbPath(null) differ on this machine, so a stale re-derivation would be caught');
+
   const r = k2.setMode('code');
   a.equal(r.changed, true, 'Code becomes reachable the instant a repo is attached, no restart');
   a.equal(k2.mode(), 'code');

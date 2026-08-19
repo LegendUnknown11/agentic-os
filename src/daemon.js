@@ -22,6 +22,7 @@ import { searchVault, recentNotes, readNote } from './vault.js';
 import { Speech } from './stt.js';
 import { deltaOf, totalsOf } from './usage.js';
 import { readApproval } from './approval.js';
+import { listWorkflows, saveWorkflow, deleteWorkflow, runWorkflow, tickScheduler, logRun, runHistory } from './workflows.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PUBLIC = join(HERE, '..', 'ui');
@@ -47,9 +48,18 @@ function savedRepo() {
 
 const repo = repoArg ? resolve(repoArg) : savedRepo();
 const port = Number(flag('--port', 7777));
-const configPath = flag('--config', defaultConfigPath(repo));
+// A repo named explicitly on the command line gets its own repo-relative
+// home (.kingdom/<repoName>/, today's original per-repo layout). A repo
+// found via savedRepo() was instead attached LIVE in a previous session —
+// per Kingdom#attachRepo, its config/db/assets stayed at the workspace home
+// and never migrated, so rediscovering it here must boot from that same
+// home and re-attach, not resolve straight to a repo-relative config/db
+// that session never wrote to (which silently forked into a second, empty
+// "kingdom" on every repo-less restart).
+const homeRepo = repoArg ? repo : null;
+const configPath = flag('--config', defaultConfigPath(homeRepo));
 
-const kingdom = new Kingdom(repo, configPath);
+const kingdom = new Kingdom(homeRepo, configPath);
 const speech = new Speech(process.env.KINGDOM_SPEECHBIRD ?? kingdom.config.speechbird);
 const clients = new Set();
 let ready = false;
@@ -71,14 +81,24 @@ const MIME = {
   '.webp': 'image/webp', '.avif': 'image/avif', '.svg': 'image/svg+xml',
   '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4', '.ogg': 'audio/ogg', '.opus': 'audio/ogg',
   '.wav': 'audio/wav', '.flac': 'audio/flac', '.webm': 'video/webm', '.mp4': 'video/mp4',
+  '.pdf': 'application/pdf', '.txt': 'text/plain', '.md': 'text/markdown',
+  '.csv': 'text/csv', '.json': 'application/json',
 };
 
 // Backgrounds and music the sovereign uploads. Kept beside the database, i.e.
 // OUTSIDE the target repo — a wallpaper must never turn up in a diff.
-const ASSETS = join(kingdomDir(repo), 'assets');
+const ASSETS = join(kingdomDir(homeRepo), 'assets');
+// Automation workflows, same reasoning: they're the court's own tooling, not
+// something that belongs in a target repo's diff.
+const WORKFLOWS_DIR = join(kingdomDir(homeRepo), 'workflows');
 const IMAGE = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.avif', '.svg']);
 const AUDIO = new Set(['.mp3', '.m4a', '.ogg', '.opus', '.wav', '.flac']);
 const VIDEO = new Set(['.webm', '.mp4']);
+// Source material the sovereign feeds the court to read — not something the
+// court writes itself (that's the vault). No .docx/.pptx: those need a real
+// parser, and every CLI backend is already a coding agent that can read a
+// PDF or a text file by path without one — see mcp.js's list_uploads.
+const DOCUMENT = new Set(['.pdf', '.txt', '.md', '.csv', '.json']);
 
 /**
  * Filenames arrive from the browser, so they are untrusted input. Keep the stem
@@ -87,14 +107,15 @@ const VIDEO = new Set(['.webm', '.mp4']);
  */
 function safeAsset(name) {
   const ext = extname(String(name ?? '')).toLowerCase();
-  if (!IMAGE.has(ext) && !AUDIO.has(ext) && !VIDEO.has(ext)) return null;
+  if (!IMAGE.has(ext) && !AUDIO.has(ext) && !VIDEO.has(ext) && !DOCUMENT.has(ext)) return null;
   const stem = basename(String(name), ext).replace(/[^a-zA-Z0-9 _-]/g, '').trim().slice(0, 80);
   return `${stem || 'upload'}${ext}`;
 }
 
 const kindOf = (f) => {
   const e = extname(f).toLowerCase();
-  return IMAGE.has(e) ? 'image' : AUDIO.has(e) ? 'audio' : VIDEO.has(e) ? 'video' : null;
+  return IMAGE.has(e) ? 'image' : AUDIO.has(e) ? 'audio' : VIDEO.has(e) ? 'video'
+    : DOCUMENT.has(e) ? 'document' : null;
 };
 
 const ACTIONS = {
@@ -113,6 +134,7 @@ const ACTIONS = {
   sleep: (b) => kingdom.sleep(b.name),
   approve: (b) => kingdom.approve(Number(b.id)),
   reject: (b) => kingdom.reject(Number(b.id), b.why ?? ''),
+  answerQuestion: (b) => kingdom.answerQuestion(Number(b.id), b.answers),
   merge: (b) => kingdom.merge(b.peasant),
   model: (b) => kingdom.setModel(b.name, {
     cli: b.cli, model: b.model, effort: b.effort, auto: b.auto,
@@ -443,6 +465,75 @@ const handle = async (req, res) => {
     });
   }
 
+  // ---- recall: search everything the court has said or done ------------
+  if (url.pathname === '/api/recall') {
+    const send = (code, o) =>
+      res.writeHead(code, { 'content-type': 'application/json' }).end(JSON.stringify(o));
+    const q = url.searchParams.get('q');
+    if (!q?.trim()) return send(200, { ok: true, query: '', hits: [] });
+    return send(200, { ok: true, query: q, hits: kingdom.bus.recall(q, { limit: 40 }) });
+  }
+
+  // ---- automation workflows, n8n-style ----------------------------------
+  // GET  /api/workflows            list them all
+  // GET  /api/workflows/runs?id=x  last 20 run outcomes for one workflow
+  // POST /api/workflows            create/update {id?, name, trigger, nodes, enabled}
+  // POST /api/workflows/delete     {id}
+  // POST /api/workflows/run        {id} -> run once now, return the trace
+  // POST /api/workflows/hook?id=x  fire a trigger:"webhook" workflow now; the
+  //                                 request body becomes ctx.input
+  if (url.pathname.startsWith('/api/workflows')) {
+    const send = (code, o) =>
+      res.writeHead(code, { 'content-type': 'application/json' }).end(JSON.stringify(o));
+
+    if (req.method === 'GET' && url.pathname === '/api/workflows') {
+      return send(200, { ok: true, workflows: await listWorkflows(WORKFLOWS_DIR) });
+    }
+    if (req.method === 'GET' && url.pathname === '/api/workflows/runs') {
+      const id = url.searchParams.get('id');
+      if (!id) return send(400, { ok: false, error: 'id required' });
+      return send(200, { ok: true, runs: runHistory(kingdom.bus, id) });
+    }
+
+    let body = '';
+    for await (const c of req) body += c;
+
+    if (url.pathname === '/api/workflows/hook') {
+      if (req.method !== 'POST') return res.writeHead(405).end();
+      const id = url.searchParams.get('id');
+      const wf = (await listWorkflows(WORKFLOWS_DIR)).find((w) => w.id === id);
+      if (!wf) return send(404, { ok: false, error: 'no such workflow' });
+      if (wf.trigger?.type !== 'webhook') return send(400, { ok: false, error: 'not a webhook-triggered workflow' });
+      let input; try { input = body ? JSON.parse(body) : {}; } catch { input = body; }
+      const result = await runWorkflow(wf, { bus: kingdom.bus, input });
+      logRun(kingdom.bus, wf, result);
+      return send(200, { ok: true, result });
+    }
+
+    if (req.method !== 'POST') return res.writeHead(405).end();
+    const b = body ? JSON.parse(body) : {};
+
+    if (url.pathname === '/api/workflows/delete') {
+      if (!b.id) return send(400, { ok: false, error: 'id required' });
+      await deleteWorkflow(WORKFLOWS_DIR, b.id);
+      return send(200, { ok: true });
+    }
+    if (url.pathname === '/api/workflows/run') {
+      const wf = (await listWorkflows(WORKFLOWS_DIR)).find((w) => w.id === b.id);
+      if (!wf) return send(404, { ok: false, error: 'no such workflow' });
+      const result = await runWorkflow(wf, { bus: kingdom.bus });
+      logRun(kingdom.bus, wf, result);
+      return send(200, { ok: true, result });
+    }
+    if (url.pathname === '/api/workflows') {
+      if (!b.name) return send(400, { ok: false, error: 'name required' });
+      const wf = { ...b, id: b.id || `wf-${Date.now()}` };
+      await saveWorkflow(WORKFLOWS_DIR, wf);
+      return send(200, { ok: true, workflow: wf });
+    }
+    return res.writeHead(404).end();
+  }
+
   // ---- backgrounds and music -------------------------------------------
   // GET  /api/assets            list what has been uploaded
   // POST /api/assets?name=x.jpg store a file (raw body)
@@ -580,8 +671,22 @@ createServer((req, res) => handle(req, res).catch((e) => {
 })).listen(port, '127.0.0.1', async () => {
   try {
     await kingdom.start();
+    // A saved repo (found via savedRepo(), not named on the CLI) boots from
+    // the workspace home above — re-attach it now, live, exactly as the UI's
+    // POST /api/attachRepo would, so kingdom.repo/base and Code mode come up
+    // the same way this session left them.
+    if (!repoArg && repo) await kingdom.attachRepo(repo);
     ready = true;
     console.log(`throne room: http://127.0.0.1:${port}  (repo: ${repo})`);
+    // Interval-triggered workflows. 5s resolution, not per-workflow timers —
+    // same tradeoff bus.js's own poll makes: fewer moving parts, and a newly
+    // saved or edited workflow is picked up on the very next tick for free.
+    setInterval(() => {
+      tickScheduler(WORKFLOWS_DIR, {
+        bus: kingdom.bus,
+        onRun: (wf, result) => push('workflow_run', { id: wf.id, name: wf.name, ok: result.ok }),
+      }).catch((e) => console.error('workflow scheduler:', e?.stack ?? e));
+    }, 5000);
   } catch (e) {
     console.error(e?.stack ?? e);
     process.exitCode = 1;

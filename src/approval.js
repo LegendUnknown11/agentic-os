@@ -18,7 +18,7 @@
 // that fails this is dropped with a line on stderr: a bad record must cost
 // itself and nothing else, and never the queue it is sitting in.
 
-const NEEDS = { summon: 'names', role: 'name', merge: 'peasant' };
+const NEEDS = { summon: 'names', role: 'name', merge: 'peasant', question: 'questions' };
 
 /**
  * Parse an approval message body, or return null if nothing renderable is in
@@ -67,8 +67,54 @@ export function badRole(p, { taken = [] } = {}) {
   return null;
 }
 
+/**
+ * Why a proposed ask_question call cannot be posted, or null if it can.
+ *
+ * Checked at the tool boundary (mcp.js), before anything reaches the
+ * sovereign, so a malformed call costs the caller one message instead of a
+ * card the sovereign has to puzzle over. readApproval's own gate only checks
+ * that `questions` exists at all — this checks it is actually renderable.
+ */
+export function badQuestions(p) {
+  const qs = p?.questions;
+  if (!Array.isArray(qs) || qs.length < 1 || qs.length > 4) {
+    return 'questions must be an array of 1 to 4 questions.';
+  }
+  for (const q of qs) {
+    if (typeof q?.question !== 'string' || !q.question.trim()) {
+      return 'Every question needs non-empty question text.';
+    }
+    if (typeof q?.header !== 'string' || !q.header.trim()) {
+      return 'Every question needs a short header label.';
+    }
+    if (!Array.isArray(q.options) || q.options.length < 2 || q.options.length > 4) {
+      return `"${q.header}" needs 2 to 4 options.`;
+    }
+    if (q.options.some((o) => typeof o?.label !== 'string' || !o.label.trim())) {
+      return `"${q.header}" has an option with no label.`;
+    }
+  }
+  return null;
+}
+
 if (process.argv[1]?.endsWith('approval.js')) {
   const { strict: a } = await import('node:assert');
+
+  a.deepEqual(
+    readApproval('{"kind":"question","questions":[{"question":"Which?","header":"H","options":[{"label":"A"},{"label":"B"}]}]}'),
+    { kind: 'question', questions: [{ question: 'Which?', header: 'H', options: [{ label: 'A' }, { label: 'B' }] }] });
+  a.equal(readApproval('{"kind":"question"}'), null, 'a question with no questions array throws in the UI');
+
+  a.equal(badQuestions({ questions: [{ question: 'Q', header: 'H', options: [{ label: 'A' }, { label: 'B' }] }] }), null);
+  a.match(badQuestions({ questions: [] }), /1 to 4 questions/, 'zero questions is nothing to ask');
+  a.match(badQuestions({ questions: Array(5).fill({ question: 'Q', header: 'H', options: [{ label: 'A' }, { label: 'B' }] }) }),
+    /1 to 4 questions/);
+  a.match(badQuestions({ questions: [{ header: 'H', options: [{ label: 'A' }, { label: 'B' }] }] }), /question text/);
+  a.match(badQuestions({ questions: [{ question: 'Q', options: [{ label: 'A' }, { label: 'B' }] }] }), /header label/);
+  a.match(badQuestions({ questions: [{ question: 'Q', header: 'H', options: [{ label: 'A' }] }] }), /2 to 4 options/,
+    'one option is not a choice');
+  a.match(badQuestions({ questions: [{ question: 'Q', header: 'H', options: Array(5).fill({ label: 'A' }) }] }), /2 to 4 options/);
+  a.match(badQuestions({ questions: [{ question: 'Q', header: 'H', options: [{}, { label: 'B' }] }] }), /no label/);
 
   a.equal(readApproval('this is not json at all'), null, 'unparseable is null, not a throw');
   a.equal(readApproval('null'), null);
@@ -108,5 +154,5 @@ if (process.argv[1]?.endsWith('approval.js')) {
     'an unknown cli fell through to codex and ran the wrong model in silence');
   a.equal(badRole({ name: 'ok' }), null, 'cli is optional — peasantDefaults supplies it');
 
-  console.log('approval.js self-check OK — unreadable rows are null, bad roles never reach disk');
+  console.log('approval.js self-check OK — unreadable rows are null, bad roles and bad questions never reach disk');
 }
