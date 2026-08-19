@@ -23,8 +23,8 @@ import {
 } from './vault.js';
 import { remember } from './memory.js';
 import { badRole, badQuestions } from './approval.js';
-import { composeSkill, listSkills } from './skills.js';
-import { modeName, modeOf, toolAllowed } from './modes.js';
+import { composeSkill, listSkills, slugSkill, SKILLS_DIR } from './skills.js';
+import { modeName, modeOf, toolAllowed, MODE_NAMES } from './modes.js';
 
 // Search results are replayed in the member's context on every later turn, so
 // the payload is a token budget, not just a display limit.
@@ -429,6 +429,60 @@ const TOOLS = {
       }
       return `# skill: ${s.name}\n${s.description ? `_${s.description}_\n` : ''}`
         + `${s.parts.length ? `_combo — includes ${s.parts.join(', ')}_\n` : ''}\n${s.text}`;
+    },
+  },
+
+  skill_save: {
+    roles: ['orchestrator', 'briefer', 'peasant'],
+    description:
+      'Write a new named procedure into the court skill set, or replace one. A '
+      + 'skill is a METHOD followed the same way every time — not knowledge '
+      + '(that is remember) and not a standing rule (those are the sovereign '
+      + 'Court Instructions). Write one when you have just worked out how to do '
+      + 'something the court will do again, and the steps mattered.',
+    schema: {
+      type: 'object',
+      properties: {
+        name: str('Lowercase kebab, e.g. "ship-migration". One colon makes it a pack: "design:a11y".'),
+        description: str('One line: WHEN to reach for this. It is the only part every member carries.'),
+        body: str('Markdown. The steps, in the order they are actually done.'),
+      },
+      required: ['name', 'description', 'body'],
+    },
+    run: ({ name, description, body }) => {
+      if (!VAULT) return 'No vault is configured for this kingdom, and skills live in it.';
+      const slugged = slugSkill(name);
+      if (!slugged) return `"${name}" leaves nothing usable as a skill name. Nothing was written.`;
+
+      // Under Kingdom/Skills/ because that is where skills.js reads them from,
+      // and NOT through vault_write: that tool puts the note in the folder the
+      // MODE chooses and strips '/' out of the title, so no member could ever
+      // land a file here. A court told it may extend itself, in a Build mode
+      // whose own blurb says "skills, notes, instructions", could not write one.
+      const dir = join(VAULT, VAULT_WRITE_DIR, SKILLS_DIR);
+      mkdirSync(dir, { recursive: true });
+      const file = join(dir, `${slugged}.md`);
+      const replaced = existsSync(file);
+
+      // Frontmatter first: skills.js reads name and description out of it, and
+      // a skill without them is invisible to the index every member carries.
+      writeFileSync(file,
+        `---\nname: ${slugged}\ndescription: ${String(description).replace(/\r?\n/g, ' ').trim()}\n---\n`
+        + `# ${slugged}\n${body}\n`);
+      noteWritten(VAULT, file);
+      mirrorToProject(MIRROR_REPO, VAULT, file);
+
+      // A shipped skill of the same name is now shadowed — the vault wins on a
+      // collision by design, but silently overriding one is not a thing to
+      // discover later.
+      const shadows = !replaced
+        && listSkills(VAULT).some((s) => s.name === slugged && s.source === 'builtin');
+
+      return `Saved ${VAULT_WRITE_DIR}/${SKILLS_DIR}/${slugged}.md.`
+        + (replaced ? ' It replaced the previous version.' : '')
+        + (shadows ? ' It now overrides the skill the court ships under that name.' : '')
+        + ` You can load it right now with skill("${slugged}"); everyone else picks it up `
+        + 'in their index when they next start.';
     },
   },
 
@@ -935,6 +989,146 @@ const TOOLS = {
       bus.post(ME, null, JSON.stringify({ kind: 'question', questions }), 'approval');
       return 'Question(s) posted to the sovereign. Their answer will arrive as a bus message — '
         + 'continue other work or end your turn.';
+    },
+  },
+
+  argue: {
+    // The orchestrator only. This is three to five one-shot model calls across two
+    // vendors, and it is the orchestrator that owns contested decisions — the same
+    // reason summon and propose_role are its alone. A peasant that wants a
+    // question settled asks the orchestrator for one.
+    roles: ['orchestrator'],
+    description:
+      'Put a genuinely contested question to the argument court: two different '
+      + 'models argue it and a third judges. Returns immediately — the verdict '
+      + 'arrives later as a message. Use it where asking two members would just '
+      + 'produce one opinion twice; not for anything you can settle yourself.',
+    schema: {
+      type: 'object',
+      properties: {
+        question: str('The question, stated so it could honestly be answered either way'),
+      },
+      required: ['question'],
+    },
+    run: ({ question }) => {
+      const q = String(question ?? '').trim();
+      if (!q) return 'Nothing was argued: the question is empty.';
+      // The same 4,000-char ceiling the bus puts on a message. A debate is not
+      // a document, and argue.js trims each side to 6,000 anyway.
+      if (q.length > 4000) {
+        return `Nothing was argued: the question is ${q.length} chars, and the limit is 4000. State it shorter.`;
+      }
+      bus.post(ME, null, JSON.stringify({ question: q }), 'argue');
+      return 'Sent to the argument court. The verdict arrives later as a message — '
+        + 'do not wait on it, carry on with something else.';
+    },
+  },
+  set_mode: {
+    // The orchestrator only. A mode decides who may be summoned, what tools exist and
+    // where notes land — it is the shape of the whole court, not one member.
+    roles: ['orchestrator'],
+    description:
+      'Change what shape the court is in. Do this when the work in front of you '
+      + 'is plainly a different KIND of work than the mode allows — a coding job '
+      + 'asked for in Chat, a question that wants a research note. Says so to '
+      + 'everyone. Code needs a repository attached and comes back refused if '
+      + 'there is none, so do not promise the sovereign a switch you have not made yet.',
+    schema: {
+      type: 'object',
+      properties: {
+        mode: str(`One of: ${MODE_NAMES.join(', ')}`),
+        why: str('One line the rest of the court will read. Optional.'),
+      },
+      required: ['mode'],
+    },
+    run: ({ mode, why }) => {
+      // Checked against the real list, NOT through modeName(): that falls back
+      // to DEFAULT_MODE for anything it does not recognise, so a typo would
+      // quietly put the whole court into Code mode.
+      if (!MODE_NAMES.includes(mode)) {
+        return `No such mode: "${mode}". The court has: ${MODE_NAMES.join(', ')}. Nothing changed.`;
+      }
+      if (mode === modeNow()) return `The court is already in ${modeOf(mode).label} mode.`;
+      bus.post(ME, null, JSON.stringify({ op: 'mode', mode, why: why ?? '' }), 'control');
+      return 'Asked for the switch. It lands within a second and everyone is told; '
+        + 'if it is refused you get a message saying why, so carry on rather than waiting on it.';
+    },
+  },
+
+  wake_member: {
+    roles: ['orchestrator'],
+    description:
+      'Wake a member that is on the roster but asleep, so it can pick work up '
+      + 'again. This is not summoning: it adds nobody, it only restarts someone '
+      + 'the sovereign already approved.',
+    schema: {
+      type: 'object',
+      properties: { name: str('A name already on the roster') },
+      required: ['name'],
+    },
+    run: ({ name }) => {
+      const known = rosterNow().map((x) => x.name);
+      if (!known.includes(name)) {
+        return `Nobody on the roster is called "${name}". The court has: ${known.join(', ')}.`;
+      }
+      bus.post(ME, null, JSON.stringify({ op: 'wake', name }), 'control');
+      return `Waking ${name}. You get a message when it is up.`;
+    },
+  },
+
+  dismiss_member: {
+    roles: ['orchestrator'],
+    description:
+      'Stand a member down when its work is genuinely finished. This is the '
+      + 'one cost lever you hold: an idle member still costs a full context '
+      + 'replay every time it wakes. It leaves the roster and must be summoned '
+      + 'again — with the sovereign approving — to come back, so do not use it '
+      + 'to park somebody for a minute.',
+    schema: {
+      type: 'object',
+      properties: {
+        name: str('A member currently on the roster'),
+        why: str('One line for the record. Optional.'),
+      },
+      required: ['name'],
+    },
+    run: ({ name }) => {
+      if (name === ME) return 'You cannot stand yourself down. Ask the sovereign.';
+      const known = rosterNow().map((x) => x.name);
+      if (!known.includes(name)) {
+        return `Nobody on the roster is called "${name}". The court has: ${known.join(', ')}.`;
+      }
+      bus.post(ME, null, JSON.stringify({ op: 'sleep', name }), 'control');
+      return `Standing ${name} down.`;
+    },
+  },
+
+  set_model: {
+    roles: ['orchestrator'],
+    description:
+      'Move a member onto a different model or effort level. Use it when the '
+      + 'work and the model are plainly mismatched in either direction — a '
+      + 'reasoning model grinding through a rename, or a small one out of its '
+      + 'depth. Changing the CLI throws that member session away, so say why in '
+      + 'the same breath.',
+    schema: {
+      type: 'object',
+      properties: {
+        name: str('A member on the roster'),
+        cli: str('claude, codex or agy. Optional — leave it out to keep the current one.'),
+        model: str('Model name. Optional — leave it out for that CLI default.'),
+        effort: str('Reasoning effort, where the model has one. Optional.'),
+      },
+      required: ['name'],
+    },
+    run: ({ name, cli, model, effort }) => {
+      const known = rosterNow().map((x) => x.name);
+      if (!known.includes(name)) {
+        return `Nobody on the roster is called "${name}". The court has: ${known.join(', ')}.`;
+      }
+      if (!cli && !model && !effort) return 'Nothing to change: name a cli, a model or an effort.';
+      bus.post(ME, null, JSON.stringify({ op: 'model', name, cli, model, effort }), 'control');
+      return `Asked to move ${name}. You get a message with what it ended up on.`;
     },
   },
 

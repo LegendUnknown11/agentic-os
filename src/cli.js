@@ -9,6 +9,7 @@
 import { createInterface } from 'node:readline';
 import { resolve } from 'node:path';
 import { Kingdom, defaultConfigPath } from './kingdom.js';
+import { fmt as fmtForecast } from './forecast.js';
 
 const argv = process.argv.slice(2);
 const repo = resolve(argv[0] ?? '.');
@@ -29,9 +30,23 @@ k.on('event', ({ name, kind, payload }) => {
 k.on('delivered', ({ to, msg }) => console.log(c.dim(`  ✉ ${msg.sender} → ${to}`)));
 k.on('verified', ({ peasant, tests }) =>
   console.log(c.dim(`  ⚑ ${peasant} tests: ${tests.ran ? (tests.ok ? 'PASS' : 'FAIL') : 'none'}`)));
-k.on('approval', (a) =>
-  console.log(`\n\x1b[33m▲ APPROVAL #${a.id} (${a.kind})\x1b[0m ${JSON.stringify(a, null, 2)}\n` +
-    c.dim(`  /approve ${a.id}   /reject ${a.id}`)));
+k.on('approval', (a) => {
+  // The same per-turn burn the throne room puts on the card. A terminal
+  // sovereign trims the crew from exactly the same decision and deserves
+  // exactly the same number — and it must not be able to stop the printout:
+  // an approval nobody can read is an approval nobody can answer.
+  let cost = null;
+  if (a.kind === 'summon') {
+    try {
+      cost = fmtForecast(k.forecast(a.names));
+    } catch (e) {
+      cost = c.dim(`  (no forecast: ${e.message})`);
+    }
+  }
+  console.log(`\n\x1b[33m▲ APPROVAL #${a.id} (${a.kind})\x1b[0m ${JSON.stringify(a, null, 2)}\n`
+    + (cost ? `${cost}\n` : '')
+    + c.dim(`  /approve ${a.id}   /reject ${a.id}`));
+});
 k.on('merged', ({ peasant }) => console.log(`\x1b[32m✔ merged ${peasant}\x1b[0m`));
 k.on('recycled', ({ name }) => console.log(c.dim(`  ♻ ${name} recycled`)));
 k.on('error', (e) => console.error('\x1b[31morchestrator:', e.message, '\x1b[0m'));

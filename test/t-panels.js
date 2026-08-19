@@ -262,6 +262,28 @@ try {
     a.ok(r.approvals.every((x) => typeof x.kind === 'string'),
       'every row handed to the UI must carry the field the UI renders on');
     console.log('  approvals: unreadable rows dropped, the readable one survives');
+
+    // The summon card carries what the crew costs per turn. Hand-derived
+    // from the seeded events above: coder took ONE turn of 40,000 input and
+    // 400 output. codex is named in config.quotas here, so it is billed
+    // against a plan and not a metered key — the card must therefore report
+    // tokens and refuse to report dollars, even though the rate card does
+    // have a row for it. Inventing a price for a subscription is the exact
+    // failure the quota feature exists to prevent.
+    const f = r.approvals[0].forecast;
+    a.ok(f, 'a pending summon must carry the cost of the crew it proposes');
+    a.equal(f.members.length, 1, 'one proposed name, one line on the card');
+    a.equal(f.members[0].name, 'coder');
+    a.equal(f.members[0].turns, 1, 'one seeded turn_end for coder');
+    a.equal(f.members[0].perTurnUsd, null,
+      'a quota-billed cli must never be priced from the metered rate card');
+    a.equal(f.members[0].perTurnTokens, 40_400,
+      'so it reports the tokens it actually burned: 40,000 in + 400 out');
+    a.deepEqual(f.crew.unpriced, ['coder'],
+      'and the card names WHICH member has no dollar figure, not just how many');
+    a.equal(f.crew.perTurnUsd, null,
+      'a wholly unpriced crew has no rate — never $0.00, which would read as free');
+    console.log('  approvals: the summon card carries a measured burn rate for the crew');
   }
 
   /* ---------- 5. the task list is visible to the sovereign ---------- */

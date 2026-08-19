@@ -141,6 +141,86 @@ a.match(after[0].body, /is not a command/, 'and the whole message must survive i
 
 rmSync(vault, { recursive: true, force: true });
 
+/* ---------- the COURT can convene one, not just the sovereign ---------- */
+// argue.js was built, tested, and reachable only by the sovereign typing
+// /argue. The orchestrator that actually hits a contested decision could not call
+// for one. Three things have to hold once it can:
+//
+//   1. the verdict goes back to WHOEVER ASKED. Hardcoding the orchestrator is the
+//      bug t-questions.js pins for ask_question; this has the same shape.
+//   2. ONE argument at a time. Each is 3-5 calls across two vendors, and a
+//      sweep reads up to 50 rows — firing them together multiplies the bill
+//      by whatever happened to land in the same window.
+//   3. the request must never be DELIVERED. It is posted with a null
+//      recipient so the sweep can find it, and a null recipient matches every
+//      summoned member in bus.pending() — the trap a milestone notice already
+//      fell into, where one FYI bought the whole court a context replay.
+process.env.KINGDOM_CODEX_BIN = process.execPath;
+const vault2 = mkdtempSync(join(tmpdir(), 'kingdom-vault2-'));
+const t = new Kingdom(repo, configPath);
+t.config.advisor = { autoModel: false, promptEngineer: false };
+t.config.vault = vault2;
+t.config.vaultWriteDir = 'Kingdom';
+
+let inFlight = 0;
+let maxInFlight = 0;
+const ran = [];
+t.argueImpl = async (question, opts) => {
+  inFlight++;
+  maxInFlight = Math.max(maxInFlight, inFlight);
+  await new Promise((r) => setTimeout(r, 40));   // long enough to overlap if it could
+  ran.push(question);
+  inFlight--;
+  return {
+    question,
+    transcript: '### FOR\nyes\n\n### AGAINST\nno',
+    verdict: `VERDICT: settled ${question}`,
+    panel: opts.panel,
+  };
+};
+
+const delivered = [];
+t.on('delivered', (d) => delivered.push(d));
+await t.start();
+t.summoned.add('coder');   // so a null-recipient message HAS somewhere wrong to go
+
+// Both posted before a single sweep can run, so they land in one window.
+t.bus.post('coder', null, JSON.stringify({ question: 'first?' }), 'argue');
+t.bus.post('coder', null, JSON.stringify({ question: 'second?' }), 'argue');
+
+const until = async (pred, ms = 8_000) => {
+  for (const t0 = Date.now(); Date.now() - t0 < ms;) {
+    if (pred()) return true;
+    await new Promise((r) => setTimeout(r, 20));
+  }
+  return false;
+};
+a.ok(await until(() => ran.length === 2),
+  `both questions must be argued, got ${ran.length}: ${ran.join(', ')}`);
+
+a.deepEqual(ran, ['first?', 'second?'],
+  'a queue, in the order asked — not a set, and not whichever finished first');
+a.equal(maxInFlight, 1,
+  'one argument at a time: two in the same sweep must not both be convened');
+
+// The verdicts must come back to coder, who asked — not to the orchestrator.
+a.ok(await until(() => t.bus.history({ limit: 1000 }).filter((x) => x.recipient === 'coder' && x.kind === 'notice').length === 2));
+const back = t.bus.history({ limit: 1000 }).filter((x) => x.recipient === 'coder' && x.kind === 'notice');
+a.match(back[0].body, /VERDICT: settled first\?/,
+  'the verdict must reach the member that asked for it');
+a.ok(back.every((x) => x.kind === 'notice'),
+  'and as a notice — the asker did not buy a turn to be told, it rides along');
+
+a.equal(t.bus.history({ limit: 1000 }).filter((x) => x.recipient === t.config.orchestrator.name && /VERDICT: settled/.test(x.body)).length, 0,
+  'the orchestrator must NOT be told about an argument it did not ask for');
+
+a.equal(delivered.filter((d) => d.msg?.kind === 'argue').length, 0,
+  'an argue request must never be delivered to a member: a null recipient reaches '
+  + 'every summoned member, and each delivery is a full context replay');
+
+await t.stop();
+rmSync(vault2, { recursive: true, force: true });
+
 for (const x of [solo, k]) x.bus.close?.();
 rmSync(repo, { recursive: true, force: true });
-console.log('t-argue.js OK — panel staffed across vendors, refused when it cannot be, never billed');
+console.log('t-argue.js OK — panel staffed across vendors, convened by the court, one at a time, answered to the asker');

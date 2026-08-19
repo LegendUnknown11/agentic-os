@@ -24,6 +24,7 @@ const suites = [
   ['context audit', join(HERE, '..', 'src', 'ctx.js')],
   ['usage accounting', join(HERE, '..', 'src', 'usage.js')],
   ['turn pricing', join(HERE, '..', 'src', 'price.js')],
+  ['summon forecast', join(HERE, '..', 'src', 'forecast.js')],
   ['approval payloads', join(HERE, '..', 'src', 'approval.js')],
   ['shared task list', join(HERE, 't-tasks.js')],
   ['idle nudge', join(HERE, 't-idle-nudge.js')],
@@ -80,6 +81,7 @@ const suites = [
   // The repo becomes optional on top of the four modes: Chat/Research/Build
   // must run with none attached, and only Code may ever require one.
   ['repo becomes optional', join(HERE, 't-repo-optional.js')],
+  ['court self-control', join(HERE, 't-control.js')],
   // A repo attached live must survive a daemon restart in the same
   // workspace home it was attached in — see kingdom.js's this.dbPath and
   // daemon.js's homeRepo for the bug this guards against.

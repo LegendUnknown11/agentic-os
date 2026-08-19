@@ -312,10 +312,25 @@ const handle = async (req, res) => {
         process.stderr.write(`daemon: approval #${m.id} from ${m.sender} is unreadable — skipped\n`);
         continue;
       }
-      rows.push({
-        id: m.id, ts: m.ts, from: m.sender, ...p,
-        resolved: kingdom.bus.get(`resolved:${m.id}`) ?? null,
-      });
+      const resolved = kingdom.bus.get(`resolved:${m.id}`) ?? null;
+      const row = { id: m.id, ts: m.ts, from: m.sender, ...p, resolved };
+      // The cost of the crew being proposed, and ONLY while it is still
+      // being proposed. A forecast is a trimming aid and there is nothing
+      // left to trim once the summon is answered — which also keeps this
+      // off the 2,000 historical rows the loop above walks on every poll.
+      //
+      // Guarded because this is the one line here that reads the event log:
+      // AGENTS.md rule 4, degrade rather than wedge. A card with no number
+      // on it is a worse card; a card that never renders is a court the
+      // sovereign cannot answer at all.
+      if (!resolved && p.kind === 'summon') {
+        try {
+          row.forecast = kingdom.forecast(p.names);
+        } catch (e) {
+          process.stderr.write(`daemon: forecast for approval #${m.id} failed — ${e.message}\n`);
+        }
+      }
+      rows.push(row);
     }
     rows.reverse();
     return res.writeHead(200, { 'content-type': 'application/json' })
@@ -689,14 +704,30 @@ createServer((req, res) => handle(req, res).catch((e) => {
   res.end(JSON.stringify({ ok: false, error: String(e?.message ?? e) }));
 })).listen(port, '127.0.0.1', async () => {
   try {
-    await kingdom.start();
     // A saved repo (found via savedRepo(), not named on the CLI) boots from
     // the workspace home above — re-attach it now, live, exactly as the UI's
     // POST /api/attachRepo would, so kingdom.repo/base and Code mode come up
     // the same way this session left them.
-    if (!repoArg && repo) await kingdom.attachRepo(repo);
+    //
+    // BEFORE start(), not after. attachRepo now restarts any member stranded in
+    // the repo-less home, because a live process cannot change directory — so
+    // attaching after start() would spawn the whole court into the workspace
+    // and immediately throw it away again, one wasted turn each. Attaching
+    // first means start() spawns everyone already pointed at the repo.
+    if (!repoArg && repo) {
+      try {
+        await kingdom.attachRepo(repo);
+      } catch (e) {
+        // Degrade, never wedge. The repo is remembered from a PREVIOUS session
+        // and may since have moved, been deleted, or become unreadable — and
+        // this whole path exists so the throne room opens without one. Dying
+        // here would make a stale config line the reason the app will not boot.
+        console.error(`saved repository unusable, starting without one: ${e.message}`);
+      }
+    }
+    await kingdom.start();
     ready = true;
-    console.log(`throne room: http://127.0.0.1:${port}  (repo: ${repo})`);
+    console.log(`throne room: http://127.0.0.1:${port}  (repo: ${kingdom.repo})`);
     // Interval-triggered workflows. 5s resolution, not per-workflow timers —
     // same tradeoff bus.js's own poll makes: fewer moving parts, and a newly
     // saved or edited workflow is picked up on the very next tick for free.

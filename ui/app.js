@@ -868,6 +868,10 @@ function connect() {
   function paintRepo(repo, base) {
     $('#repo').textContent = repo ? `${repo.split(/[\\/]/).pop()}${base ? ' · ' + base : ''}` : 'no repository';
     $('#repo').title = repo ?? '';
+    // The Code button reads hasRepo() off that title, so it has to be repainted
+    // when the title moves — otherwise attaching a repo leaves Code greyed out
+    // until the next mode change happens to repaint it.
+    paintMode();
   }
 
   function onStreamEvent(d) {
@@ -1113,10 +1117,26 @@ buildLayouts();
  * NOT gold. --crown is the sovereign's alone, and this is the court's state,
  * not theirs.
  */
+/**
+ * Is a repository attached?
+ *
+ * Read off the header label rather than mirrored into another module-level
+ * variable: paintRepo already writes the full path into its title on both the
+ * snapshot and the live `repo` event, so this cannot drift out of step with
+ * what the sovereign is looking at.
+ */
+const hasRepo = () => Boolean($('#repo').title);
+
 function paintMode() {
   for (const b of $('#court').children) {
     b.classList.toggle('on', b.dataset.mode === MODE);
     b.classList.toggle('pending', b.dataset.mode === PENDING);
+    b.classList.toggle('needs-repo', b.dataset.mode === 'code' && !hasRepo());
+    if (b.dataset.mode === 'code') {
+      b.title = hasRepo()
+        ? `${MODES.code.label} — ${MODES.code.blurb}`
+        : 'Code — needs a repository. Click to choose one.';
+    }
   }
   // Everything downstream reads MODE, so it all repaints from here.
   document.body.dataset.mode = MODE;
@@ -1135,6 +1155,12 @@ function buildCourtModes() {
     b.textContent = MODES[m].label;
     b.title = `${MODES[m].label} — ${MODES[m].blurb}`;
     b.onclick = async () => {
+      // Code with no repository is not an error to report, it is a question to
+      // ask: go straight to the picker rather than round-tripping to the daemon
+      // for a refusal the button already knows is coming. paintMode() greys it
+      // for the same reason — the one mode that cannot work yet should not look
+      // identical to the four that can.
+      if (m === 'code' && !hasRepo()) return openRepoPicker();
       const r = await post('mode', { mode: m });
       if (!r.ok) {
         toast(r.error ?? 'Could not switch mode.', true,
@@ -1171,17 +1197,70 @@ async function attachRepo(path) {
   post('mode', { mode: 'code' });
 }
 
+/**
+ * Which codebase Code mode works on.
+ *
+ * Built out of .srow like every other settings section rather than a bare
+ * input and button: unstyled form controls inherit the BROWSER defaults, which
+ * in a dark panel is a white box with a grey bevel — the one part of Settings
+ * that looked broken rather than merely plain.
+ */
 function buildRepoSection(el) {
   const body = document.createElement('div');
   body.className = 'log settings';
+
+  const now = document.createElement('div');
+  now.className = 'srow';
+  const nowLabel = document.createElement('span');
+  const cur = $('#repo').title;
+  nowLabel.innerHTML = '<b>Attached</b>';
+  const em = document.createElement('em');
+  // textContent, not a template into innerHTML: this is a filesystem path the
+  // sovereign typed, and it lands in the document either way.
+  em.textContent = cur || 'Nothing yet — Chat, Research, Build and Automate run without one; Code needs it.';
+  nowLabel.append(em);
+  now.append(nowLabel);
+  body.append(now);
+
+  const row = document.createElement('div');
+  row.className = 'srow';
+  const label = document.createElement('span');
+  label.innerHTML = '<b>Attach a repository</b><em>The folder itself, not the .git inside it. '
+    + 'It must already be a git repository with at least one commit.</em>';
+  row.append(label);
+  body.append(row);
+
   const input = document.createElement('input');
   input.type = 'text';
-  input.placeholder = 'Path to a git repository…';
+  input.placeholder = 'C:\\path\\to\\repo';
+  input.value = cur || '';
+
+  // The field shares the button row, where nothing else wants the width — a
+  // path is the longest thing anyone types in this app and it has to be
+  // readable while it is being corrected.
+  const btns = document.createElement('div');
+  btns.className = 'srow entry';
+  btns.append(input);
   const go = document.createElement('button');
+  go.className = 'primary';
   go.textContent = 'Attach';
-  go.onclick = () => { if (input.value.trim()) attachRepo(input.value.trim()); };
+  go.onclick = () => {
+    const v = input.value.trim();
+    if (!v) return toast('Type the path to a git repository first.', true);
+    attachRepo(v);
+  };
   input.onkeydown = (e) => { if (e.key === 'Enter') go.click(); };
-  body.append(input, go);
+  // Electron can open a real folder dialog; a plain browser tab cannot, so the
+  // button only exists where it would work.
+  if (window.kingdomShell?.chooseRepo) {
+    const pick = document.createElement('button');
+    pick.textContent = 'Choose folder…';
+    pick.onclick = openRepoPicker;
+    btns.append(pick);
+  }
+  btns.append(go);
+  body.append(btns);
+
   el.append(body);
 }
 // Called from the boot block at the bottom, NOT here: paintMode() repaints the
@@ -1912,6 +1991,7 @@ const TOOLS = [
   ['vault', 'Notes', 'Search your notes', () => P.openVault()],
   ['recall', 'Memory', 'Search everything the court remembers — history and notes together', () => P.openRecall()],
   ['workflows', 'Automations', 'The court’s n8n-style automations', () => P.openWorkflows({ post, toast })],
+  ['target', 'Repository', 'Which codebase Code mode works on', () => openSettings('repo')],
   ['summary', 'Summaries', 'The model that condenses each turn', () => openSettings('summary')],
   ['advisor', 'Advisor', 'Prompt engineer and model selector', () => openSettings('advisor')],
   ['image', 'Wallpaper', 'Background image, dim and blur', () => openSettings('image')],

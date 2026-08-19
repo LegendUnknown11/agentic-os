@@ -16,6 +16,7 @@ import { summarize, settingsOf as summarizerSettings } from './summarize.js';
 import { Bus } from './bus.js';
 import { inputTokens, deltaOf, totalsOf } from './usage.js';
 import { costOf, tableFrom } from './price.js';
+import { forecast as forecastOf } from './forecast.js';
 import { readApproval, badRole } from './approval.js';
 import { parseWindow, autoWindow, fmtTokens } from './compact.js';
 import { ripeness, checkTiming } from './ripeness.js';
@@ -224,6 +225,34 @@ export class Kingdom extends EventEmitter {
     if (name === this.config.orchestrator.name) return this.config.orchestrator;
     if (name === this.config.briefer.name) return this.config.briefer;
     return this.config.peasants.find((p) => p.name === name);
+  }
+
+  #forecastRows = [];
+  #forecastMark = -1;
+
+  /**
+   * What a proposed crew has cost per turn, for the summon approval card.
+   *
+   * MEMOISED ON THE LOG'S HIGH-WATER MARK, because the surface that calls it
+   * is polled: /api/approvals is re-fetched every few seconds while the panel
+   * is open, and events() JSON.parses every row it returns. That is the exact
+   * trap metrics() documents — it was pulling all 20,000 retained events just
+   * to keep the turn_ends — so the mark is checked with lastEventId(), an
+   * O(1) primary-key probe, and the log is re-read only when it has actually
+   * moved. A court mid-turn invalidates on its own; an idle court computes
+   * once and answers from cache for as long as the sovereign reads the card.
+   */
+  forecast(names) {
+    const mark = this.bus.lastEventId();
+    if (this.#forecastMark !== mark) {
+      this.#forecastRows = this.bus.events({ limit: 100_000, type: 'turn_end' });
+      this.#forecastMark = mark;
+    }
+    return forecastOf(this.#forecastRows, names, {
+      specOf: (n) => this.specOf(n),
+      table: tableFrom(this.config),
+      quotaClis: Object.keys(this.config.quotas ?? {}),
+    });
   }
 
   #publishRoster() {
@@ -1291,6 +1320,28 @@ export class Kingdom extends EventEmitter {
     this.config.repo = this.repo;
     this.#persistConfig();
     this.bus.set('base', this.base);
+
+    // A LIVE member cannot change directory. Its cwd was fixed when it was
+    // spawned, and agent.js hands a resumed session its ORIGINAL cwd back (see
+    // the comment beside the -C flag there), so resuming is not enough either.
+    // Without this, a court that was already awake when the repo arrived goes
+    // on reporting the repo-less workspace home and telling the sovereign
+    // there is no repository — which is exactly what it was asked to fix.
+    //
+    // Only members stranded in the REPO-LESS home are restarted: a peasant in
+    // a worktree is already somewhere valid, and a re-attach of the same repo
+    // must not cost the whole court a respawn. The fresh session picks up
+    // #orientation(), which exists for precisely this kind of restart.
+    const stranded = kingdomDir(null);
+    for (const [name, agent] of [...this.agents]) {
+      if (agent.cwd !== stranded) continue;
+      agent.recycling = true;          // so the delivery backstop lets go of it
+      agent.stop();
+      this.agents.delete(name);
+      this.bus.set(`session:${name}`, '');
+      await this.#spawn(name);
+    }
+
     this.emit('repo', { repo: this.repo, base: this.base });
     return { repo: this.repo, base: this.base };
   }
@@ -1573,6 +1624,8 @@ export class Kingdom extends EventEmitter {
     // sovereign's approval request is surfaced.
     this.#applyMilestones();
     this.#surfaceApprovals();
+    this.#applyArguments();
+    this.#applyControl();
 
     // THE KING FIRST, then the briefer, then everyone else.
     //
@@ -1593,10 +1646,21 @@ export class Kingdom extends EventEmitter {
 
       const highest = pending[pending.length - 1].id;
 
-      // Approvals belong to the sovereign; `done` starts verify -> digest.
+      // Approvals belong to the sovereign; an argue request belongs to the
+      // argument court; `done` starts verify -> digest. None of the three is
+      // traffic for a member to read.
       const deliverable = [];
       for (const msg of pending) {
         if (msg.kind === 'approval') continue;
+        // Posted with a null recipient so #applyArguments can sweep it, and a
+        // null recipient matches EVERY summoned member in bus.pending() — the
+        // same trap a milestone notice fell into, where one FYI bought a full
+        // context replay for the whole court. Skipped here so it costs nobody
+        // a turn; the verdict comes back addressed to whoever asked.
+        if (msg.kind === 'argue') continue;
+        // Same null-recipient trap as 'argue' above: this is a request for
+        // #applyControl, not traffic for the crew.
+        if (msg.kind === 'control') continue;
         if (msg.kind === 'done' && name === this.config.orchestrator.name) {
           // ONCE per declaration. This loop runs before the ripeness gate and
           // before the ack, so a `done` that arrives alongside any other message
@@ -1735,6 +1799,149 @@ export class Kingdom extends EventEmitter {
         `AWARENESS ONLY — TAKE NO ACTION. Milestone reached: "${hit.text}". `
         + (left ? `${left} still open.` : 'That was the last one; the goal is complete.'),
         'notice');
+    }
+  }
+
+  #argueQueue = [];
+  #arguing = false;
+
+  /**
+   * Run arguments the court has asked for.
+   *
+   * Same shape as #applyMilestones and for the same reason: the request is
+   * addressed to nobody, so no delivery would ever pick it up and it needs
+   * its own sweep. The ORCHESTRATOR runs it rather than the MCP server because
+   * the argument writes a vault note and posts a notice, and one writer is
+   * the whole point.
+   *
+   * ONE AT A TIME, through a queue. A sweep can find several requests at
+   * once and each is three to five model calls across two vendors; firing
+   * them concurrently would multiply the bill by however many happened to
+   * land in the same 50-row window. The cursor advances over the whole sweep
+   * as it does for milestones, so nothing is re-read — the queue, not the
+   * cursor, is what holds the backlog.
+   */
+  #applyArguments() {
+    const seen = Number(this.bus.get('argue:cursor') ?? 0);
+    const rows = this.bus.history({ since: seen, limit: 50 });
+    if (rows.length) this.bus.set('argue:cursor', String(rows[rows.length - 1].id));
+    for (const m of rows) {
+      if (m.kind !== 'argue') continue;
+      let req;
+      try { req = JSON.parse(m.body); } catch { continue; }
+      const question = String(req?.question ?? '').trim();
+      if (!question) continue;
+      this.#argueQueue.push({ question, asker: m.sender });
+    }
+    this.#drainArguments();
+  }
+
+  /**
+   * Degrade, never wedge: every exit from here posts something back to
+   * whoever asked. A member told "the verdict arrives later" and then left
+   * with silence is the exact stall AGENTS.md rule 4 forbids.
+   */
+  #drainArguments() {
+    if (this.#arguing || !this.#argueQueue.length || this.stopping) return;
+    const { question, asker } = this.#argueQueue.shift();
+
+    // The verdict goes back to WHOEVER ASKED. Hardcoding the orchestrator here is
+    // the bug t-questions.js exists to pin, and the argument court has the
+    // same shape: it answers a caller, not a fixed address.
+    const reply = (body) => this.bus.post('orchestrator', asker, body, 'notice');
+
+    const cap = this.config.maxKingdomUsd ?? 0;
+    const spent = Number(this.bus.get('spentUsd') ?? 0);
+    if (cap && spent >= cap) {
+      reply(`The argument court was not convened: the kingdom is at its spend ceiling `
+        + `($${spent.toFixed(2)} of $${cap}). Decide it yourself or ask the sovereign to raise the cap.`);
+      return;
+    }
+
+    const panel = pickPanel(this.config);
+    if (!panel) {
+      reply('The argument court needs two different models to argue and a third to judge, '
+        + 'and this kingdom has only one configured. Decide it yourself.');
+      return;
+    }
+
+    this.#arguing = true;
+    // #runArgument posts the verdict itself, addressed to the asker. A second
+    // copy from here is a second notice in somebody's context for one answer.
+    this.#runArgument(question, panel, { tell: asker })
+      .catch((e) => {
+        this.emit('argued', { question, error: e.message });
+        reply(`The argument court could not settle "${question.slice(0, 90)}": ${e.message}. `
+          + `Decide it yourself rather than waiting.`);
+      })
+      .finally(() => {
+        this.#arguing = false;
+        this.#drainArguments();
+      });
+  }
+
+  /**
+   * Run the control the court asked for: mode, wake, sleep, model.
+   *
+   * These are levers the SOVEREIGN already had (they are the same Kingdom
+   * methods daemon.js's ACTIONS map calls) and the court had none of. The
+   * orchestrator is the one that discovers mid-conversation that this is a
+   * coding job rather than a chat, or that a member has been idle for an hour,
+   * and until now its only move was to ask the sovereign to click something.
+   *
+   * One sweep for all of them rather than one per tool: mcp.js runs in its own
+   * process and reaches the court only through the bus, so every lever needs a
+   * request row, a cursor and a delivery skip. Sharing them makes the next
+   * lever one line in the switch below instead of a third copy of this.
+   *
+   * The Kingdom methods do the refusing, not this — setMode throws for Code
+   * with no repo, setModel throws for a name nobody holds — and the member is
+   * told what it was, rather than left wondering whether the call landed.
+   */
+  #applyControl() {
+    const seen = Number(this.bus.get('control:cursor') ?? 0);
+    const rows = this.bus.history({ since: seen, limit: 50 });
+    if (rows.length) this.bus.set('control:cursor', String(rows[rows.length - 1].id));
+    for (const m of rows) {
+      if (m.kind !== 'control') continue;
+      let req;
+      try { req = JSON.parse(m.body); } catch { continue; }
+      const say = (body) => body && this.bus.post('orchestrator', m.sender, body, 'notice');
+      // Degrade, never wedge: every path here ends in something the caller can
+      // read, because a member told nothing cannot tell "refused" from "lost".
+      try {
+        Promise.resolve(this.#control(req, m.sender))
+          .then(say)
+          .catch((e) => say(`${req.op} failed: ${e.message}`));
+      } catch (e) {
+        say(`${req.op} failed: ${e.message}`);
+      }
+    }
+  }
+
+  /** One lever. Returns what to tell the caller, or null if it was told already. */
+  #control(req, by) {
+    switch (req.op) {
+      case 'mode': {
+        const r = this.setMode(req.mode, { why: req.why ?? '', by });
+        // A real change already notices every member, this one included. Only
+        // the no-op needs a word back, or the caller cannot tell it landed.
+        return r.changed ? null : `The court is already in ${modeOf(r.mode).label} mode.`;
+      }
+      case 'wake':
+        return this.wake(req.name).then(() => `${req.name} is awake.`);
+      case 'sleep':
+        // Not a nap: sleep() takes the member off the roster entirely, which is
+        // what makes it a cost lever. Said plainly so it is not called by mistake.
+        this.sleep(req.name);
+        return `${req.name} has been stood down and is off the roster. Summon it again to bring it back.`;
+      case 'model':
+        return this.setModel(req.name, { cli: req.cli, model: req.model, effort: req.effort })
+          .then((r) => `${r.name} is now on ${r.cli}${r.model ? ' / ' + r.model : ' (the CLI default)'}`
+            + `${r.effort ? ' at ' + r.effort + ' effort' : ''}.`
+            + (r.cliChanged ? ' The CLI changed, so its session did not carry over.' : ''));
+      default:
+        return `No such control: ${req.op}.`;
     }
   }
 
@@ -2089,7 +2296,14 @@ export class Kingdom extends EventEmitter {
       + `The verdict goes to the vault.`);
   }
 
-  async #runArgument(question, panel) {
+  /**
+   * @param tell  who learns the verdict. The sovereign's own /argue tells the
+   *   orchestrator; a question the COURT put tells whoever put it, and nobody
+   *   else. Telling both doubles the notice, and one of the two copies lands
+   *   in the orchestrator's context — the scarcest thing in the kingdom — for a
+   *   question it never asked.
+   */
+  async #runArgument(question, panel, { tell = null } = {}) {
     this.emit('argued', { question, stage: 'start', panel });
     // Seam: a test must be able to exercise the vault write and the orchestrator's
     // notice without spawning three real CLIs and spending real money.
@@ -2112,11 +2326,14 @@ export class Kingdom extends EventEmitter {
       mirrorToProject(this.repo, this.config.vault, path);
     }
 
-    // A NOTICE, not a message: the orchestrator did not ask for this and does not have
-    // to act on it, so it rides along with real traffic instead of buying a
-    // full context replay of its own.
-    this.bus.post('orchestrator', this.config.orchestrator.name,
-      `AWARENESS ONLY — the argument court settled a question for the sovereign.\n`
+    // A NOTICE, not a message: the recipient did not ask to be interrupted and
+    // does not have to act on it, so it rides along with real traffic instead
+    // of buying a full context replay of its own.
+    const to = tell ?? this.config.orchestrator.name;
+    this.bus.post('orchestrator', to,
+      (tell
+        ? `AWARENESS ONLY — the argument court settled the question you put to it.\n`
+        : `AWARENESS ONLY — the argument court settled a question for the sovereign.\n`)
       + `Q: ${question}\n${result.verdict}\n`
       + (path ? `Full argument: ${path}` : ''),
       'notice');

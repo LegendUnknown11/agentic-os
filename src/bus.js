@@ -169,6 +169,15 @@ export class Bus {
   }
 
   /** How many messages there are. Counting them by loading every body is not that. */
+  /**
+   * The newest event id, or 0. An O(1) primary-key probe — this exists so a
+   * caller can tell whether the log has moved WITHOUT paying for events(),
+   * which JSON.parses every row it returns.
+   */
+  lastEventId() {
+    return this.db.prepare('select max(id) as id from events').get().id ?? 0;
+  }
+
   countMessages() {
     return this.db.prepare('select count(*) as n from messages').get().n;
   }

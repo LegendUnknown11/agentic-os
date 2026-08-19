@@ -149,7 +149,7 @@ export function crewFor(mode, allNames = []) {
  * withhold is the step AFTER the report — the merge itself.
  */
 const GATED = {
-  crew:  ['summon', 'assign', 'propose_role'],
+  crew:  ['summon', 'assign', 'propose_role', 'wake_member', 'dismiss_member'],
   tasks: ['add_task', 'tasks', 'claim_task', 'finish_task', 'submit_plan', 'rule_on_plan'],
   merge: ['request_merge', 'send_back'],
   workflows: ['workflow_list', 'workflow_get', 'workflow_save', 'workflow_delete', 'workflow_run'],

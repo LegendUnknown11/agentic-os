@@ -672,6 +672,15 @@ body.has-bg #bg::after{opacity:var(--bg-dim,.5)}
 .srow.tick>span{font-family:var(--mono);font-size:var(--t-micro);color:var(--dim)}
 .srow input[type=checkbox]{flex:none;width:18px;height:18px;accent-color:var(--accent);cursor:pointer}
 .srow select{flex:none;max-width:52%}
+.srow input[type=text]{flex:1;min-width:0;background:rgba(0,0,0,.32);
+  border:1px solid var(--edge);border-radius:var(--r-sm);color:var(--ink);font:inherit;
+  font-size:var(--t-sm);padding:var(--s2);outline:none;user-select:text}
+.srow input[type=text]:focus{border-color:var(--edge-strong);background:rgba(0,0,0,.45)}
+.srow button{color:var(--ink);background:var(--glass-raised);border:1px solid var(--edge);
+  border-radius:var(--r-sm);padding:var(--s2) var(--s4);font:inherit;font-size:var(--t-sm)}
+.srow button.primary{color:var(--accent);
+  border-color:color-mix(in srgb,var(--accent) 45%,transparent)}
+.srow.entry{justify-content:flex-start;cursor:default}
 .shead{margin-top:var(--s5);padding-bottom:var(--s2);border-bottom:1px solid var(--edge-strong);
   font-weight:600;display:flex;flex-direction:column;gap:2px}
 .shead em{font-style:normal;font-weight:400;font-size:var(--t-micro);color:var(--faint);line-height:1.4}
@@ -944,6 +953,11 @@ input.msnew:focus{border-color:var(--accent)}
   overflow-wrap:anywhere}
 .appr .why{font-size:var(--t-micro);color:var(--dim);line-height:1.5;margin-top:var(--s1);
   overflow-wrap:anywhere}
+/* The summon forecast reuses .grid and .note verbatim; these two lines are
+   the whole of its own styling — spacing, and a crew total that reads as a
+   total rather than as one more member. */
+.appr .forecast{margin-top:var(--s2)}
+.appr .forecast tr.sum td{color:var(--crown)}
 .appr .btns{display:flex;gap:var(--s2);margin-top:var(--s3)}
 .appr .btns button{border:1px solid var(--edge-strong);border-radius:var(--r-sm);
   padding:var(--s1) var(--s3);font-size:var(--t-sm)}
@@ -1010,6 +1024,11 @@ input.msnew:focus{border-color:var(--accent)}
 .court-mode button.pending{color:var(--accent);opacity:.62;
   box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent) 45%,transparent)}
 .court-mode button.pending::after{content:'…';margin-left:2px}
+/* Code mode with no repository attached. Dimmed so it does not read as
+   available, but still clickable — clicking it opens the repo picker,
+   which is the only way to make it available. */
+.court-mode button.needs-repo{opacity:.45}
+.court-mode button.needs-repo:hover{opacity:.8}
 
 #stage.board #surface{pointer-events:none;cursor:default}
 #stage.board #windows{position:absolute;inset:0;

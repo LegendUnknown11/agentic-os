@@ -35,6 +35,70 @@ const el = (tag, cls, text) => {
 const kb = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(n ?? 0));
 const money = (n) => `$${(n ?? 0).toFixed(2)}`;
 
+// A per-turn rate is routinely under a cent, where money()'s two decimals
+// read as $0.00 — the one thing a cost must never look like. Three decimals
+// normally, four below a cent.
+const rate = (n) => `$${n.toFixed(n < 0.01 ? 4 : 3)}/turn`;
+
+/**
+ * What a proposed crew has cost per turn, drawn as the Usage panel's grid.
+ *
+ * Three states, and the difference between them is the whole point:
+ *   no history   never run here — no number, because there is nothing to
+ *                average and a borrowed one would be fiction
+ *   no rate      subscription-billed or unpriced — tokens, never dollars
+ *   otherwise    dollars, and the sample size they rest on
+ *
+ * Same rule price.js keeps by returning null rather than 0. The sample size
+ * sits beside every figure on purpose: a rate off two turns and a rate off
+ * two hundred are not the same claim, and the sovereign is the one deciding
+ * how much weight to put on it.
+ */
+function forecastTable(f) {
+  const wrap = el('div', 'forecast');
+  const t = el('table', 'grid');
+  const hr = el('tr');
+  ['member', 'per turn', 'observed'].forEach((c, i) => hr.append(el('th', i ? 'r' : null, c)));
+  const thead = el('thead');
+  thead.append(hr);
+  t.append(thead);
+
+  const tb = el('tbody');
+  for (const m of f.members) {
+    const tr = el('tr');
+    const cost = m.perTurnUsd !== null ? rate(m.perTurnUsd)
+      : m.turns ? `${kb(m.perTurnTokens)} tok/turn`
+      : 'no history';
+    tr.append(
+      el('td', null, displayName(m.name, 'peasant')),
+      el('td', 'r num', cost),
+      el('td', 'r num', m.turns ? `${m.turns} turn${m.turns === 1 ? '' : 's'}` : '—'),
+    );
+    tb.append(tr);
+  }
+
+  const c = f.crew ?? {};
+  const sum = el('tr', 'sum');
+  sum.append(
+    el('td', null, 'crew'),
+    el('td', 'r num', c.perTurnUsd != null ? rate(c.perTurnUsd) : `${kb(c.perTurnTokens ?? 0)} tok/turn`),
+    el('td', 'r num', ''),
+  );
+  tb.append(sum);
+  t.append(tb);
+  wrap.append(t);
+
+  // Say what the number is NOT. A rate is not a bill, and a member that has
+  // never run has no rate at all — leaving either unsaid invites the card to
+  // be read as a quote.
+  const caveats = [];
+  if (c.unknown?.length) caveats.push(`no history yet for ${c.unknown.join(', ')}`);
+  if (c.unpriced?.length) caveats.push(`no published rate for ${c.unpriced.join(', ')}`);
+  caveats.push('a rate per turn, not a total for the job');
+  wrap.append(el('div', 'note', caveats.join(' · ')));
+  return wrap;
+}
+
 /* ================= cost and run metrics ================= */
 export function openMetrics() {
   // The poller is stopped by onClose, not by a custom event: a closed window is
@@ -525,6 +589,14 @@ export function openApprovals({ post, toast }) {
         const what = a.names?.length ? a.names.join(', ') : (a.peasant ?? a.name ?? '');
         if (what) d.append(el('div', 'what', what));
         if (a.reason) d.append(el('div', 'why', a.reason));
+
+        // The cost of the crew, at the moment the crew is decided. README.md
+        // calls the roster the biggest lever there is and says to trim it
+        // here — and this card carried names and a paragraph of prose and no
+        // number at all. Guarded on the field rather than the kind: the
+        // daemon attaches it only to a summon still awaiting a decision, so
+        // an absent forecast is the ordinary case, not a failure.
+        if (a.forecast?.members?.length) d.append(forecastTable(a.forecast));
 
         // approve()/reject() only know summon/role/merge — a question answers
         // with CHOSEN OPTIONS, not a yes/no, and its reply must go back to
