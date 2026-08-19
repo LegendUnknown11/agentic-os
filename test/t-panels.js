@@ -49,6 +49,9 @@ writeFileSync(cfg, JSON.stringify({
   peasants: [{ name: 'coder', cli: 'codex' }],
   rolesSeeded: true,
   advisor: { promptEngineer: false, autoModel: false },
+  // codex here has no $/token — it runs against a subscription plan's own
+  // token allowance, not a metered key. See t-panels.js section 1.
+  quotas: { codex: { label: 'Test Plan', limitTokens: 200_000 } },
 }));
 
 /* ---------- seed turn_end events BEFORE the daemon opens the bus ---------- */
@@ -121,7 +124,20 @@ try {
     a.equal(m.spent, 3.5);
     a.equal(m.cap, 75);
     a.equal(m.perMemberCap, 5);
+
+    // codex has no $/token in this config — quota tracks its real ceiling
+    // (the plan's token allowance) instead of inventing a dollar figure.
+    // Both orchestrator and coder run on codex, so their deltaed in+out (the
+    // same numbers already proven above, not resummed some other way) land
+    // in one bucket: (140,000 + 1,400) + (40,000 + 400) = 181,800.
+    const q = m.quotas.find((x) => x.cli === 'codex');
+    a.ok(q, 'a cli named in config.quotas appears in the metrics response');
+    a.equal(q.label, 'Test Plan');
+    a.equal(q.used, 181_800, 'every codex member\'s deltaed tokens, summed across the whole cli');
+    a.equal(q.limit, 200_000);
+    a.equal(q.pct, 91);
     console.log(`  metrics: orchestrator 5 turns -> ${orchestrator.in} in (a sum would have said 255000)`);
+    console.log(`  quota: codex at ${q.pct}% of its plan, no dollar price required`);
   }
 
   /* ---------- 2. diff of real work ---------- */

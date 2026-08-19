@@ -80,6 +80,21 @@ export function openMetrics() {
           body.append(bar);
         }
 
+        // A subscription CLI has no $/token, so its "spent" figure above is at
+        // best a guess — the real ceiling is the plan's own token allowance.
+        for (const q of m.quotas ?? []) {
+          body.append(el('div', 'note',
+            `${q.label} — ${kb(q.used)}${q.limit ? ` / ${kb(q.limit)} tokens (no dollar price; this is a plan allowance)` : ' tokens burned (no plan size set)'}`));
+          if (q.pct !== null) {
+            const bar = el('div', 'meter');
+            const fill = el('i');
+            fill.style.width = `${q.pct}%`;
+            if (q.pct > 80) fill.classList.add('hot');
+            bar.append(fill);
+            body.append(bar);
+          }
+        }
+
         const h = el('div', 'shead');
         h.innerHTML = 'Per member<em>Input is the real figure: codex reports usage cumulatively '
           + 'per thread, so these are deltas, not the sum it hands out.</em>';

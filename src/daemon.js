@@ -165,6 +165,8 @@ function metrics() {
   const rows = kingdom.bus.events({ limit: 100_000, type: 'turn_end' });
   const prev = new Map();
   const by = new Map();
+  const byCli = new Map();   // cli -> tokens burned, for quota-billed backends (see below)
+  const def = kingdom.config.peasantDefaults ?? {};
 
   for (const ev of rows) {
     let p;
@@ -189,6 +191,9 @@ function metrics() {
     m.ctx = p?.ctx ?? m.ctx;                     // latest, not a sum
     m.last = ev.ts;
     by.set(ev.agent, m);
+
+    const cli = kingdom.specOf(ev.agent)?.cli ?? def.cli ?? 'claude';
+    byCli.set(cli, (byCli.get(cli) ?? 0) + d.in + d.out);
   }
 
   const members = [...by.values()].map((m) => ({
@@ -203,6 +208,19 @@ function metrics() {
     turns: t.turns + m.turns, in: t.in + m.in, out: t.out + m.out, cached: t.cached + m.cached,
   }), { turns: 0, in: 0, out: 0, cached: 0 });
 
+  // A subscription CLI (codex on a ChatGPT plan, say) has no $/token at all —
+  // `spent` above is at best a reference-rate guess for it, built from a price
+  // table meant for metered API keys. The real ceiling is the plan's own
+  // token allowance, so a cli named in `quotas` gets tracked against THAT
+  // instead: config names the plan's size, this sums what every member on
+  // that cli actually burned (already deltaed above, same as everything else
+  // in this function), never invents a dollar figure for it.
+  const quotas = Object.entries(kingdom.config.quotas ?? {}).map(([cli, q]) => {
+    const used = byCli.get(cli) ?? 0;
+    const limit = q.limitTokens ?? 0;
+    return { cli, label: q.label ?? cli, used, limit, pct: limit ? Math.min(100, Math.round((used / limit) * 100)) : null };
+  });
+
   return {
     members,
     total,
@@ -210,6 +228,7 @@ function metrics() {
     cap: kingdom.config.maxKingdomUsd ?? 0,
     perMemberCap: kingdom.config.maxBudgetUsd ?? 0,
     messages: kingdom.bus.countMessages(),   // count(*), not "load every body and take .length"
+    quotas,
   };
 }
 
