@@ -115,6 +115,23 @@ a.ok(successor.spec.prompt.includes(HANDOVER),
   k2.stop?.();
 }
 
+// A failed CLI can leave `send()` unable to accept a handover request. A model
+// switch must still retire it: persisting the new model while leaving the old
+// member alive strands the court on the failed runtime.
+{
+  const failed = new FakeBriefer();
+  failed.send = () => { throw new Error('dead transport'); };
+  const k3 = new Kingdom(repo, configPath);
+  k3.base = 'master';
+  k3.bus.set('base', 'master');
+  k3.agents.set('briefer', failed);
+
+  await k3.recycleBriefer();
+  a.equal(failed.stopped, true, 'a failed handover transport must not block retirement');
+  a.ok(k3.agents.get('briefer'), 'the successor must still be spawned without a handover');
+  await k3.stop();
+}
+
 // A stale session id would resume the DEAD context and defeat the recycle.
 a.ok(!successor.sessionId || successor.sessionId !== 'old-session-id-should-be-discarded',
   'the successor must not resume the exhausted session');

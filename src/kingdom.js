@@ -2316,8 +2316,11 @@ export class Kingdom extends EventEmitter {
     return new Promise((res) => {
       let last = '';
       let timer;
+      let settled = false;
       const grab = (t) => (last += t);
       const done = () => {
+        if (settled) return;
+        settled = true;
         clearTimeout(timer);
         agent.off('text', grab);
         // The TAIL, and capped. `grab` accumulates every text event of the
@@ -2331,14 +2334,18 @@ export class Kingdom extends EventEmitter {
       };
       agent.on('text', grab);
       agent.once('turn_end', done);
-      agent.send(
-        '[ORCHESTRATOR] Your session is about to be replaced by a successor who ' +
-        'will inherit ONLY what you write now. Reply with a compact handover: ' +
-        'the goal you are pursuing, what has been decided and merged, the state ' +
-        'of everyone you are working with, open threads, and what happens next. ' +
-        'Facts and decisions, not narrative.'
-      );
       timer = setTimeout(done, 120_000); // a wedged member must not block this
+      try {
+        agent.send(
+          '[ORCHESTRATOR] Your session is about to be replaced by a successor who ' +
+          'will inherit ONLY what you write now. Reply with a compact handover: ' +
+          'the goal you are pursuing, what has been decided and merged, the state ' +
+          'of everyone you are working with, open threads, and what happens next. ' +
+          'Facts and decisions, not narrative.'
+        );
+      } catch {
+        done(); // a dead transport has no handover, but must not block its successor
+      }
     });
   }
 
