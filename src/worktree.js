@@ -4,7 +4,7 @@
 // inside the main checkout makes git status noisy and confuses file tools.
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { existsSync, readdirSync, readFileSync, renameSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync } from 'node:fs';
 import { join, basename, dirname, resolve } from 'node:path';
 import { homedir } from 'node:os';
 
@@ -66,6 +66,11 @@ export async function assertRepo(repo) {
  * peasant's first diff would contain the entire existing project.
  */
 export async function ensureRepo(repo, { onInit } = {}) {
+  // execFile uses cwd before it starts `git`, so an absent project directory
+  // surfaces as `spawn git ENOENT` even when Git itself is installed. The CLI
+  // deliberately accepts a new toy-project path; make that path real before
+  // asking Git whether it is already a repository.
+  mkdirSync(repo, { recursive: true });
   let top = null;
   try {
     top = (await git(repo, 'rev-parse', '--show-toplevel')).stdout.trim();

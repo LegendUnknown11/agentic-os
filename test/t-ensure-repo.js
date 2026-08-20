@@ -50,6 +50,18 @@ a.equal(await ensureRepo(empty), 'main');
 a.equal(git(empty, 'rev-list', '--count', 'HEAD').trim(), '1',
   'a worktree cannot be cut from a repo with no commit — an empty folder needs one too');
 
+/* ---------- a missing folder becomes a usable repository --------------- */
+// The headless CLI accepts a path for a brand-new toy project. Git cannot use
+// that path as cwd until Kingdom creates it, so this must not surface as the
+// misleading `spawn git ENOENT` seen by a sovereign starting fresh work.
+const missingParent = tmp();
+const missing = join(missingParent, 'new-project');
+a.ok(!existsSync(missing), 'the regression needs an actually absent target directory');
+a.equal(await ensureRepo(missing), 'main');
+a.ok(existsSync(join(missing, '.git')), 'a missing target must be created before Git is invoked');
+a.equal(git(missing, 'rev-list', '--count', 'HEAD').trim(), '1',
+  'the new target still needs the ordinary usable base commit');
+
 /* ---------- NEVER nest inside an existing repository -------------------- */
 // A nested repo silently shadows the outer one: the sovereign's real history
 // stops being visible to git, to the court, and to their own editor.
@@ -73,5 +85,5 @@ a.equal(await ensureRepo(outer, { onInit: (w) => touched.push(w) }), 'main');
 a.equal(touched.length, 0);
 a.equal(git(outer, 'rev-list', '--count', 'HEAD').trim(), '1', 'no extra commit in a real repo');
 
-for (const d of [plain, empty, outer]) rmSync(d, { recursive: true, force: true });
+for (const d of [plain, empty, missingParent, outer]) rmSync(d, { recursive: true, force: true });
 console.log('t-ensure-repo.js OK — folders become repos, existing history is never nested or touched');
