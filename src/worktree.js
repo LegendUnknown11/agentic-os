@@ -4,7 +4,7 @@
 // inside the main checkout makes git status noisy and confuses file tools.
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { existsSync, readFileSync, renameSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, renameSync } from 'node:fs';
 import { join, basename, dirname, resolve } from 'node:path';
 import { homedir } from 'node:os';
 
@@ -283,6 +283,20 @@ export async function mergeWorktree(repo, peasant, base) {
 }
 
 /**
+ * Does this look like a project `node --test` can run? A test/ directory
+ * holding JavaScript, or a *.test.js beside the code. Deliberately a shallow
+ * look: the question is which runner to use, and a directory scan that walks
+ * the tree costs more than the answer is worth.
+ */
+function nodeTests(dir) {
+  const js = /\.(?:c|m)?js$/;
+  const names = (d) => { try { return readdirSync(d); } catch { return []; } };
+  if (names(join(dir, 'test')).some((f) => js.test(f))) return true;
+  if (names(join(dir, 'tests')).some((f) => js.test(f))) return true;
+  return names(dir).some((f) => /\.test\.(?:c|m)?js$/.test(f));
+}
+
+/**
  * The project's own verification command, discovered rather than configured.
  * Returns null when the project has no tests — the caller must treat that as
  * "unverified", never as "passed".
@@ -296,6 +310,25 @@ export function testCommand(dir) {
       if (scripts.build) return ['npm', ['run', 'build', '--silent']];
     } catch {}
   }
+  // Node's own runner, for the case the package.json branch above cannot
+  // answer: a repo with no package.json at all, or one whose package.json has
+  // no test script. Both are ordinary for a stdlib-only Node project, and both
+  // used to fall all the way through to null.
+  //
+  // This is the Flutter bug directly below, in the ecosystem this application
+  // is itself written in. Watched live: a peasant wrote lib/select.js and
+  // test/select.test.js, called declare_done, and the crown reported
+  // `{ran: false, ok: false, output: 'No test/build command found in this
+  // project.'}` — for a repository whose only content was tests and the code
+  // they cover. The orchestrator is told to treat that as UNVERIFIED and
+  // send_back, so four correct implementations were about to be bounced for
+  // having no tests, in a directory full of them.
+  //
+  // Bare `node --test`, not a path: that is Node's own default glob
+  // (**/*.test.?(c|m)js, **/test/**, ...), so it finds root-level tests as well
+  // as test/, and stays whatever the installed Node says it is.
+  if (nodeTests(dir)) return ['node', ['--test']];
+
   // Flutter before Dart: a Flutter project has a pubspec too, and `dart test`
   // cannot load the Flutter test bindings. Without this every peasant in a
   // Flutter repo is reported to the orchestrator as "TESTS: NONE FOUND" — the court

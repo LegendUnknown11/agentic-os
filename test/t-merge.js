@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   assertRepo, behindBase, commitAll, conflictsWith, createWorktree, diffOf, mergeWorktree,
-  removeWorktree, runTests, statOf, worktreePath,
+  removeWorktree, runTests, statOf, testCommand, worktreePath,
 } from '../src/worktree.js';
 
 const repo = mkdtempSync(join(tmpdir(), 'kingdom-merge-'));
@@ -126,6 +126,56 @@ const bare = mkdtempSync(join(tmpdir(), 'kingdom-bare-'));
 const none = await runTests(bare);
 a.equal(none.ran, false);
 a.equal(none.ok, false, 'no tests must never report ok');
+
+// A stdlib-only Node project has no package.json and no test script, and used
+// to be reported as having no tests at all — in a directory whose entire
+// content was tests and the code they cover. Watched live: a peasant wrote
+// lib/select.js and test/select.test.js, called declare_done, and the crown
+// answered "No test/build command found in this project." The orchestrator is
+// told an unverified done-report must be sent back, so four correct
+// implementations were one turn away from being bounced for missing the tests
+// they had written.
+//
+// Same shape as the Flutter case beside it in testCommand(), in the ecosystem
+// this application is itself written in.
+{
+  const nodeOnly = mkdtempSync(join(tmpdir(), 'kingdom-nodetest-'));
+  mkdirSync(join(nodeOnly, 'test'));
+  writeFileSync(join(nodeOnly, 'lib.js'), 'module.exports.two = () => 2;\n');
+  writeFileSync(join(nodeOnly, 'test', 'lib.test.js'),
+    "const a=require('node:assert');const t=require('node:test');\n"
+    + "t('two is two', () => a.equal(require('../lib.js').two(), 2));\n");
+
+  a.deepEqual(testCommand(nodeOnly), ['node', ['--test']],
+    'a Node project with tests and no package.json must be runnable, not "no tests found"');
+  const ran = await runTests(nodeOnly);
+  a.equal(ran.ran, true, 'and the command must actually run');
+  a.equal(ran.ok, true, `and pass. Output: ${ran.output.slice(0, 300)}`);
+
+  // A failing test must still fail — a detector that always says ok is worse
+  // than none, because the court merges on it.
+  writeFileSync(join(nodeOnly, 'test', 'lib.test.js'),
+    "const a=require('node:assert');const t=require('node:test');\n"
+    + "t('two is three', () => a.equal(require('../lib.js').two(), 3));\n");
+  const failed = await runTests(nodeOnly);
+  a.equal(failed.ran, true);
+  a.equal(failed.ok, false, 'a broken test must come back not-ok, or the gate is decorative');
+
+  // package.json still wins: a project that declares its own runner gets it.
+  writeFileSync(join(nodeOnly, 'package.json'),
+    JSON.stringify({ name: 'x', scripts: { test: 'echo mine' } }));
+  a.deepEqual(testCommand(nodeOnly), ['npm', ['test', '--silent']],
+    "a project's own test script must outrank the fallback");
+
+  // And a directory with no JavaScript tests must stay null, not guess.
+  const notNode = mkdtempSync(join(tmpdir(), 'kingdom-notnode-'));
+  mkdirSync(join(notNode, 'test'));
+  writeFileSync(join(notNode, 'test', 'thing.py'), 'pass\n');
+  a.equal(testCommand(notNode), null, 'a test/ dir of Python must not summon node --test');
+
+  for (const d of [nodeOnly, notNode]) { try { rmSync(d, { recursive: true, force: true }); } catch {} }
+  console.log('  node --test found for a stdlib-only project; package.json still wins');
+}
 
 for (const d of [repo, bare]) { try { rmSync(d, { recursive: true, force: true }); } catch {} }
 console.log('t-merge.js OK — worktree, auto-commit, diff, test discovery, merge');
