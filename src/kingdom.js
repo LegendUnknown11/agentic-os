@@ -680,6 +680,35 @@ export class Kingdom extends EventEmitter {
     this.#reloadApprovals();
     await this.#spawn(this.config.orchestrator.name);
     await this.#spawn(this.config.briefer.name);
+
+    // The court keeps two records of who is doing what — `summoned` and
+    // `tasks.owner` — and boot restores only the first. A task owned by
+    // somebody the restored roster does not contain is unreachable: claimTask
+    // refuses a task that already has an owner, so no peasant may take it, and
+    // the orchestrator reads `active` as work in hand and does not reassign.
+    //
+    // sleep() closes the runtime door. This is the other one, and it does not
+    // go through sleep() at all: the restore loop above drops any name specOf()
+    // no longer answers for, so removing or renaming a peasant in
+    // kingdom.config.json between runs strands everything it had claimed, with
+    // no dismissal ever happening. Same divergence, same deadlock, different
+    // door.
+    //
+    // After the spawns, not before: #spawn is what puts the orchestrator and
+    // briefer into `summoned`, so by here the set is complete and the test is
+    // simply "can anybody work this" — no special cases for the crown.
+    const orphans = this.bus.tasks()
+      .filter((t) => t.owner && t.state !== 'done' && !this.summoned.has(t.owner));
+    for (const t of orphans) this.bus.updateTask(t.id, { owner: null, state: 'pending' });
+    if (orphans.length) {
+      this.bus.post(CROWN, this.config.orchestrator.name,
+        `AWARENESS ONLY — TAKE NO ACTION. ${orphans.map((t) => `#${t.id} (${t.title})`).join(', ')} `
+        + `${orphans.length === 1 ? 'was' : 'were'} still held by somebody no longer in this court `
+        + `(${[...new Set(orphans.map((t) => t.owner))].join(', ')}). `
+        + `${orphans.length === 1 ? 'It is' : 'They are'} unclaimed again — nobody is working on `
+        + `${orphans.length === 1 ? 'it' : 'them'}.`, 'notice');
+    }
+
     this.timer = setInterval(() => this.#tick().catch((e) => this.emit('error', e)), POLL_MS);
     // agy reads only the GLOBAL mcp_config.json, so the declaration has to be
     // installed before any Antigravity member is spawned.

@@ -19,7 +19,7 @@
 //   node test/t-control.js
 import { strict as a } from 'node:assert';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, existsSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Kingdom } from '../src/kingdom.js';
@@ -255,6 +255,53 @@ try {
   a.equal(after.description, 'moving a schema forward without a window of downtime',
     'with its trigger line intact — that line is the only part every member carries');
   a.equal(after.source, 'vault');
+
+  /* ---- 8. a restart must not inherit a task nobody in the court can work -- */
+  // sleep() releases what a dismissed member held, but a member can also leave
+  // without ever being dismissed: drop it from kingdom.config.json and the
+  // restore loop in start() silently skips it, because specOf() no longer
+  // answers for the name. Its claims survive with an owner the court does not
+  // have — claimTask refuses an owned task, so nobody may take it, and the
+  // orchestrator goes on reporting it as active. Same deadlock as a dismissal,
+  // reached without one. This is the boot-time half of the same invariant.
+  {
+    await k.wake('coder');   // it has to actually be in service before it can leave it
+    const stranded = k.bus.addTask({ title: 'Work held by a departed hand', by: 'orchestrator' });
+    const mine = k.bus.addTask({ title: 'Held by somebody still here', by: 'orchestrator' });
+    a.equal(k.bus.claimTask('coder', stranded).ok, true, 'sanity: the claim must land');
+    a.equal(k.bus.claimTask('briefer', mine).ok, true, 'sanity: the second claim must land');
+    a.ok(JSON.parse(k.bus.get('summoned') ?? '[]').includes('coder'),
+      'sanity: the departing member must be in the persisted roster to begin with');
+
+    // The sovereign edits the roster between runs. Nothing dismisses anybody.
+    const cfg = JSON.parse(readFileSync(configPath, 'utf8'));
+    cfg.peasants = cfg.peasants.filter((p) => p.name !== 'coder');
+    writeFileSync(configPath, JSON.stringify(cfg));
+
+    await k.stop();
+    k = new Kingdom(null, configPath);
+    k.on('error', () => {});
+    await k.start();
+
+    a.equal(k.summoned.has('coder'), false,
+      'sanity: a name the config no longer carries must not be restored — that is the setup');
+    const after = k.bus.task(stranded);
+    a.equal(after.owner, null,
+      'a restart must not inherit a task owned by somebody no longer in the court: nobody can claim it');
+    a.equal(after.state, 'pending', 'and it must be claimable again, not stuck in active');
+    a.ok(k.bus.availableTasks().some((x) => x.id === stranded),
+      'availableTasks is what claim_task offers — the released task must appear there');
+
+    a.equal(k.bus.task(mine).owner, 'briefer',
+      'and a task held by somebody still in service must be left exactly alone');
+
+    a.ok(k.bus.history({ limit: 400 }).some((m) =>
+      m.recipient === k.config.orchestrator.name && /no longer in this court/.test(m.body)
+      && new RegExp(`#${stranded}`).test(m.body)),
+    'the orchestrator must be told, or it goes on reporting the task as in progress');
+
+    console.log('  a restart releases work held by members the config no longer carries');
+  }
 
   console.log('t-control.js OK — a live court follows the repo, and the court can steer itself');
 } finally {
