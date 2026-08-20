@@ -14,11 +14,36 @@ import { strict as a } from 'node:assert';
 import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { delimiter, join } from 'node:path';
 
 const dir = mkdtempSync(join(tmpdir(), 'kingdom-codexargs-'));
+
+/* ---------- 0. Windows must prefer the npm JS entry over a shim exe ------- */
+if (process.platform === 'win32') {
+  const prior = { appdata: process.env.APPDATA, path: process.env.PATH, codex: process.env.KINGDOM_CODEX_BIN };
+  const appdata = join(dir, 'appdata');
+  const bin = join(dir, 'bin');
+  const entry = join(appdata, 'npm', 'node_modules', '@openai', 'codex', 'bin', 'codex.js');
+  mkdirSync(join(appdata, 'npm', 'node_modules', '@openai', 'codex', 'bin'), { recursive: true });
+  mkdirSync(bin);
+  writeFileSync(entry, '// synthetic npm entry\n');
+  writeFileSync(join(bin, 'codex.exe'), 'synthetic shim executable\n');
+  process.env.APPDATA = appdata;
+  process.env.PATH = bin + delimiter + (prior.path ?? '');
+  delete process.env.KINGDOM_CODEX_BIN;
+
+  const { resolveCli } = await import(`../src/agent.js?npm-entry-${Date.now()}`);
+  const resolved = resolveCli('codex');
+  a.equal(resolved.command, process.execPath, 'a packaged codex.exe must not outrank the user npm entry');
+  a.deepEqual(resolved.prefixArgs, [entry]);
+
+  if (prior.appdata === undefined) delete process.env.APPDATA; else process.env.APPDATA = prior.appdata;
+  if (prior.path === undefined) delete process.env.PATH; else process.env.PATH = prior.path;
+  if (prior.codex === undefined) delete process.env.KINGDOM_CODEX_BIN; else process.env.KINGDOM_CODEX_BIN = prior.codex;
+  console.log('  Windows prefers the npm codex.js entry over a shim executable');
+}
 
 /* ---------- 1. the flags the real CLI accepts ---------- */
 // Found independently of resolveCli: this test stubs the CLI later, and

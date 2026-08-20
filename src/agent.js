@@ -39,6 +39,21 @@ const CLAUDE_SYSPROMPT_ARGV_BUDGET = 24_000;
 
 const cliCache = new Map();
 
+function npmEntry(name) {
+  if (!NPM_ENTRY[name]) return null;
+  const roots = [
+    process.env.APPDATA && join(process.env.APPDATA, 'npm', 'node_modules'),
+    join(homedir(), '.npm-global', 'lib', 'node_modules'),
+    '/usr/local/lib/node_modules',
+    '/usr/lib/node_modules',
+  ].filter(Boolean);
+  for (const r of roots) {
+    const p = join(r, ...NPM_ENTRY[name].split('/'));
+    if (existsSync(p)) return { command: process.execPath, prefixArgs: [p] };
+  }
+  return null;
+}
+
 /**
  * Resolve a CLI to a REAL executable + prefix args. Never `shell: true` —
  * on Windows that concatenates argv unescaped and shreds JSON arguments
@@ -54,6 +69,8 @@ export function resolveCli(name) {
   let out = !override ? null
     : override.endsWith('.js') ? { command: process.execPath, prefixArgs: [override] }
     : { command: override, prefixArgs: [] };
+
+  if (!out && IS_WIN && name === 'codex') out = npmEntry(name);
 
   if (!out) {
     const dirs = [
@@ -78,21 +95,7 @@ export function resolveCli(name) {
     }
   }
 
-  if (!out && NPM_ENTRY[name]) {
-    const roots = [
-      process.env.APPDATA && join(process.env.APPDATA, 'npm', 'node_modules'),
-      join(homedir(), '.npm-global', 'lib', 'node_modules'),
-      '/usr/local/lib/node_modules',
-      '/usr/lib/node_modules',
-    ].filter(Boolean);
-    for (const r of roots) {
-      const p = join(r, ...NPM_ENTRY[name].split('/'));
-      if (existsSync(p)) {
-        out = { command: process.execPath, prefixArgs: [p] };
-        break;
-      }
-    }
-  }
+  if (!out) out = npmEntry(name);
 
   if (!out) throw new Error(`Cannot find the '${name}' CLI. Set KINGDOM_${name.toUpperCase()}_BIN.`);
   cliCache.set(name, out);
