@@ -2547,6 +2547,33 @@ export class Kingdom extends EventEmitter {
     this.agents.delete(name);
     this.summoned.delete(name);
     this.bus.set('summoned', JSON.stringify([...this.summoned]));
+
+    // A dismissed member cannot finish what it claimed, and nothing reconciled
+    // those two facts. Watched live: "backend" finished task #3 and claimed #5
+    // (the CLI integration everything else was waiting on) while #3 was still
+    // in review. #3 merged, mergeWork() called sleep() to drop the worktree —
+    // and #5 was left active, owned by somebody the court no longer had.
+    //
+    // It cannot recover on its own. claim_task refuses a task that has an
+    // owner, so no other peasant may take it; the orchestrator reads "active"
+    // as work in hand and reports progress. The build stopped and the board
+    // said it was running.
+    //
+    // Here rather than in mergeWork because every dismissal has the same hole:
+    // dismiss_member and the sovereign's own /sleep orphan a task just as
+    // quietly. Released rather than reassigned — the list exists so an idle
+    // peasant can claim the next thing, and picking the claimant is the
+    // orchestrator's job, not a side effect of a merge.
+    const stranded = this.bus.tasks().filter((t) => t.owner === name && t.state !== 'done');
+    for (const t of stranded) this.bus.updateTask(t.id, { owner: null, state: 'pending' });
+    if (stranded.length) {
+      this.bus.post(CROWN, this.config.orchestrator.name,
+        `"${name}" left service still holding ${stranded.map((t) => `#${t.id} (${t.title})`).join(', ')}. `
+        + `${stranded.length === 1 ? 'It is' : 'They are'} unclaimed again and can be picked up by `
+        + 'anyone — assign or summon somebody, because nobody is working on '
+        + `${stranded.length === 1 ? 'it' : 'them'} now.`, 'notice');
+    }
+
     this.emit('agent', { name, state: 'exited' });
     this.#publishRoster();
   }

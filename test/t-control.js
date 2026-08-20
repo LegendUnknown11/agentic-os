@@ -204,6 +204,35 @@ try {
     console.log('  a member using its CLI\'s own court is reported, not swallowed');
   }
 
+  /* ---- 3c. dismissing a member must not orphan the work it claimed ------- */
+  // Watched live: "backend" finished #3 and claimed #5 while #3 was in review.
+  // #3 merged, mergeWork() slept it to drop the worktree, and #5 stayed active
+  // under an owner the court no longer had. claim_task refuses an owned task,
+  // so nobody could take it; the orchestrator read "active" as work in hand.
+  // The build stopped and the board said it was running.
+  {
+    const held = k.bus.addTask({ title: 'Integrate the CLI', by: 'orchestrator' });
+    const other = k.bus.addTask({ title: 'Untouched by anyone', by: 'orchestrator' });
+    a.equal(k.bus.claimTask('coder', held).ok, true, 'sanity: the claim must land');
+
+    k.sleep('coder');
+
+    const after = k.bus.task(held);
+    a.equal(after.owner, null, 'a dismissed member must not keep holding a task nobody can take');
+    a.equal(after.state, 'pending', 'and it must be claimable again, not stuck in active');
+    a.ok(k.bus.availableTasks().some((x) => x.id === held),
+      'availableTasks is what claim_task offers — the released task must appear there');
+
+    a.equal(k.bus.task(other).owner, null, 'sanity: an unclaimed task is untouched');
+
+    a.ok(k.bus.history({ limit: 400 }).some((m) =>
+      m.recipient === k.config.orchestrator.name && /still holding/.test(m.body)
+      && new RegExp(`#${held}`).test(m.body)),
+    'and the orchestrator must be told, or it goes on reporting the task as in progress');
+
+    console.log('  a dismissed member releases its claims, and the king hears about it');
+  }
+
   /* ---- 4. the court can write a skill, which it structurally could not --- */
   // vault_write puts a note in the folder the MODE picks and strips '/' out of
   // the title, so no member could ever land a file in Kingdom/Skills/ — the one
