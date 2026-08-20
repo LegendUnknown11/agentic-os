@@ -82,6 +82,13 @@ writeFileSync(cfg, JSON.stringify({
   const t1 = bus.addTask({ title: 'write the parser', by: 'orchestrator' });
   bus.addTask({ title: 'test the parser', needs: [t1], by: 'orchestrator' });
   bus.claimTask('coder', t1);
+  // In service, because only a summoned member can reach claim_task at all —
+  // the MCP server that carries it runs per spawned agent. Without this the
+  // fixture describes a task held by somebody the court does not have, which
+  // start() now releases on sight (a dismissed or config-dropped member used
+  // to strand its claims forever). That is a different scenario than the one
+  // this fixture is for.
+  bus.set('summoned', JSON.stringify(['coder']));
   bus.close();
 }
 
