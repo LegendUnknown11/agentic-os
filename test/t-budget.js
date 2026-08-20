@@ -211,7 +211,57 @@ a.equal(unpriced.stopped, false);
 
 await k3.stop();
 
-for (const d of [repo, kingdomDir(repo), repo3, kingdomDir(repo3)]) {
+// --- a subscription quota stops the whole CLI before another turn --------
+const repo4 = mkdtempSync(join(tmpdir(), 'kingdom-quota-'));
+const git4 = (...x) => execFileSync('git', x, { cwd: repo4, stdio: 'pipe' });
+git4('init', '-q');
+git4('config', 'user.email', 'k@kingdom');
+git4('config', 'user.name', 'kingdom');
+writeFileSync(join(repo4, 'README.md'), '# t\n');
+git4('add', '-A');
+git4('commit', '-qm', 'init');
+
+const cfg4 = join(repo4, 'kingdom.config.json');
+writeFileSync(cfg4, JSON.stringify({
+  recycleAtTokens: 10_000_000,
+  quotas: { codex: { label: 'Tiny Test Plan', limitTokens: 20 } },
+  orchestrator: { name: 'orchestrator', cli: 'codex' },
+  briefer: { name: 'briefer', cli: 'codex' },
+  peasants: [{ name: 'coder', cli: 'codex' }],
+}));
+
+const k4 = new Kingdom(repo4, cfg4);
+await k4.start();
+await k4.wake('coder');
+const quotaCoder = neuter(k4.agents.get('coder'));
+const quotaEvents = [];
+const quotaFailures = [];
+k4.on('budget', (e) => quotaEvents.push(e));
+k4.on('failure', (e) => quotaFailures.push(e));
+
+// Exactly the configured allowance. A ceiling is not an advisory percentage.
+quotaCoder.emit('turn_end', { usage: { input_tokens: 20 }, costUsd: 0 });
+await wait(200);
+
+a.equal(quotaEvents.length, 1, 'reaching a subscription quota must surface one event');
+a.deepEqual(quotaEvents[0], { scope: 'quota', cli: 'codex', label: 'Tiny Test Plan', used: 20, cap: 20 });
+a.equal(quotaCoder.stopped, true, 'the member that reached the plan ceiling must stop');
+a.ok(!k4.agents.has('coder') && !k4.agents.has('orchestrator'),
+  'every member on the exhausted CLI must stop, not just the one that reported last');
+a.match(quotaFailures.find((e) => /Tiny Test Plan/.test(e.message))?.message ?? '', /Tiny Test Plan.*20.*20/i,
+  'the sovereign must be told which quota stopped the court and why');
+
+const turnsBefore = k4.bus.events({ type: 'turn_end', limit: 100 }).length;
+k4.bus.post('sovereign', 'coder', 'do not start another paid turn', 'assignment');
+await k4.wake('coder');
+await wait(500);
+a.equal(k4.agents.has('coder'), false, 'waking an exhausted CLI must refuse before delivery');
+a.equal(k4.bus.events({ type: 'turn_end', limit: 100 }).length, turnsBefore,
+  'the refused wake must not spend a second turn');
+
+await k4.stop();
+
+for (const d of [repo, kingdomDir(repo), repo3, kingdomDir(repo3), repo4, kingdomDir(repo4)]) {
   try { rmSync(d, { recursive: true, force: true }); } catch {}
 }
 console.log('t-budget.js OK — cumulative ceiling survives restarts, codex courts can be capped, any member recycles');

@@ -76,6 +76,10 @@ export function onEvent(d) {
         `Resets ${d.resetsAt}. Retrying will not help.`, 'limited');
 
     case 'budget':
+      if (d.scope === 'quota') {
+        return prefs.budget && fire(`${d.label} quota reached`,
+          `${(d.used ?? 0).toLocaleString()} of ${(d.cap ?? 0).toLocaleString()} tokens. ${d.cli} members stopped.`, 'budget');
+      }
       return prefs.budget && fire(
         d.scope === 'kingdom' ? 'Team spend ceiling reached' : `${d.name} hit its ceiling`,
         `$${(d.spent ?? 0).toFixed(2)} of $${d.cap}. Everyone stopped.`, 'budget');

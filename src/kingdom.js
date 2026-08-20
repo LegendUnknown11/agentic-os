@@ -1031,6 +1031,8 @@ export class Kingdom extends EventEmitter {
       this.emit('spend',
         { total: spent, tokens, turns: this.#countTurns(), name, ctx, spentByAgent: mine });
 
+      if (this.#enforceQuota(name)) return;
+
       // Any member whose context has grown expensive gets recycled — not just
       // the briefer. The orchestrator is usually the worst offender.
       //
@@ -1180,6 +1182,42 @@ export class Kingdom extends EventEmitter {
         `$${perMember}) and has been stopped. Do not wait on it. The sovereign ` +
         `must raise its budget or reassign the work.`);
     }
+  }
+
+  #cliOf(name) {
+    const spec = { ...(this.config.peasantDefaults ?? {}), ...(this.specOf(name) ?? {}) };
+    return spec.cli ?? 'claude';
+  }
+
+  #quotaFor(name) {
+    const cli = this.#cliOf(name);
+    const quota = this.config.quotas?.[cli];
+    const cap = Number(quota?.limitTokens ?? 0);
+    const names = [this.config.orchestrator, this.config.briefer, ...this.config.peasants]
+      .map((s) => s.name).filter((n) => this.#cliOf(n) === cli);
+    return {
+      cli, label: quota?.label ?? cli, cap,
+      used: names.reduce((sum, n) => sum + Number(this.bus.get(`tokens:${n}`) ?? 0), 0),
+    };
+  }
+
+  /** Stops measured plan usage; a future turn is never reserved from a forecast. */
+  #enforceQuota(name) {
+    const quota = this.#quotaFor(name);
+    if (!quota.cap || quota.used < quota.cap) return false;
+
+    const key = `quota:${quota.cli}`;
+    if (this.bus.get(key) !== String(quota.cap)) {
+      this.bus.set(key, String(quota.cap));
+      this.emit('budget', { scope: 'quota', ...quota });
+      const message = `${quota.label} is exhausted (${quota.used.toLocaleString()} of `
+        + `${quota.cap.toLocaleString()} tokens). ${quota.cli} members were stopped before another turn. `
+        + 'Raise the plan limit or switch the work to a CLI with quota remaining.';
+      this.emit('failure', { name, message });
+      this.bus.post(CROWN, this.config.orchestrator.name, `AWARENESS: ${message}`, 'notice');
+    }
+    for (const n of [...this.agents.keys()]) if (this.#cliOf(n) === quota.cli) this.sleep(n);
+    return true;
   }
 
   /** Reset a member's cumulative spend — the sovereign lifting a ceiling. */
@@ -1743,6 +1781,7 @@ export class Kingdom extends EventEmitter {
         this.#maybeIdleSleep(name, now);
         continue;
       }
+      if (this.#enforceQuota(name)) continue;
 
       const highest = pending[pending.length - 1].id;
 

@@ -972,6 +972,11 @@ function connect() {
           append('orchestrator', 't-error',
             `⛔ KINGDOM SPEND CEILING reached ($${d.spent.toFixed(2)} of $${d.cap}). Everyone stopped.`);
           toast(`Kingdom spend ceiling $${d.cap} reached — everyone stopped`, true);
+        } else if (d.scope === 'quota') {
+          append('orchestrator', 't-error',
+            `⛔ ${d.label} token quota reached (${d.used.toLocaleString()} of ${d.cap.toLocaleString()}). `
+            + `${d.cli} members stopped before another turn.`);
+          toast(`${d.label} quota reached — ${d.cli} members stopped`, true);
         } else {
           append(d.name, 't-error',
             `⛔ ${d.name} reached its spend ceiling ($${d.spent.toFixed(2)} of $${d.cap}) and was stopped.`);
