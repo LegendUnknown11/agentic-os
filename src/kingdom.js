@@ -31,6 +31,25 @@ import { mirrorToProject } from './vault.js';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const MCP_PATH = join(HERE, 'mcp.js');
 const POLL_MS = 300;
+
+// Who the CROWN speaks as when it tells a member something itself — an approval
+// landed, a merge failed, a member is confined. Not a role and not a member: a
+// member name, because every sender is one, but one nobody can ever be.
+//
+// It has to be distinct because bus.pending() drops rows where sender = the
+// reader, which is right — a member must not be handed its own outbound
+// messages back as if they were mail. These notices used to be posted as
+// `bus.post(CROWN, this.config.orchestrator.name, ...)`: the ROLE as
+// sender, the NAME as recipient. The shipped default name IS "orchestrator", so
+// in the out-of-the-box configuration all nineteen of them were posted by the
+// king to the king and swallowed by that guard before delivery.
+//
+// Watched live: a summon was approved, five peasants woke in their worktrees,
+// "The sovereign approved your summons ... Assign their work." was written to
+// the bus as message #3 — and the orchestrator sat idle, because it never
+// arrived. The court stalls after every approved summon and the log shows the
+// notice sitting there, sent.
+export const CROWN = 'crown';
 // Every delivered message costs the recipient a FULL context replay, so the
 // cost of a session is driven by TURN COUNT, not message size. These three
 // constants exist to collapse many messages into few turns.
@@ -651,7 +670,7 @@ export class Kingdom extends EventEmitter {
     const inherited = [...this.summoned].filter((n) => this.roleOf(n) === 'peasant');
     if (inherited.length) {
       this.emit('inherited', { names: inherited });
-      this.bus.post('orchestrator', this.config.orchestrator.name,
+      this.bus.post(CROWN, this.config.orchestrator.name,
         `AWARENESS ONLY — TAKE NO ACTION. Still in service from a previous session: `
         + `${inherited.join(', ')}. They were approved then, not now, and they cost money the `
         + `moment anyone messages them. Do not use one unless this session's work needs it.`,
@@ -879,7 +898,32 @@ export class Kingdom extends EventEmitter {
       this.emit('agent', { name, state: 'ready', sessionId: sid });
     });
     agent.on('text', (t) => this.#record(name, 'text', { text: t }));
-    agent.on('tool', (t) => this.#record(name, 'tool', t));
+    // The prohibition in #promptFor is the ONLY thing keeping a member out of
+    // its CLI's own multi-agent system: codex 0.145.0 offers spawn_agent under
+    // every feature flag there is — features.multi_agent=false and
+    // features.collaboration_modes=false are both valid config and neither
+    // removes it, measured by asking for the tool under each.
+    //
+    // A prohibition can be talked past, and the first time one was, nothing
+    // here noticed. A whole four-module build ran through codex's own
+    // sub-agents and codex's own todo list, in the base repository: no summon
+    // card, no worktree, no test gate, no merge, one cost line for what five
+    // workers did. The orchestrator then signed off with "Court work: ...
+    // assigned as independent slices", believing it had used us. It was caught
+    // by a human reading the raw event stream.
+    //
+    // So: a bypass may still happen, but it may never again be quiet. Reported,
+    // not blocked — killing a turn mid-flight loses the work as well.
+    agent.on('tool', (t) => {
+      this.#record(name, 'tool', t);
+      if (t?.name !== 'collab_tool_call') return;
+      const msg = `"${name}" called its CLI's own "${t.input?.tool ?? 'collab'}" tool instead of `
+        + "the kingdom's. That work runs inside its own process: unseen, unapproved, outside "
+        + 'any worktree, unbilled per member, and impossible to test or merge from here.';
+      this.emit('failure', { name, message: msg });
+      this.bus.post(CROWN, this.config.orchestrator.name,
+        `AWARENESS ONLY — TAKE NO ACTION. ${msg}`, 'notice');
+    });
     agent.on('error', async (e) => {
       const msg = String(e);
       this.#record(name, 'error', { message: msg });
@@ -890,7 +934,7 @@ export class Kingdom extends EventEmitter {
       if (/session limit/i.test(msg)) {
         if (await this.#failoverToken(name)) return;
         this.emit('limited', { name, resetsAt: reset ?? 'unknown' });
-        this.bus.post('orchestrator', this.config.orchestrator.name,
+        this.bus.post(CROWN, this.config.orchestrator.name,
           `"${name}" has hit the account's session limit${reset ? `, which resets ${reset}` : ''}. ` +
           `This is not a fault and retrying will not help. Do not wait on it.`, 'notice');
         return;
@@ -989,7 +1033,7 @@ export class Kingdom extends EventEmitter {
         + 'DENY every kingdom tool call. It cannot message anyone, declare_done, or reach '
         + 'the vault. Remove "sandbox" from its config to restore them.';
       this.emit('failure', { name, message: msg });
-      this.bus.post('orchestrator', this.config.orchestrator.name,
+      this.bus.post(CROWN, this.config.orchestrator.name,
         `AWARENESS ONLY — TAKE NO ACTION. ${msg}`, 'notice');
     }
 
@@ -1075,7 +1119,7 @@ export class Kingdom extends EventEmitter {
       // worst case is unchanged and the common case is free — against an orchestrator
       // whose turns are 61% of the court's output and whose context reaches
       // 70k+, a full replay to be told "someone died, carry on" is not worth it.
-      this.bus.post('orchestrator', this.config.orchestrator.name,
+      this.bus.post(CROWN, this.config.orchestrator.name,
         `AWARENESS: "${name}" has failed and may be unable to continue. ` +
         `Do not wait on them indefinitely. Error: ${message.slice(0, 300)}`, 'notice');
     }
@@ -1102,7 +1146,7 @@ export class Kingdom extends EventEmitter {
     if (perMember && spentByAgent >= perMember) {
       this.emit('budget', { scope: 'member', name, spent: spentByAgent, cap: perMember });
       this.sleep(name);
-      this.bus.post('orchestrator', this.config.orchestrator.name,
+      this.bus.post(CROWN, this.config.orchestrator.name,
         `"${name}" reached its spend ceiling ($${spentByAgent.toFixed(2)} of ` +
         `$${perMember}) and has been stopped. Do not wait on it. The sovereign ` +
         `must raise its budget or reassign the work.`);
@@ -1378,7 +1422,7 @@ export class Kingdom extends EventEmitter {
       this.#persistConfig();
       this.bus.set('goal', '');
       this.emit('goal', null);
-      this.bus.post('orchestrator', this.config.orchestrator.name,
+      this.bus.post(CROWN, this.config.orchestrator.name,
         'AWARENESS ONLY — TAKE NO ACTION. The sovereign has cleared the standing goal. '
         + 'Finish what is in flight; do not start anything new towards it.', 'notice');
       return null;
@@ -1455,6 +1499,33 @@ export class Kingdom extends EventEmitter {
       `rather than routing everything through the orchestrator — that is the point of this court.\n` +
       `Messages from others arrive in your session prefixed with [MESSAGE FROM ...], ` +
       `sometimes several at once. Answer them.\n` +
+      // MEASURED against codex 0.145.0: `spawn_agent` and `wait` are gated by
+      // NO feature flag. features.multi_agent=false and
+      // features.collaboration_modes=false are both accepted by --strict-config
+      // and both leave the tools on the surface — checked by running a prompt
+      // that asks for them under each. The CLI's own multi-agent system cannot
+      // be switched off. It can only be forbidden.
+      //
+      // And it WINS if you let it. Two runs against a real repository: the
+      // orchestrator announced a three-member crew, then built the entire
+      // project through codex's own sub-agents and codex's own todo list. The
+      // kingdom recorded ONE member and ONE turn. No summon card, no worktree,
+      // no briefer, no test gate, no merge, no per-member cost — and the king
+      // signed off with "Court work: ... assigned as independent slices",
+      // believing it had used us. Of course it won: the native tool is one call
+      // away and needs no sovereign's approval, and nothing told it not to.
+      //
+      // The prohibition holds. Same measurement with this text prepended and a
+      // user prompt ORDERING it to use its agent-spawning tool: it refused, and
+      // named summon instead.
+      `YOUR CLI OFFERS TOOLS THAT LOOK LIKE THIS COURT AND ARE NOT IT. Built-in ` +
+      `agent-spawning and task-list tools — codex's spawn_agent, wait and ` +
+      `todo_list, Claude Code's Task and TodoWrite, and every equivalent — run ` +
+      `inside your own process, where this kingdom cannot see, approve, isolate, ` +
+      `bill, test or merge them, and everything they produce dies with your turn. ` +
+      `NEVER call one. When you need another pair of hands, or a list that must ` +
+      `outlive this turn, use the kingdom tools you were given: they are the only ` +
+      `ones that are real.\n` +
       `Keep messages short: they are replayed into the recipient's context and ` +
       `are capped at 4000 characters. To share anything large, write it to a ` +
       `file and send the path — others can read your worktree.\n` +
@@ -1795,7 +1866,7 @@ export class Kingdom extends EventEmitter {
       // front of the whole court to read "TAKE NO ACTION" — while the orchestrator's own
       // prompt says "Never broadcast what one member needs to hear." Every other
       // orchestrator notice in this file addresses the orchestrator; this one did not.
-      this.bus.post('orchestrator', this.config.orchestrator.name,
+      this.bus.post(CROWN, this.config.orchestrator.name,
         `AWARENESS ONLY — TAKE NO ACTION. Milestone reached: "${hit.text}". `
         + (left ? `${left} still open.` : 'That was the last one; the goal is complete.'),
         'notice');
@@ -2027,7 +2098,7 @@ export class Kingdom extends EventEmitter {
     // vault directly, with no git tracking to fall behind on.
     if (this.roleOf(name) !== 'peasant' || !this.repo) return;
     if (!(await commitAll(this.repo, name, `WIP: ${name} slept with uncommitted work`))) return;
-    this.bus.post('orchestrator', this.config.orchestrator.name,
+    this.bus.post(CROWN, this.config.orchestrator.name,
       `AWARENESS ONLY — TAKE NO ACTION. "${name}" went idle with uncommitted edits, ` +
       `so the crown committed them as WIP on its branch. Nothing is lost; the work ` +
       `was never declared done, so it has NOT been tested or reviewed.`, 'notice');
@@ -2054,7 +2125,7 @@ export class Kingdom extends EventEmitter {
     // is whatever vault_write already landed; report the summary straight
     // through instead of running a verification pipeline that has no target.
     if (!this.repo) {
-      this.bus.post('orchestrator', this.config.orchestrator.name,
+      this.bus.post(CROWN, this.config.orchestrator.name,
         `"${peasant}" declared done.\n${msg.body}\n\n` +
         `No repository is attached, so nothing was committed, tested or diffed — ` +
         `check the vault for what it wrote.`, 'done-report');
@@ -2093,7 +2164,7 @@ export class Kingdom extends EventEmitter {
       : `The work stays on its branch — nothing merges in this mode. Say whether it is `
         + `good enough and what is still open.`;
     if (workers <= useBriefer) {
-      this.bus.post('orchestrator', this.config.orchestrator.name,
+      this.bus.post(CROWN, this.config.orchestrator.name,
         `"${peasant}" declared done.\n${msg.body}\n\n${verdict}\n${tests.output.slice(-1200)}\n\n` +
         `CHANGED:\n${stat}\n\nUse read_diff("${peasant}") if you need the actual changes, ` +
         next, 'done-report');
@@ -2643,7 +2714,7 @@ export class Kingdom extends EventEmitter {
     if (name !== this.config.orchestrator.name) {
       // Framing matters: an earlier version phrased this as a plain report and
       // the orchestrator obediently carried out the peasant's instruction itself.
-      this.bus.post('orchestrator', this.config.orchestrator.name,
+      this.bus.post(CROWN, this.config.orchestrator.name,
         `AWARENESS ONLY — THIS IS NOT AN ORDER TO YOU. TAKE NO ACTION.\n` +
         `The sovereign has spoken directly to "${name}". What they said to ${name} ` +
         `was: "${text}"\nYou are told only so you are not surprised by what ` +
@@ -2672,7 +2743,7 @@ export class Kingdom extends EventEmitter {
         const why = `${barred.join(', ')} ${barred.length === 1 ? 'is' : 'are'} not on the `
           + `${modeOf(this.mode()).label} bench, so nobody was woken. Propose from this mode's `
           + `crew, or ask the sovereign to switch modes.`;
-        this.bus.post('orchestrator', this.config.orchestrator.name, why);
+        this.bus.post(CROWN, this.config.orchestrator.name, why);
         this.emit('resolved', { id, approved: false });
         return;
       }
@@ -2682,7 +2753,7 @@ export class Kingdom extends EventEmitter {
       await Promise.all(p.names.map((n) => this.#spawn(n)));
       this.approvals.delete(id);
       this.bus.set(`resolved:${id}`, 'approved');
-      this.bus.post('orchestrator', this.config.orchestrator.name,
+      this.bus.post(CROWN, this.config.orchestrator.name,
         `The sovereign approved your summons: ${p.names.join(', ')} are awake. Assign their work.`);
     } else if (p.kind === 'role') {
       // The sovereign approving a role is not validation — they are ruling on
@@ -2698,7 +2769,7 @@ export class Kingdom extends EventEmitter {
       });
       this.#persistConfig();
       this.#publishRoster();
-      this.bus.post('orchestrator', this.config.orchestrator.name,
+      this.bus.post(CROWN, this.config.orchestrator.name,
         `The sovereign approved the new role "${p.name}". It is in the roster permanently.`);
     } else if (p.kind === 'merge') {
       await this.merge(p.peasant);
@@ -2711,7 +2782,7 @@ export class Kingdom extends EventEmitter {
     if (!p) return;
     this.approvals.delete(id);
     this.bus.set(`resolved:${id}`, 'rejected');
-    this.bus.post('orchestrator', this.config.orchestrator.name,
+    this.bus.post(CROWN, this.config.orchestrator.name,
       `The sovereign REJECTED your ${p.kind} proposal. ${why}`);
     this.emit('resolved', { id, approved: false });
   }
@@ -2745,7 +2816,7 @@ export class Kingdom extends EventEmitter {
       const why = `Nothing merges in ${m.label} mode, so "${peasant}"'s work was not merged and `
         + `${this.base} is untouched. The work is on its own branch — switch to Code mode to `
         + `land it, or take what you want from the branch by hand.`;
-      this.bus.post('orchestrator', this.config.orchestrator.name, why, 'notice');
+      this.bus.post(CROWN, this.config.orchestrator.name, why, 'notice');
       this.emit('mergeFailed', { peasant, message: why });
       throw new Error(why);
     }
@@ -2756,7 +2827,7 @@ export class Kingdom extends EventEmitter {
     } catch (e) {
       // Conflicts and dirty trees are expected outcomes, not crashes: tell the
       // orchestrator so it can send the work back, and leave the repo untouched.
-      this.bus.post('orchestrator', this.config.orchestrator.name,
+      this.bus.post(CROWN, this.config.orchestrator.name,
         `The merge of "${peasant}" did NOT happen and nothing was changed.\n${e.message}`);
       this.emit('mergeFailed', { peasant, message: e.message });
       throw e;
@@ -2765,7 +2836,7 @@ export class Kingdom extends EventEmitter {
     // Confirmation of something the orchestrator itself asked for, so it rides along
     // rather than buying a turn. The FAILURE path above stays a message on
     // purpose: that one needs a decision (send the work back), this one does not.
-    this.bus.post('orchestrator', this.config.orchestrator.name,
+    this.bus.post(CROWN, this.config.orchestrator.name,
       `"${peasant}"'s work is merged into ${this.base}.`, 'notice');
     this.emit('merged', { peasant, output: out });
 

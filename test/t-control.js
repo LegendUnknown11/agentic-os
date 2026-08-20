@@ -177,6 +177,33 @@ try {
     .some((m) => m.recipient === 'coder' && /No such control/.test(m.body))),
   'and so must a lever that does not exist');
 
+  /* ---- 3b. a member that uses its CLI's own court must be reported ------- */
+  // codex 0.145.0 ships spawn_agent/wait/todo_list and no feature flag removes
+  // them, so the prompt is the only guard — and a prompt can be talked past.
+  // When one was, an entire four-module build ran through codex's own
+  // sub-agents while this kingdom recorded one member and one turn. Nothing
+  // said a word. Asserted on the event, not on a real process: the gate is one
+  // handler, and a test that has to run codex to see it is a test nobody runs.
+  {
+    const heard = [];
+    k.on('failure', (f) => heard.push(f));
+    k.agents.get(who).emit('tool', { name: 'collab_tool_call', input: { tool: 'spawn_agent' } });
+
+    a.equal(heard.length, 1, 'a member reaching for its CLI\'s own agents must be reported once');
+    a.match(heard[0].message, /spawn_agent/, 'and the report must name the tool it actually called');
+    a.equal(heard[0].name, who);
+    a.ok(k.bus.history({ limit: 400 }).some((m) =>
+      m.recipient === k.config.orchestrator.name && /AWARENESS ONLY/.test(m.body)
+      && /spawn_agent/.test(m.body)),
+    'and must reach the orchestrator, which is the one that can stop doing it');
+
+    // An ordinary tool call must stay silent, or the notice is noise.
+    k.agents.get(who).emit('tool', { name: 'command_execution', input: { command: 'ls' } });
+    a.equal(heard.length, 1, 'a normal tool call must not be reported');
+    k.removeAllListeners('failure');
+    console.log('  a member using its CLI\'s own court is reported, not swallowed');
+  }
+
   /* ---- 4. the court can write a skill, which it structurally could not --- */
   // vault_write puts a note in the folder the MODE picks and strips '/' out of
   // the title, so no member could ever land a file in Kingdom/Skills/ — the one

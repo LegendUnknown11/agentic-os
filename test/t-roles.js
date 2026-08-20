@@ -128,6 +128,37 @@ console.log('  orchestrator briefed on the whole bench');
   console.log(`  build doctrine on all ${workers.length} workers; orchestrator enforces it`);
 }
 
+/* ---------- the CLI's own court must be forbidden to EVERY member ---------- */
+// Two live runs against a real repository, on codex 0.145.0. The orchestrator
+// announced a three-member crew, then built the whole project through codex's
+// own `spawn_agent` and `todo_list`. The kingdom saw one member and one turn:
+// no summon card, no worktree, no briefer, no test gate, no merge, no
+// per-member cost. It then reported "Court work: ... assigned as independent
+// slices", believing it had used us.
+//
+// It cannot be switched off — features.multi_agent=false and
+// features.collaboration_modes=false are both valid config and both leave the
+// tools on the surface, measured. So the prohibition is the mechanism, and a
+// mechanism that is one sentence of prose is one careless edit from gone.
+//
+// On the SHARED block, not per role, for the same reason the build doctrine is:
+// a role added tomorrow must not start out exempt.
+{
+  k = new Kingdom(repo, cfgPath);
+  const everyone = ['orchestrator', 'briefer', ...read().peasants.map((p) => p.name)];
+  for (const n of everyone) {
+    const b = k.briefFor(n);
+    a.match(b, /LOOK LIKE THIS COURT AND ARE NOT IT/,
+      `${n} must be warned that its CLI ships a rival court`);
+    a.match(b, /spawn_agent/, `${n} must be told the codex tool BY NAME — "do not spawn agents" `
+      + 'is advice; naming the tool it is about to reach for is a rule');
+    a.match(b, /todo_list/, `${n} must be told the native task list is not the kingdom's either`);
+    a.match(b, /Task and TodoWrite/, `${n} may be on Claude Code, which has its own pair`);
+  }
+  k.bus.close();
+  console.log(`  native agent/todo tools forbidden on all ${everyone.length} members`);
+}
+
 /* ---------- domain presets move a whole side of the stack at once ---------- */
 {
   k = new Kingdom(repo, cfgPath);

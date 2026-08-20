@@ -6,7 +6,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Kingdom } from '../src/kingdom.js';
+import { Kingdom, CROWN } from '../src/kingdom.js';
 import { kingdomDir } from '../src/worktree.js';
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -44,6 +44,44 @@ k.bus.post('orchestrator', null,
   JSON.stringify({ kind: 'summon', names: ['designer'], reason: 'second probe' }), 'approval');
 await wait(700);
 a.equal(k.approvals.size, 2, 'new approval must be picked up by the delivery loop');
+
+/* ---- the king must be TOLD its summons were approved -------------------- */
+// Watched live, on the shipped default configuration: a summon of five was
+// approved, five peasants woke in five worktrees, "The sovereign approved your
+// summons ... Assign their work." was written to the bus — and the orchestrator
+// never moved. Four minutes later all five idle-slept, having been handed
+// nothing. The court paid for a crew and then stalled.
+//
+// bus.pending() drops rows where sender = the reader, which is correct: nobody
+// is handed their own outbound mail back. But the crown posted these notices as
+// the ROLE "orchestrator" to the orchestrator's NAME, and the default name is
+// "orchestrator" — so the guard ate every one of them. Twenty call sites, all
+// of them the crown telling the king something, all silent out of the box.
+//
+// Asserted through the real approve() path, with a default-named orchestrator,
+// because it is the collision that is the bug: a fixture that renames the king
+// passes either way and proves nothing.
+{
+  a.equal(k.config.orchestrator.name, 'orchestrator',
+    'this test is ABOUT the default name — renaming the fixture would hide the bug');
+
+  const id = [...k.approvals.keys()][0];
+  await k.approve(id);
+
+  const inbox = k.bus.pending('orchestrator').map((m) => m.body);
+  a.ok(inbox.some((b) => /approved your summons/.test(b)),
+    'an approved summon must be DELIVERABLE to the orchestrator, not merely written '
+    + `to the log. Its inbox held: ${JSON.stringify(inbox).slice(0, 200)}`);
+  a.ok(k.bus.history({ limit: 50 }).some((m) => m.sender === CROWN),
+    'and it must come from the crown, which is nobody, so no member ever filters it');
+
+  // The guard itself must survive: a member still never re-reads its own post.
+  k.bus.post('orchestrator', 'orchestrator', 'talking to myself');
+  a.ok(!k.bus.pending('orchestrator').some((m) => m.body === 'talking to myself'),
+    'a member must still not be handed its own outbound message back');
+
+  console.log('  an approved summon reaches the king; self-posts still filtered');
+}
 
 await k.wake('designer');
 await k.stop();
