@@ -36,6 +36,15 @@ create table if not exists tasks (
   by         text    not null,
   done_ts    integer
 );
+create table if not exists campaigns (
+  id            integer primary key autoincrement,
+  ts            integer not null,
+  title         text    not null,
+  message_start integer not null,
+  event_start   integer not null,
+  spent_usd     real    not null,
+  tokens        integer not null
+);
 create index if not exists idx_msg_recipient on messages(recipient, id);
 create index if not exists idx_evt_agent on events(agent, id);
 create index if not exists idx_task_state on tasks(state, owner);
@@ -176,6 +185,45 @@ export class Bus {
    */
   lastEventId() {
     return this.db.prepare('select max(id) as id from events').get().id ?? 0;
+  }
+
+  lastMessageId() {
+    return this.db.prepare('select max(id) as id from messages').get().id ?? 0;
+  }
+
+  /** A sovereign order is a chronological interval, never a guessed project plan. */
+  beginCampaign(title) {
+    const row = {
+      ts: Date.now(), title: String(title ?? '').trim(),
+      messageStart: this.lastMessageId(), eventStart: this.lastEventId(),
+      spentUsd: Number(this.get('spentUsd') ?? 0), tokens: Number(this.get('tokens') ?? 0),
+    };
+    const { lastInsertRowid } = this.db.prepare(
+      'insert into campaigns (ts,title,message_start,event_start,spent_usd,tokens) values (?,?,?,?,?,?)'
+    ).run(row.ts, row.title, row.messageStart, row.eventStart, row.spentUsd, row.tokens);
+    return { id: Number(lastInsertRowid), ...row };
+  }
+
+  campaigns() {
+    const rows = this.db.prepare('select * from campaigns order by id').all();
+    const now = { spentUsd: Number(this.get('spentUsd') ?? 0), tokens: Number(this.get('tokens') ?? 0) };
+    return rows.map((r, i) => {
+      const next = rows[i + 1];
+      const end = next
+        ? { spentUsd: Number(next.spent_usd), tokens: Number(next.tokens) }
+        : now;
+      return {
+        id: r.id, ts: r.ts, title: r.title,
+        messageStart: r.message_start, messageEnd: next?.message_start ?? null,
+        eventStart: r.event_start, eventEnd: next?.event_start ?? null,
+        spentUsd: end.spentUsd - Number(r.spent_usd), tokens: end.tokens - Number(r.tokens),
+        current: !next,
+      };
+    });
+  }
+
+  campaign(id) {
+    return this.campaigns().find((c) => c.id === Number(id)) ?? null;
   }
 
   countMessages() {

@@ -351,6 +351,11 @@ const handle = async (req, res) => {
     }));
   }
 
+  if (url.pathname === '/api/campaigns') {
+    return res.writeHead(200, { 'content-type': 'application/json' })
+      .end(JSON.stringify({ ok: true, campaigns: kingdom.bus.campaigns() }));
+  }
+
   // ---- the chronicle: everything that happened, in order ---------------
   // The bus panel shows messages; a member's panel shows one transcript. There
   // was no view of the court as a whole over time, and no way to find which of
@@ -360,12 +365,20 @@ const handle = async (req, res) => {
     const limit = Math.min(500, Number(url.searchParams.get('limit') ?? 200));
     const kinds = new Set((url.searchParams.get('kinds') ?? 'summary,message,error,done')
       .split(',').filter(Boolean));
+    const requestedCampaign = url.searchParams.get('campaign');
+    const campaign = requestedCampaign ? kingdom.bus.campaign(requestedCampaign) : null;
+    if (requestedCampaign && !campaign) {
+      return res.writeHead(404, { 'content-type': 'application/json' })
+        .end(JSON.stringify({ ok: false, error: 'No such campaign.' }));
+    }
+    const inCampaign = (id, start, end) => !campaign || (id > start && (end == null || id <= end));
 
     const rows = [];
 
     // Summaries and errors — one line per turn, which is the readable layer.
     if (kinds.has('summary') || kinds.has('error')) {
       for (const e of kingdom.bus.events({ limit: 20_000, tail: true })) {
+        if (!inCampaign(e.id, campaign?.eventStart, campaign?.eventEnd)) continue;
         if (e.type !== 'summary' && e.type !== 'error') continue;
         if (!kinds.has(e.type)) continue;
         let p;
@@ -378,6 +391,7 @@ const handle = async (req, res) => {
 
     if (kinds.has('message') || kinds.has('done')) {
       for (const m of kingdom.bus.history({ limit: 20_000, tail: true })) {
+        if (!inCampaign(m.id, campaign?.messageStart, campaign?.messageEnd)) continue;
         const kind = m.kind === 'done' ? 'done' : 'message';
         if (!kinds.has(kind)) continue;
         // Approvals and notices are machinery, not narrative.
@@ -402,6 +416,7 @@ const handle = async (req, res) => {
     return res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({
       ok: true,
       query: q,
+      campaign,
       total: hits.length,
       // Bodies can be enormous; the chronicle is for scanning, and the member's
       // own panel is where you go for the whole thing.

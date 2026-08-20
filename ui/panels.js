@@ -332,6 +332,9 @@ export function openChronicle({ onOpenMember }) {
       input.placeholder = 'Search everything the team said…';
       input.autocomplete = 'off';
       const filters = el('div', 'filters');
+      const campaign = el('select', 'filt');
+      campaign.append(el('option', '', 'all orders'));
+      filters.append(campaign);
       search.append(input, filters);
 
       const body = el('div', 'log settings');
@@ -357,7 +360,7 @@ export function openChronicle({ onOpenMember }) {
       const draw = async () => {
         const mine = seq.next();
         const r = await get(`/api/chronicle?kinds=${[...kinds].join(',')}`
-          + `&q=${encodeURIComponent(input.value.trim())}`);
+          + `&q=${encodeURIComponent(input.value.trim())}&campaign=${campaign.value}`);
         if (!seq.current(mine)) return;   // a newer search already painted
         body.textContent = '';
         if (!r.ok) { body.append(el('div', 'empty', 'The team is not answering.')); return; }
@@ -393,6 +396,14 @@ export function openChronicle({ onOpenMember }) {
       let t;
       input.oninput = () => { clearTimeout(t); t = setTimeout(draw, 220); };
       input.onkeydown = (e) => { if (e.key === 'Escape') { input.value = ''; draw(); } };
+      campaign.onchange = draw;
+      get('/api/campaigns').then((r) => {
+        for (const c of r.campaigns ?? []) {
+          const option = el('option', '', `${c.current ? 'current — ' : ''}${c.title.slice(0, 80)}`);
+          option.value = c.id;
+          campaign.append(option);
+        }
+      }).catch(() => {});
       draw();
       setTimeout(() => input.focus(), 30);
     },

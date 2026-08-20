@@ -109,6 +109,9 @@ const up = async () => {
 };
 a.ok(await up(), 'the daemon must come up');
 const get = (p) => fetch(base + p).then((r) => r.json());
+const post = (p, body) => fetch(base + p, {
+  method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+}).then((r) => r.json());
 
 try {
   /* ---------- 1. metrics: deltas, not sums ---------- */
@@ -228,6 +231,47 @@ try {
     a.ok(only.rows.every((r) => r.kind === 'summary'), 'the kind filter is honoured');
     a.equal(only.total, 2);
     console.log('  chronicle: two tables merged, newest first, filtered and searchable');
+  }
+
+  /* ---------- 2c. campaigns: one sovereign order, one bounded interval ---- */
+  {
+    const { Bus: B } = await import('../src/bus.js');
+    const bus = new B(dbPath(repo));
+    bus.set('spentUsd', '4');
+    bus.set('tokens', '100');
+    const first = bus.beginCampaign('ship the parser');
+    bus.post('sovereign', 'orchestrator', 'ship the parser', 'assignment');
+    bus.logEvent('coder', 'summary', { text: 'Parser campaign finished.' });
+    bus.set('spentUsd', '4.5');
+    bus.set('tokens', '150');
+    bus.close();
+
+    a.ok((await post('/api/command', { text: 'ship the formatter' })).ok,
+      'a real sovereign command must start the next campaign');
+    await wait(20);
+
+    const fresh = new B(dbPath(repo));
+    fresh.logEvent('coder', 'summary', { text: 'Formatter campaign finished.' });
+    fresh.set('spentUsd', '5');
+    fresh.set('tokens', '190');
+    fresh.close();
+
+    const campaigns = await get('/api/campaigns');
+    a.equal(campaigns.ok, true);
+    a.equal(campaigns.campaigns.length, 2, 'two sovereign orders make two durable intervals');
+    const second = campaigns.campaigns.find((c) => c.title === 'ship the formatter');
+    a.ok(second, 'the real command names the current campaign');
+    a.equal(second.spentUsd, 0.5, 'current spend is the measured state delta, not a forecast');
+    a.equal(second.tokens, 40, 'current tokens are the measured state delta, not a cumulative total');
+    const old = campaigns.campaigns.find((c) => c.id === first.id);
+    a.equal(old.spentUsd, 0.5, 'the next campaign snapshot closes the earlier interval');
+
+    const scoped = await get(`/api/chronicle?campaign=${second.id}`);
+    a.ok(scoped.rows.some((r) => /ship the formatter/.test(r.text)));
+    a.ok(scoped.rows.some((r) => /Formatter campaign finished/.test(r.text)));
+    a.ok(!scoped.rows.some((r) => /parser|Parser campaign/i.test(r.text)),
+      'a campaign view must not leak an earlier order\'s narrative');
+    console.log('  campaigns: durable order intervals scope activity and measured deltas');
   }
 
   /* ---------- 3. vault ---------- */

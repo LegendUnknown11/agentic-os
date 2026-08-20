@@ -2620,6 +2620,8 @@ export class Kingdom extends EventEmitter {
     const local = this.#compactCommand(text) ?? this.#argueCommand(text);
     if (local) return { text: local, local: true };
 
+    const campaign = this.bus.beginCampaign(text);
+
     text = this.#skillCommand(text);
     const a = this.advisor();
 
@@ -2632,7 +2634,7 @@ export class Kingdom extends EventEmitter {
 
     if (!a.promptEngineer) {
       this.bus.post('sovereign', this.config.orchestrator.name, text, 'assignment');
-      return { text };
+      return { text, campaign };
     }
 
     // The rewrite DOES have to block: it changes the words the court acts on,
@@ -2675,7 +2677,7 @@ export class Kingdom extends EventEmitter {
     } else {
       this.bus.post('sovereign', this.config.orchestrator.name, final, 'assignment');
     }
-    return { text: final, rewritten: rewritten ?? null, models: applied };
+    return { text: final, rewritten: rewritten ?? null, models: applied, campaign };
   }
 
   /**
@@ -2766,6 +2768,7 @@ export class Kingdom extends EventEmitter {
     if (local) return { text: local, local: true };
     text = this.#skillCommand(text);
     if (name === this.config.orchestrator.name) return this.command(text);
+    this.bus.beginCampaign(text);
     this.bus.post('sovereign', name, text, 'assignment'); // recorded, like command()
     if (name !== this.config.orchestrator.name) {
       // Framing matters: an earlier version phrased this as a plain report and
