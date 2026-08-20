@@ -22,33 +22,74 @@
  * to refract, which is why the backdrop is never allowed to be flat.
  *
  * Every pane is built from the same four ingredients, never improvised:
- *   1. a translucent fill                 (--glass)
+ *   1. the sheet fill                      (--glass)
  *   2. backdrop blur + saturation          (--frost)
  *   3. a hairline edge, lighter on top     (--edge / --sheen)
  *   4. a soft drop shadow for separation   (--lift)
  *
- * Contrast is measured against the darkest backdrop, not eyeballed:
- *   --ink #eef3f8 16.6:1   --dim #a6b3c1 8.7:1   --faint #8f9cab 6.3:1
+ * Those four are the MATERIAL, and they are the only thing a material change
+ * touches. The default is solid: opaque sheets, no frost, no bevel, a hairline
+ * border, and separation carried by value and spacing rather than by four
+ * effects at once. `<html data-material="glass">` restores the frosted room —
+ * one block, near the top, redeclaring nothing but these variables.
  *
- * A wallpaper changes all of these: glass keeps the backdrop's luminance, so a
- * bright photo at low dim washes every pane out. assets.js measures the image
- * and raises the scrim to a readable floor — see safeDim().
+ * Separation comes from ONE mechanism at a time. The panes used to stack a
+ * translucent fill, a 30px blur at 165% saturation, an inset bevel and a drop
+ * shadow together; four cues where one would do is what reads as busy rather
+ * than finished.
+ *
+ * Contrast is measured, not eyeballed. On the solid sheet --glass #14171a:
+ *   --ink #f4f6f9 16.6:1   --dim #aab1bb 8.3:1   --faint #868d98 5.4:1
+ * and on the floor --bg #090b0d: 18.2 / 9.1 / 5.9. --edge-strong #646c77 is
+ * 3.4:1, the lightest value clearing the 3:1 WCAG asks of a control edge.
+ *
+ * A wallpaper changes all of these IN GLASS: glass keeps the backdrop's
+ * luminance, so a bright photo at low dim washes every pane out. assets.js
+ * measures the image and raises the scrim to a readable floor — see safeDim().
+ * Solid sheets are unaffected, which is a second reason they are the default.
  */
 :root {
   /* Darker than the panes on purpose. The stage recedes and the cards come
      forward; when both sat within a few percent of each other no edge read as
      an edge and nothing looked like a card. */
-  --bg:#04060a;
-  --deep:#070a10;
+  --bg:#090b0d;
+  --deep:#0e1013;
 
-  --ink:#eef3f8;
-  --dim:#a6b3c1;
-  --faint:#8f9cab;   /* 6.3:1 on the dark backdrop; headroom for a bright wallpaper */
+  --ink:#f4f6f9;
+  --dim:#aab1bb;
+  --faint:#868d98;
 
-  --accent:#45ecc6;
-  --accent-ink:#04120e;
+  /* THE ACCENT IS NOT A COLOUR. It is the chrome lighting up.
+     It used to be a mint that appeared 67 times in this file, on buttons,
+     rules, tab pills, focus rings, status dots and section headings — none of
+     which are signals. Everything wore it, so nothing was marked by it, and a
+     room where every surface is tinted reads as decorated rather than
+     finished. Near-white does the same job (this is selected, this is live)
+     without spending the one thing that can still mean something.
+     Colour is kept for what actually signals: --crown for the sovereign
+     personally, --danger for loss, and the categorical chips. Adding a fourth
+     is how the first one stopped meaning anything.
+     Measured against --glass #14171a: ink 16.6:1, dim 8.3:1, faint 5.4:1;
+     on --bg #090b0d: 18.2 / 9.1 / 5.9. --accent-ink on --accent is 15.3:1. */
+  --accent:#e0e4ea;
+  --accent-ink:#0b0d10;
   --crown:#f0c97d;
-  --danger:#ff8585;
+  --crown-ink:#1a1206;
+  --danger:#e2665f;
+
+  /* The same three colours as channels, because a wash of one is not the same
+     value as the colour itself and CSS cannot take a hex apart. Thirty-nine
+     rules had the components typed out — rgb(var(--accent-rgb) / .45) and its
+     siblings — so changing the accent changed the solid uses and left every
+     tint, glow and focus ring the old hue. The palette looked like one colour
+     and was two.
+     Keep BOTH forms: --accent for a solid fill, --accent-rgb for anything with
+     an alpha. A new tint uses rgb(var(--accent-rgb) / .3) and inherits every
+     future change to the hue for free. Safe here — the shell is Electron, so
+     the space-separated rgb() syntax is Chromium's own. */
+  --accent-rgb:224 228 234;
+  --crown-rgb:240 201 125;
+  --danger-rgb:226 102 95;
 
   /* The glass system. Tuned together — changing one alone breaks the effect.
      .72 is not a taste call. Solved for: composite every surface over the
@@ -58,23 +99,48 @@
      a margin. An earlier pass used .93, at which an 18px blur moves almost
      nothing — 93% of every pixel is the flat fill, so the panes wore a blur
      they could not show and the room read as slate. */
-  --glass:rgba(20,26,36,.72);
-  --glass-strong:rgba(14,19,27,.82);
-  --glass-raised:rgba(255,255,255,.075);
-  --frost:blur(30px) saturate(165%);
-  --frost-lite:blur(20px) saturate(140%);
-  --edge:rgba(255,255,255,.12);
-  --edge-strong:rgba(255,255,255,.22);
+  --glass:#14171a;
+  --glass-strong:#0e1013;
+  --glass-raised:rgba(255,255,255,.045);
+  --frost:none;
+  --frost-lite:none;
+  --edge:#2c3138;
+  /* 3.4:1 on --glass. WCAG asks 3:1 of a non-text control edge, and the
+     obvious pick (#565d67) measures 2.7:1 — close enough to look fine and
+     fail. #646c77 is the lightest value that clears it. */
+  --edge-strong:#646c77;
   /* Top highlight AND bottom shade: a pane with only a top edge reads as a
      sticker, one with both reads as a slab with depth. This one pair of lines
      is most of what sells the material. */
-  --sheen:inset 0 1px 0 rgba(255,255,255,.13), inset 0 -1px 0 rgba(0,0,0,.30);
-  --lift:0 20px 48px -18px rgba(0,0,0,.9), 0 4px 12px -4px rgba(0,0,0,.65);
+  --sheen:none;
+  --lift:0 8px 24px -12px rgba(0,0,0,.7);
 
   /* Gold is the sovereign's alone. Anything wearing it is the throne, the
      standing decree, or an approval waiting on the sovereign personally. */
-  --gold-edge:rgba(240,201,125,.18);
-  --gold-wash:rgba(240,201,125,.07);
+  /* A category is the one thing a hue carries better than position or weight,
+     so the chips keep their colour where the chrome gave its up. Named because
+     they were three hexes and two rgba triples scattered across two rules, and
+     a palette that cannot be read in one place cannot be tuned in one place. */
+  --cat-discovery:69 180 236;   --cat-discovery-ink:#70cbf8;
+  --cat-knowledge:180 140 240;  --cat-knowledge-ink:#c8a4f8;
+
+  /* The floor, in three steps. Darker than every pane so the room recedes and
+     the cards come forward — when both sat within a few percent of each other
+     no edge read as an edge and nothing looked like a card. */
+  --floor-1:#0d1013; --floor-2:#0a0c0f; --floor-3:#06080a;
+  --floor-shade:rgba(4,6,8,.92); --floor-shade-soft:rgba(4,6,8,.5);
+  --scrim:rgba(4,6,8,.5);
+
+  /* The two coloured corner washes. They exist to give GLASS something to
+     refract — a pane over a flat ground shows a blur it cannot demonstrate,
+     which is why the backdrop was never allowed to be flat. With solid sheets
+     there is nothing refracting them, so all they do is tint a floor you can
+     barely see, in two hues that are not signals. Near-neutral by default,
+     their original blue and violet restored with the glass material. */
+  --wash-cool:rgba(28,34,42,.5); --wash-warm:rgba(30,32,42,.42);
+
+  --gold-edge:rgb(var(--crown-rgb) / .18);
+  --gold-wash:rgb(var(--crown-rgb) / .07);
 
   --ui:"Segoe UI Variable Text","Segoe UI",Inter,system-ui,-apple-system,sans-serif;
   --mono:"JetBrains Mono","Cascadia Code",Consolas,ui-monospace,monospace;
@@ -93,6 +159,47 @@
 
   --ease:cubic-bezier(.16,1,.3,1); /* snappier attack curve with smooth settle */
   --fast:140ms; --base:240ms; --slow:420ms;
+}
+
+/* The old room, kept whole: <html data-material="glass">.
+ *
+ * THE ONLY OVERRIDE BLOCK IN THIS FILE, and the reason it is allowed where the
+ * five stacked REFITs were not: it redeclares nothing but the material
+ * variables, in one place, and no rule anywhere else has to know it exists.
+ * Every surface already reads --glass / --frost / --sheen / --lift, so the
+ * material is a value change, not a cascade fight. The refits lost precisely
+ * because they re-declared .win, #bg and :root instead.
+ *
+ * The names are kept. --glass now holds an opaque fill in the default
+ * material, which reads oddly for one line here and would otherwise cost
+ * sixty-seven edits across the file for no visual difference at all.
+ *
+ * Solid is the default because the panes are the app and the room is not. Glass
+ * only reads as glass when there is something behind it to refract, so it is a
+ * choice that depends on a wallpaper being set and worth looking at — which is
+ * exactly the sovereign's call, not a default. The reasoning behind these
+ * values is not lost: .72 was solved for, against a wallpaper composited under
+ * the scrim assets.js computes, taking the WORST contrast for --faint. .68
+ * gives 4.42:1 and fails AA; .70 gives 4.53:1; .72 gives 4.64:1 with a margin.
+ * An earlier pass used .93, at which an 18px blur moves almost nothing — 93% of
+ * every pixel is the flat fill, so the panes wore a blur they could not show
+ * and the room read as slate. */
+:root[data-material="glass"]{
+  --bg:#04060a;
+  --deep:#070a10;
+  --glass:rgba(20,26,36,.72);
+  --glass-strong:rgba(14,19,27,.82);
+  --glass-raised:rgba(255,255,255,.075);
+  --frost:blur(30px) saturate(165%);
+  --frost-lite:blur(20px) saturate(140%);
+  --edge:rgba(255,255,255,.12);
+  --edge-strong:rgba(255,255,255,.22);
+  --sheen:inset 0 1px 0 rgba(255,255,255,.13), inset 0 -1px 0 rgba(0,0,0,.30);
+  --lift:0 20px 48px -18px rgba(0,0,0,.9), 0 4px 12px -4px rgba(0,0,0,.65);
+  --floor-1:#0d131d; --floor-2:#090d15; --floor-3:#050810;
+  --floor-shade:rgba(4,7,12,.92); --floor-shade-soft:rgba(4,7,12,.5);
+  --scrim:rgba(4,7,11,.5);
+  --wash-cool:rgba(24,74,98,.42); --wash-warm:rgba(52,39,94,.34);
 }
 
 *{box-sizing:border-box;margin:0;padding:0}
@@ -125,7 +232,7 @@ header{padding:var(--s2) var(--s4);border-bottom:1px solid var(--gold-edge);
 footer{padding:var(--s2) var(--s4);border-top:1px solid var(--edge);box-shadow:var(--sheen),0 -6px 20px -12px rgba(0,0,0,.7)}
 
 .mark{color:var(--crown);display:flex;flex:none;
-  filter:drop-shadow(0 0 8px rgba(240,201,125,.5))}
+  filter:drop-shadow(0 0 8px rgb(var(--crown-rgb) / .5))}
 /* Header overflow is fought in one place: everything is `flex:none` and the
    goal bar is the only thing allowed to shrink. Before this the whole row
    competed — the repo path ellipsised to four characters, "0 turns" wrapped
@@ -190,7 +297,7 @@ footer:has(#cmd.advising) input{border-color:var(--accent);
 .rail{flex:none;width:214px;display:flex;flex-direction:column;min-height:0;
   /* Chrome sits a step denser than content: the rail and the member card are
      the frame, and a frame that competes with the work is noise. */
-  background:rgba(9,12,18,.76);backdrop-filter:var(--frost);
+  background:var(--glass);backdrop-filter:var(--frost);
   -webkit-backdrop-filter:var(--frost);
   border-right:1px solid var(--edge);position:relative;z-index:15;
   transition:width var(--base) var(--ease)}
@@ -286,21 +393,21 @@ body.rail-collapsed #rail-collapse{rotate:180deg}
 #bg{position:absolute;inset:0;z-index:0;pointer-events:none;overflow:hidden;
   background:
     /* the light falling from above the throne */
-    radial-gradient(72% 46% at 50% -14%, rgba(240,201,125,.16) 0%,
-                                          rgba(240,201,125,.05) 40%, transparent 74%),
+    radial-gradient(72% 46% at 50% -14%, rgb(var(--crown-rgb) / .16) 0%,
+                                          rgb(var(--crown-rgb) / .05) 40%, transparent 74%),
     /* cool washes, upper corners */
-    radial-gradient(48% 42% at 6% 10%,   rgba(24,74,98,.42) 0%, transparent 74%),
-    radial-gradient(46% 40% at 96% 14%,  rgba(52,39,94,.34) 0%, transparent 74%),
+    radial-gradient(48% 42% at 6% 10%,   var(--wash-cool) 0%, transparent 74%),
+    radial-gradient(46% 40% at 96% 14%,  var(--wash-warm) 0%, transparent 74%),
     /* the floor. The line where it meets the wall is drawn in ::before, so it
        can fade out at the edges — a hairline running the full width of the
        stage reads as a rendering seam, not as a horizon. */
     linear-gradient(to top,
-      rgba(4,7,12,.92) 0 11%,
-      rgba(4,7,12,.5) 11% 19%,
+      var(--floor-shade) 0 11%,
+      var(--floor-shade-soft) 11% 19%,
       transparent 36%),
     /* what the floor reflects back */
-    radial-gradient(64% 24% at 50% 100%, rgba(69,236,198,.13) 0%, transparent 74%),
-    linear-gradient(168deg, #0d131d 0%, #090d15 55%, #050810 100%);
+    radial-gradient(64% 24% at 50% 100%, rgb(var(--accent-rgb) / .13) 0%, transparent 74%),
+    linear-gradient(168deg, var(--floor-1) 0%, var(--floor-2) 55%, var(--floor-3) 100%);
   animation:drift 46s var(--ease) infinite alternate}
 @keyframes drift{to{background-position:0 0, 5% 3%, -4% 4%, 0 0, 0 0, center}}
 /* Walls. The room falls into shadow at its edges, which is also what stops the
@@ -356,7 +463,7 @@ body.has-bg #bg::after{opacity:var(--bg-dim,.5)}
 @keyframes materialize{from{opacity:0;scale:.985;translate:0 8px}}
 .win:hover{border-color:var(--edge-strong)}
 .win.asleep{opacity:.72}
-.win.role-king{border-color:rgba(240,201,125,.28)}
+.win.role-king{border-color:rgb(var(--crown-rgb) / .28)}
 /* Focused pane: the accent edge reads THROUGH the glass rather than being
    swallowed by an opaque fill. */
 .win.focus{border-color:color-mix(in srgb,var(--accent) 40%,var(--edge-strong));
@@ -384,7 +491,7 @@ body.has-bg #bg::after{opacity:var(--bg-dim,.5)}
   background:linear-gradient(145deg,rgba(255,255,255,.10),rgba(255,255,255,.02) 65%)}
 /* The king's plaque is gilded. Nothing else in the app gets this. */
 .win.role-king>.bar{border-bottom-color:var(--gold-edge);
-  background:linear-gradient(145deg,rgba(240,201,125,.14),rgba(255,255,255,.02) 65%)}
+  background:linear-gradient(145deg,rgb(var(--crown-rgb) / .14),rgba(255,255,255,.02) 65%)}
 /* The titlebar is a plaque, not a strip: the name is cut into it in the
    display serif, and the band is tall enough to be read as a nameplate on the
    front of the pane rather than as a row of controls above it. */
@@ -394,7 +501,7 @@ body.has-bg #bg::after{opacity:var(--bg-dim,.5)}
    panels carry state on the avatar's own corner, and both drawn together read
    as a rendering fault. */
 .win>.bar::before{content:"";width:7px;height:7px;border-radius:50%;flex:none;
-  background:#3a4553;margin-right:var(--s1)}
+  background:var(--edge-strong);margin-right:var(--s1)}
 .win:not(.asleep)>.bar::before{background:var(--accent);box-shadow:0 0 6px var(--accent)}
 .win.role-king>.bar::before{background:var(--crown);box-shadow:0 0 6px var(--crown)}
 .win.member>.bar::before{display:none}
@@ -489,9 +596,9 @@ body.has-bg #bg::after{opacity:var(--bg-dim,.5)}
 .t-text{color:var(--ink)}
 .t-tool{color:var(--faint);font-size:11px}
 .t-sys{color:var(--dim);font-style:normal;opacity:.85;font-size:11.5px}
-.t-error{color:var(--danger);border-left:2px solid rgba(255,133,133,.5);
+.t-error{color:var(--danger);border-left:2px solid rgb(var(--danger-rgb) / .5);
   padding-left:var(--s2);margin-left:-2px}
-.t-msg{color:var(--ink);border-left:2px solid rgba(69,236,198,.45);
+.t-msg{color:var(--ink);border-left:2px solid rgb(var(--accent-rgb) / .45);
   padding-left:var(--s2);margin-left:-2px}
 .t-end{height:var(--s3)}
 .more{color:var(--accent);cursor:pointer}
@@ -537,7 +644,7 @@ body.has-bg #bg::after{opacity:var(--bg-dim,.5)}
 .model:focus{border-color:var(--accent)}
 .model:disabled{opacity:.4;cursor:not-allowed}
 .model.custom{max-width:150px}
-.model option,.model optgroup{background:#141a24;color:var(--ink)}
+.model option,.model optgroup{background:var(--glass-strong);color:var(--ink)}
 
 /* ---------- the state light per member ----------
    This used to be a hue-derived monogram disc with the state dot pinned to its
@@ -548,7 +655,7 @@ body.has-bg #bg::after{opacity:var(--bg-dim,.5)}
    rail cannot answer any other way. */
 .av{flex:none;position:relative;width:8px;height:8px}
 .av i{position:absolute;inset:0;border-radius:50%;
-  background:#39414f;box-shadow:0 0 0 2px var(--glass);
+  background:var(--edge-strong);box-shadow:0 0 0 2px var(--glass);
   transition:background var(--base) var(--ease),box-shadow var(--base) var(--ease)}
 .rail-row.awake .av i,.win:not(.asleep)>.bar .av i,.who-id.awake .av i{
   background:var(--accent);box-shadow:0 0 0 2px var(--glass),0 0 7px var(--accent)}
@@ -576,7 +683,7 @@ body.has-bg #bg::after{opacity:var(--bg-dim,.5)}
 /* ---------- approvals ---------- */
 #approvals{position:absolute;right:var(--s4);bottom:var(--s4);z-index:30;
   display:flex;flex-direction:column;gap:var(--s2);max-width:420px}
-.approval{background:rgba(12,16,24,.86);backdrop-filter:var(--frost);
+.approval{background:var(--glass-strong);backdrop-filter:var(--frost);
   -webkit-backdrop-filter:var(--frost);border:1px solid var(--edge-strong);
   border-radius:var(--r-lg);padding:var(--s3) var(--s4);box-shadow:var(--lift),var(--sheen);
   animation:rise var(--slow) var(--ease)}
@@ -589,10 +696,10 @@ body.has-bg #bg::after{opacity:var(--bg-dim,.5)}
 .approval .btns{display:flex;gap:var(--s2);margin-top:var(--s3)}
 .approval button{border:1px solid var(--edge-strong);border-radius:var(--r-sm);
   padding:var(--s2) var(--s4);font-size:var(--t-sm);font-weight:600}
-.approval .go{color:var(--accent);border-color:rgba(69,236,198,.45)}
-.approval .go:hover{background:rgba(69,236,198,.12)}
+.approval .go{color:var(--accent);border-color:rgb(var(--accent-rgb) / .45)}
+.approval .go:hover{background:rgb(var(--accent-rgb) / .12)}
 .approval .no{color:var(--dim)}
-.approval .no:hover{color:var(--danger);border-color:rgba(255,133,133,.45)}
+.approval .no:hover{color:var(--danger);border-color:rgb(var(--danger-rgb) / .45)}
 
 .approval.question .qlist{display:flex;flex-direction:column;gap:var(--s4);margin-top:var(--s2)}
 .approval.question .q{display:flex;flex-direction:column;gap:var(--s2)}
@@ -608,7 +715,7 @@ body.has-bg #bg::after{opacity:var(--bg-dim,.5)}
 .approval.question .opt:hover{border-color:var(--edge-strong)}
 .approval.question .opt b{font:600 var(--t-sm)/1.3 var(--ui);color:var(--ink)}
 .approval.question .opt small{font:400 var(--t-micro)/1.3 var(--ui);color:var(--faint)}
-.approval.question .opt.picked{border-color:rgba(69,236,198,.45);background:rgba(69,236,198,.1)}
+.approval.question .opt.picked{border-color:rgb(var(--accent-rgb) / .45);background:rgb(var(--accent-rgb) / .1)}
 .approval.question .opt.picked b{color:var(--accent)}
 .approval.question .other{width:100%;background:var(--glass-raised);border:1px solid var(--edge);
   border-radius:var(--r-sm);color:var(--ink);font:400 var(--t-sm)/1.4 var(--ui);
@@ -618,12 +725,12 @@ body.has-bg #bg::after{opacity:var(--bg-dim,.5)}
 /* ---------- toast ---------- */
 #toast{position:absolute;left:50%;translate:-50% 0;bottom:var(--s4);z-index:40;
   display:flex;flex-direction:column;gap:var(--s2);align-items:center;pointer-events:none;max-width:480px}
-#toast div{background:rgba(12,16,24,.88);backdrop-filter:var(--frost-lite);
+#toast div{background:var(--glass-strong);backdrop-filter:var(--frost-lite);
   -webkit-backdrop-filter:var(--frost-lite);border:1px solid var(--edge);
   border-radius:999px;padding:var(--s2) var(--s5);font-size:var(--t-sm);
   box-shadow:var(--lift),var(--sheen);animation:rise var(--base) var(--ease)}
-#toast div.bad{border-color:rgba(255,133,133,.45);color:var(--danger);
-  box-shadow:var(--lift),var(--sheen),0 0 16px -4px rgba(255,133,133,.3)}
+#toast div.bad{border-color:rgb(var(--danger-rgb) / .45);color:var(--danger);
+  box-shadow:var(--lift),var(--sheen),0 0 16px -4px rgb(var(--danger-rgb) / .3)}
 /* A toast carrying an action is the only clickable one, so the whole strip has
    to accept the pointer again — #toast itself is pointer-events:none so that a
    notice never eats a click meant for the canvas underneath.
@@ -641,11 +748,11 @@ body.has-bg #bg::after{opacity:var(--bg-dim,.5)}
 
 /* ---------- command palette ---------- */
 #palette{position:fixed;inset:0;z-index:100;display:flex;justify-content:center;
-  padding-top:14vh;background:rgba(4,7,11,.5);backdrop-filter:blur(6px)}
+  padding-top:14vh;background:var(--scrim);backdrop-filter:blur(6px)}
 #palette[hidden]{display:none}
 #palette .sheet{width:min(560px,92vw);height:fit-content;max-height:66vh;
   display:flex;flex-direction:column;overflow:hidden;
-  background:rgba(12,16,24,.86);backdrop-filter:var(--frost);
+  background:var(--glass-strong);backdrop-filter:var(--frost);
   -webkit-backdrop-filter:var(--frost);border:1px solid var(--edge-strong);
   border-radius:var(--r-xl);box-shadow:var(--lift),var(--sheen);
   animation:pop var(--base) var(--ease)}
@@ -709,7 +816,7 @@ body.has-bg #bg::after{opacity:var(--bg-dim,.5)}
 .act button{border:1px solid var(--edge);border-radius:var(--r-sm);
   padding:var(--s1) var(--s3);font-size:var(--t-sm);color:var(--dim)}
 .act button:hover{color:var(--ink);background:var(--glass-raised);border-color:var(--edge-strong)}
-.act button.primary{color:var(--accent);border-color:rgba(69,236,198,.4)}
+.act button.primary{color:var(--accent);border-color:rgb(var(--accent-rgb) / .4)}
 
 .slider{display:flex;align-items:center;gap:var(--s3);padding:var(--s2) 0;
   font-size:var(--t-micro);color:var(--faint)}
@@ -796,8 +903,8 @@ pre.diff{font:400 var(--t-micro)/1.55 var(--mono);white-space:pre;overflow-x:aut
 pre.diff span{display:block;color:var(--dim)}
 pre.diff .meta{color:var(--faint)}
 pre.diff .hunk{color:var(--crown)}
-pre.diff .add{background:rgba(69,236,198,.08)}
-pre.diff .del{background:rgba(255,133,133,.08)}
+pre.diff .add{background:rgb(var(--accent-rgb) / .08)}
+pre.diff .del{background:rgb(var(--danger-rgb) / .08)}
 
 .act.sticky{position:sticky;bottom:0;padding:var(--s3) 0 var(--s2);
   background:linear-gradient(transparent,var(--glass) 35%)}
@@ -851,7 +958,7 @@ pre.diff .del{background:rgba(255,133,133,.08)}
 .tool::before{content:attr(data-tip);position:absolute;top:calc(100% + 7px);left:50%;
   translate:-50% -3px;z-index:70;pointer-events:none;
   padding:5px var(--s2);border-radius:var(--r-sm);
-  background:rgba(10,14,20,.96);border:1px solid var(--edge-strong);
+  background:var(--glass-strong);border:1px solid var(--edge-strong);
   box-shadow:var(--lift);color:var(--ink);
   font:500 var(--t-micro)/1 var(--ui);letter-spacing:.02em;white-space:nowrap;
   opacity:0;transition:opacity var(--fast) var(--ease),translate var(--fast) var(--ease)}
@@ -872,20 +979,20 @@ pre.diff .del{background:rgba(255,133,133,.08)}
    `blip` used to be declared beside the rail's `.dot`, which is gone — it lives
    here now, with its only remaining user. */
 @keyframes blip{50%{opacity:.35}}
-.tool.arm{color:var(--danger);background:rgba(255,133,133,.14);
+.tool.arm{color:var(--danger);background:rgb(var(--danger-rgb) / .14);
   animation:blip .8s var(--ease) infinite}
 /* Approvals are the sovereign's own business, so the badge is gold. */
 .tool[data-tool="approve"].waiting{color:var(--crown)}
 .tool[data-tool="approve"].waiting::after{
   content:attr(data-count);position:absolute;top:1px;right:1px;
   min-width:14px;height:14px;padding:0 3px;border-radius:99px;
-  background:var(--crown);color:#1a1206;
+  background:var(--crown);color:var(--crown-ink);
   font:600 9.5px/14px var(--ui);text-align:center;
   box-shadow:0 0 0 2px var(--glass-strong)}
 
 .menu{position:absolute;top:calc(100% + 6px);right:var(--s3);z-index:60;min-width:236px;
   padding:var(--s2);border-radius:var(--r-lg);
-  background:rgba(12,16,24,.86);backdrop-filter:var(--frost);
+  background:var(--glass-strong);backdrop-filter:var(--frost);
   -webkit-backdrop-filter:var(--frost);border:1px solid var(--edge-strong);
   box-shadow:var(--lift),var(--sheen);animation:pop var(--fast) var(--ease)}
 .menu[hidden]{display:none}
@@ -907,12 +1014,12 @@ pre.diff .del{background:rgba(255,133,133,.08)}
   padding:var(--s1) var(--s3);border-radius:99px;
   border:1px solid var(--gold-edge);background:var(--gold-wash);
   backdrop-filter:var(--frost-lite);-webkit-backdrop-filter:var(--frost-lite);
-  box-shadow:inset 0 1px 0 rgba(240,201,125,.15);
+  box-shadow:inset 0 1px 0 rgb(var(--crown-rgb) / .15);
   color:var(--dim);font-size:var(--t-sm);transition:border-color var(--fast) var(--ease),color var(--fast) var(--ease)}
 /* `display:flex` above outranks the UA's [hidden] rule, so with no goal set an
    empty 26px pill sat in the header doing nothing. */
 .goalbar[hidden]{display:none}
-.goalbar:hover{color:var(--ink);border-color:rgba(240,201,125,.4)}
+.goalbar:hover{color:var(--ink);border-color:rgb(var(--crown-rgb) / .4)}
 /* The decree is set in the court's own voice too — it is the one line of text
    in the header that came from the sovereign rather than from the machine. */
 .goalbar .gtext{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
@@ -944,7 +1051,7 @@ input.msnew:focus{border-color:var(--accent)}
 /* ---------- approvals panel ---------- */
 .appr{border:1px solid var(--edge);border-radius:var(--r-md);padding:var(--s3);
   margin:var(--s2) 0;background:var(--glass-raised)}
-.appr.open{border-color:rgba(240,201,125,.4)}
+.appr.open{border-color:rgb(var(--crown-rgb) / .4)}
 .appr .hd{display:flex;align-items:baseline;gap:var(--s2);flex-wrap:wrap}
 .appr .kind{font:600 var(--t-micro)/1 var(--mono);letter-spacing:.08em;color:var(--crown)}
 .appr .who{font-size:var(--t-micro);color:var(--dim)}
@@ -961,10 +1068,10 @@ input.msnew:focus{border-color:var(--accent)}
 .appr .btns{display:flex;gap:var(--s2);margin-top:var(--s3)}
 .appr .btns button{border:1px solid var(--edge-strong);border-radius:var(--r-sm);
   padding:var(--s1) var(--s3);font-size:var(--t-sm)}
-.appr .go{color:var(--accent);border-color:rgba(69,236,198,.45)}
-.appr .go:hover{background:rgba(69,236,198,.12)}
+.appr .go{color:var(--accent);border-color:rgb(var(--accent-rgb) / .45)}
+.appr .go:hover{background:rgb(var(--accent-rgb) / .12)}
 .appr .no{color:var(--dim)}
-.appr .no:hover{color:var(--danger);border-color:rgba(255,133,133,.45)}
+.appr .no:hover{color:var(--danger);border-color:rgb(var(--danger-rgb) / .45)}
 .appr .verdict{margin-top:var(--s2);font-size:var(--t-micro);letter-spacing:.04em}
 .appr .verdict.approved{color:var(--accent)}
 .appr .verdict.rejected{color:var(--faint)}
@@ -974,7 +1081,7 @@ input.msnew:focus{border-color:var(--accent)}
 .filters{display:flex;gap:var(--s1);flex-wrap:wrap;padding-bottom:var(--s2)}
 .filt{font-size:var(--t-micro);color:var(--faint);padding:2px var(--s2);
   border:1px solid var(--edge);border-radius:99px}
-.filt.on{color:var(--accent);border-color:rgba(69,236,198,.4)}
+.filt.on{color:var(--accent);border-color:rgb(var(--accent-rgb) / .4)}
 .filt:hover{color:var(--ink)}
 
 .chron-day{font-size:var(--t-micro);letter-spacing:.08em;text-transform:uppercase;
@@ -1054,7 +1161,7 @@ input.msnew:focus{border-color:var(--accent)}
 /* ---------- who: the member card on the right ----------
    The rail says a member exists. This says what it is for. */
 .who{flex:none;width:280px;display:flex;flex-direction:column;min-height:0;
-  background:rgba(9,12,18,.76);backdrop-filter:var(--frost);
+  background:var(--glass);backdrop-filter:var(--frost);
   -webkit-backdrop-filter:var(--frost);
   border-left:1px solid var(--edge);position:relative;z-index:15}
 body.who-collapsed .who{display:none}
@@ -1070,13 +1177,15 @@ body.who-collapsed .who{display:none}
 .who-cat{width:100%;font:600 9.5px/1 var(--mono);padding:4px 9px;border-radius:99px;
   background:rgba(255,255,255,.08);color:var(--dim);border:1px solid var(--edge);
   letter-spacing:.03em;text-transform:uppercase;margin-top:2px}
-.who-cat[data-cat="discovery"]{background:rgba(69,180,236,.12);color:#70cbf8;border-color:rgba(69,180,236,.25)}
-.who-cat[data-cat="craft"]{background:rgba(69,236,198,.12);color:var(--accent);border-color:rgba(69,236,198,.25)}
-.who-cat[data-cat="verification"]{background:rgba(240,201,125,.12);color:var(--crown);border-color:rgba(240,201,125,.25)}
-.who-cat[data-cat="security-ops"]{background:rgba(255,133,133,.12);color:var(--danger);border-color:rgba(255,133,133,.25)}
-.who-cat[data-cat="knowledge"]{background:rgba(180,140,240,.12);color:#c8a4f8;border-color:rgba(180,140,240,.25)}
+.who-cat[data-cat="discovery"]{background:rgb(var(--cat-discovery) / .12);color:var(--cat-discovery-ink);
+  border-color:rgb(var(--cat-discovery) / .25)}
+.who-cat[data-cat="craft"]{background:rgb(var(--accent-rgb) / .12);color:var(--accent);border-color:rgb(var(--accent-rgb) / .25)}
+.who-cat[data-cat="verification"]{background:rgb(var(--crown-rgb) / .12);color:var(--crown);border-color:rgb(var(--crown-rgb) / .25)}
+.who-cat[data-cat="security-ops"]{background:rgb(var(--danger-rgb) / .12);color:var(--danger);border-color:rgb(var(--danger-rgb) / .25)}
+.who-cat[data-cat="knowledge"]{background:rgb(var(--cat-knowledge) / .12);color:var(--cat-knowledge-ink);
+  border-color:rgb(var(--cat-knowledge) / .25)}
 .who-id.role-king{color:var(--crown)}
-.who-id.role-king .rl{color:rgba(240,201,125,.7)}
+.who-id.role-king .rl{color:rgb(var(--crown-rgb) / .7)}
 /* The awake case is already covered by the shared `.who-id.awake .av i` rule.
    Only the throne's gold is special here — the one place the crown's colour
    still lands now that the gilded disc is gone. */
@@ -1164,17 +1273,17 @@ body.rail-collapsed #pet{width:40px;height:43px}
 .summon-btn{
   flex:none;margin:0 var(--s2) var(--s2);padding:var(--s2) var(--s3);
   display:flex;align-items:center;justify-content:center;gap:var(--s2);
-  background:linear-gradient(158deg,#63f4d6,#2fc4a4);
+  background:var(--accent);
   color:var(--accent-ink);border:0;border-radius:var(--r-md);cursor:pointer;
   font:600 var(--t-sm)/1 var(--ui);letter-spacing:.02em;
-  box-shadow:0 8px 20px -10px rgba(69,236,198,.7),inset 0 1px 0 rgba(255,255,255,.35);
+  box-shadow:0 8px 20px -10px rgb(var(--accent-rgb) / .7),inset 0 1px 0 rgba(255,255,255,.35);
   transition:filter var(--fast) var(--ease),transform var(--fast) var(--ease),
              box-shadow var(--fast) var(--ease);
 }
 .summon-btn:hover{filter:brightness(1.07);
-  box-shadow:0 10px 26px -10px rgba(69,236,198,.85),inset 0 1px 0 rgba(255,255,255,.4)}
+  box-shadow:0 10px 26px -10px rgb(var(--accent-rgb) / .85),inset 0 1px 0 rgba(255,255,255,.4)}
 .summon-btn:active{transform:translateY(1px);
-  box-shadow:0 4px 12px -8px rgba(69,236,198,.7),inset 0 1px 0 rgba(255,255,255,.25)}
+  box-shadow:0 4px 12px -8px rgb(var(--accent-rgb) / .7),inset 0 1px 0 rgba(255,255,255,.25)}
 #court-count{color:var(--faint);font-size:var(--t-micro)}
 body.rail-collapsed #court-count{display:none}
 /* Collapsed, the rail is 52px of avatars — a word would not fit, so the button
@@ -1249,7 +1358,7 @@ body.rail-collapsed .summon-btn::after{content:"+";font-size:15px;line-height:1}
   font:600 32px/1.15 var(--display);color:var(--ink);letter-spacing:-.01em;
   margin-bottom:var(--s2);
   /* The one place gold is used at size: this is the throne addressing you. */
-  background:linear-gradient(180deg,var(--ink),rgba(240,201,125,.85));
+  background:linear-gradient(180deg,var(--ink),rgb(var(--crown-rgb) / .85));
   -webkit-background-clip:text;background-clip:text;color:transparent;
 }
 /* Scoped to the empty state: the live blocks have their own paragraphs, and a
@@ -1343,12 +1452,18 @@ body.rail-collapsed .summon-btn::after{content:"+";font-size:15px;line-height:1}
    near-transparent smear of unreadable text, so fall back to solid fills. */
 @supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
   .win,.rail,.who,header,footer,.approval,.menu,#palette .sheet,#toast div,.skillmenu,.fr-step
-    {background:#131924}
+    {background:var(--glass)}
 }
+/* Somebody who has asked the OS for less transparency gets the solid material,
+   whichever one is selected. Expressed as the material's own variables rather
+   than by re-declaring .rail and .who: every surface already reads them, and a
+   selector in here is how this file grew five stacked override blocks the last
+   time. */
 @media (prefers-reduced-transparency:reduce){
-  :root{--glass:rgba(20,26,36,.96);--glass-strong:rgba(14,19,27,.98);
-    --frost:none;--frost-lite:none}
-  .rail,.who{background:rgba(9,12,18,.97)}
+  :root,:root[data-material="glass"]{
+    --glass:#14171a;--glass-strong:#0e1013;
+    --frost:none;--frost-lite:none;--sheen:none;
+  }
 }
 /* Every entrance in this file is a fade with a small offset, so switching them
    all off in one place is honest — nothing here carries meaning that only the

@@ -88,6 +88,7 @@ const suites = [
   ['a live-attached repo survives a restart', join(HERE, 't-daemon-boot.js')],
   ['skill set + observation masking', join(HERE, 't-skills.js')],
   ['panel teardown', join(HERE, 't-win.js')],
+  ['palette and material', join(HERE, 't-theme.js')],
   ['a claude that dies mid-turn', join(HERE, 't-claude-death.js')],
 ];
 

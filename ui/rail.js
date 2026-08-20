@@ -8,7 +8,7 @@
 // Same job, so the same shape of API the graph exposed: upsert, state, status,
 // size. Nothing here knows about the canvas.
 import { statusDot } from './avatar.js';
-import { arrive, depart, pulse } from './feel.js';
+import { arrive, brand, depart, pulse } from './feel.js';
 import { displayName, roleGroup } from './names.js';
 
 const rows = new Map();     // name -> {el, role, state, status, ctx}
@@ -208,7 +208,7 @@ export function flash(from, to) {
     const r = rows.get(name);
     if (!r) continue;
     r.el.animate(
-      [{ background: 'rgba(69,236,198,.22)' }, { background: 'transparent' }],
+      [{ background: brand('--accent-rgb', .22) }, { background: 'transparent' }],
       { duration: 900, easing: 'cubic-bezier(.22,1,.36,1)' },
     );
   }

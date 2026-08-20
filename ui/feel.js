@@ -71,8 +71,25 @@ export function depart(el, done) {
   ).finished.catch(() => {}).finally(done);
 }
 
+/**
+ * A brand colour at some alpha, resolved to a plain rgb() string.
+ *
+ * Read here rather than typed as a literal, so changing the accent reaches the
+ * animations too — these two were the only places still holding the old hue
+ * after the stylesheet moved to channel tokens.
+ *
+ * Resolved rather than handed to the animation as `rgb(var(--accent-rgb) / a)`:
+ * a keyframe carrying a custom property comes back from getKeyframes()
+ * unparsed, where a literal comes back normalised — measured — and whether it
+ * still interpolates or degrades to a discrete jump is not something to take
+ * on faith for a colour the eye follows across 900ms. getComputedStyle hands
+ * back the channels and the browser animates an ordinary colour.
+ */
+export const brand = (token, alpha) =>
+  `rgb(${getComputedStyle(document.documentElement).getPropertyValue(token).trim()} / ${alpha})`;
+
 /** Something about this element just became true. One ring, outward. */
-export function pulse(el, colour = 'rgba(69,236,198,.55)') {
+export function pulse(el, colour = brand('--accent-rgb', .55)) {
   if (REDUCED.matches || !el) return;
   el.animate(
     [
