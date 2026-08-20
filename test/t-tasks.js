@@ -83,7 +83,7 @@ try {
     const k = await orchestrator.tools(), c = await coder.tools();
     a.ok(k.includes('add_task') && k.includes('rule_on_plan'), 'the orchestrator stocks the list and rules on plans');
     a.ok(!k.includes('claim_task'), 'and does not claim work — an orchestrator that codes stops coordinating');
-    a.ok(c.includes('claim_task') && c.includes('finish_task') && c.includes('submit_plan'));
+    a.ok(c.includes('claim_task') && c.includes('declare_done') && c.includes('finish_task') && c.includes('submit_plan'));
     a.ok(!c.includes('add_task'), 'a peasant does not write its own assignments');
     a.ok(k.includes('tasks') && c.includes('tasks'), 'but the LIST is shared, so both must see it');
     console.log('  tools: orchestrator stocks and rules, peasants claim, both read the same list');
@@ -179,6 +179,32 @@ try {
       `completions must reach the orchestrator by office, got ${JSON.stringify(reports.map((m) => m.recipient))}`);
     bus.close();
     console.log('  ownership honoured, dependents unblocked, completions reached the orchestrator by office');
+  }
+
+  /* ---------- 7. declaring done must not leave a claimed review active ----- */
+  {
+    a.match(await orchestrator.call('add_task', { title: 'review the candidate', detail: 'read-only final gate' }), /#4 added/);
+    a.match(await coder.call('claim_task', { id: 4 }), /Claimed #4/);
+    a.match(await coder.call('declare_done', { summary: 'candidate approved after tests' }), /Declared done/);
+
+    const bus = new Bus(db);
+    const review = bus.task(4);
+    a.equal(review.state, 'done',
+      'declare_done must close a member\'s sole active task instead of leaving the board falsely in progress');
+    a.equal(review.owner, 'coder', 'closing the task must preserve its accountable owner');
+    bus.close();
+
+    a.match(await orchestrator.call('add_task', { title: 'review alpha', detail: 'first independent check' }), /#5 added/);
+    a.match(await orchestrator.call('add_task', { title: 'review beta', detail: 'second independent check' }), /#6 added/);
+    await coder.call('claim_task', { id: 5 });
+    await coder.call('claim_task', { id: 6 });
+    a.match(await coder.call('declare_done', { summary: 'one review is ready' }), /still hold #5 and #6/,
+      'declare_done must not guess which of several active tasks it should close');
+    const ambiguous = new Bus(db);
+    a.equal(ambiguous.task(5).state, 'active');
+    a.equal(ambiguous.task(6).state, 'active');
+    ambiguous.close();
+    console.log('  declare_done closes its sole active task, so review completion clears the board');
   }
 
   console.log('t-tasks.js OK — a shared list two processes cannot both claim, with a plan gate that holds');

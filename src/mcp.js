@@ -259,9 +259,17 @@ const TOOLS = {
       required: ['summary'],
     },
     run: ({ summary }) => {
+      const held = bus.tasks().filter((t) => t.owner === ME && t.state !== 'done');
+      if (held.length > 1) {
+        return `You still hold ${held.map((t) => `#${t.id}`).join(' and ')}. Call finish_task for the completed one before declaring done.`;
+      }
+      if (held[0]?.state === 'planning') {
+        return `Task #${held[0].id} still needs an approved plan. Call submit_plan and wait for the orchestrator.`;
+      }
+      if (held[0]) bus.updateTask(held[0].id, { state: 'done', doneTs: Date.now() });
       const orchestrator = officer('orchestrator', 'orchestrator');
       bus.post(ME, orchestrator, summary, 'done');
-      return `Declared done. ${orchestrator} has been notified; await review.`;
+      return `Declared done${held[0] ? `; task #${held[0].id} closed` : ''}. ${orchestrator} has been notified; await review.`;
     },
   },
 
