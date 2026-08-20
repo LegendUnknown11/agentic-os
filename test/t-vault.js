@@ -398,11 +398,12 @@ a.equal(existsSync(join(vault, '..', 'escaped.md')), false, 'title must not trav
   a.match(readFileSync(mirrored, 'utf8'), /mirror-token-2291/, 'the mirror must carry the real content');
 
   const remembered = callTool('remember',
-    { title: 'Mirror remember probe', body: 'discovered the hard way' },
+    { campaign: 1, title: 'Mirror remember probe', body: 'discovered the hard way' },
     { KINGDOM_REPO: repo });
-  a.match(remembered, /Remembered:/);
+  a.match(remembered, /No campaign #1/,
+    'remember must not write directly when there is no closed campaign to ground a proposal');
   const mirroredMemory = join(kingdomDir(repo), 'vault', 'Kingdom', 'Memories', 'Mirror remember probe.md');
-  a.ok(existsSync(mirroredMemory), 'a remember() call for an attached repo must be mirrored too');
+  a.ok(!existsSync(mirroredMemory), 'a memory must not exist until the sovereign approves its proposal');
 
   // No repo attached: a write must NOT touch the shared homedir workspace —
   // that would be silent pollution of the machine's real state on every test run.

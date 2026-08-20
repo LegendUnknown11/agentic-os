@@ -45,6 +45,10 @@ create table if not exists campaigns (
   spent_usd     real    not null,
   tokens        integer not null
 );
+create table if not exists memory_proposals (
+  campaign integer primary key,
+  count    integer not null default 0
+);
 create index if not exists idx_msg_recipient on messages(recipient, id);
 create index if not exists idx_evt_agent on events(agent, id);
 create index if not exists idx_task_state on tasks(state, owner);
@@ -224,6 +228,25 @@ export class Bus {
 
   campaign(id) {
     return this.campaigns().find((c) => c.id === Number(id)) ?? null;
+  }
+
+  /**
+   * Reserve one of a closed campaign's three retrospective slots.
+   *
+   * This is deliberately an INSERT/UPDATE rather than a history() count: the
+   * bus is retained only to a finite length, and two MCP processes can propose
+   * at once. SQLite makes this one statement atomic, so a busy court cannot
+   * sneak a fourth proposed memory through a read-then-write race.
+   */
+  takeMemoryProposal(campaign, limit = 3) {
+    const id = Number(campaign);
+    const cap = Number(limit);
+    if (!Number.isInteger(id) || id < 1 || !Number.isInteger(cap) || cap < 1) return false;
+    const r = this.db.prepare(
+      `insert into memory_proposals (campaign,count) values (?,1)
+       on conflict(campaign) do update set count = count + 1 where count < ?`,
+    ).run(id, cap);
+    return r.changes === 1;
   }
 
   countMessages() {

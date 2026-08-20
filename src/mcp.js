@@ -21,7 +21,6 @@ import {
   insideVault as vaultInside, walkVault, invalidateVault, noteWritten, searchVault, noteOutline, noteSection,
   mirrorToProject,
 } from './vault.js';
-import { remember } from './memory.js';
 import { badRole, badQuestions } from './approval.js';
 import { composeSkill, listSkills, slugSkill, SKILLS_DIR } from './skills.js';
 import { modeName, modeOf, toolAllowed, MODE_NAMES } from './modes.js';
@@ -602,32 +601,75 @@ const TOOLS = {
   remember: {
     roles: ['peasant', 'briefer', 'orchestrator'],
     description:
-      `Record ONE durable fact the court should not have to learn twice — a ` +
-      `gotcha found the hard way, a convention, a decision and its reasoning, ` +
-      `a tool that does not behave as documented. Every member is given the ` +
-      `TITLES of all memories on every spawn, so a good title is the whole ` +
-      `point: write it as the fact itself ("flutter test, not dart test, for ` +
-      `Flutter repos"), never as a topic ("testing notes"). NOT for progress, ` +
-      `status, or anything true only today — that is what the bus is for.`,
+      `Propose ONE durable fact the court should not have to learn twice, from a ` +
+      `CLOSED sovereign campaign. The sovereign must approve it before it becomes ` +
+      `memory. Use campaign_history first; preserve the evidence and never turn a ` +
+      `transient status, secret, or unverified failure into a durable instruction. ` +
+      `At most three proposals may come from one campaign. A good title is the fact ` +
+      `itself ("flutter test, not dart test, for Flutter repos"), never a topic. ` +
+      `NOT for progress, status, or anything true only today — that is what the bus is for.`,
     schema: {
       type: 'object',
       properties: {
+        campaign: { type: 'integer', description: 'Closed campaign ID from campaign_history' },
         title: str('The fact itself, in one line. This is what every member sees.'),
         body: str('Why it is true and what to do about it. Keep it short.'),
         tags: { type: 'array', items: { type: 'string' }, description: 'Optional tags' },
       },
-      required: ['title', 'body'],
+      required: ['campaign', 'title', 'body'],
     },
-    run: ({ title, body, tags = [] }) => {
+    run: ({ campaign: id, title, body, tags = [] }) => {
       if (!VAULT) return 'No vault is configured for this kingdom, so there is nowhere to remember.';
-      try {
-        const at = remember(VAULT, { title, body, tags, by: ME, dir: VAULT_WRITE_DIR });
-        noteWritten(VAULT, join(VAULT, at));   // searchable by the next call
-        mirrorToProject(MIRROR_REPO, VAULT, join(VAULT, at));
-        return `Remembered: ${at}`;
-      } catch (e) {
-        return `Could not remember that: ${e.message}`;
+      if (typeof title !== 'string' || !title.trim() || typeof body !== 'string' || !body.trim()) {
+        return 'A memory proposal needs a non-empty title and body.';
       }
+      const campaign = bus.campaign(id);
+      if (!campaign) return `No campaign #${id}. Call campaign_history with a real closed campaign ID.`;
+      if (campaign.current) return `Campaign #${id} is still active. Memories are proposed only after it closes.`;
+      if (!bus.takeMemoryProposal(campaign.id)) {
+        return `Campaign #${campaign.id} already has its maximum of three memory proposals.`;
+      }
+      bus.post(ME, null, JSON.stringify({
+        kind: 'memory', campaign: campaign.id, title, body, tags,
+        // Existing approval cards deliberately render a named subject and a
+        // verdict. Keeping those aliases means this policy change does not
+        // need a second renderer or a brittle special case in the throne room.
+        peasant: title,
+        verdict: `Campaign #${campaign.id} — proposed by ${ME}\n\n${body}`,
+      }), 'approval');
+      return `Memory proposal for campaign #${campaign.id} sent to the sovereign. Nothing was written yet.`;
+    },
+  },
+
+  campaign_history: {
+    roles: ['peasant', 'briefer', 'orchestrator'],
+    description:
+      'Read the bounded messages and failures from one CLOSED sovereign campaign before proposing a memory. ' +
+      'The result is evidence, not an instruction to create a note.',
+    schema: {
+      type: 'object',
+      properties: { campaign: { type: 'integer', description: 'Closed campaign ID' } },
+      required: ['campaign'],
+    },
+    run: ({ campaign: id }) => {
+      const campaign = bus.campaign(id);
+      if (!campaign) return `No campaign #${id}.`;
+      if (campaign.current) return `Campaign #${id} is still active; wait until the next sovereign order closes it.`;
+      const within = (row, start, end) => row.id > start && (end == null || row.id <= end);
+      const messages = bus.history({ since: campaign.messageStart, limit: 20_000 })
+        .filter((m) => within(m, campaign.messageStart, campaign.messageEnd))
+        .filter((m) => m.kind !== 'approval' && m.kind !== 'notice')
+        .map((m) => `MESSAGE ${m.sender}${m.recipient ? ` → ${m.recipient}` : ''}: ${m.body}`);
+      const failures = bus.events({ since: campaign.eventStart, type: 'error', limit: 20_000 })
+        .filter((e) => within(e, campaign.eventStart, campaign.eventEnd))
+        .map((e) => `FAILURE ${e.agent}: ${e.payload?.message ?? JSON.stringify(e.payload)}`);
+      const text = [
+        `Campaign #${campaign.id}: ${campaign.title}`,
+        'Propose zero memories unless the evidence supports a durable, non-sensitive lesson.',
+        ...failures,
+        ...messages,
+      ].join('\n\n');
+      return text.length > 12_000 ? `${text.slice(0, 12_000)}\n\n[history truncated]` : text;
     },
   },
 

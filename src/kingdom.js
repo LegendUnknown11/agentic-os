@@ -9,7 +9,7 @@ import { join, dirname, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { Agent, MUTES_KINGDOM_TOOLS } from './agent.js';
-import { brainBlock, brainFingerprint } from './memory.js';
+import { brainBlock, brainFingerprint, remember } from './memory.js';
 import { skillsBlock, expandSkillCommand, listSkills } from './skills.js';
 import { engineerPrompt, pickModels } from './advisor.js';
 import { summarize, settingsOf as summarizerSettings } from './summarize.js';
@@ -26,7 +26,7 @@ import {
   assertRepo, ensureRepo, behindBase, commitAll, createWorktree, dbPath, diffOf, statOf, kingdomDir,
   globalTokenStore, mergeWorktree, removeWorktree, runTests, testCommand, worktreePath,
 } from './worktree.js';
-import { mirrorToProject } from './vault.js';
+import { mirrorToProject, noteWritten } from './vault.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const MCP_PATH = join(HERE, 'mcp.js');
@@ -1644,13 +1644,13 @@ export class Kingdom extends EventEmitter {
         `that. A done-report whose tests did not run is UNVERIFIED — send_back ` +
         `and ask for the test, do not request_merge on it. Prefer merging a ` +
         `small verified slice now over waiting for a large unverified one.\n\n` +
-        `YOU ALWAYS CALL remember. The bus is pruned and a peasant's worktree is ` +
-        `deleted once merged — anything durable you learn or decide (a scope ` +
+        `When a campaign closes, use campaign_history before calling remember. The bus is pruned and a peasant's worktree is ` +
+        `deleted once merged — propose only something durable you learned or decided (a scope ` +
         `change and why, a convention this project uses, a gotcha a peasant hit, ` +
         `a decision the sovereign made) is GONE once that happens unless you ` +
-        `record it with remember before moving on. Do this as it happens, not ` +
-        `at the end of a session — call remember the moment you know something ` +
-        `is worth keeping, not just when you happen to remember to.\n\n`,
+        `propose it with remember after the campaign closes. Do this on the retrospective ` +
+        `notice — call remember when the evidence says it is worth keeping, not just when you ` +
+        `happen to remember to.\n\n`,
       briefer:
         `You watch everything and you are the orchestrator's eyes. Use read_events and ` +
         `read_bus freely — you are cheap and the orchestrator is not. Use brief_orchestrator to ` +
@@ -2659,7 +2659,7 @@ export class Kingdom extends EventEmitter {
     const local = this.#compactCommand(text) ?? this.#argueCommand(text);
     if (local) return { text: local, local: true };
 
-    const campaign = this.bus.beginCampaign(text);
+    const campaign = this.#beginCampaign(text);
 
     text = this.#skillCommand(text);
     const a = this.advisor();
@@ -2798,6 +2798,20 @@ export class Kingdom extends EventEmitter {
     return hit?.text ?? text;
   }
 
+  /** Opening the next order is the completion marker for an open campaign. */
+  #beginCampaign(text) {
+    const previous = this.bus.campaigns().at(-1);
+    const campaign = this.bus.beginCampaign(text);
+    if (previous && this.config.vault) {
+      this.bus.post(CROWN, this.config.briefer.name,
+        `RETROSPECTIVE — campaign #${previous.id} just closed. Review it with campaign_history ` +
+        `before proposing zero to three durable memories via remember. Do not turn transient ` +
+        `status, secrets, or unverified failures into memory; the sovereign approves every note.`,
+        'notice');
+    }
+    return campaign;
+  }
+
   /** You type into a peasant's pane directly; the orchestrator is told so it stays coherent. */
   speakTo(name, text) {
     // Before the orchestrator delegation: `/autocompact` in a pane is about THAT
@@ -2807,7 +2821,7 @@ export class Kingdom extends EventEmitter {
     if (local) return { text: local, local: true };
     text = this.#skillCommand(text);
     if (name === this.config.orchestrator.name) return this.command(text);
-    this.bus.beginCampaign(text);
+    this.#beginCampaign(text);
     this.bus.post('sovereign', name, text, 'assignment'); // recorded, like command()
     if (name !== this.config.orchestrator.name) {
       // Framing matters: an earlier version phrased this as a plain report and
@@ -2824,7 +2838,7 @@ export class Kingdom extends EventEmitter {
   async approve(id) {
     const p = this.approvals.get(id);
     if (!p) throw new Error(`No pending approval ${id}`);
-    if (p.kind !== 'summon') {
+    if (p.kind !== 'summon' && p.kind !== 'memory') {
       this.approvals.delete(id);
       this.bus.set(`resolved:${id}`, 'approved');
     }
@@ -2871,6 +2885,21 @@ export class Kingdom extends EventEmitter {
         `The sovereign approved the new role "${p.name}". It is in the roster permanently.`);
     } else if (p.kind === 'merge') {
       await this.merge(p.peasant);
+    } else if (p.kind === 'memory') {
+      if (!this.config.vault) throw new Error('Cannot approve a memory: this kingdom has no vault.');
+      if (typeof p.title !== 'string' || !p.title.trim() || typeof p.body !== 'string' || !p.body.trim()) {
+        throw new Error('Cannot approve a memory without a title and body.');
+      }
+      const at = remember(this.config.vault, {
+        title: p.title, body: p.body, tags: Array.isArray(p.tags) ? p.tags : [],
+        by: p.from ?? 'court', dir: this.config.vaultWriteDir ?? 'Kingdom',
+      });
+      noteWritten(this.config.vault, join(this.config.vault, at));
+      mirrorToProject(this.repo, this.config.vault, join(this.config.vault, at));
+      this.approvals.delete(id);
+      this.bus.set(`resolved:${id}`, 'approved');
+      this.bus.post(CROWN, this.config.orchestrator.name,
+        `The sovereign approved memory from campaign #${p.campaign}: ${p.title}`);
     }
     this.emit('resolved', { id, approved: true });
   }
