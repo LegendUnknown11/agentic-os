@@ -12,12 +12,14 @@
 //   node test/t-argue.js
 import { strict as a } from 'node:assert';
 
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { mkdtempSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { Kingdom } from '../src/kingdom.js';
 
+const HERE = dirname(fileURLToPath(import.meta.url));
 const repo = mkdtempSync(join(tmpdir(), 'kingdom-argue-'));
 const git = (...x) => execFileSync('git', x, { cwd: repo, stdio: 'pipe' });
 git('init', '-q');
@@ -26,6 +28,48 @@ git('config', 'user.name', 'kingdom');
 writeFileSync(join(repo, 'README.md'), '# t\n');
 git('add', '-A');
 git('commit', '-qm', 'init');
+
+/** A real MCP peer, so court-only tools cannot be accidentally tested in-process. */
+function member(name, role, db) {
+  const child = spawn(process.execPath, [join(HERE, '..', 'src', 'mcp.js')], {
+    cwd: join(HERE, '..'),
+    env: { ...process.env, KINGDOM_AGENT: name, KINGDOM_ROLE: role, KINGDOM_DB: db },
+    stdio: ['pipe', 'pipe', 'ignore'],
+  });
+  let buffer = '';
+  const waiting = [];
+  const fail = (e) => { while (waiting.length) waiting.shift().reject(e); };
+  child.on('error', fail);
+  child.stdout.on('data', (chunk) => {
+    buffer += chunk;
+    let end;
+    while ((end = buffer.indexOf('\n')) !== -1) {
+      const line = buffer.slice(0, end).trim();
+      buffer = buffer.slice(end + 1);
+      if (!line) continue;
+      try { waiting.shift()?.resolve(JSON.parse(line)); } catch (e) { fail(e); }
+    }
+  });
+  let id = 0;
+  const rpc = (method, params) => new Promise((resolve, reject) => {
+    waiting.push({ resolve, reject });
+    child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: ++id, method, params }) + '\n');
+  });
+  return {
+    async start() {
+      await rpc('initialize', {
+        protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'test', version: '1' },
+      });
+      child.stdin.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized', params: {} }) + '\n');
+      return this;
+    },
+    async call(tool, args = {}) {
+      const r = await rpc('tools/call', { name: tool, arguments: args });
+      return r.result?.content?.[0]?.text ?? JSON.stringify(r.error ?? r);
+    },
+    stop() { child.kill(); },
+  };
+}
 
 const configPath = join(repo, 'kingdom.config.json');
 const write = (models) => writeFileSync(configPath, JSON.stringify({
@@ -161,6 +205,8 @@ const t = new Kingdom(repo, configPath);
 t.config.advisor = { autoModel: false, promptEngineer: false };
 t.config.vault = vault2;
 t.config.vaultWriteDir = 'Kingdom';
+// A non-default name catches a verdict accidentally hardcoded to `orchestrator`.
+t.config.orchestrator.name = 'sovereign-regent';
 
 let inFlight = 0;
 let maxInFlight = 0;
@@ -183,6 +229,15 @@ const delivered = [];
 t.on('delivered', (d) => delivered.push(d));
 await t.start();
 t.summoned.add('coder');   // so a null-recipient message HAS somewhere wrong to go
+const regent = await member('sovereign-regent', 'orchestrator', t.dbPath).start();
+
+const mcpReply = await regent.call('argue', { question: 'from the real MCP server?' });
+a.match(mcpReply, /Sent to the argument court/,
+  'the MCP tool must fire and return, rather than waiting for a three-model verdict');
+a.ok(t.bus.history({ limit: 1000 }).some((x) => x.sender === 'sovereign-regent'
+  && x.recipient === null && x.kind === 'argue' && /real MCP server/.test(x.body)),
+  'the real MCP server must queue the question for the Kingdom sweep');
+a.equal(ran.length, 0, 'the MCP response returns before the argument runner starts');
 
 // Both posted before a single sweep can run, so they land in one window.
 t.bus.post('coder', null, JSON.stringify({ question: 'first?' }), 'argue');
@@ -195,10 +250,10 @@ const until = async (pred, ms = 8_000) => {
   }
   return false;
 };
-a.ok(await until(() => ran.length === 2),
-  `both questions must be argued, got ${ran.length}: ${ran.join(', ')}`);
+a.ok(await until(() => ran.length === 3),
+  `all questions must be argued, got ${ran.length}: ${ran.join(', ')}`);
 
-a.deepEqual(ran, ['first?', 'second?'],
+a.deepEqual(ran, ['from the real MCP server?', 'first?', 'second?'],
   'a queue, in the order asked — not a set, and not whichever finished first');
 a.equal(maxInFlight, 1,
   'one argument at a time: two in the same sweep must not both be convened');
@@ -211,13 +266,20 @@ a.match(back[0].body, /VERDICT: settled first\?/,
 a.ok(back.every((x) => x.kind === 'notice'),
   'and as a notice — the asker did not buy a turn to be told, it rides along');
 
-a.equal(t.bus.history({ limit: 1000 }).filter((x) => x.recipient === t.config.orchestrator.name && /VERDICT: settled/.test(x.body)).length, 0,
+const regentVerdict = () => t.bus.history({ limit: 1000 }).find((x) => x.recipient === 'sovereign-regent'
+  && x.kind === 'notice' && /VERDICT: settled from the real MCP server\?/.test(x.body));
+a.ok(await until(regentVerdict),
+  'the MCP caller must receive its verdict under its configured name, not a hardcoded recipient');
+
+a.equal(t.bus.history({ limit: 1000 }).filter((x) => x.recipient === t.config.orchestrator.name
+  && /VERDICT: settled (first|second)\?/.test(x.body)).length, 0,
   'the orchestrator must NOT be told about an argument it did not ask for');
 
 a.equal(delivered.filter((d) => d.msg?.kind === 'argue').length, 0,
   'an argue request must never be delivered to a member: a null recipient reaches '
   + 'every summoned member, and each delivery is a full context replay');
 
+regent.stop();
 await t.stop();
 rmSync(vault2, { recursive: true, force: true });
 
