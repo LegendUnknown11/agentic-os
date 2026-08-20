@@ -836,6 +836,30 @@ const TOOLS = {
     },
   },
 
+  close_task: {
+    roles: ['orchestrator'],
+    description:
+      'Close an UNOWNED stale task after its work was superseded or otherwise completed. ' +
+      'Never use this to take a task away from a member who still owns it.',
+    schema: {
+      type: 'object',
+      properties: {
+        id: { type: 'integer', description: 'The unowned stale task to reconcile' },
+        summary: str('Why this task is complete without an owner'),
+      },
+      required: ['id', 'summary'],
+    },
+    run: ({ id, summary }) => {
+      const t = bus.task(id);
+      if (!t) return `No task #${id}.`;
+      if (t.owner) return `Task #${id} is still owned by ${t.owner}; do not close someone else's work.`;
+      if (t.state === 'done') return `Task #${id} is already closed.`;
+      if (typeof summary !== 'string' || !summary.trim()) return 'Say why the unowned task is complete.';
+      bus.updateTask(id, { state: 'done', doneTs: Date.now() });
+      return `Task #${id} closed. ${summary.trim()}`;
+    },
+  },
+
   submit_plan: {
     roles: ['peasant'],
     description:

@@ -81,7 +81,8 @@ try {
   /* ---------- 1. the tools reach the right roles ---------- */
   {
     const k = await orchestrator.tools(), c = await coder.tools();
-    a.ok(k.includes('add_task') && k.includes('rule_on_plan'), 'the orchestrator stocks the list and rules on plans');
+    a.ok(k.includes('add_task') && k.includes('rule_on_plan') && k.includes('close_task'),
+      'the orchestrator stocks the list, rules on plans, and can reconcile an unowned stale task');
     a.ok(!k.includes('claim_task'), 'and does not claim work — an orchestrator that codes stops coordinating');
     a.ok(c.includes('claim_task') && c.includes('declare_done') && c.includes('finish_task') && c.includes('submit_plan'));
     a.ok(!c.includes('add_task'), 'a peasant does not write its own assignments');
@@ -178,6 +179,9 @@ try {
     a.ok(reports.length >= 2 && reports.every((m) => m.recipient === 'sovereign-regent'),
       `completions must reach the orchestrator by office, got ${JSON.stringify(reports.map((m) => m.recipient))}`);
     bus.close();
+    // Section 7 pins declare_done for coder. The race above deliberately gives
+    // #2 to either worker, so close it before that focused one-task scenario.
+    await other.call('finish_task', { id: 2, summary: 'parser tests written' });
     console.log('  ownership honoured, dependents unblocked, completions reached the orchestrator by office');
   }
 
@@ -205,6 +209,26 @@ try {
     a.equal(ambiguous.task(6).state, 'active');
     ambiguous.close();
     console.log('  declare_done closes its sole active task, so review completion clears the board');
+  }
+
+  /* ---------- 8. stale unowned work has an auditable closure ----------- */
+  {
+    a.match(await orchestrator.call('add_task', {
+      title: 'superseded planning task', detail: 'the replacement implementation already merged', require_plan: true,
+    }), /#7 added/);
+    a.match(await orchestrator.call('close_task', {
+      id: 7, summary: 'Superseded by the verified replacement task.',
+    }), /Task #7 closed/,
+    'the orchestrator must be able to close an unowned stale task without guessing at an active owner');
+    const bus = new Bus(db);
+    const stale = bus.task(7);
+    a.equal(stale.state, 'done', 'a reconciled task must stop keeping the board open');
+    a.equal(stale.owner, null, 'reconciliation must preserve that nobody owns the stale task');
+    a.ok(stale.done_ts, 'the closure needs a durable timestamp');
+    bus.close();
+    a.match(await orchestrator.call('close_task', { id: 5, summary: 'do not steal work' }), /still owned/,
+      'an orchestrator may not close a task a member still owns');
+    console.log('  unowned stale tasks close audibly; active work is never guessed away');
   }
 
   console.log('t-tasks.js OK — a shared list two processes cannot both claim, with a plan gate that holds');
