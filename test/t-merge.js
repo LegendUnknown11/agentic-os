@@ -121,6 +121,56 @@ a.equal(existsSync(worktreePath(repo, 'coder')), false, 'merged worktree must be
   a.ok(existsSync(join(wt3, 'mine.txt')), 'and its work must survive untouched');
 }
 
+// ...and a worktree RE-CUT after a merge must be current too, which is the
+// case the reuse test above cannot reach. mergeWork removes the worktree and
+// `git worktree remove` deletes the directory, so the next summon finds nothing
+// on disk, skips the reuse path entirely, and lands on the branch's own tip —
+// wherever the member left it before its work was merged.
+//
+// Watched live: "coder" wrote lib/format.js, it merged, and coder was brought
+// back to integrate all four modules into one CLI. Its worktree returned seven
+// commits behind master holding only its own format.js. It wrote a CLI
+// importing ./lib/parse, which was not there, and lost the whole turn. The
+// member most likely to need current code — one on its second task — was the
+// one guaranteed not to get it.
+{
+  const wt4 = await createWorktree(repo, 'returner', base);
+  writeFileSync(join(wt4, 'first-task.txt'), 'the work it was summoned for\n');
+  await commitAll(repo, 'returner', 'first task');
+  await mergeWorktree(repo, 'returner', base);
+  await removeWorktree(repo, 'returner');
+  a.equal(existsSync(wt4), false,
+    'sanity: the merge removes the checkout — that is why the next summon cannot reuse it');
+
+  // Everybody else keeps working while it is away. This is the code it will be
+  // asked to build on.
+  writeFileSync(join(repo, 'somebody-elses.txt'), 'merged while it was asleep\n');
+  git('add', '-A');
+  git('commit', '-qm', 'the rest of the court moves on');
+
+  const again = await createWorktree(repo, 'returner', base);
+  a.equal(await behindBase(repo, 'returner', base), 0,
+    'a worktree re-cut after a merge must be caught up to base, not left on the branch tip');
+  a.ok(existsSync(join(again, 'somebody-elses.txt')),
+    'the work it has to build on must actually be in its checkout — a task to integrate '
+    + 'code it cannot see is one it cannot do');
+  a.ok(existsSync(join(again, 'first-task.txt')), 'and its own merged work is still there');
+
+  // The guard still holds: unmerged work is never rewritten under a member.
+  writeFileSync(join(again, 'not-merged.txt'), 'still mine\n');
+  await commitAll(repo, 'returner', 'second task, not merged');
+  writeFileSync(join(repo, 'later.txt'), 'base advances again\n');
+  git('add', '-A');
+  git('commit', '-qm', 'base advances once more');
+  await removeWorktree(repo, 'returner');
+  const third = await createWorktree(repo, 'returner', base);
+  a.equal(await behindBase(repo, 'returner', base), 1,
+    'a re-cut branch that still holds unmerged work must be reported behind, never rewritten');
+  a.ok(existsSync(join(third, 'not-merged.txt')), 'and that work must survive the re-cut');
+
+  console.log('  a worktree re-cut after a merge comes back current, unless it holds unmerged work');
+}
+
 // A project with no tests must report unverified, never "passed".
 const bare = mkdtempSync(join(tmpdir(), 'kingdom-bare-'));
 const none = await runTests(bare);

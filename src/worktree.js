@@ -142,8 +142,27 @@ export async function createWorktree(repo, peasant, base) {
 
   const { stdout } = await git(repo, 'branch', '--list', branch);
   try {
-    if (stdout.trim()) await git(repo, 'worktree', 'add', path, branch);
-    else await git(repo, 'worktree', 'add', '-b', branch, path, base);
+    if (stdout.trim()) {
+      await git(repo, 'worktree', 'add', path, branch);
+      // A worktree re-cut from a branch lands on that branch's TIP, which is
+      // wherever the member last left it — and after a merge that is the past.
+      // mergeWork removes the worktree, and `git worktree remove` deletes the
+      // directory, so the next summon finds nothing on disk and never takes the
+      // reuse path above. catchUp lived only on that path, so the one member
+      // most likely to need current code — one being brought back for a second
+      // task — was the one member guaranteed not to get it.
+      //
+      // Watched live: "coder" wrote lib/format.js, it merged, and coder was
+      // re-summoned to integrate all four modules into a CLI. Its worktree came
+      // back seven commits behind master holding only its own format.js. It
+      // wrote a CLI importing ./lib/parse, which was not there, burned a full
+      // turn, and the whole thing was rejected.
+      //
+      // Same call, same guard: catchUp refuses a dirty tree or a branch with
+      // commits of its own, so a member with unmerged work is still never
+      // rewritten under it.
+      await catchUp(repo, path, branch, base);
+    } else await git(repo, 'worktree', 'add', '-b', branch, path, base);
   } catch (e) {
     // Belt and braces against a racing caller: if the worktree now exists,
     // that is the outcome we wanted anyway.
