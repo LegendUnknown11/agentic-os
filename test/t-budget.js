@@ -261,7 +261,57 @@ a.equal(k4.bus.events({ type: 'turn_end', limit: 100 }).length, turnsBefore,
 
 await k4.stop();
 
-for (const d of [repo, kingdomDir(repo), repo3, kingdomDir(repo3), repo4, kingdomDir(repo4)]) {
+// --- the kingdom-wide ceiling can be raised or lowered live --------------
+//
+// maxKingdomUsd used to take effect only at the process that read the
+// config file — a court running hot had no lever except a restart, which
+// is itself billed and stops nothing in the meantime.
+const repo5 = mkdtempSync(join(tmpdir(), 'kingdom-livecap-'));
+const git5 = (...x) => execFileSync('git', x, { cwd: repo5, stdio: 'pipe' });
+git5('init', '-q');
+git5('config', 'user.email', 'k@kingdom');
+git5('config', 'user.name', 'kingdom');
+writeFileSync(join(repo5, 'README.md'), '# t\n');
+git5('add', '-A');
+git5('commit', '-qm', 'init');
+
+const cfg5 = join(repo5, 'kingdom.config.json');
+writeFileSync(cfg5, JSON.stringify({
+  maxKingdomUsd: 100,   // high enough that nothing below trips it before the live change
+  orchestrator: { name: 'orchestrator', cli: 'codex' },
+  briefer: { name: 'briefer', cli: 'codex' },
+  peasants: [{ name: 'coder', cli: 'codex' }],
+}));
+
+const k5 = new Kingdom(repo5, cfg5);
+await k5.start();
+neuter(k5.agents.get('orchestrator'));
+neuter(k5.agents.get('briefer'));
+await k5.wake('coder');
+const liveCoder = neuter(k5.agents.get('coder'));
+const liveEvents = [];
+k5.on('budget', (e) => liveEvents.push(e));
+
+a.throws(() => k5.setBudget(-1), /must be a number/, 'a negative ceiling must be refused');
+
+const setResult = k5.setBudget(1);
+a.equal(setResult.cap, 1);
+a.equal(liveEvents.length, 1, 'setBudget must announce the change on its own, not wait for a trip');
+a.deepEqual(liveEvents[0], { scope: 'kingdom', cap: 1, changed: true });
+
+// $0.60 x 2 = $1.20 — under the CONFIGURED $100 cap, over the LIVE $1 one.
+liveCoder.emit('turn_end', { usage: { input_tokens: 10 }, costUsd: 0.6 });
+liveCoder.emit('turn_end', { usage: { input_tokens: 10 }, costUsd: 0.6 });
+await wait(200);
+
+a.equal(liveEvents.length, 2, 'the live ceiling must be the one #enforceBudget actually checks');
+a.equal(liveEvents[1].scope, 'kingdom');
+a.equal(liveEvents[1].cap, 1, 'the trip must report the LIVE cap, not the config default of 100');
+a.equal(liveCoder.stopped, true, 'crossing the live ceiling must still stop the court for real');
+
+await k5.stop();
+
+for (const d of [repo, kingdomDir(repo), repo3, kingdomDir(repo3), repo4, kingdomDir(repo4), repo5, kingdomDir(repo5)]) {
   try { rmSync(d, { recursive: true, force: true }); } catch {}
 }
 console.log('t-budget.js OK — cumulative ceiling survives restarts, codex courts can be capped, any member recycles');

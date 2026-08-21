@@ -568,7 +568,9 @@ export function openApprovals({ post, toast }) {
       // means for one (see the card() comment below), so bulk-approving a mixed
       // batch would silently eat any question in it.
       const bulkRow = (pending) => {
-        const actionable = pending.filter((a) => a.kind !== 'question');
+        // A push approval is deliberately never part of a bulk gesture: it is
+        // a one-time outward action and needs the sovereign's focused click.
+        const actionable = pending.filter((a) => a.kind !== 'question' && a.kind !== 'push');
         if (actionable.length < 2) return null;
         const row = el('div', 'btns');
         const act = (verb, cls, label) => {
@@ -597,9 +599,12 @@ export function openApprovals({ post, toast }) {
         d.append(head);
 
         // What is actually being asked: names for a summon, a peasant for a merge.
-        const what = a.names?.length ? a.names.join(', ') : (a.peasant ?? a.name ?? '');
+        const what = a.kind === 'push' ? 'Configured upstream (one plain push)' :
+          (a.names?.length ? a.names.join(', ') : (a.peasant ?? a.name ?? ''));
         if (what) d.append(el('div', 'what', what));
         if (a.reason) d.append(el('div', 'why', a.reason));
+        if (a.kind === 'push') d.append(el('div', 'note', 'No force push. Approval permits this one attempt only.'));
+        if (a.push?.message) d.append(el('div', `verdict ${a.push.status}`, a.push.message));
 
         // The cost of the crew, at the moment the crew is decided. README.md
         // calls the roster the biggest lever there is and says to trim it
@@ -630,7 +635,8 @@ export function openApprovals({ post, toast }) {
           btns.append(go, no);
           d.append(btns);
         } else {
-          d.append(el('div', `verdict ${a.resolved}`, a.resolved === 'approved' ? 'Approved' : 'Rejected'));
+          d.append(el('div', `verdict ${a.resolved}`, a.resolved === 'approved' ? 'Approved' :
+            (a.resolved === 'blocked' ? 'Blocked' : 'Rejected')));
         }
         return d;
       };

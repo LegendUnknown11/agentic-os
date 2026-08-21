@@ -24,7 +24,7 @@ import { argue, pickPanel, verdictNote } from './argue.js';
 import { modeOf, modeName, modeBlock, canSummon, crewFor } from './modes.js';
 import {
   assertRepo, ensureRepo, behindBase, commitAll, createWorktree, dbPath, diffOf, statOf, kingdomDir,
-  globalTokenStore, mergeWorktree, removeWorktree, runTests, testCommand, worktreePath,
+  globalTokenStore, mergeWorktree, removeWorktree, pushBase, runTests, testCommand, worktreePath,
 } from './worktree.js';
 import { mirrorToProject, noteWritten } from './vault.js';
 
@@ -195,6 +195,7 @@ export class Kingdom extends EventEmitter {
     this.bus = new Bus(this.dbPath);
     this.agents = new Map(); // name -> Agent (awake, has a live process)
     this.summoned = new Set(); // members in service; may be idle-slept and revived
+    this.paused = false; // true: the tick loop still runs control/approvals, nobody gets a new turn
     this.lastActive = new Map(); // name -> ts, for idle sleep
     this.approvals = new Map(); // id -> payload
     this.turnBuf = new Map();   // name -> events of the turn in flight, for the summariser
@@ -663,6 +664,9 @@ export class Kingdom extends EventEmitter {
     for (const n of JSON.parse(this.bus.get('summoned') ?? '[]')) {
       if (this.specOf(n)) this.summoned.add(n);
     }
+    // Survives a restart for the same reason `summoned` does: a pause is a
+    // decision, and a crash or a redeploy must not silently undo it.
+    this.paused = this.bus.get('paused') === '1';
     // Restored crew is INHERITED, not approved. It costs money the moment
     // anyone messages it — a peasant approved weeks ago woke, took a turn and
     // was billed this session without an approval card ever appearing. Say who
@@ -1167,7 +1171,7 @@ export class Kingdom extends EventEmitter {
    */
   #enforceBudget(name, spentByAgent, spentTotal) {
     const perMember = this.specOf(name)?.maxBudgetUsd ?? this.config.maxBudgetUsd ?? 0;
-    const kingdomCap = this.config.maxKingdomUsd ?? 0;
+    const kingdomCap = this.#kingdomBudget();
 
     if (kingdomCap && spentTotal >= kingdomCap) {
       this.emit('budget', { scope: 'kingdom', spent: spentTotal, cap: kingdomCap });
@@ -1774,6 +1778,12 @@ export class Kingdom extends EventEmitter {
     // pressing enter to the orchestrator being handed the text, of which 3.3s was
     // waiting for peasants nobody was waiting on. Nothing else in the court has
     // a human sitting in front of it.
+    // A pause freezes turns, not the court: control/approvals/arguments above
+    // still run so a `resume` sent while paused is not stuck behind the very
+    // thing it is meant to lift. Nobody mid-turn is interrupted — this only
+    // stops the NEXT one from being handed out.
+    if (this.paused) return;
+
     const rank = (n) => (n === this.config.orchestrator.name ? 0 : n === this.config.briefer.name ? 1 : 2);
     for (const name of [...this.summoned].sort((a, b) => rank(a) - rank(b))) {
       const pending = this.bus.pending(name);
@@ -1989,7 +1999,7 @@ export class Kingdom extends EventEmitter {
     // same shape: it answers a caller, not a fixed address.
     const reply = (body) => this.bus.post('orchestrator', asker, body, 'notice');
 
-    const cap = this.config.maxKingdomUsd ?? 0;
+    const cap = this.#kingdomBudget();
     const spent = Number(this.bus.get('spentUsd') ?? 0);
     if (cap && spent >= cap) {
       reply(`The argument court was not convened: the kingdom is at its spend ceiling `
@@ -2079,6 +2089,21 @@ export class Kingdom extends EventEmitter {
           .then((r) => `${r.name} is now on ${r.cli}${r.model ? ' / ' + r.model : ' (the CLI default)'}`
             + `${r.effort ? ' at ' + r.effort + ' effort' : ''}.`
             + (r.cliChanged ? ' The CLI changed, so its session did not carry over.' : ''));
+      case 'pause': {
+        const r = this.pause(req.why ?? '');
+        return r.changed ? null : 'The court is already paused.';
+      }
+      case 'resume': {
+        const r = this.resume();
+        return r.changed ? null : 'The court is not paused.';
+      }
+      case 'budget': {
+        const { cap } = this.setBudget(req.capUsd);
+        return `Kingdom spend ceiling is now ${cap ? '$' + cap : 'unlimited'}.`;
+      }
+      case 'push':
+        this.requestPush(req.reason ?? '', by);
+        return null;
       default:
         return `No such control: ${req.op}.`;
     }
@@ -2654,6 +2679,53 @@ export class Kingdom extends EventEmitter {
   }
 
   /**
+   * Freeze the court without dismissing anyone: nobody on the roster gets a
+   * new turn, but nothing is stopped mid-turn and nothing is stood down. Use
+   * this when work needs to stop for a beat — a review, a suspected loop, a
+   * change the sovereign wants to make first — without paying to re-summon
+   * and re-brief the whole crew afterward the way `sleep()` on everyone would.
+   */
+  pause(why = '') {
+    if (this.paused) return { changed: false };
+    this.paused = true;
+    this.bus.set('paused', '1');
+    this.emit('paused', { paused: true, why });
+    this.bus.post(CROWN, this.config.orchestrator.name,
+      `The court is paused${why ? `: ${why}` : ''}. Nobody will be given a new turn until resume_court.`,
+      'notice');
+    return { changed: true };
+  }
+
+  resume() {
+    if (!this.paused) return { changed: false };
+    this.paused = false;
+    this.bus.set('paused', '0');
+    this.emit('paused', { paused: false });
+    this.bus.post(CROWN, this.config.orchestrator.name, 'The court has resumed.', 'notice');
+    return { changed: true };
+  }
+
+  /**
+   * The court-wide spend ceiling, live. `maxKingdomUsd` in kingdom.config.json
+   * only ever took effect at the process that read the file — a court running
+   * hot had no lever except a restart, which is itself billed and loses no
+   * spend at all in the meantime. 0 clears the ceiling.
+   */
+  setBudget(capUsd) {
+    const cap = Number(capUsd);
+    if (!Number.isFinite(cap) || cap < 0) throw new Error('The ceiling must be a number, 0 or more.');
+    this.bus.set('maxKingdomUsd', String(cap));
+    this.emit('budget', { scope: 'kingdom', cap, changed: true });
+    return { cap };
+  }
+
+  /** The live ceiling if one has ever been set here, else the config default. */
+  #kingdomBudget() {
+    const live = this.bus.get('maxKingdomUsd');
+    return live != null ? Number(live) : (this.config.maxKingdomUsd ?? 0);
+  }
+
+  /**
    * You speak to the orchestrator. Routed through the BUS, not straight into the
    * process: a goal sent directly leaves no record, so a successor orchestrator had no
    * way to discover what it was supposed to be doing and asked the sovereign
@@ -2845,7 +2917,7 @@ export class Kingdom extends EventEmitter {
   async approve(id) {
     const p = this.approvals.get(id);
     if (!p) throw new Error(`No pending approval ${id}`);
-    if (p.kind !== 'summon' && p.kind !== 'memory') {
+    if (p.kind !== 'summon' && p.kind !== 'memory' && p.kind !== 'push') {
       this.approvals.delete(id);
       this.bus.set(`resolved:${id}`, 'approved');
     }
@@ -2892,6 +2964,27 @@ export class Kingdom extends EventEmitter {
         `The sovereign approved the new role "${p.name}". It is in the roster permanently.`);
     } else if (p.kind === 'merge') {
       await this.merge(p.peasant);
+    } else if (p.kind === 'push') {
+      // A push approval is consumed exactly once. Whether Git succeeds is a
+      // separate fact, recorded on the historical card instead of retried.
+      this.approvals.delete(id);
+      try {
+        const out = await pushBase(this.repo, this.base);
+        const message = `Pushed ${out.branch} to configured remote ${out.remote}.`;
+        this.bus.set(`resolved:${id}`, 'approved');
+        this.bus.set(`push:${id}`, JSON.stringify({ status: 'pushed', message, ...out }));
+        this.bus.post(CROWN, this.config.orchestrator.name, message, 'notice');
+        this.emit('pushed', { id, ...out });
+      } catch (e) {
+        const message = e.message;
+        this.bus.set(`resolved:${id}`, 'blocked');
+        this.bus.set(`push:${id}`, JSON.stringify({ status: 'blocked', message }));
+        this.bus.post(CROWN, this.config.orchestrator.name,
+          `The sovereign approved a push, but it did not happen. ${message}`, 'notice');
+        this.emit('pushBlocked', { id, message });
+        this.emit('resolved', { id, approved: false, blocked: true });
+        return;
+      }
     } else if (p.kind === 'memory') {
       if (!this.config.vault) throw new Error('Cannot approve a memory: this kingdom has no vault.');
       if (typeof p.title !== 'string' || !p.title.trim() || typeof p.body !== 'string' || !p.body.trim()) {
@@ -2909,6 +3002,12 @@ export class Kingdom extends EventEmitter {
         `The sovereign approved memory from campaign #${p.campaign}: ${p.title}`);
     }
     this.emit('resolved', { id, approved: true });
+  }
+
+  /** Request one outward push; the next action is always an approval card. */
+  requestPush(reason = '', from = this.config.orchestrator.name) {
+    this.bus.post(from, null, JSON.stringify({ kind: 'push', reason: String(reason) }), 'approval');
+    return { requested: true };
   }
 
   reject(id, why = '') {

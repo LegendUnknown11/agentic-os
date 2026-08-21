@@ -860,6 +860,34 @@ const TOOLS = {
     },
   },
 
+  reassign_task: {
+    roles: ['orchestrator'],
+    description:
+      'Move a task to a different peasant — one stuck with an owner who will not finish it, or one still '
+      + 'unclaimed that needs to be placed rather than waited on. Unlike claim_task, which only the '
+      + 'claiming peasant may call, this is an administrative override and works on someone else\'s task.',
+    schema: {
+      type: 'object',
+      properties: { id: { type: 'integer', description: 'Which task' }, to: str('The new owner') },
+      required: ['id', 'to'],
+    },
+    run: ({ id, to }) => {
+      const t = bus.tasks().find((x) => x.id === Number(id));
+      if (!t) return `No task #${id}.`;
+      if (t.state === 'done') return `Task #${id} is already done — nothing to reassign.`;
+      if (t.owner === to) return `Task #${id} is already ${to}'s.`;
+      const summoned = JSON.parse(bus.get('summoned') ?? '[]');
+      if (!summoned.includes(to)) return `Cannot reassign to ${to}: not summoned.`;
+      const from = t.owner;
+      bus.updateTask(id, { owner: to, state: t.state === 'planning' ? 'planning' : 'active' });
+      bus.post(ME, to,
+        `Task #${id} (${t.title}) was reassigned to you${from ? ` from ${from}` : ''}.\n\n${t.detail}`,
+        'assignment');
+      if (from) bus.post(ME, from, `Task #${id} (${t.title}) was reassigned to ${to}. Stop work on it.`, 'notice');
+      return `Reassigned #${id} to ${to}${from ? ` (was ${from}'s)` : ''}.`;
+    },
+  },
+
   submit_plan: {
     roles: ['peasant'],
     description:
@@ -1206,6 +1234,48 @@ const TOOLS = {
     },
   },
 
+  pause_court: {
+    roles: ['orchestrator'],
+    description:
+      'Stop handing out new turns to anyone, without dismissing the crew. Nobody mid-turn is interrupted; '
+      + 'this only stops the next one. Cheaper than dismissing everyone when work needs to stop for a beat '
+      + '— a review, a suspected loop, a change the sovereign wants to make first.',
+    schema: { type: 'object', properties: { why: str('One line for the record. Optional.') }, required: [] },
+    run: ({ why }) => {
+      bus.post(ME, null, JSON.stringify({ op: 'pause', why: why ?? '' }), 'control');
+      return 'Pausing the court.';
+    },
+  },
+
+  resume_court: {
+    roles: ['orchestrator'],
+    description: 'Lift a pause. Everyone resumes exactly where their queued work left off.',
+    schema: { type: 'object', properties: {}, required: [] },
+    run: () => {
+      bus.post(ME, null, JSON.stringify({ op: 'resume' }), 'control');
+      return 'Resuming the court.';
+    },
+  },
+
+  set_budget: {
+    roles: ['orchestrator'],
+    description:
+      'Raise or lower the court-wide spend ceiling live, without a restart. 0 means no ceiling. This does '
+      + 'not touch any one member\'s own per-member cap.',
+    schema: {
+      type: 'object',
+      properties: { cap_usd: { type: 'number', description: 'New ceiling in USD, 0 for none' } },
+      required: ['cap_usd'],
+    },
+    run: ({ cap_usd }) => {
+      if (typeof cap_usd !== 'number' || !Number.isFinite(cap_usd) || cap_usd < 0) {
+        return 'cap_usd must be a number, 0 or more.';
+      }
+      bus.post(ME, null, JSON.stringify({ op: 'budget', capUsd: cap_usd }), 'control');
+      return `Asked to set the kingdom spend ceiling to ${cap_usd ? '$' + cap_usd : 'unlimited'}.`;
+    },
+  },
+
   request_merge: {
     roles: ['orchestrator'],
     description:
@@ -1219,6 +1289,22 @@ const TOOLS = {
     run: ({ peasant, verdict }) => {
       bus.post(ME, null, JSON.stringify({ kind: 'merge', peasant, verdict }), 'approval');
       return 'Merge proposed to the sovereign.';
+    },
+  },
+
+  request_push: {
+    roles: ['orchestrator'],
+    description:
+      'Ask the sovereign for one explicit push of the local base branch to its configured upstream. This never '
+      + 'pushes now, never force-pushes, and every later push needs a new approval.',
+    schema: {
+      type: 'object',
+      properties: { reason: str('Why this reviewed local state should leave the machine') },
+      required: ['reason'],
+    },
+    run: ({ reason }) => {
+      bus.post(ME, null, JSON.stringify({ op: 'push', reason }), 'control');
+      return 'Push proposed to the sovereign. No remote was contacted.';
     },
   },
 

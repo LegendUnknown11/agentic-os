@@ -70,7 +70,7 @@ function push(type, data) {
   for (const res of clients) res.write(line);
 }
 
-for (const ev of ['agent', 'event', 'delivered', 'approval', 'verified', 'merged', 'recycled', 'resolved', 'started', 'failure', 'roster', 'failover', 'mergeFailed', 'spend', 'budget', 'limited', 'advising', 'advisor', 'summarizer', 'goal', 'milestone', 'mode', 'compact', 'argued', 'repo']) {
+for (const ev of ['agent', 'event', 'delivered', 'approval', 'verified', 'merged', 'recycled', 'resolved', 'started', 'failure', 'roster', 'failover', 'mergeFailed', 'pushed', 'pushBlocked', 'spend', 'budget', 'limited', 'advising', 'advisor', 'summarizer', 'goal', 'milestone', 'mode', 'compact', 'argued', 'repo', 'paused']) {
   kingdom.on(ev, (d) => push(ev, d ?? {}));
 }
 kingdom.on('error', (e) => push('error', { message: e.message }));
@@ -132,6 +132,10 @@ const ACTIONS = {
   milestone: (b) => kingdom.setMilestone(Number(b.index), Boolean(b.done)),
   wake: (b) => kingdom.wake(b.name),
   sleep: (b) => kingdom.sleep(b.name),
+  pause: (b) => kingdom.pause(b.why ?? ''),
+  resume: () => kingdom.resume(),
+  setBudget: (b) => kingdom.setBudget(b.capUsd),
+  requestPush: (b) => kingdom.requestPush(b.reason ?? ''),
   approve: (b) => kingdom.approve(Number(b.id)),
   reject: (b) => kingdom.reject(Number(b.id), b.why ?? ''),
   answerQuestion: (b) => kingdom.answerQuestion(Number(b.id), b.answers),
@@ -314,6 +318,9 @@ const handle = async (req, res) => {
       }
       const resolved = kingdom.bus.get(`resolved:${m.id}`) ?? null;
       const row = { id: m.id, ts: m.ts, from: m.sender, ...p, resolved };
+      if (p.kind === 'push') {
+        try { row.push = JSON.parse(kingdom.bus.get(`push:${m.id}`) ?? 'null'); } catch { /* card still renders */ }
+      }
       // The cost of the crew being proposed, and ONLY while it is still
       // being proposed. A forecast is a trimming aid and there is nothing
       // left to trim once the summon is answered — which also keeps this

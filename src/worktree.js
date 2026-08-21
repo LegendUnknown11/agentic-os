@@ -19,6 +19,51 @@ const exec = promisify(execFile);
 
 const git = (cwd, ...args) => exec('git', args, { cwd, maxBuffer: 64 * 1024 * 1024 });
 
+// Measured locally on 2026-08-21: five bare-repo pushes took 254.5–312.6ms
+// (285.5ms mean). This is a failure bound, not a latency target: it exists so
+// an auth prompt or unreachable remote ends as a blocked approval instead of a wedged court.
+const pushTimeout = () => {
+  const ms = Number(process.env.KINGDOM_PUSH_TIMEOUT_MS ?? 30_000);
+  return Number.isFinite(ms) && ms > 0 ? ms : 30_000;
+};
+
+/**
+ * Push only the checked-out base branch through Git's already-configured
+ * upstream. It accepts no remote, refspec or force option from the court.
+ */
+export async function pushBase(repo, base) {
+  if (!repo || !base) throw new Error('This court has no base repository to push.');
+  const branch = (await git(repo, 'branch', '--show-current')).stdout.trim();
+  if (branch !== base) throw new Error(`Base branch changed from ${base} to ${branch || '(detached)'}; nothing was pushed.`);
+
+  const readConfig = async (key) => {
+    try { return (await git(repo, 'config', '--get', key)).stdout.trim(); } catch { return ''; }
+  };
+  const remote = await readConfig(`branch.${branch}.remote`);
+  const merge = await readConfig(`branch.${branch}.merge`);
+  if (!remote || remote === '.' || !merge.startsWith('refs/heads/')) {
+    throw new Error(`Branch ${branch} has no configured remote tracking branch; nothing was pushed.`);
+  }
+
+  const timeout = pushTimeout();
+  try {
+    const out = await exec('git', ['-c', 'credential.interactive=false', 'push'], {
+      cwd: repo,
+      timeout,
+      maxBuffer: 64 * 1024 * 1024,
+      env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'Never' },
+    });
+    return { remote, branch, output: `${out.stdout}\n${out.stderr}`.trim() };
+  } catch (e) {
+    if (e.killed || e.signal) throw new Error(`Push timed out after ${timeout}ms; nothing was assumed to have landed.`);
+    const detail = `${e.stderr ?? ''}\n${e.stdout ?? ''}\n${e.message ?? ''}`.trim();
+    if (/non-fast-forward|fetch first|\[rejected\]/i.test(detail)) {
+      throw new Error(`Configured upstream ${remote}/${branch} has diverged; plain push was refused and nothing was changed.`);
+    }
+    throw new Error(`Push to configured upstream ${remote}/${branch} failed: ${detail || 'git returned no detail'}`);
+  }
+}
+
 /**
  * Where this repo's kingdom lives: <repoParent>/.kingdom/<repoName>/
  *

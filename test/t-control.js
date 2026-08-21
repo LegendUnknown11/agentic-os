@@ -34,6 +34,7 @@ process.env.KINGDOM_SETTLE_MS = '120';
 // call time, so setting them before anything is constructed is enough.
 const fakeHome = mkdtempSync(join(tmpdir(), 'kingdom-ctl-home-'));
 const savedEnv = { USERPROFILE: process.env.USERPROFILE, HOME: process.env.HOME };
+const savedPushTimeout = process.env.KINGDOM_PUSH_TIMEOUT_MS;
 process.env.USERPROFILE = fakeHome;
 process.env.HOME = fakeHome;
 
@@ -69,6 +70,7 @@ const until = async (pred, ms = 8_000) => {
   }
   return false;
 };
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** Drive the real MCP server the way a CLI does, over stdin. */
 function mcp(calls, { role = 'orchestrator', db }) {
@@ -256,6 +258,174 @@ try {
     'with its trigger line intact — that line is the only part every member carries');
   a.equal(after.source, 'vault');
 
+  /* ---- 5. pausing freezes new turns without dismissing anyone ------------ */
+  // The king could previously only stop a member by dismissing it — which
+  // costs a full re-summon and re-brief to undo. This is the cheap version:
+  // freeze delivery, leave the roster and every session exactly as it was.
+  {
+    await k.wake('coder');
+    a.equal(k.paused, false, 'sanity: the court is not paused to start');
+
+    const pausedEvents = [];
+    k.on('paused', (e) => pausedEvents.push(e));
+
+    const r1 = k.pause('checking something');
+    a.equal(r1.changed, true);
+    a.equal(k.paused, true);
+    a.equal(k.bus.get('paused'), '1', 'must persist — a crash or redeploy must not silently lift it');
+    a.deepEqual(pausedEvents[0], { paused: true, why: 'checking something' });
+
+    const r2 = k.pause('again');
+    a.equal(r2.changed, false, 'pausing an already-paused court is a no-op, not a second event');
+    a.equal(pausedEvents.length, 1);
+
+    const beforeLen = delivered.length;
+    k.bus.post('sovereign', 'coder', 'do something', 'assignment');
+    await wait(400);
+    a.equal(delivered.slice(beforeLen).some((d) => d.to === 'coder'), false,
+      'a message queued while paused must not be handed out — that is the entire feature');
+
+    // Lifted the same way every other court-issued lever travels: a `control`
+    // row the orchestrator's own MCP tool posts, swept on the next tick.
+    k.bus.post('coder', null, JSON.stringify({ op: 'resume' }), 'control');
+    a.ok(await until(() => k.paused === false), 'resume must actually take effect');
+    a.equal(k.bus.get('paused'), '0');
+    a.equal(pausedEvents[pausedEvents.length - 1].paused, false);
+
+    a.ok(await until(() => delivered.slice(beforeLen).some((d) => d.to === 'coder')),
+      'and the queued message must now go out — nothing paused twice is lost, only delayed');
+
+    // Persistence: a pause set before a restart must still hold after one.
+    k.pause('about to restart');
+    await k.stop();
+    k = new Kingdom(null, configPath);
+    k.on('error', () => {});
+    k.on('delivered', (d) => delivered.push(d));
+    await k.start();
+    a.equal(k.paused, true, 'a paused court must come back paused, the same way `summoned` comes back restored');
+    k.resume();   // leave a clean state for what follows
+
+    console.log('  a pause freezes delivery without touching the roster, and survives a restart');
+  }
+
+  /* ---- 6. the orchestrator can move a stuck task without a dismissal ----- */
+  // Previously the only way to move a claimed task off a member was
+  // dismiss_member — which also drops its worktree and its session. A task
+  // stuck with a member that will not finish it needed all of that just to
+  // free up nine words of ownership.
+  {
+    const t = k.bus.addTask({ title: 'Reassign me', by: 'orchestrator' });
+    a.equal(k.bus.claimTask('coder', t).ok, true, 'sanity: coder holds it to start');
+
+    const { said } = mcp([
+      { name: 'reassign_task', arguments: { id: t, to: 'nobody-home' } },
+      { name: 'reassign_task', arguments: { id: t, to: 'briefer' } },
+    ], { db });
+
+    a.match(said[0], /not summoned/, 'cannot reassign to somebody not in service');
+    a.match(said[1], /Reassigned/);
+
+    const after = k.bus.task(t);
+    a.equal(after.owner, 'briefer', 'ownership must actually move');
+    a.equal(after.state, 'active', 'and stay workable, not reset to pending');
+
+    a.ok(k.bus.history({ limit: 400 }).some((m) =>
+      m.recipient === 'briefer' && /reassigned to you/.test(m.body) && new RegExp(`#${t}`).test(m.body)),
+    'the new owner must be told, with the task content, not left to discover it via tasks()');
+    a.ok(k.bus.history({ limit: 400 }).some((m) =>
+      m.recipient === 'coder' && /reassigned to briefer/.test(m.body)),
+    'and the old owner must be told to stop, or it keeps working a task it no longer owns');
+
+    console.log('  the orchestrator can move a stuck task without a dismissal round-trip');
+  }
+
+  /* ---- 7. an outward push needs its own, one-time sovereign approval ----- */
+  {
+    // §5 deliberately restarted the workspace court without a command-line
+    // repo. Real push is Code-only, so attach the fixture base again here.
+    if (!k.repo) await k.attachRepo(repo);
+    const branch = execFileSync('git', ['branch', '--show-current'], { cwd: repo, encoding: 'utf8' }).trim();
+    const remote = join(dir, 'push-remote.git');
+    execFileSync('git', ['init', '--bare', '-q', remote]);
+    execFileSync('git', ['symbolic-ref', 'HEAD', `refs/heads/${branch}`], { cwd: remote });
+    execFileSync('git', ['remote', 'add', 'origin', remote], { cwd: repo });
+    execFileSync('git', ['config', `branch.${branch}.remote`, 'origin'], { cwd: repo });
+    execFileSync('git', ['config', `branch.${branch}.merge`, `refs/heads/${branch}`], { cwd: repo });
+
+    const pushed = [];
+    const blocked = [];
+    k.on('pushed', (e) => pushed.push(e));
+    k.on('pushBlocked', (e) => blocked.push(e));
+
+    const asked = mcp([{ name: 'request_push', arguments: {
+      reason: 'publish the reviewed local base', force: true,
+    } }], { db }).said[0];
+    a.match(asked, /Push proposed/, 'the tool must return after posting an approval, not push in the caller turn');
+    a.ok(await until(() => [...k.approvals.values()].some((p) => p.kind === 'push')),
+      'a push must be a distinct approval kind, not a summon or merge');
+    a.equal(execFileSync('git', ['for-each-ref', '--format=%(refname)'], { cwd: remote, encoding: 'utf8' }).trim(), '',
+      'requesting a push must not touch its remote before the sovereign approves');
+    const first = [...k.approvals].find(([, p]) => p.kind === 'push')[0];
+    const proposal = JSON.parse(k.bus.history({ limit: 50 }).find((m) => m.id === first).body);
+    a.equal(proposal.force, undefined, 'there is no force-push request path to approve');
+
+    await k.approve(first);
+    a.equal(pushed.length, 1, 'one approval must cause exactly one push attempt');
+    a.equal(k.bus.get(`resolved:${first}`), 'approved');
+    a.equal(execFileSync('git', ['rev-parse', `refs/heads/${branch}`], { cwd: remote, encoding: 'utf8' }).trim(),
+      execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim(),
+    'the approved plain push must update the configured upstream branch');
+
+    // Make the two sides diverge. A force push would replace this remote head;
+    // the only safe result is a blocked card and the remote left as it was.
+    writeFileSync(join(repo, 'local-after-push.txt'), 'local\n');
+    execFileSync('git', ['add', '-A'], { cwd: repo });
+    execFileSync('git', ['commit', '-qm', 'local after push'], { cwd: repo });
+    const other = join(dir, 'push-other');
+    execFileSync('git', ['clone', '-q', remote, other]);
+    execFileSync('git', ['config', 'user.email', 'k@kingdom'], { cwd: other });
+    execFileSync('git', ['config', 'user.name', 'kingdom'], { cwd: other });
+    writeFileSync(join(other, 'remote-after-push.txt'), 'remote\n');
+    execFileSync('git', ['add', '-A'], { cwd: other });
+    execFileSync('git', ['commit', '-qm', 'remote after push'], { cwd: other });
+    execFileSync('git', ['push'], { cwd: other });
+    const remoteHead = execFileSync('git', ['rev-parse', `refs/heads/${branch}`], { cwd: remote, encoding: 'utf8' }).trim();
+
+    const secondAsked = mcp([{ name: 'request_push', arguments: { reason: 'try a diverged upstream' } }], { db }).said[0];
+    a.match(secondAsked, /Push proposed/);
+    a.ok(await until(() => [...k.approvals.values()].filter((p) => p.kind === 'push').length === 1));
+    const second = [...k.approvals].find(([, p]) => p.kind === 'push')[0];
+    await k.approve(second);
+    a.equal(blocked.length, 1, 'a rejected non-fast-forward push must report a blocked result');
+    a.equal(k.bus.get(`resolved:${second}`), 'blocked', 'remote divergence must stay visible on the approval card');
+    a.equal(execFileSync('git', ['rev-parse', `refs/heads/${branch}`], { cwd: remote, encoding: 'utf8' }).trim(), remoteHead,
+      'the divergence proves force-push is unreachable: the remote head remains untouched');
+
+    const hungRemote = join(dir, 'push-hung.git');
+    execFileSync('git', ['init', '--bare', '-q', hungRemote]);
+    execFileSync('git', ['symbolic-ref', 'HEAD', `refs/heads/${branch}`], { cwd: hungRemote });
+    writeFileSync(join(hungRemote, 'hooks', 'pre-receive'), '#!/bin/sh\nsleep 2\n');
+    execFileSync('git', ['remote', 'set-url', 'origin', hungRemote], { cwd: repo });
+    process.env.KINGDOM_PUSH_TIMEOUT_MS = '150';
+
+    const thirdAsked = mcp([{ name: 'request_push', arguments: { reason: 'prove a hanging remote is bounded' } }], { db }).said[0];
+    a.match(thirdAsked, /Push proposed/);
+    a.ok(await until(() => [...k.approvals.values()].filter((p) => p.kind === 'push').length === 1));
+    const third = [...k.approvals].find(([, p]) => p.kind === 'push')[0];
+    const started = Date.now();
+    await k.approve(third);
+    a.ok(Date.now() - started < 1_500, 'a timed-out push must return control instead of wedging the court');
+    a.equal(k.bus.get(`resolved:${third}`), 'blocked');
+    a.match(JSON.parse(k.bus.get(`push:${third}`)).message, /timed out/i,
+      'the timeout must become a human-readable blocked result, not a silent failure');
+    process.env.KINGDOM_PUSH_TIMEOUT_MS = savedPushTimeout;
+    // The killed client has already returned; this only lets the local bare
+    // repository's deliberate two-second hook exit before fixture cleanup.
+    await wait(2_100);
+
+    console.log('  push waits for one approval, never forces divergence, and turns timeout into a blocked card');
+  }
+
   /* ---- 8. a restart must not inherit a task nobody in the court can work -- */
   // sleep() releases what a dismissed member held, but a member can also leave
   // without ever being dismissed: drop it from kingdom.config.json and the
@@ -307,6 +477,8 @@ try {
 } finally {
   await k?.stop?.();   // closes the bus with it
   Object.assign(process.env, savedEnv);
+  if (savedPushTimeout == null) delete process.env.KINGDOM_PUSH_TIMEOUT_MS;
+  else process.env.KINGDOM_PUSH_TIMEOUT_MS = savedPushTimeout;
   rmSync(dir, { recursive: true, force: true });
   rmSync(fakeHome, { recursive: true, force: true });
 }
