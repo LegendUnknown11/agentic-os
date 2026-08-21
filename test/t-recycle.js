@@ -50,7 +50,7 @@ class FakeBriefer extends EventEmitter {
 const k = new Kingdom(repo, configPath);
 k.base = 'master';
 k.bus.set('base', 'master');
-k.bus.set('session:briefer', 'old-session-id-should-be-discarded');
+k.bus.set('session:briefer:default', 'old-session-id-should-be-discarded');
 
 const fake = new FakeBriefer();
 k.agents.set('briefer', fake);
@@ -97,7 +97,7 @@ a.ok(successor.spec.prompt.includes(HANDOVER),
   const k2 = new Kingdom(repo, configPath);
   k2.base = 'master';
   k2.bus.set('base', 'master');
-  k2.bus.set('session:briefer', 'another-old-session');
+  k2.bus.set('session:briefer:default', 'another-old-session');
   k2.agents.set('briefer', verbose);
   await k2.recycleBriefer();
 

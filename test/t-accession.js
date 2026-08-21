@@ -72,12 +72,12 @@ k.bus.post('orchestrator', 'coder', 'Implement the onboarding screens.');
 await wait(600);
 
 // --- switching CLI must take a handover before discarding the session -
-const before = k.bus.get('session:orchestrator');
+const before = k.bus.get('session:orchestrator:default');
 await k.setModel('orchestrator', { cli: 'claude', model: 'haiku' });
 
 const successor = k.agents.get('orchestrator');
 a.ok(successor, 'a successor orchestrator must exist');
-a.equal(k.bus.get('session:orchestrator') === before, false, 'the old session must be discarded');
+a.equal(k.bus.get('session:orchestrator:default') === before, false, 'the old session must be discarded');
 a.match(successor.spec.prompt, /HANDOVER FROM YOUR PREDECESSOR/,
   'a CLI switch must capture a handover, not silently wipe memory');
 a.match(successor.spec.prompt, /coverage run still pending/i);
@@ -92,7 +92,7 @@ a.match(successor.spec.prompt, /Do NOT ask the sovereign/i);
 await k.stop();
 const k2 = new Kingdom(repo, configPath);
 await k2.start();
-k2.bus.set('session:orchestrator', ''); // simulate an orchestrator with no resumable session
+k2.bus.set('session:orchestrator:default', ''); // simulate an orchestrator with no resumable session
 k2.agents.get('orchestrator')?.stop();
 k2.agents.delete('orchestrator');
 await k2.wake('orchestrator');
@@ -154,7 +154,7 @@ a.match(revived.spec.prompt, /Ship tier 1/i,
   // answered from the CLI's own private memory store instead of the court's.
   {
     const { writeFileSync: w2 } = await import('node:fs');
-    k2.bus.set('session:coder', 'thread-that-already-exists');
+    k2.bus.set('session:coder:default', 'thread-that-already-exists');
     await k2.wake('coder');                       // resumes; records the fingerprint
     const before = k2.bus.pending('coder').length;
 
@@ -183,6 +183,35 @@ a.match(revived.spec.prompt, /Ship tier 1/i,
   a.ok(!k2.briefFor('coder').includes('STANDING INSTRUCTIONS'),
     'no vault means no brain block, not a crash');
   console.log('  brain: instructions and memory titles reach orchestrator, briefer and peasants');
+}
+
+// A brand new conversation must not orient itself with a DIFFERENT
+// conversation's chat, as if it were "what we were just doing".
+//
+// Real bug: a fresh Chat-mode conversation, asked to repeat the sovereign's
+// last message, recited a completely unrelated conversation's last message
+// instead — #orientation() built "RECENT COURT TRAFFIC"/"STANDING GOAL" from
+// bus.history() with no conversation filter at all, so a member spawning
+// into a brand new thread was hearing another thread's chat as its own.
+{
+  // A marker unique to this block — config.goal (set above via setGoal) is
+  // ITSELF court-wide by design and also contains "Ship tier 1", so reusing
+  // that text here would not isolate what #orientation() is doing from what
+  // briefFor()'s separate STANDING GOAL block already, correctly, does.
+  //
+  // Deliberately NOT neutering the outgoing orchestrator here: switchConversation
+  // calls the real live.stop() on it to kill its process before respawning, and
+  // neutering that stop() first (as an earlier version of this test did) silently
+  // no-ops the real kill — the child process leaks, and the whole suite hangs
+  // until run-all.js's 180s timeout kills it.
+  k2.bus.post('sovereign', 'orchestrator', 'DEFAULT-THREAD-ONLY: what should we build next?', 'assignment', 'default');
+  await k2.switchConversation('orchestrator', 'conv-b');
+  const inB = k2.agents.get('orchestrator');
+  a.ok(!inB.spec.prompt.includes('DEFAULT-THREAD-ONLY'),
+    'a fresh conversation\'s orientation must not include a DIFFERENT conversation\'s chat turns');
+  a.match(inB.spec.prompt, /IN SERVICE:.*coder/s,
+    'court-wide operational context (the crew) must still reach it — only chat turns are conversation-scoped');
+  console.log('  a fresh conversation orients from its own chat, not a sibling conversation\'s');
 }
 
 await k2.stop();

@@ -18,6 +18,7 @@ import { cue, soundOn, setSound } from './feel.js';
 import { displayName, agentCount } from './names.js';
 import * as O from './overview.js';
 import { mdToHtml } from './markdown.js';
+import * as CH from './chat.js';
 // Served straight from src/ by the daemon — the SAME table the orchestrator
 // enforces, so the switcher can never offer a shape the court does not have.
 import { MODES, MODE_NAMES, modeOf, canSummon } from '/modes.js';
@@ -195,6 +196,11 @@ const body = (name) => W.getWindow(`m:${name}`)?.querySelector('.log');
 
 /* ---------- member windows ---------- */
 function openMember(name) {
+  // Chat mode has its own dedicated thread for the orchestrator — opening the
+  // generic floating panel on top of it would be a second, invisible-behind-
+  // the-thread copy of the same conversation. Every other panel (the briefer,
+  // tool windows) is unaffected.
+  if (MODE === 'chat' && members.get(name)?.role === 'orchestrator') return CH.focusComposer();
   I.select(name);
   const m = members.get(name) ?? {};
   // The id stays keyed on the real name — it is how the bus, the log map and
@@ -876,6 +882,7 @@ function connect() {
 
   function onStreamEvent(d) {
     N.onEvent(d);   // desktop alerts for the few things that stall the court
+    CH.onEvent(d);  // Chat mode's own thread, fed regardless of active mode
     switch (d.type) {
       case 'snapshot':
         paintRepo(d.repo, d.base);
@@ -886,7 +893,10 @@ function connect() {
         if (d.skills) SKILLS = d.skills;
         if (d.summarizer) SUMMARIZER = d.summarizer;
         if (d.goal !== undefined) { GOAL = d.goal; paintGoal(); }
-        if (d.mode) { MODE = d.mode; PENDING = null; paintMode(); }
+        if (d.mode) {
+          if (d.mode === 'chat' && MODE !== 'chat') G.collapse();
+          MODE = d.mode; PENDING = null; paintMode();
+        }
         applyRoster(d.roster);
         // An empty card on load teaches nothing. Start on the orchestrator: it is the
         // one member the sovereign always has.
@@ -1282,6 +1292,9 @@ function buildRepoSection(el) {
  * orchestrator, and a button that implied a turn could be recalled would be a lie.
  */
 function onModeChanged(d) {
+  // Chat's roster is at most the orchestrator + briefer, so the rail defaults
+  // collapsed on entry — reuses the button's own toggle, not a second flag.
+  if (d.mode === 'chat' && d.previous && d.previous !== 'chat') G.collapse();
   MODE = d.mode;
   PENDING = d.pending ?? null;
   paintMode();
@@ -1348,6 +1361,7 @@ O.initOverview($('#overview'), {
   members: () => members,
   goal: () => GOAL,
   mode: () => modeOf(MODE),
+  modeName: () => MODE,
   statusOf: () => statusOf,
   summaries: () => summaries,
   // Read off the cards on screen rather than a parallel list, for the reason
@@ -1364,6 +1378,7 @@ O.initOverview($('#overview'), {
   onOpenMember: openMember,
   onDiff: (name) => P.openDiff(name, { post, toast }),
 });
+CH.initChat($('#chat-view'), { post, toast, fillModels, fillEfforts, AUTO, openRecall: P.openRecall });
 
 /* ---------- the summariser ---------- */
 const saveSummarizer = (patch) => post('summarizer', patch);
@@ -2402,7 +2417,10 @@ $('#spend').textContent = '0 turns';
  */
 if (!localStorage.getItem('kd.seen')) {
   localStorage.setItem('kd.seen', '1');
-  setTimeout(() => openMember('orchestrator'), 400);
+  // MODE checked inside the callback, not before scheduling it: the real SSE
+  // snapshot has set it by the time this fires, and Chat mode has its own
+  // thread — the floating panel would be a redundant, invisible-behind-it copy.
+  setTimeout(() => { if (MODE !== 'chat') openMember('orchestrator'); }, 400);
 }
 badge();
 connect();

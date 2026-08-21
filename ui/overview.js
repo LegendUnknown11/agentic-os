@@ -148,6 +148,18 @@ function section(title, count) {
   return h;
 }
 
+/**
+ * Chat mode can never be staffed (`crew:[]` — nobody can be summoned), so the
+ * generic "no agents yet" tour would show forever and point at a summon
+ * screen with nothing to offer. Only Chat is special-cased: Automate has the
+ * identical crew:[] shape and keeps its own tour, since it genuinely can
+ * start empty and still wants "Add an agent" as the first step.
+ */
+export function isEmpty(modeName, staffed, hasGoal) {
+  if (modeName === 'chat') return false;
+  return !staffed && !hasGoal;
+}
+
 function paint() {
   if (!root) return;
   const members = api.members?.() ?? new Map();
@@ -156,7 +168,7 @@ function paint() {
 
   // Nothing has been set up at all: the three steps, which are still the right
   // thing to show and are the one part of this slot that already worked.
-  if (!staffed && !goal) return paintEmpty();
+  if (isEmpty(api.modeName?.(), staffed, Boolean(goal))) return paintEmpty();
 
   root.textContent = '';
   root.classList.add('ov');
@@ -377,6 +389,16 @@ if (typeof process !== 'undefined' && process.argv?.[1]?.endsWith('overview.js')
   a.equal(t.minus, 4);
   a.deepEqual(tally(''), { files: 0, plus: 0, minus: 0 }, 'an empty stat is not a crash');
   a.deepEqual(tally(undefined), { files: 0, plus: 0, minus: 0 });
+
+  // --- isEmpty() ---
+  a.equal(isEmpty('chat', false, false), false,
+    'Chat can never be staffed — the tour would show forever and point at nothing');
+  a.equal(isEmpty('chat', true, true), false, 'still false when staffed, for the same reason');
+  a.equal(isEmpty('automate', false, false), true,
+    'Automate has the identical crew:[] shape and must keep its own empty-state tour');
+  a.equal(isEmpty('code', false, false), true, 'the ordinary case is unchanged');
+  a.equal(isEmpty('code', true, false), false, 'staffed alone clears it');
+  a.equal(isEmpty('code', false, true), false, 'a goal alone clears it too');
 
   console.log('overview ok');
 }

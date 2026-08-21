@@ -1,7 +1,7 @@
-// A document the sovereign uploads (see daemon.js's DOCUMENT set, /api/assets)
-// must be discoverable by a court member through list_uploads — name, kind,
-// and a real path its own file-reading tool can open. Non-document uploads
-// (images, audio) must not clutter that list.
+// A document or image the sovereign uploads (see daemon.js's DOCUMENT/IMAGE
+// sets, /api/assets) must be discoverable by a court member through
+// list_uploads — name, kind, and a real path its own file-reading tool can
+// open. Uploads that are neither (audio, video) must not clutter that list.
 //
 //   node test/t-uploads.js
 import { strict as a } from 'node:assert';
@@ -16,7 +16,8 @@ const assets = join(dir, 'assets');
 mkdirSync(assets, { recursive: true });
 writeFileSync(join(assets, 'spec.pdf'), 'not a real pdf, just bytes');
 writeFileSync(join(assets, 'notes.txt'), 'plain text upload');
-writeFileSync(join(assets, 'wallpaper.png'), 'not a real png either');
+writeFileSync(join(assets, 'screenshot.png'), 'not a real png either');
+writeFileSync(join(assets, 'theme.mp3'), 'not real audio');
 
 function invoke(role) {
   const rpc = [
@@ -40,7 +41,9 @@ try {
   a.match(text, /spec\.pdf/, 'a pdf upload must be listed');
   a.match(text, /notes\.txt/, 'a text upload must be listed');
   a.ok(text.includes(join(assets, 'spec.pdf')), 'must give the real path, not just the name — that is what a file-read tool needs');
-  a.ok(!/wallpaper\.png/.test(text), 'a non-document upload (image/audio) must not appear as something to read');
+  a.match(text, /screenshot\.png \(image\)/, 'an image upload must be listed too, labelled as an image');
+  a.match(text, /spec\.pdf \(document\)/, 'a document must be labelled as a document');
+  a.ok(!/theme\.mp3/.test(text), 'an upload that is neither a document nor an image (audio/video) must not appear');
 
   // every role that can already vault_search/vault_read can list_uploads too —
   // it is the same "check what the sovereign left you before doing the work" shape

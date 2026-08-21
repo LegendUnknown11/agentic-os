@@ -203,8 +203,23 @@ export class Kingdom extends EventEmitter {
     this.turnsSinceSpawn = new Map(); // name -> turns, so nobody recycles on turn one
     this.lastUsage = new Map(); // name -> last usage totals; codex reports cumulatively
     this.spawning = new Map(); // name -> in-flight spawn promise, so nobody spawns twice
+    this.activeConversation = new Map(); // name -> conversation id currently live for that member
     this.base = null;
     this.timer = null;
+  }
+
+  /** Which conversation a member is currently in — bus-backed so a restart resumes the same one. */
+  #activeConv(name) {
+    const cached = this.activeConversation.get(name);
+    if (cached) return cached;
+    const saved = this.bus.get(`activeConversation:${name}`) || 'default';
+    this.activeConversation.set(name, saved);
+    return saved;
+  }
+
+  #setActiveConv(name, conversationId) {
+    this.activeConversation.set(name, conversationId);
+    this.bus.set(`activeConversation:${name}`, conversationId);
   }
 
   /**
@@ -786,7 +801,7 @@ export class Kingdom extends EventEmitter {
    * Returns the SAME promise to every concurrent caller, so they all get the
    * one agent and any failure reaches all of them.
    */
-  #spawn(name, seedPrompt = null) {
+  #spawn(name, seedPrompt = null, conversationId = null) {
     const live = this.agents.get(name);
     if (live) return Promise.resolve(live);
     const inflight = this.spawning.get(name);
@@ -803,7 +818,7 @@ export class Kingdom extends EventEmitter {
       return Promise.resolve(null);
     }
 
-    const p = this.#doSpawn(name, seedPrompt)
+    const p = this.#doSpawn(name, seedPrompt, conversationId)
       .then((agent) => { this.spawnFailed?.delete(name); return agent; })
       .catch((e) => {
         (this.spawnFailed ??= new Map())
@@ -815,11 +830,20 @@ export class Kingdom extends EventEmitter {
     return p;
   }
 
-  async #doSpawn(name, seedPrompt = null) {
+  async #doSpawn(name, seedPrompt = null, conversationId = null) {
     if (this.agents.has(name)) return this.agents.get(name);
     const spec = this.specOf(name);
     if (!spec) throw new Error(`No such member of the court: ${name}`);
     const role = this.roleOf(name);
+
+    // Every member has exactly one live session at a time, bound to whichever
+    // conversation is active — switchConversation() is what changes which one
+    // that is. `this.bus.createConversation` is idempotent, so a first-ever
+    // spawn into 'default' (or a caller-minted id) needs no separate existence
+    // check.
+    const convId = conversationId || this.#activeConv(name);
+    this.bus.createConversation(name, { id: convId, title: convId === 'default' ? 'Conversation' : '' });
+    this.#setActiveConv(name, convId);
 
     // Peasants work in isolation; orchestrator and briefer observe from the repo root.
     //
@@ -854,7 +878,9 @@ export class Kingdom extends EventEmitter {
 
     // `|| null`, not `??`: recycling and CLI switches blank this to '', and an
     // empty string would sail past `??=` and become a literal --session-id ''.
-    const saved = this.bus.get(`session:${name}`) || null;
+    // Keyed by conversation, not just member: each conversation is its own
+    // CLI session, since no backend supports holding two open in one process.
+    const saved = this.bus.get(`session:${name}:${convId}`) || null;
 
     // A RESUMED member is handed the prompt it was born with, byte for byte.
     //
@@ -871,13 +897,18 @@ export class Kingdom extends EventEmitter {
     // as a notice that rides along with real traffic. That is the ONE path for
     // mid-session change now, which also stops the brain arriving twice.
     const prompt = saved
-      ? (this.bus.get(`prompt:${name}`) || this.#promptFor(name, role, spec, seedPrompt, null))
-      : this.#promptFor(name, role, spec, seedPrompt, this.#orientation());
-    if (!saved) this.bus.set(`prompt:${name}`, prompt);
+      ? (this.bus.get(`prompt:${name}:${convId}`) || this.#promptFor(name, role, spec, seedPrompt, null))
+      : this.#promptFor(name, role, spec, seedPrompt, this.#orientation(convId));
+    if (!saved) this.bus.set(`prompt:${name}:${convId}`, prompt);
 
     const agent = new Agent(
       {
         ...spec,
+        // The orchestrator's tools:'' enforces "delegates rather than edits" —
+        // but Chat mode has no crew to delegate an uploaded file to, so with
+        // no exception it can never see what the sovereign attaches. Read-only,
+        // and only in Chat mode: it still cannot Bash/Write/escape its role.
+        tools: role === 'orchestrator' && this.mode() === 'chat' ? 'Read' : spec.tools,
         // A fresh session (restart, recycle, CLI switch) gets the state of the
         // kingdom so it can continue rather than interrogate the sovereign.
         prompt,
@@ -891,7 +922,7 @@ export class Kingdom extends EventEmitter {
         sessionId: saved ?? null,
         // A resumed thread keeps its history, so the estimate must not restart
         // at zero — a restarted member would look freshly empty and never recycle.
-        ctxSeed: saved ? Number(this.bus.get(`ctx:${name}`) ?? 0) : 0,
+        ctxSeed: saved ? Number(this.bus.get(`ctx:${name}:${convId}`) ?? 0) : 0,
         // peasants read each other's worktrees to review; everyone reaches the vault
         addDirs: [
           // No repo, no worktrees anywhere to read — and the dir was never created.
@@ -918,6 +949,11 @@ export class Kingdom extends EventEmitter {
         },
       }
     );
+    // Which conversation this live process/session belongs to — read by
+    // #record, recycleAgent, setModel and switchConversation so they touch
+    // only the right conversation's bus keys, not every conversation the
+    // member has.
+    agent.conversationId = convId;
 
     // agy takes no MCP flags at all: it reads `.agents/mcp_config.json` from
     // the workspace. Without this file an Antigravity member has no
@@ -927,7 +963,7 @@ export class Kingdom extends EventEmitter {
     else if ((spec.cli ?? 'claude') === 'opencode') this.#writeOpenCodeMcp(name, cwd, role);
 
     agent.on('ready', (sid) => {
-      this.bus.set(`session:${name}`, sid);
+      this.bus.set(`session:${name}:${convId}`, sid);
       this.emit('agent', { name, state: 'ready', sessionId: sid });
     });
     agent.on('text', (t) => this.#record(name, 'text', { text: t }));
@@ -1041,7 +1077,7 @@ export class Kingdom extends EventEmitter {
       this.bus.set(`tokens:${name}`, String(Number(this.bus.get(`tokens:${name}`) ?? 0) + spentTok));
 
       const ctx = u.ctx ?? this.#contextTokens(u.usage);
-      this.bus.set(`ctx:${name}`, String(ctx));
+      this.bus.set(`ctx:${name}:${agent.conversationId ?? 'default'}`, String(ctx));
       this.emit('spend',
         { total: spent, tokens, turns: this.#countTurns(), name, ctx, spentByAgent: mine });
 
@@ -1254,10 +1290,11 @@ export class Kingdom extends EventEmitter {
   }
 
   #record(name, type, payload) {
-    this.bus.logEvent(name, type, payload);
+    const conversationId = this.agents.get(name)?.conversationId ?? 'default';
+    this.bus.logEvent(name, type, payload, conversationId);
     // `kind`, not `type`: consumers wrap this in an envelope that has its own
     // `type`, and a collision there silently swallowed every agent event.
-    this.emit('event', { name, kind: type, payload });
+    this.emit('event', { name, kind: type, payload, conversationId });
 
     // Buffer the turn so the summariser has something to condense. Every agent
     // event passes through here, so this is the one place it can be collected
@@ -1463,8 +1500,8 @@ export class Kingdom extends EventEmitter {
       agent.recycling = true;          // so the delivery backstop lets go of it
       agent.stop();
       this.agents.delete(name);
-      this.bus.set(`session:${name}`, '');
-      await this.#spawn(name);
+      this.bus.set(`session:${name}:${agent.conversationId ?? 'default'}`, '');
+      await this.#spawn(name, null, agent.conversationId);
     }
 
     this.emit('repo', { repo: this.repo, base: this.base });
@@ -1796,7 +1833,7 @@ export class Kingdom extends EventEmitter {
 
     const rank = (n) => (n === this.config.orchestrator.name ? 0 : n === this.config.briefer.name ? 1 : 2);
     for (const name of [...this.summoned].sort((a, b) => rank(a) - rank(b))) {
-      const pending = this.bus.pending(name);
+      const pending = this.bus.pending(name, 200, this.#activeConv(name));
       if (!pending.length) {
         this.#maybeIdleSleep(name, now);
         continue;
@@ -2305,26 +2342,114 @@ export class Kingdom extends EventEmitter {
     briefer.recycling = true;
 
     const note = await this.#captureHandover(briefer);
+    const convId = briefer.conversationId ?? this.#activeConv(name);
 
     briefer.stop();
     this.agents.delete(name);
-    this.bus.set(`session:${name}`, ''); // fresh session, seeded by the note
-    this.bus.set(`ctx:${name}`, '0');
+    // Scoped to the conversation that was actually recycled — a member with
+    // several conversations must not have the OTHER ones silently reset too.
+    this.bus.set(`session:${name}:${convId}`, ''); // fresh session, seeded by the note
+    this.bus.set(`ctx:${name}:${convId}`, '0');
     // A masked tool result says "you already have this". The successor does
     // not — it is a fresh context holding only a handover note — so the ledger
     // has to die with the session that earned it.
     this.bus.set(`served:${name}`, '');
-    await this.#spawn(name, note);
+    await this.#spawn(name, note, convId);
     this.emit('recycled', { name, note });
+  }
+
+  /**
+   * Move a member's live session to a different conversation.
+   *
+   * No CLI backend supports holding two sessions open in one process (every
+   * resume flag continues ONE thread), so this is kill-and-respawn, not a
+   * cheap in-process swap: if the member was mid-turn, that generation is
+   * lost. Never silent about it — `interrupted` rides the returned result and
+   * the emitted event, so the caller can say so rather than let the thread
+   * just change under the sovereign.
+   *
+   * Sovereign-initiated only (called from daemon.js's ACTIONS map) — unlike
+   * `mode`/`wake`/`sleep`/`model`, this has no #control() lever, because
+   * conversations are a Chat-mode/orchestrator concept and no peasant flow
+   * needs to switch one.
+   */
+  async switchConversation(name, conversationId, { by = 'sovereign' } = {}) {
+    const spec = this.specOf(name);
+    if (!spec) throw new Error(`No such member of the court: ${name}`);
+    this.bus.createConversation(name, { id: conversationId }); // idempotent
+    const from = this.#activeConv(name);
+    if (from === conversationId) return { interrupted: false, changed: false, from, conversationId };
+
+    const live = this.agents.get(name);
+    let interrupted = false;
+    if (live) {
+      interrupted = Boolean(live.busy);
+      live.recycling = true; // so the delivery backstop lets go of it
+      live.stop();
+      this.agents.delete(name);
+      // A masked tool result says "you already have this" about the OLD live
+      // session; the new one starts from nothing.
+      this.bus.set(`served:${name}`, '');
+    }
+    this.#setActiveConv(name, conversationId);
+    await this.#spawn(name, null, conversationId);
+    this.emit('conversationSwitched', { name, conversationId, from, interrupted, by });
+    return { interrupted, changed: true, from, conversationId };
+  }
+
+  /**
+   * Fork a conversation at `forkAtMessageId` into a new sibling, seeded with
+   * the prior turns replayed as context, then post `newText` as its first
+   * message. This is how both "edit a past message" and "regenerate a reply"
+   * work: neither claude/codex/agy/opencode support rewinding a session in
+   * place, so the only way to change history is to start a fresh one that has
+   * been told what happened up to the fork point — the same replay technique
+   * #orientation() already uses for a fresh member.
+   */
+  async branchFrom(name, conversationId, forkAtMessageId, newText, { by = 'sovereign' } = {}) {
+    const source = this.bus.conversation(conversationId);
+    if (!source) throw new Error(`No such conversation: ${conversationId}`);
+    const prior = this.bus.history({ conversation: conversationId, limit: 10_000 })
+      .filter((m) => m.id <= Number(forkAtMessageId));
+    const log = prior.map((m) =>
+      `${m.sender}->${m.recipient ?? '*'}: ${m.body.replace(/\s+/g, ' ').slice(0, 300)}`).join('\n');
+    const forked = this.bus.forkConversation(
+      conversationId, Number(forkAtMessageId), name, source.title ? `${source.title} (branch)` : ''
+    );
+    // The member must actually be live IN the new conversation before either
+    // the replay notice or newText is posted, or the delivery loop (scoped to
+    // whichever conversation is active) never picks either one up.
+    await this.switchConversation(name, forked.id, { by });
+    if (prior.length) {
+      this.bus.post(CROWN, name,
+        `AWARENESS ONLY — TAKE NO ACTION. This is a new branch of an earlier conversation, `
+        + `forked at message #${forkAtMessageId}. Prior turns up to that point, for context `
+        + `(oldest first):\n${log}`,
+        'notice', forked.id);
+    }
+    await this.speakTo(name, newText, forked.id);
+    return forked;
   }
 
   /**
    * What a member waking into a FRESH session needs to know so it never has to
    * ask the sovereign "what were we doing?". Built from the bus, so it works
    * after a restart, a recycle, or a CLI switch alike.
+   *
+   * `conversationId` scopes this the same way bus.js#pending() scopes
+   * delivery: an inclusion list, not an exclusion one. Only `assignment` rows
+   * (real sovereign<->orchestrator chat turns) are conversation-scoped — a
+   * fresh conversation must not orient itself with a DIFFERENT conversation's
+   * chat as if it were "what we were just doing" (observed for real: a brand
+   * new Chat-mode conversation, asked what the sovereign had just said,
+   * recited a completely different conversation's last message). Everything
+   * else — mode changes, worktree notices, peasant reports — is still
+   * court-wide operational context every conversation needs.
    */
-  #orientation() {
-    const recent = this.bus.history({ limit: 500 }).slice(-25);
+  #orientation(conversationId = 'default') {
+    const recent = this.bus.history({ limit: 500 })
+      .filter((m) => m.kind !== 'assignment' || m.conversation_id === conversationId)
+      .slice(-25);
     if (!recent.length) return null;
 
     const goal = [...recent].reverse().find((m) => m.sender === 'sovereign');
@@ -2614,6 +2739,7 @@ export class Kingdom extends EventEmitter {
 
     if (this.agents.has(name)) {
       const old = this.agents.get(name);
+      const convId = old.conversationId ?? this.#activeConv(name);
       // A CLI switch throws the session away. Take a handover first — losing a
       // member's memory silently is how an orchestrator ended up asking the sovereign
       // what it had been working on.
@@ -2625,8 +2751,11 @@ export class Kingdom extends EventEmitter {
       const note = cliChanged ? await this.#captureHandover(old) : null;
       old.stop();
       this.agents.delete(name);
-      if (cliChanged) this.bus.set(`session:${name}`, '');
-      await this.#spawn(name, note || null);
+      // Scoped to the ACTIVE conversation only — a model/CLI change while
+      // conversation B is open must not silently invalidate conversation A's
+      // saved session, which the sovereign would find reset on switching back.
+      if (cliChanged) this.bus.set(`session:${name}:${convId}`, '');
+      await this.#spawn(name, note || null, convId);
       this.bus.post('orchestrator', name,
         `AWARENESS ONLY — TAKE NO ACTION. The sovereign changed your model to ` +
         `${spec.cli ?? 'claude'}${spec.model ? ' / ' + spec.model : ' (default)'}` +
@@ -2638,7 +2767,7 @@ export class Kingdom extends EventEmitter {
     } else if (cliChanged) {
       // Asleep, but its stored session belongs to the OLD cli and would be
       // meaningless (or invalid) to the new one.
-      this.bus.set(`session:${name}`, '');
+      this.bus.set(`session:${name}:${this.#activeConv(name)}`, '');
     }
     this.#publishRoster();
     return { name, cli: spec.cli ?? 'claude', model: spec.model ?? null,
@@ -2746,13 +2875,14 @@ export class Kingdom extends EventEmitter {
    * way to discover what it was supposed to be doing and asked the sovereign
    * to re-explain. Everything the court is told must be reconstructable.
    */
-  async command(text) {
+  async command(text, conversationId = null) {
     // Settings are not work. This must precede the advisor: a prompt engineer
     // handed `/autocompact 300k` would rewrite it into a paragraph asking the
     // court to please consider compacting, and bill a turn for it.
     const local = this.#compactCommand(text) ?? this.#argueCommand(text);
     if (local) return { text: local, local: true };
 
+    const convId = conversationId || this.#activeConv(this.config.orchestrator.name);
     const campaign = this.#beginCampaign(text);
 
     text = this.#skillCommand(text);
@@ -2766,7 +2896,7 @@ export class Kingdom extends EventEmitter {
     if (a.autoModel) this.#autoModelInBackground(a, text);
 
     if (!a.promptEngineer) {
-      this.bus.post('sovereign', this.config.orchestrator.name, text, 'assignment');
+      this.bus.post('sovereign', this.config.orchestrator.name, text, 'assignment', convId);
       return { text, campaign };
     }
 
@@ -2806,9 +2936,9 @@ export class Kingdom extends EventEmitter {
     if (rewritten && rewritten !== text) {
       this.bus.post('sovereign', this.config.orchestrator.name,
         `${final}\n\n---\nSovereign's original wording (for reference; the brief above is authoritative):\n${text}`,
-        'assignment');
+        'assignment', convId);
     } else {
-      this.bus.post('sovereign', this.config.orchestrator.name, final, 'assignment');
+      this.bus.post('sovereign', this.config.orchestrator.name, final, 'assignment', convId);
     }
     return { text: final, rewritten: rewritten ?? null, models: applied, campaign };
   }
@@ -2913,15 +3043,16 @@ export class Kingdom extends EventEmitter {
   }
 
   /** You type into a peasant's pane directly; the orchestrator is told so it stays coherent. */
-  speakTo(name, text) {
+  speakTo(name, text, conversationId = null) {
     // Before the orchestrator delegation: `/autocompact` in a pane is about THAT
     // member's window, and routing the orchestrator's pane to command() would quietly
     // turn it into the court-wide default.
     const local = this.#compactCommand(text, name) ?? this.#argueCommand(text);
     if (local) return { text: local, local: true };
     text = this.#skillCommand(text);
-    if (name === this.config.orchestrator.name) return this.command(text);
+    if (name === this.config.orchestrator.name) return this.command(text, conversationId);
     this.#beginCampaign(text);
+    // A peasant has no multi-conversation UI, so its pane always stays 'default'.
     this.bus.post('sovereign', name, text, 'assignment'); // recorded, like command()
     if (name !== this.config.orchestrator.name) {
       // Framing matters: an earlier version phrased this as a plain report and
@@ -3097,7 +3228,7 @@ export class Kingdom extends EventEmitter {
     // Merged work needs no worktree; the branch stays for history.
     this.sleep(peasant);
     await removeWorktree(this.repo, peasant).catch(() => {});
-    this.bus.set(`session:${peasant}`, ''); // its next task starts clean
+    this.bus.set(`session:${peasant}:${this.#activeConv(peasant)}`, ''); // its next task starts clean
     this.#publishRoster();
     return out;
   }

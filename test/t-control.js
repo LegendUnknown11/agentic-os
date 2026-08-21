@@ -119,7 +119,7 @@ try {
     + 'change directory, and a resumed session is handed its original cwd back');
   a.equal(k.agents.get(who).cwd, repo,
     'and the replacement must be standing in the repository the sovereign just attached');
-  a.equal(k.bus.get(`session:${who}`), '',
+  a.equal(k.bus.get(`session:${who}:default`), '',
     'its session must be dropped too, or the CLI resumes the old thread in the old cwd');
 
   // Re-attaching the same repo must not cost the court another respawn.

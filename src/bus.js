@@ -11,14 +11,25 @@ create table if not exists messages (
   sender    text    not null,
   recipient text,                       -- null = broadcast to all awake agents
   kind      text    not null,           -- message | escalation | done | brief | system
-  body      text    not null
+  body      text    not null,
+  conversation_id text not null default 'default'
 );
 create table if not exists events (
   id      integer primary key autoincrement,
   ts      integer not null,
   agent   text    not null,
   type    text    not null,             -- text | tool | turn_end | ready | error
-  payload text    not null              -- json
+  payload text    not null,             -- json
+  conversation_id text not null default 'default'
+);
+create table if not exists conversations (
+  id         text primary key,          -- 'default', or c-<ts>-<rand> for a new/forked thread
+  member     text not null,             -- which court member this thread belongs to
+  title      text not null default '',
+  parent_id  text,                      -- set when forked from another conversation
+  fork_at    integer,                   -- message id this was forked from, when parent_id is set
+  created_ts integer not null,
+  archived   integer not null default 0
 );
 create table if not exists state (
   k text primary key,
@@ -71,6 +82,15 @@ end;
 create index if not exists idx_msg_recipient on messages(recipient, id);
 create index if not exists idx_evt_agent on events(agent, id);
 create index if not exists idx_task_state on tasks(state, owner);
+create index if not exists idx_conv_member on conversations(member, created_ts);
+`;
+
+// A pre-conversations db's messages/events tables don't have conversation_id
+// yet at SCHEMA-exec time — #migrateConversations() adds it — so these two
+// indexes must be created AFTER that migration runs, not as part of SCHEMA.
+const CONVERSATION_INDEXES = `
+create index if not exists idx_msg_conv on messages(conversation_id, id);
+create index if not exists idx_evt_conv on events(conversation_id, id);
 `;
 
 export class Bus {
@@ -92,6 +112,8 @@ export class Bus {
     this.db.exec('pragma synchronous = NORMAL');
     this.db.exec(SCHEMA);
     this.#rebuildTranscriptSearch();
+    this.#migrateConversations();
+    this.db.exec(CONVERSATION_INDEXES);
   }
 
   /** Existing courts get one atomic FTS rebuild; new rows stay current by trigger. */
@@ -110,14 +132,42 @@ export class Bus {
     }
   }
 
+  /**
+   * A court that existed before conversations did has `messages`/`events`
+   * tables with no `conversation_id` column. `CREATE TABLE IF NOT EXISTS`
+   * (in SCHEMA above) only helps a brand-new db — an existing table needs an
+   * explicit ALTER, and SQLite backfills every existing row with the column's
+   * DEFAULT automatically, which is exactly "everything that happened before
+   * conversations existed is the 'default' conversation."
+   */
+  #migrateConversations() {
+    this.db.exec('begin immediate');
+    try {
+      if (this.get('schema:conversations:v1') !== '1') {
+        const cols = (table) => this.db.prepare(`pragma table_info(${table})`).all().map((c) => c.name);
+        if (!cols('messages').includes('conversation_id')) {
+          this.db.exec("alter table messages add column conversation_id text not null default 'default'");
+        }
+        if (!cols('events').includes('conversation_id')) {
+          this.db.exec("alter table events add column conversation_id text not null default 'default'");
+        }
+        this.set('schema:conversations:v1', '1');
+      }
+      this.db.exec('commit');
+    } catch (e) {
+      this.db.exec('rollback');
+      throw e;
+    }
+  }
+
   // --- messages -------------------------------------------------------
 
   /** recipient=null broadcasts. Returns the new message id. */
-  post(sender, recipient, body, kind = 'message') {
+  post(sender, recipient, body, kind = 'message', conversationId = 'default') {
     const ts = Date.now();
     const { lastInsertRowid } = this.db
-      .prepare('insert into messages (ts, sender, recipient, kind, body) values (?,?,?,?,?)')
-      .run(ts, sender, recipient, kind, body);
+      .prepare('insert into messages (ts, sender, recipient, kind, body, conversation_id) values (?,?,?,?,?,?)')
+      .run(ts, sender, recipient, kind, body, conversationId);
     return Number(lastInsertRowid);
   }
 
@@ -150,15 +200,27 @@ export class Bus {
    * bounded it. The oldest are taken first, so the remainder simply rides the
    * next tick: 300ms later, and in order.
    */
-  pending(agent, limit = 200) {
+  /**
+   * `conversation`, when given, scopes only `assignment` rows (the sovereign's
+   * actual chat turns, posted by kingdom.js#command/#speakTo) to one thread.
+   * Everything else — notices, approvals, system, escalation, done, brief,
+   * and plain inter-member `message` chatter — is court-wide and must reach a
+   * member regardless of which conversation it currently has active (a member
+   * only ever has one live session at a time, see kingdom.js#switchConversation,
+   * so this is the delivery-side half of that: a stray "mode: research" notice
+   * must not wait for the sovereign to switch back to whatever thread happened
+   * to be active when it was sent). An inclusion list, not an exclusion one —
+   * new kinds default to court-wide, which is the safer failure mode.
+   */
+  pending(agent, limit = 200, conversation = null) {
     const cursor = Number(this.get(`cursor:${agent}`) ?? 0);
+    const where = ['id > ?', 'sender != ?', '(recipient = ? or recipient is null)'];
+    const args = [cursor, agent, agent];
+    if (conversation) { where.push("(kind != 'assignment' or conversation_id = ?)"); args.push(conversation); }
+    args.push(limit);
     return this.db
-      .prepare(
-        `select * from messages
-          where id > ? and sender != ? and (recipient = ? or recipient is null)
-          order by id limit ?`
-      )
-      .all(cursor, agent, agent, limit);
+      .prepare(`select * from messages where ${where.join(' and ')} order by id limit ?`)
+      .all(...args);
   }
 
   ack(agent, messageId) {
@@ -176,10 +238,11 @@ export class Bus {
    * throne room's reload replayed the FIRST 200 messages of a session and
    * nothing since — which reads, correctly, as messages not being saved at all.
    */
-  history({ since = 0, limit = 200, agent = null, tail = false } = {}) {
+  history({ since = 0, limit = 200, agent = null, tail = false, conversation = null } = {}) {
     const args = [since];
     let where = 'id > ?';
     if (agent) { where += ' and (sender = ? or recipient = ?)'; args.push(agent, agent); }
+    if (conversation) { where += ' and conversation_id = ?'; args.push(conversation); }
     args.push(limit);
     return this.db.prepare(
       tail
@@ -191,10 +254,10 @@ export class Bus {
 
   // --- raw agent events (briefer firehose + UI replay) -----------------
 
-  logEvent(agent, type, payload) {
+  logEvent(agent, type, payload, conversationId = 'default') {
     this.db
-      .prepare('insert into events (ts, agent, type, payload) values (?,?,?,?)')
-      .run(Date.now(), agent, type, JSON.stringify(payload ?? {}));
+      .prepare('insert into events (ts, agent, type, payload, conversation_id) values (?,?,?,?,?)')
+      .run(Date.now(), agent, type, JSON.stringify(payload ?? {}), conversationId);
   }
 
   // `type` filters in SQL rather than after the fact, because every row this
@@ -202,11 +265,12 @@ export class Bus {
   // all 20,000 retained events to keep a handful of them parsed the whole log
   // every 5 seconds.
   // `tail` as in history(): the newest `limit` rows rather than the oldest.
-  events({ since = 0, agent = null, type = null, limit = 500, tail = false } = {}) {
+  events({ since = 0, agent = null, type = null, limit = 500, tail = false, conversation = null } = {}) {
     const where = ['id > ?'];
     const args = [since];
     if (agent) { where.push('agent = ?'); args.push(agent); }
     if (type) { where.push('type = ?'); args.push(type); }
+    if (conversation) { where.push('conversation_id = ?'); args.push(conversation); }
     args.push(limit);
     const w = where.join(' and ');
     const rows = this.db.prepare(
@@ -322,6 +386,56 @@ export class Bus {
         where messages_fts match ? order by messages.id desc limit ?`
     ).all(match, limit).map((r) => ({ ...r, source: 'message' }));
     return [...events, ...messages].sort((a, b) => b.ts - a.ts).slice(0, limit);
+  }
+
+  // --- conversations ----------------------------------------------------
+  //
+  // A conversation is a named thread scoped to one court member. Creation is
+  // idempotent (`on conflict do nothing`) so callers with a well-known id —
+  // 'default', or one minted client-side before the round-trip completes —
+  // never need a separate existence check first.
+
+  createConversation(member, { id = null, title = '', parentId = null, forkAt = null } = {}) {
+    const cid = id || `c-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    this.db.prepare(
+      `insert into conversations (id, member, title, parent_id, fork_at, created_ts)
+       values (?,?,?,?,?,?) on conflict(id) do nothing`
+    ).run(cid, member, title, parentId, forkAt ?? null, Date.now());
+    return this.conversation(cid);
+  }
+
+  conversation(id) {
+    return this.db.prepare('select * from conversations where id = ?').get(id) ?? null;
+  }
+
+  conversations(member) {
+    return this.db.prepare(
+      'select * from conversations where member = ? and archived = 0 order by created_ts'
+    ).all(member);
+  }
+
+  renameConversation(id, title) {
+    this.db.prepare('update conversations set title = ? where id = ?').run(title, id);
+    return this.conversation(id);
+  }
+
+  /** Soft delete — a transcript is the court's record, never hard-deleted. */
+  archiveConversation(id) {
+    this.db.prepare('update conversations set archived = 1 where id = ?').run(id);
+  }
+
+  /** Every conversation (including `id` itself) that forked from the same point. */
+  siblingsOf(id) {
+    const c = this.conversation(id);
+    if (!c) return [];
+    if (!c.parent_id) return [c];
+    return this.db.prepare(
+      'select * from conversations where parent_id = ? and fork_at = ? order by created_ts'
+    ).all(c.parent_id, c.fork_at);
+  }
+
+  forkConversation(parentId, forkAt, member, title = '') {
+    return this.createConversation(member, { title, parentId, forkAt });
   }
 
   // --- the shared task list -------------------------------------------
@@ -657,5 +771,79 @@ if (process.argv[1]?.endsWith('bus.js')) {
 
   a.equal(b.claimTask('coder', 9999).ok, false, 'a task that does not exist is a refusal, not a throw');
 
-  console.log('bus.js self-check OK — messages, events, state, and a task list two members cannot both claim');
+  // --- conversations ----------------------------------------------------
+  {
+    const c = new Bus(':memory:');
+    const convA = c.createConversation('orchestrator', { id: 'default', title: 'General' });
+    const convB = c.createConversation('orchestrator', { title: 'Side quest' });
+    a.equal(convA.id, 'default');
+    a.notEqual(convB.id, convA.id);
+
+    c.post('sovereign', 'orchestrator', 'hello in A', 'message', convA.id);
+    c.post('sovereign', 'orchestrator', 'hello in B', 'message', convB.id);
+    a.deepEqual(c.history({ conversation: convA.id }).map((m) => m.body), ['hello in A'],
+      'history() must isolate one conversation from another');
+    a.deepEqual(c.history({ conversation: convB.id }).map((m) => m.body), ['hello in B']);
+
+    c.logEvent('orchestrator', 'text', { text: 'in A' }, convA.id);
+    c.logEvent('orchestrator', 'text', { text: 'in B' }, convB.id);
+    a.equal(c.events({ conversation: convA.id }).length, 1, 'events() must isolate too');
+
+    // pending(): a real sovereign chat turn (kind 'assignment', what
+    // kingdom.js#command actually posts) is scoped to the active conversation,
+    // but a court-wide notice reaches the member regardless of which
+    // conversation they were last in.
+    c.post('orchestrator', 'coder', 'mode: research', 'notice', convA.id);
+    c.post('sovereign', 'coder', 'only for B', 'assignment', convB.id);
+    const forCoderInA = c.pending('coder', 200, convA.id);
+    a.deepEqual(forCoderInA.map((m) => m.body), ['mode: research'],
+      'an assignment() posted to a different conversation must not leak into this one');
+    const forCoderInB = c.pending('coder', 200, convB.id);
+    a.deepEqual(forCoderInB.map((m) => m.body).sort(), ['mode: research', 'only for B'].sort(),
+      'the notice reaches every conversation; the chat assignment reaches only its own');
+
+    // idempotent creation: re-creating 'default' must not throw or duplicate
+    const again = c.createConversation('orchestrator', { id: 'default', title: 'ignored' });
+    a.equal(again.title, 'General', 'creation is idempotent — the first title wins');
+    a.equal(c.conversations('orchestrator').length, 2);
+
+    c.renameConversation(convB.id, 'Renamed');
+    a.equal(c.conversation(convB.id).title, 'Renamed');
+    c.archiveConversation(convB.id);
+    a.deepEqual(c.conversations('orchestrator').map((x) => x.id), [convA.id],
+      'an archived conversation drops out of the active list without deleting its transcript');
+    a.equal(c.history({ conversation: convB.id }).length, 2,
+      'archiving must not touch the transcript itself');
+
+    // branching: a fork shares its parent/fork-point with its siblings
+    const fork1 = c.forkConversation(convA.id, 1, 'orchestrator', 'branch 1');
+    const fork2 = c.forkConversation(convA.id, 1, 'orchestrator', 'branch 2');
+    const sibs = c.siblingsOf(fork1.id);
+    a.deepEqual(sibs.map((s) => s.id).sort(), [fork1.id, fork2.id].sort(),
+      'siblingsOf must return every conversation forked from the same point');
+    a.deepEqual(c.siblingsOf(convA.id).map((s) => s.id), [convA.id],
+      'a root conversation with no parent is its own only sibling');
+    c.close();
+  }
+
+  // legacy schema (pre-conversations) must migrate: old rows become 'default'
+  {
+    const legacyDir = mkdtempSync(join(tmpdir(), 'kingdom-conv-legacy-'));
+    const legacyPath = join(legacyDir, 'kingdom.db');
+    const legacy = new DatabaseSync(legacyPath);
+    legacy.exec(`create table messages (id integer primary key autoincrement, ts integer not null, sender text not null, recipient text, kind text not null, body text not null);
+      create table events (id integer primary key autoincrement, ts integer not null, agent text not null, type text not null, payload text not null);
+      create table state (k text primary key, v text not null);`);
+    legacy.prepare('insert into messages (ts,sender,recipient,kind,body) values (?,?,?,?,?)')
+      .run(Date.now(), 'coder', 'reviewer', 'message', 'a pre-conversations message');
+    legacy.close();
+    const migrated = new Bus(legacyPath);
+    const rows = migrated.history({ conversation: 'default' });
+    a.equal(rows.length, 1, 'a pre-existing row must be readable as the default conversation');
+    a.equal(rows[0].body, 'a pre-conversations message');
+    migrated.close();
+    rmSync(legacyDir, { recursive: true, force: true });
+  }
+
+  console.log('bus.js self-check OK — messages, events, state, a task list two members cannot both claim, and conversations');
 }

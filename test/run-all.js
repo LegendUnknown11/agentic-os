@@ -86,6 +86,9 @@ const suites = [
   // workspace home it was attached in — see kingdom.js's this.dbPath and
   // daemon.js's homeRepo for the bug this guards against.
   ['a live-attached repo survives a restart', join(HERE, 't-daemon-boot.js')],
+  ['stream + actions scope by conversation', join(HERE, 't-daemon-conversations.js')],
+  ['conversation branching', join(HERE, 't-branching.js')],
+  ['chat mode grants a Read-only tool', join(HERE, 't-chat-read-tool.js')],
   ['skill set + observation masking', join(HERE, 't-skills.js')],
   ['panel teardown', join(HERE, 't-win.js')],
   ['palette and material', join(HERE, 't-theme.js')],

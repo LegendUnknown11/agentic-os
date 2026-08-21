@@ -258,3 +258,10 @@ export function initCollapse(btn) {
   };
   apply();
 }
+
+/** Forces the same collapse the button toggles — used to default Chat mode
+ * collapsed on entry, without a second collapsed/expanded flag to keep in sync. */
+export function collapse() {
+  localStorage.setItem('kd.rail', '1');
+  document.body.classList.add('rail-collapsed');
+}

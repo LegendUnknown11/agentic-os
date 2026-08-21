@@ -92,11 +92,12 @@ const bus = DB ? new Bus(DB) : null;
 const WORKFLOWS_DIR = DB ? join(dirname(DB), 'workflows') : null;
 // Same reasoning, same directory daemon.js uploads into and serves from.
 const ASSETS_DIR = DB ? join(dirname(DB), 'assets') : null;
-// Must track daemon.js's DOCUMENT set — the extensions it will actually
-// accept an upload for. Duplicated rather than shared: five extensions in a
-// server-only file and a five-extension Set here are cheaper kept in sync by
-// eye than by a new module built to hold one constant.
+// Must track daemon.js's DOCUMENT/IMAGE sets — the extensions it will
+// actually accept an upload for. Duplicated rather than shared: a handful of
+// extensions in a server-only file and matching Sets here are cheaper kept
+// in sync by eye than by a new module built to hold them.
 const DOCUMENT_EXT = new Set(['.pdf', '.txt', '.md', '.csv', '.json']);
+const IMAGE_EXT = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.avif', '.svg']);
 if (!bus) {
   process.stderr.write(
     'kingdom MCP: no court in this directory — starting with no tools.\n'
@@ -319,17 +320,20 @@ const TOOLS = {
   list_uploads: {
     roles: ['peasant', 'briefer', 'orchestrator'],
     description:
-      'List documents the sovereign has uploaded (pdf, txt, md, csv, json) for ' +
-      'the court to read. Each entry gives the real file path — open it with ' +
-      'your own file-reading tool, the same as any other file on disk.',
+      'List documents and images the sovereign has uploaded (pdf, txt, md, csv, ' +
+      'json, png, jpg, gif, webp, avif, svg) for the court to read. Each entry ' +
+      'gives the real file path — open it with your own file-reading tool, the ' +
+      'same as any other file on disk.',
     schema: { type: 'object', properties: {}, required: [] },
     run: () => {
       if (!ASSETS_DIR) return 'No court home directory — nothing to list.';
       let files;
       try { files = readdirSync(ASSETS_DIR); } catch { files = []; }
-      const docs = files.filter((f) => DOCUMENT_EXT.has(extname(f).toLowerCase()));
-      if (!docs.length) return 'No documents uploaded.';
-      return docs.map((f) => `${f} — ${join(ASSETS_DIR, f)}`).join('\n');
+      const uploads = files
+        .filter((f) => DOCUMENT_EXT.has(extname(f).toLowerCase()) || IMAGE_EXT.has(extname(f).toLowerCase()))
+        .map((f) => `${f} (${IMAGE_EXT.has(extname(f).toLowerCase()) ? 'image' : 'document'}) — ${join(ASSETS_DIR, f)}`);
+      if (!uploads.length) return 'No documents or images uploaded.';
+      return uploads.join('\n');
     },
   },
 
@@ -1217,7 +1221,7 @@ const TOOLS = {
       type: 'object',
       properties: {
         name: str('A member on the roster'),
-        cli: str('claude, codex or agy. Optional — leave it out to keep the current one.'),
+        cli: str('claude, codex, agy or opencode. Optional — leave it out to keep the current one.'),
         model: str('Model name. Optional — leave it out for that CLI default.'),
         effort: str('Reasoning effort, where the model has one. Optional.'),
       },

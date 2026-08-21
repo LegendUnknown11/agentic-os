@@ -61,16 +61,33 @@ const configPath = flag('--config', defaultConfigPath(homeRepo));
 
 const kingdom = new Kingdom(homeRepo, configPath);
 const speech = new Speech(process.env.KINGDOM_SPEECHBIRD ?? kingdom.config.speechbird);
-const clients = new Set();
+// res -> conversationId the tab asked to be scoped to, or null for an
+// unfiltered subscriber (every non-Chat panel, and any Chat tab that hasn't
+// picked a conversation yet).
+const clients = new Map();
 let ready = false;
+
+/**
+ * Court-wide events (roster, mode, budget, approvals, ...) always reach every
+ * tab. Only the handful of per-thread event types carry a conversation, and
+ * only those get filtered against a scoped client — an event type with no
+ * conversation of its own is, by construction, court-wide.
+ */
+function shouldDeliver(clientConv, type, data) {
+  if (clientConv == null) return true;
+  if (type === 'event') return (data.conversationId ?? 'default') === clientConv;
+  if (type === 'delivered') return (data.msg?.conversation_id ?? 'default') === clientConv;
+  if (type === 'conversationSwitched') return data.conversationId === clientConv;
+  return true;
+}
 
 function push(type, data) {
   // envelope type last: it must never be clobbered by a field of the same name
   const line = `data: ${JSON.stringify({ ...data, type })}\n\n`;
-  for (const res of clients) res.write(line);
+  for (const [res, conv] of clients) if (shouldDeliver(conv, type, data)) res.write(line);
 }
 
-for (const ev of ['agent', 'event', 'delivered', 'approval', 'verified', 'merged', 'recycled', 'resolved', 'started', 'failure', 'roster', 'failover', 'mergeFailed', 'pushed', 'pushBlocked', 'spend', 'budget', 'limited', 'advising', 'advisor', 'summarizer', 'goal', 'milestone', 'mode', 'compact', 'argued', 'repo', 'paused']) {
+for (const ev of ['agent', 'event', 'delivered', 'approval', 'verified', 'merged', 'recycled', 'resolved', 'started', 'failure', 'roster', 'failover', 'mergeFailed', 'pushed', 'pushBlocked', 'spend', 'budget', 'limited', 'advising', 'advisor', 'summarizer', 'goal', 'milestone', 'mode', 'compact', 'argued', 'repo', 'paused', 'conversationSwitched']) {
   kingdom.on(ev, (d) => push(ev, d ?? {}));
 }
 kingdom.on('error', (e) => push('error', { message: e.message }));
@@ -122,8 +139,14 @@ const ACTIONS = {
   // NOT awaited: with the advisor on, this runs a model call before the message
   // reaches the bus, and holding the POST open for that would look like a hung
   // UI. Progress and failure both arrive on the stream as `advising`.
-  command: (b) => { kingdom.command(b.text).catch((e) => push('error', { message: e.message })); },
-  speak: (b) => kingdom.speakTo(b.name, b.text),
+  command: (b) => { kingdom.command(b.text, b.conversationId).catch((e) => push('error', { message: e.message })); },
+  speak: (b) => kingdom.speakTo(b.name, b.text, b.conversationId),
+  switchConversation: (b) => kingdom.switchConversation(b.name, b.conversationId),
+  // Plain bus CRUD, no orchestration — but other tabs still need to hear
+  // about it live, the same as every other state change on this stream.
+  renameConversation: (b) => push('conversationRenamed', kingdom.bus.renameConversation(b.id, b.title ?? '')),
+  archiveConversation: (b) => { kingdom.bus.archiveConversation(b.id); push('conversationArchived', { id: b.id }); },
+  branchConversation: (b) => kingdom.branchFrom(b.name, b.conversationId, Number(b.forkAtMessageId), b.text),
   advisor: (b) => kingdom.setAdvisor(b),
   summarizer: (b) => kingdom.setSummarizer(b),
   goal: (b) => kingdom.setGoal(b),
@@ -273,13 +296,18 @@ const handle = async (req, res) => {
 
   if (url.pathname === '/stream') {
     if (!ready) return res.writeHead(503).end('starting');
+    // No conversation param: an unfiltered subscriber (every non-Chat panel).
+    const conversation = url.searchParams.get('conversation') || null;
+    // Reconnecting with a cursor wants only what it missed, oldest first — a
+    // fresh tab wants the room repainted from the newest rows backward. Same
+    // distinction bus.js's own tail flag exists for.
+    const since = Number(url.searchParams.get('since') || 0);
     res.writeHead(200, {
       'content-type': 'text/event-stream',
       'cache-control': 'no-cache',
       connection: 'keep-alive',
     });
-    clients.add(res);
-    // Snapshot so a late-joining window is not staring at an empty room.
+    clients.set(res, conversation);
     res.write(`data: ${JSON.stringify({
       type: 'snapshot',
       repo: kingdom.repo,
@@ -297,11 +325,12 @@ const handle = async (req, res) => {
       summarizer: kingdom.summarizer(),
       goal: kingdom.goal(),
       mode: kingdom.mode(),
-      // tail: this is a window repainting itself, so it wants the LAST 400/200,
-      // not the first. Without it a reload showed the opening of the session and
-      // nothing that had happened since.
-      events: kingdom.bus.events({ limit: 400, tail: true }),
-      messages: kingdom.bus.history({ limit: 200, tail: true }),
+      events: since
+        ? kingdom.bus.events({ since, limit: 2000, conversation })
+        : kingdom.bus.events({ limit: 400, tail: true, conversation }),
+      messages: since
+        ? kingdom.bus.history({ since, limit: 2000, conversation })
+        : kingdom.bus.history({ limit: 200, tail: true, conversation }),
       approvals: [...kingdom.approvals].map(([id, p]) => ({ id, ...p })),
     })}\n\n`);
     req.on('close', () => clients.delete(res));
@@ -374,6 +403,18 @@ const handle = async (req, res) => {
   if (url.pathname === '/api/campaigns') {
     return res.writeHead(200, { 'content-type': 'application/json' })
       .end(JSON.stringify({ ok: true, campaigns: kingdom.bus.campaigns() }));
+  }
+
+  // Sidebar boot: the list of threads for one member, without waiting on the
+  // stream. `?member=` defaults to the orchestrator — the only member Chat
+  // mode talks to today.
+  if (url.pathname === '/api/conversations') {
+    const member = url.searchParams.get('member') || kingdom.config.orchestrator.name;
+    return res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({
+      ok: true,
+      active: kingdom.activeConversation.get(member) ?? 'default',
+      conversations: kingdom.bus.conversations(member),
+    }));
   }
 
   // ---- the chronicle: everything that happened, in order ---------------

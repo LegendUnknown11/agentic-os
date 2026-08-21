@@ -26,6 +26,8 @@ const P = {
   next: 'M4.5 3.6 10.2 8l-5.7 4.4zM11.8 3.6v8.8',
   loop: 'M3 7a3 3 0 0 1 3-3h6.2M12.8 9a3 3 0 0 1-3 3H3.6M10.6 2.2 12.9 4l-2.3 1.8M5.4 10.2 3.1 12l2.3 1.8',
   upload: 'M8 10.6V2.8M5.4 5.2 8 2.6l2.6 2.6M2.6 10v2.6a.8.8 0 0 0 .8.8h9.2a.8.8 0 0 0 .8-.8V10',
+  // A paperclip: a loop closing around a straight line.
+  attach: 'M11.2 4.6 6.6 9.2a2.3 2.3 0 1 0 3.2 3.2l4.4-4.4a4 4 0 1 0-5.6-5.6L3.6 7.4a5.6 5.6 0 1 0 7.9 7.9',
   // The toolbar set. Same 16 grid, same 1.5 stroke — a row of icons only reads
   // as a set if every one was drawn to the same rules.
   metrics: 'M2.6 13.4h10.8M4.4 13.4V8.2M7.4 13.4V4.4M10.4 13.4V6.6',
