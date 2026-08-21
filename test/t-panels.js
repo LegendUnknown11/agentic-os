@@ -190,6 +190,23 @@ try {
     console.log('  diff: stat + patch, per-file view, orchestrator and unknowns refused');
   }
 
+  /* ---------- 2a. malformed workflow mutations stay client errors ------- */
+  {
+    for (const path of ['/api/workflows', '/api/workflows/delete', '/api/workflows/run']) {
+      const r = await fetch(base + path, {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: '{not json',
+      });
+      a.equal(r.status, 400, `${path} must reject malformed JSON without looking like a daemon failure`);
+      a.deepEqual(await r.json(), { ok: false, error: 'invalid JSON' });
+    }
+    const made = await post('/api/workflows', {
+      id: 'post-bad-json', name: 'still usable', trigger: { type: 'manual' }, nodes: [], enabled: true,
+    });
+    a.equal(made.ok, true, 'a valid workflow write after malformed input must still work');
+    a.equal((await post('/api/workflows/delete', { id: made.workflow.id })).ok, true);
+    console.log('  workflow mutations reject malformed JSON as 400 and stay usable');
+  }
+
   /* ---------- 2b. the chronicle ---------- */
   {
     // Seed a mixed history: summaries and errors are EVENTS, messages are

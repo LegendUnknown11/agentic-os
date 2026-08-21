@@ -580,7 +580,9 @@ const handle = async (req, res) => {
     }
 
     if (req.method !== 'POST') return res.writeHead(405).end();
-    const b = body ? JSON.parse(body) : {};
+    let b;
+    try { b = body ? JSON.parse(body) : {}; }
+    catch { return send(400, { ok: false, error: 'invalid JSON' }); }
 
     if (url.pathname === '/api/workflows/delete') {
       if (!b.id) return send(400, { ok: false, error: 'id required' });
