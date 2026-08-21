@@ -2646,9 +2646,14 @@ export class Kingdom extends EventEmitter {
   }
 
   /** Wake a peasant directly, without waiting for the orchestrator to propose it. */
-  async wake(name) {
+  async wake(name, { by = 'sovereign', approvalId = null } = {}) {
+    if (this.agents.has(name)) return this.agents.get(name);
     this.spawnFailed?.delete(name);   // a sovereign asking again is not the retry storm
-    return this.#spawn(name);
+    const agent = await this.#spawn(name);
+    // `summoned` is the durable history a Set cannot carry: a restart can
+    // restore a member, but it must never look like a second sovereign spend.
+    this.bus.logEvent(name, 'summoned', { by, approvalId });
+    return agent;
   }
 
   /** Explicit stop: leaves service entirely, unlike an idle sleep. */
@@ -2957,7 +2962,7 @@ export class Kingdom extends EventEmitter {
       // In parallel: each wake is its own git worktree, and they do not touch
       // each other. Serially, an approved crew of six paid for six worktree
       // creations end to end before the sovereign saw anyone wake up.
-      await Promise.all(p.names.map((n) => this.#spawn(n)));
+      await Promise.all(p.names.map((n) => this.wake(n, { by: p.from ?? 'orchestrator', approvalId: id })));
       this.approvals.delete(id);
       this.bus.set(`resolved:${id}`, 'approved');
       this.bus.post(CROWN, this.config.orchestrator.name,

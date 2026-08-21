@@ -118,6 +118,10 @@ try {
   a.equal(kingdom.bus.get(`resolved:${approval.id}`), 'approved');
   a.ok(kingdom.summoned.has('designer'), 'approval must add designer to the standing crew');
   a.ok(kingdom.agents.has('designer'), 'approval must wake designer');
+  const summons = kingdom.bus.events({ agent: 'designer', type: 'summoned' });
+  a.equal(summons.length, 1, 'an approved summon must leave one durable telemetry row');
+  a.equal(summons[0].payload.approvalId, approval.id, 'the event must identify the approval that spent the wake');
+  a.equal(summons[0].payload.by, 'orchestrator', 'the event must identify who requested the crew');
 
   await new Promise((resolve) => setTimeout(resolve, 700));
   const memoryApprovals = [...kingdom.approvals.entries()].filter(([, p]) => p.kind === 'memory');

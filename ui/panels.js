@@ -173,7 +173,7 @@ export function openMetrics() {
           // Keyed on position, not on the heading's text: when that heading was
           // renamed the string comparison stopped matching and silently
           // right-aligned the name column too.
-          ['agent', 'turns', 'in', 'per turn', 'ctx', 'spent'].forEach((c, i) => {
+          ['agent', 'summons', 'turns', 'in', 'per turn', 'ctx', 'spent'].forEach((c, i) => {
             const th = el('th', i ? 'r' : null, c);
             hr.append(th);
           });
@@ -186,8 +186,9 @@ export function openMetrics() {
             const nm = el('td');
             nm.append(el('span', `dot ${r.awake ? 'awake' : ''}`),
               document.createTextNode(displayName(r.name, r.role)));
-            tr.append(nm,
-              el('td', 'r num', String(r.turns)),
+              tr.append(nm,
+                el('td', 'r num', String(r.summons)),
+                el('td', 'r num', String(r.turns)),
               el('td', 'r num', kb(r.in)),
               el('td', 'r num', kb(r.perTurn)),
               el('td', 'r num', r.ctx ? kb(r.ctx) : '—'),

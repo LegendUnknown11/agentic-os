@@ -167,6 +167,7 @@ function metrics() {
   // parsing the whole log — on every /api/metrics, which the throne room polls
   // every 5s while the cost panel is open (ui/panels.js).
   const rows = kingdom.bus.events({ limit: 100_000, type: 'turn_end' });
+  const summonRows = kingdom.bus.events({ limit: 100_000, type: 'summoned' });
   const prev = new Map();
   const by = new Map();
   const byCli = new Map();   // cli -> tokens burned, for quota-billed backends (see below)
@@ -187,7 +188,9 @@ function metrics() {
     const d = deltaOf(prev.get(ev.agent), u);
     prev.set(ev.agent, totalsOf(u));
 
-    const m = by.get(ev.agent) ?? { name: ev.agent, turns: 0, in: 0, out: 0, cached: 0, ctx: 0, first: ev.ts };
+    const m = by.get(ev.agent) ?? {
+      name: ev.agent, turns: 0, summons: 0, in: 0, out: 0, cached: 0, ctx: 0, first: ev.ts,
+    };
     m.turns++;
     m.in += d.in;
     m.out += d.out;
@@ -200,6 +203,15 @@ function metrics() {
     byCli.set(cli, (byCli.get(cli) ?? 0) + d.in + d.out);
   }
 
+  for (const ev of summonRows) {
+    const m = by.get(ev.agent) ?? {
+      name: ev.agent, turns: 0, summons: 0, in: 0, out: 0, cached: 0, ctx: 0, first: ev.ts,
+    };
+    m.summons++;
+    m.last = Math.max(m.last ?? 0, ev.ts);
+    by.set(ev.agent, m);
+  }
+
   const members = [...by.values()].map((m) => ({
     ...m,
     role: kingdom.roleOf(m.name),
@@ -209,8 +221,9 @@ function metrics() {
   })).sort((a, b) => b.in - a.in);
 
   const total = members.reduce((t, m) => ({
-    turns: t.turns + m.turns, in: t.in + m.in, out: t.out + m.out, cached: t.cached + m.cached,
-  }), { turns: 0, in: 0, out: 0, cached: 0 });
+    turns: t.turns + m.turns, summons: t.summons + m.summons,
+    in: t.in + m.in, out: t.out + m.out, cached: t.cached + m.cached,
+  }), { turns: 0, summons: 0, in: 0, out: 0, cached: 0 });
 
   // A subscription CLI (codex on a ChatGPT plan, say) has no $/token at all —
   // `spent` above is at best a reference-rate guess for it, built from a price

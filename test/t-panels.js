@@ -68,6 +68,7 @@ writeFileSync(cfg, JSON.stringify({
   turn('orchestrator', 25_000, 8_000);     // <- recycled: a fresh thread, counter resets
   turn('orchestrator', 50_000, 14_000);
   turn('coder', 40_000, 12_000);
+  bus.logEvent('coder', 'summoned', { by: 'orchestrator', approvalId: 1 });
   bus.set('spentUsd', '3.50');
   bus.set('spent:orchestrator', '2.00');
   // One good approval and two the throne room cannot render. The UI does
@@ -128,8 +129,11 @@ try {
     a.equal(orchestrator.perTurn, 28_000, '140k over 5 turns');
     a.equal(orchestrator.role, 'orchestrator');
     a.equal(orchestrator.spent, 2);
+    const coder = m.members.find((x) => x.name === 'coder');
+    a.equal(coder.summons, 1, 'summons are durable history, not inferred from the current roster set');
 
     a.equal(m.total.turns, 6, 'orchestrator 5 + coder 1');
+    a.equal(m.total.summons, 1, 'the usage report exposes the court-wide summon count');
     a.equal(m.total.in, 180_000, '140k + 40k');
     a.equal(m.spent, 3.5);
     a.equal(m.cap, 75);
