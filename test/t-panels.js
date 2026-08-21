@@ -207,6 +207,16 @@ try {
     console.log('  workflow mutations reject malformed JSON as 400 and stay usable');
   }
 
+  /* ---------- 2aa. malformed control JSON stays a client error ----------- */
+  {
+    const r = await fetch(`${base}/api/wake`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: '{not json',
+    });
+    a.equal(r.status, 400, 'a malformed action body must not look like a daemon failure');
+    a.deepEqual(await r.json(), { ok: false, error: 'invalid JSON' });
+    console.log('  action routes reject malformed JSON as 400');
+  }
+
   /* ---------- 2b. the chronicle ---------- */
   {
     // Seed a mixed history: summaries and errors are EVENTS, messages are

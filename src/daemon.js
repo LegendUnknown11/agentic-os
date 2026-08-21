@@ -696,8 +696,14 @@ const handle = async (req, res) => {
     if (!action) return res.writeHead(404).end();
     let body = '';
     for await (const c of req) body += c;
+    let input;
+    try { input = body ? JSON.parse(body) : {}; }
+    catch {
+      return res.writeHead(400, { 'content-type': 'application/json' })
+        .end(JSON.stringify({ ok: false, error: 'invalid JSON' }));
+    }
     try {
-      await action(body ? JSON.parse(body) : {});
+      await action(input);
       res.writeHead(200, { 'content-type': 'application/json' }).end('{"ok":true}');
     } catch (e) {
       res.writeHead(500, { 'content-type': 'application/json' })
