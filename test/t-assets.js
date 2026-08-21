@@ -150,7 +150,22 @@ try {
     console.log('  delete is confined too; the database and config are untouchable');
   }
 
-  /* ---------- 6. the size cap is real ---------- */
+  /* ---------- 6. bad delete JSON is a client error, not a daemon failure -- */
+  {
+    await put('recover.png');
+    const bad = await fetch(`${base}/api/assets/delete`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: '{not json',
+    });
+    a.equal(bad.status, 400, 'malformed client JSON must not be reported as a server failure');
+    a.deepEqual(await bad.json(), { ok: false, error: 'invalid JSON' });
+    const deleted = await fetch(`${base}/api/assets/delete`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: 'recover.png' }),
+    });
+    a.deepEqual(await deleted.json(), { ok: true }, 'the next valid delete proves the daemon stayed usable');
+    console.log('  malformed delete JSON is 400; the next valid request still works');
+  }
+
+  /* ---------- 7. the size cap is real ---------- */
   {
     const r = await put('huge.png', Buffer.alloc(81 * 1024 * 1024)).catch(() => ({ ok: false }));
     a.equal(r.ok, false, 'over the cap must be refused rather than filling the disk');

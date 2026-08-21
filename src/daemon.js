@@ -625,7 +625,10 @@ const handle = async (req, res) => {
     if (url.pathname.endsWith('/delete')) {
       let body = '';
       for await (const c of req) body += c;
-      const name = safeAsset(JSON.parse(body || '{}').name);
+      let request;
+      try { request = JSON.parse(body || '{}'); }
+      catch { return send(400, { ok: false, error: 'invalid JSON' }); }
+      const name = safeAsset(request.name);
       if (!name) return send(400, { ok: false, error: 'not a media file' });
       try { await unlink(join(ASSETS, name)); } catch {}
       return send(200, { ok: true });
