@@ -5,7 +5,7 @@
 //
 //   node test/t-advisor.js
 import { strict as a } from 'node:assert';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -94,7 +94,50 @@ async function pick(reply, allowed) {
   console.log('  unknown members and non-answers change nothing');
 }
 
-/* ---------- 3. the rewrite must never replace the order with an answer ---- */
+/* ---------- 3. output/effort evidence is observed, never guessed -------- */
+{
+  const { outputEvidence, pickModels } = await import(`../src/advisor.js?output=${Math.random()}`);
+  const evidence = outputEvidence([
+    { agent: 'coder', payload: {
+      cli: 'codex', model: 'gpt-5.6-luna', effort: 'max',
+      usage: { input_tokens: 100, cached_input_tokens: 50, output_tokens: 10 },
+    } },
+    { agent: 'coder', payload: {
+      cli: 'codex', model: 'gpt-5.6-luna', effort: 'max',
+      // Codex usage is cumulative, so this contributes 40, not 50, output tokens.
+      usage: { input_tokens: 250, cached_input_tokens: 200, output_tokens: 50 },
+    } },
+    // Courts created before this feature have no configuration snapshot. They
+    // remain an honest absence of evidence, rather than being guessed from a
+    // member's current settings.
+    { agent: 'scribe', payload: { usage: { input_tokens: 999, output_tokens: 999 } } },
+  ]);
+  a.match(evidence, /coder .*gpt-5\.6-luna.*max.*2 turns.*50 output tokens/i,
+    'the advisor sees the measured cumulative delta, grouped by the actual effort used');
+  a.match(evidence, /\$0\.000060/, 'output cost uses the rate card, not an invented ratio');
+  a.equal(outputEvidence([]), 'No measured output history is available for this court yet.');
+
+  const capture = join(dir, 'model-prompt.txt');
+  stub(`
+require('node:fs').writeFileSync(${JSON.stringify(capture)}, process.argv.at(-1));
+process.stdout.write(JSON.stringify({ type: 'item.completed',
+  item: { type: 'agent_message', text: ${JSON.stringify(JSON.stringify({
+    coder: { model: 'codex/gpt-5.6-luna', effort: 'max' },
+  }))} } }) + '\\n');
+`);
+  const picked = await pickModels({ cli: 'codex' }, {
+    goal: 'ship a small regression fix', members, allowed: ['codex/gpt-5.6-luna'], efforts,
+    measurements: evidence,
+  }, { cwd: dir });
+  a.ok(picked.coder, 'adding evidence must not change the allowlist gate');
+  const prompt = readFileSync(capture, 'utf8');
+  a.match(prompt, /MEASURED OUTPUT HISTORY/, 'the selected advisor receives the court measurement');
+  a.match(prompt, /do not treat token count as a quality score/i,
+    'the prompt must not turn output volume into an invented quality proxy');
+  console.log('  measured output history informs effort selection without claiming quality');
+}
+
+/* ---------- 4. the rewrite must never replace the order with an answer ---- */
 {
   says(JSON.stringify({ mode: 'code', brief: 'Fix the login redirect on /auth/callback.' }));
   const { engineerPrompt } = await import(`../src/advisor.js?e=${Math.random()}`);
@@ -127,7 +170,7 @@ async function pick(reply, allowed) {
   console.log('  rewrite accepted when brief, refused when it runs away; mode classified');
 }
 
-/* ---------- 4. a dead advisor must not stop the sovereign ---------------- */
+/* ---------- 5. a dead advisor must not stop the sovereign ---------------- */
 {
   stub('process.exit(9);');
   const { ask, engineerPrompt } = await import(`../src/advisor.js?d=${Math.random()}`);
@@ -142,7 +185,7 @@ async function pick(reply, allowed) {
   console.log('  crash and hang both degrade to "no advice" quickly');
 }
 
-/* ---------- 5. the money path: what actually reaches the orchestrator ------------ */
+/* ---------- 6. the money path: what actually reaches the orchestrator ------------ */
 // Everything above tests the advisor in isolation. This tests the only thing
 // that matters — that command() puts the RIGHT text on the bus.
 {
@@ -164,7 +207,8 @@ async function pick(reply, allowed) {
     efforts: { codex: ['low', 'medium'], byModel: { 'gpt-5.6-luna': ['low', 'medium'] } },
     orchestrator: { name: 'orchestrator', cli: 'codex' },
     briefer: { name: 'briefer', cli: 'codex' },
-    peasants: [{ name: 'coder', cli: 'codex', description: 'writes code', ...(auto && { auto: true }) }],
+    peasants: [{ name: 'coder', cli: 'codex', model: 'gpt-5.6-luna', effort: 'medium',
+      description: 'writes code', ...(auto && { auto: true }) }],
     rolesSeeded: true,
     advisor,
   }));
@@ -194,7 +238,33 @@ async function pick(reply, allowed) {
   a.equal(sovereignSaid(k).body, 'exactly this', 'with the advisor off nothing may be added');
   await k.stop();
 
-  // (c) nobody is on Auto — the model selector must not be called AT ALL.
+  // (c) A completed turn persists the configuration that actually produced it,
+  // and that measurement reaches the next Auto selection. A live member can
+  // be reconfigured later; reading its current dropdown would relabel history.
+  const captured = join(repo, 'measured-model-prompt.txt');
+  stub(`
+require('node:fs').writeFileSync(${JSON.stringify(captured)}, process.argv.at(-1));
+process.stdout.write(JSON.stringify({ type: 'item.completed', item: { type: 'agent_message',
+  text: ${JSON.stringify(JSON.stringify({ coder: { model: 'codex/gpt-5.6-luna', effort: 'medium' } }))} } }) + '\\n');
+`);
+  write({ cli: 'codex', model: 'gpt-5.6-luna', promptEngineer: false, autoModel: true, allow: [] }, true);
+  k = new Kingdom(repo, cfg);
+  await k.start();
+  await k.wake('coder');
+  const liveCoder = k.agents.get('coder');
+  liveCoder.emit('turn_end', { usage: { input_tokens: 100, cached_input_tokens: 80, output_tokens: 12 }, ctx: 12 });
+  const recorded = k.bus.events({ agent: 'coder', type: 'turn_end' }).at(-1).payload;
+  a.deepEqual(
+    { cli: recorded.cli, model: recorded.model, effort: recorded.effort },
+    { cli: 'codex', model: 'gpt-5.6-luna', effort: 'medium' },
+    'turn history must retain the launched model and effort, not infer either later');
+  await k.command('use the measured effort history');
+  await k.autoModelPending;
+  a.match(readFileSync(captured, 'utf8'), /12 output tokens/,
+    'the next Auto selection receives this court\'s measured output history');
+  await k.stop();
+
+  // (d) nobody is on Auto — the model selector must not be called AT ALL.
   // A member pinned to a model chose it deliberately; there is nothing to pick,
   // and spending an advisor call to throw the answer away is pure cost.
   stub('process.exit(1);');
@@ -209,7 +279,7 @@ async function pick(reply, allowed) {
   a.equal(quiet.length, 0, 'with nobody on Auto the selector must never run');
   await k.stop();
 
-  // (d) advisor dead, with a member on Auto — the order still gets through.
+  // (e) advisor dead, with a member on Auto — the order still gets through.
   write({ cli: 'codex', model: 'gpt-5.6-luna', promptEngineer: true, autoModel: true, allow: [] }, true);
   k = new Kingdom(repo, cfg);
   const warned = [];

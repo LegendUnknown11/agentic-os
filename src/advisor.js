@@ -12,6 +12,8 @@
 import { spawn } from 'node:child_process';
 import { resolveCli, AGY_EFFORTS } from './agent.js';
 import { MODE_NAMES } from './modes.js';
+import { deltaOf, totalsOf } from './usage.js';
+import { costOf, PRICES } from './price.js';
 
 const TIMEOUT_MS = 90_000;
 
@@ -232,13 +234,54 @@ export const DEFAULT_GUIDANCE = `Choosing the MODEL matters far more than choosi
 A member the task barely touches can simply be left alone — omit it.`;
 
 /**
+ * What this court has actually spent on output at each recorded effort.
+ *
+ * A turn snapshots its CLI/model/effort when it ends, rather than looking at
+ * the member's current settings. Otherwise an effort change would rewrite the
+ * past and make a low-effort result appear to belong to the later high-effort
+ * choice. Older turns have no such snapshot and are deliberately omitted.
+ */
+export function outputEvidence(events = [], { names = null, table = PRICES } = {}) {
+  const wanted = names ? new Set(names) : null;
+  const previous = new Map();
+  const grouped = new Map();
+  for (const e of events) {
+    const p = e.payload ?? {};
+    const usage = p.usage ?? {};
+    const d = deltaOf(previous.get(e.agent), usage);
+    previous.set(e.agent, totalsOf(usage));
+    if (wanted && !wanted.has(e.agent)) continue;
+    if (!p.cli || !p.model || !p.effort || !p.usage) continue;
+    const key = `${e.agent}\u0000${p.cli}\u0000${p.model}\u0000${p.effort}`;
+    const row = grouped.get(key) ?? {
+      name: e.agent, cli: p.cli, model: p.model, effort: p.effort,
+      turns: 0, output: 0, outputCost: 0, priced: true,
+    };
+    row.turns++;
+    row.output += d.out;
+    const outputCost = costOf({ out: d.out }, p.cli, p.model, table);
+    if (outputCost === null) row.priced = false;
+    else row.outputCost += outputCost;
+    grouped.set(key, row);
+  }
+  const rows = [...grouped.values()].sort((a, b) => a.name.localeCompare(b.name)
+    || a.cli.localeCompare(b.cli) || a.model.localeCompare(b.model)
+    || a.effort.localeCompare(b.effort));
+  if (!rows.length) return 'No measured output history is available for this court yet.';
+  return ['MEASURED OUTPUT HISTORY — observed usage, not a quality score:']
+    .concat(rows.map((r) => `- ${r.name} · ${r.cli}/${r.model} · ${r.effort}: ${r.turns} turns, `
+      + `${r.output} output tokens, ${r.priced ? '$' + r.outputCost.toFixed(6) : 'unpriced output'}`))
+    .join('\n');
+}
+
+/**
  * Picks a model and effort per member from `allowed`.
  *
  * `allowed` is the sovereign's restriction, checked again on the way out —
  * a model is only ever applied if it was on the list, so a creative answer
  * cannot spend money on a tier they excluded.
  */
-export async function pickModels(spec, { goal, members, allowed, efforts, guidance }, opts = {}) {
+export async function pickModels(spec, { goal, members, allowed, efforts, guidance, measurements }, opts = {}) {
   if (!allowed.length || !members.length) return {};
   guidance ??= DEFAULT_GUIDANCE;
 
@@ -263,6 +306,10 @@ ALLOWED (you may use nothing else):
 ${menu}
 
 ${guidance}
+
+${measurements ?? 'No measured output history is available for this court yet.'}
+Use that history only as a cost observation. It does not measure correctness,
+quality, or task difficulty; do not treat token count as a quality score.
 
 Reply with ONLY JSON, no prose:
 {"member-name": {"model": "codex/gpt-5.6-luna", "effort": "medium"}, ...}

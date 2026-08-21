@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { Agent, MUTES_KINGDOM_TOOLS } from './agent.js';
 import { brainBlock, brainFingerprint, remember } from './memory.js';
 import { skillsBlock, expandSkillCommand, listSkills } from './skills.js';
-import { engineerPrompt, pickModels } from './advisor.js';
+import { engineerPrompt, outputEvidence, pickModels } from './advisor.js';
 import { summarize, settingsOf as summarizerSettings } from './summarize.js';
 import { Bus } from './bus.js';
 import { inputTokens, deltaOf, totalsOf } from './usage.js';
@@ -979,7 +979,17 @@ export class Kingdom extends EventEmitter {
     });
     agent.on('stderr', (d) => this.emit('stderr', { name, data: d }));
     agent.on('turn_end', (u) => {
-      this.#record(name, 'turn_end', u);
+      // This is the launched agent's configuration, not the config as it may
+      // look after a later model change. The advisor can only compare effort
+      // against the output it actually produced when the historical turn keeps
+      // that snapshot beside its usage.
+      const turnSpec = { ...(this.config.peasantDefaults ?? {}), ...agent.spec };
+      this.#record(name, 'turn_end', {
+        ...u,
+        cli: turnSpec.cli ?? null,
+        model: turnSpec.model ?? null,
+        effort: turnSpec.effort ?? null,
+      });
       this.#summarizeTurn(name);   // async, deliberately not awaited
       this.lastActive.set(name, Date.now());
 
@@ -2849,6 +2859,11 @@ export class Kingdom extends EventEmitter {
     // No Auto members means no advisor call at all — the pick would be discarded.
     const members = this.#autoMembers();
     if (!members.length) return Promise.resolve({});
+    // Only the roles the advisor may move are relevant. outputEvidence ignores
+    // pre-snapshot history instead of guessing which setting produced it.
+    const measurements = outputEvidence(this.bus.events({ type: 'turn_end', limit: 100_000 }), {
+      names: members.map((p) => p.name), table: tableFrom(this.config),
+    });
     return pickModels(a, {
       goal,
       // The orchestrator and briefer are the sovereign's own choice of instrument; the
@@ -2859,6 +2874,7 @@ export class Kingdom extends EventEmitter {
       allowed,
       efforts: this.efforts().byModel ?? {},
       guidance: a.guidance,   // undefined falls back to the vault's policy
+      measurements,
     }, opts);
   }
 
