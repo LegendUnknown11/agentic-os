@@ -1,7 +1,8 @@
 // The kingdom's message bus + event log. node:sqlite, no native deps.
 import { DatabaseSync } from 'node:sqlite';
-import { mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { tmpdir } from 'node:os';
 
 const SCHEMA = `
 create table if not exists messages (
@@ -49,6 +50,24 @@ create table if not exists memory_proposals (
   campaign integer primary key,
   count    integer not null default 0
 );
+create virtual table if not exists messages_fts using fts5(
+  body, content='messages', content_rowid='id'
+);
+create virtual table if not exists events_fts using fts5(
+  payload, content='events', content_rowid='id'
+);
+create trigger if not exists messages_fts_insert after insert on messages begin
+  insert into messages_fts(rowid, body) values (new.id, new.body);
+end;
+create trigger if not exists messages_fts_delete after delete on messages begin
+  insert into messages_fts(messages_fts, rowid, body) values ('delete', old.id, old.body);
+end;
+create trigger if not exists events_fts_insert after insert on events begin
+  insert into events_fts(rowid, payload) values (new.id, new.payload);
+end;
+create trigger if not exists events_fts_delete after delete on events begin
+  insert into events_fts(events_fts, rowid, payload) values ('delete', old.id, old.payload);
+end;
 create index if not exists idx_msg_recipient on messages(recipient, id);
 create index if not exists idx_evt_agent on events(agent, id);
 create index if not exists idx_task_state on tasks(state, owner);
@@ -72,6 +91,23 @@ export class Bus {
     } catch {}
     this.db.exec('pragma synchronous = NORMAL');
     this.db.exec(SCHEMA);
+    this.#rebuildTranscriptSearch();
+  }
+
+  /** Existing courts get one atomic FTS rebuild; new rows stay current by trigger. */
+  #rebuildTranscriptSearch() {
+    this.db.exec('begin immediate');
+    try {
+      if (this.get('fts:transcript:v1') !== '1') {
+        this.db.exec("insert into messages_fts(messages_fts) values ('rebuild')");
+        this.db.exec("insert into events_fts(events_fts) values ('rebuild')");
+        this.set('fts:transcript:v1', '1');
+      }
+      this.db.exec('commit');
+    } catch (e) {
+      this.db.exec('rollback');
+      throw e;
+    }
   }
 
   // --- messages -------------------------------------------------------
@@ -254,7 +290,7 @@ export class Bus {
   }
 
   /**
-   * Substring search across everything the court has said or done: event
+   * FTS5 search across everything the court has said or done: event
    * text/tool/summary payloads and posted messages, merged and ranked by
    * recency. This IS the "remembers everything" system — events/messages
    * already are a complete log, so recall is a read, not a new capture
@@ -263,12 +299,17 @@ export class Bus {
    * memoryIndex()'s index/search-don't-inject approach in memory.js.
    */
   recall(query, { limit = 20 } = {}) {
-    const like = `%${query}%`;
+    // The query is data, not FTS syntax. Quoting each word keeps punctuation
+    // from turning a member's literal search into an operator expression.
+    const terms = String(query ?? '').match(/[\p{L}\p{N}_]+/gu) ?? [];
+    if (!terms.length) return [];
+    const match = terms.map((term) => `"${term.replaceAll('"', '""')}"`).join(' AND ');
     const events = this.db.prepare(
-      `select ts, agent as who, type as kind, payload from events
-        where type in ('text','tool','summary','error','workflow_run') and payload like ?
+      `select events.ts, events.agent as who, events.type as kind, events.payload from events_fts
+        join events on events.id = events_fts.rowid
+        where events_fts match ? and events.type in ('text','tool','summary','error','workflow_run')
         order by id desc limit ?`
-    ).all(like, limit).map((r) => {
+    ).all(match, limit).map((r) => {
       const p = JSON.parse(r.payload);
       const text = r.kind === 'tool' ? `${p.name} ${JSON.stringify(p.input ?? p)}`
         : r.kind === 'workflow_run' ? `workflow "${p.name}" ${p.ok ? 'succeeded' : `failed: ${p.error}`}`
@@ -276,9 +317,10 @@ export class Bus {
       return { ts: r.ts, who: r.who, kind: r.kind, text, source: 'event' };
     });
     const messages = this.db.prepare(
-      `select ts, sender as who, kind, body as text from messages
-        where body like ? order by id desc limit ?`
-    ).all(like, limit).map((r) => ({ ...r, source: 'message' }));
+      `select messages.ts, messages.sender as who, messages.kind, messages.body as text from messages_fts
+        join messages on messages.id = messages_fts.rowid
+        where messages_fts match ? order by messages.id desc limit ?`
+    ).all(match, limit).map((r) => ({ ...r, source: 'message' }));
     return [...events, ...messages].sort((a, b) => b.ts - a.ts).slice(0, limit);
   }
 
@@ -509,6 +551,34 @@ if (process.argv[1]?.endsWith('bus.js')) {
   a.equal(b.countMessages(), b.history({ limit: 100_000 }).length,
     'count(*) must agree with the old load-and-measure it replaces');
 
+  // Court transcript search must use SQLite's index, not a `%LIKE%` scan over
+  // a session-long log. Both durable transcript tables need their own FTS5
+  // mirror because recall merges messages with agent events.
+  a.match(b.db.prepare("select sql from sqlite_master where name = 'messages_fts'").get()?.sql ?? '', /fts5/i,
+    'messages must have an FTS5 index');
+  a.match(b.db.prepare("select sql from sqlite_master where name = 'events_fts'").get()?.sql ?? '', /fts5/i,
+    'events must have an FTS5 index');
+
+  // Opening an old court must build indexes for the transcript it already
+  // retained; otherwise FTS only works from the first post-upgrade message.
+  const legacyDir = mkdtempSync(join(tmpdir(), 'kingdom-fts-legacy-'));
+  const legacyPath = join(legacyDir, 'kingdom.db');
+  const legacy = new DatabaseSync(legacyPath);
+  legacy.exec(`create table messages (id integer primary key autoincrement, ts integer not null, sender text not null, recipient text, kind text not null, body text not null);
+    create table events (id integer primary key autoincrement, ts integer not null, agent text not null, type text not null, payload text not null);
+    create table state (k text primary key, v text not null);`);
+  legacy.prepare('insert into messages (ts,sender,recipient,kind,body) values (?,?,?,?,?)')
+    .run(Date.now(), 'coder', 'reviewer', 'message', 'preupgrade transcript message');
+  legacy.prepare('insert into events (ts,agent,type,payload) values (?,?,?,?)')
+    .run(Date.now(), 'coder', 'text', JSON.stringify({ text: 'preupgrade transcript event' }));
+  legacy.close();
+  const migrated = new Bus(legacyPath);
+  const migratedHits = migrated.recall('preupgrade transcript');
+  a.equal(migratedHits.length, 2,
+    'the first FTS open must rebuild both tables from retained legacy rows');
+  migrated.close();
+  rmSync(legacyDir, { recursive: true, force: true });
+
   // recall: finds a hit in event text, in a tool call, and in a message body —
   // and ranks the most recent hit first regardless of which table it came from.
   b.logEvent('coder', 'text', { text: 'the parser handles nested quotes now' });
@@ -523,6 +593,15 @@ if (process.argv[1]?.endsWith('bus.js')) {
   // workflow runs are recorded as events too, and recall finds them by name
   b.logEvent('workflow:deploy', 'workflow_run', { name: 'nightly deploy', ok: true, steps: 4 });
   a.equal(b.recall('nightly deploy')[0].text, 'workflow "nightly deploy" succeeded');
+
+  // Pruning deletes old source rows. The mirrors must delete with them or a
+  // later FTS hit points at a transcript row that no longer exists.
+  const prunedSearch = new Bus(':memory:');
+  prunedSearch.post('coder', 'reviewer', 'remove this searchable transcript', 'message');
+  prunedSearch.logEvent('coder', 'text', { text: 'remove this searchable event' });
+  prunedSearch.prune({ keepMessages: 0, keepEvents: 0 });
+  a.equal(prunedSearch.recall('searchable').length, 0, 'pruned transcript rows must leave both FTS indexes');
+  prunedSearch.close();
 
   b.set('session:coder', 'abc');
   a.equal(b.get('session:coder'), 'abc');
