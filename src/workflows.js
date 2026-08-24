@@ -42,6 +42,15 @@ function evalCondition(cfg, ctx) {
 
 // --- node execution -------------------------------------------------------
 
+/**
+ * Every type `runNode` below handles, named once so the UI's node palette can
+ * be asserted against it rather than drifting from it. The self-check runs one
+ * of each through the interpreter, so a type added to the switch and forgotten
+ * here — or listed here and never implemented — fails the suite instead of
+ * surfacing as a palette chip that produces an unrunnable graph.
+ */
+export const NODE_TYPES = ['http', 'delay', 'log', 'set', 'condition', 'bus', 'transform', 'foreach'];
+
 async function runNode(node, ctx, { bus } = {}) {
   const cfg = interp(node.config ?? {}, ctx);
   switch (node.type) {
@@ -231,6 +240,7 @@ if (process.argv[1]?.endsWith('workflows.js')) {
   const { strict: a } = await import('node:assert');
   const { mkdtemp, rm } = await import('node:fs/promises');
   const { tmpdir } = await import('node:os');
+  const src = await readFile(new URL(import.meta.url), 'utf8');
 
   // set -> condition -> branch -> log
   const wf = {
@@ -278,6 +288,30 @@ if (process.argv[1]?.endsWith('workflows.js')) {
   const r4 = await runWorkflow(bad);
   a.equal(r4.ok, false);
   a.ok(r4.steps[0].error.includes('unknown node type'));
+
+  // NODE_TYPES is what the UI's palette is asserted against, so it has to stay
+  // exactly the switch in runNode — both ways. The list is checked against the
+  // cases in the source, and every entry is then actually run, so a name that
+  // is merely spelled right in both places still has to interpret.
+  const runNodeSrc = src.slice(src.indexOf('async function runNode'), src.indexOf('* Runs from the first node'));
+  a.deepEqual(
+    [...runNodeSrc.matchAll(/^ {4}case '(\w+)':/gm)].map((m) => m[1]).sort(),
+    [...NODE_TYPES].sort(),
+    'NODE_TYPES and runNode\'s switch must name the same set');
+  // Configs chosen to fail fast and locally — http gets an unparseable URL so
+  // nothing leaves the machine. The claim is only "the interpreter knows this
+  // type", so any error EXCEPT "unknown node type" passes.
+  const MINIMAL = {
+    http: { url: '' }, delay: { ms: 0 }, log: { message: 'x' }, set: { values: {} },
+    condition: { path: 'x', op: 'exists' }, bus: { body: 'x' },
+    transform: { from: 'missing' }, foreach: { from: 'missing' },
+  };
+  for (const type of NODE_TYPES) {
+    const r = await runWorkflow(
+      { id: 'probe', trigger: { type: 'manual' }, nodes: [{ id: 'n', type, config: MINIMAL[type] }] },
+      { bus: { post() {} } });
+    a.doesNotMatch(r.steps[0].error ?? '', /unknown node type/, type + ' must be interpretable');
+  }
 
   // transform: filter then pick, no eval involved
   const transformWf = {

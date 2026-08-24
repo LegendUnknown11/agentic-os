@@ -37,6 +37,11 @@ const suites = [
   // Same again: the overview's shaping decides what the home screen SAYS is
   // happening, and it is the one screen nobody has to open to be misled by.
   ['overview shaping', join(HERE, '..', 'ui', 'overview.js')],
+  // And again: the automation graph's pure half decides what the saved node
+  // graph actually IS — a delete that leaves a pointer behind, or a palette
+  // that has drifted from the engine's node types, both ship a workflow that
+  // fails only when it runs.
+  ['automation graph', join(HERE, '..', 'ui', 'graph.js')],
   // The mode table decides who can be summoned, what gets a worktree and what
   // may ever merge. Pure, so it checks itself.
   ['court modes', join(HERE, '..', 'src', 'modes.js')],

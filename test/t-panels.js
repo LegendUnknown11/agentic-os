@@ -207,6 +207,28 @@ try {
     console.log('  workflow mutations reject malformed JSON as 400 and stay usable');
   }
 
+  /* ---------- 2b. a node's canvas position survives the round trip ------- */
+  {
+    // The graph editor writes where a node was dragged to onto the node itself
+    // — daemon.js's save spreads the posted body, so x/y ride along with no
+    // schema change. That is behaviour the editor depends on to remember a
+    // layout, so it is pinned here rather than assumed from reading the spread.
+    const nodes = [
+      { id: 'a', type: 'log', config: { message: 'placed' }, next: 'b', x: 310, y: 96 },
+      { id: 'b', type: 'log', config: { message: 'also placed' }, x: 24, y: 210 },
+    ];
+    const made = await post('/api/workflows', {
+      name: 'laid out', trigger: { type: 'manual' }, nodes, enabled: false,
+    });
+    a.equal(made.ok, true);
+    const back = (await get('/api/workflows')).workflows.find((w) => w.id === made.workflow.id);
+    a.deepEqual(back.nodes.map((n) => [n.x, n.y]), [[310, 96], [24, 210]],
+      'node coordinates must survive a save/list round trip, or a dragged layout is lost');
+    a.equal(back.nodes[0].next, 'b', 'and the topology alongside them');
+    await post('/api/workflows/delete', { id: made.workflow.id });
+    console.log('  node canvas positions round-trip through the workflow store');
+  }
+
   /* ---------- 2aa. malformed control JSON stays a client error ----------- */
   {
     const r = await fetch(`${base}/api/wake`, {

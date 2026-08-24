@@ -6,6 +6,7 @@ import { setIcon, icon } from './icons.js';
 import { matchesQuery } from './court.js';
 import { cue } from './feel.js';
 import { displayName } from './names.js';
+import * as GR from './graph.js';
 
 const get = (u) => fetch(u).then((r) => r.json()).catch(() => ({ ok: false }));
 
@@ -886,14 +887,114 @@ export function openRecall() {
 }
 
 /* ================= automation workflows, n8n-style ================= */
+
+/**
+ * The inspector for one node: real fields, driven by graph.js's TYPES table
+ * rather than a form per type, so a node type added to the engine gets an
+ * editor by being named once.
+ *
+ * A `json` field is a textarea because the engine genuinely takes arbitrary
+ * objects there (set's values, foreach's body, http's headers). It is parsed on
+ * every keystroke and simply refuses to write an unparseable value — a config
+ * that silently became the string "{oops" is worse than one that did not change.
+ */
+function nodeForm(n, nodes, { onEdit, onStart, isStart }) {
+  const spec = GR.TYPES[n.type];
+  const box = el('div', 'wfform');
+  const head = el('div', 'wfform-head');
+  head.append(el('span', 'p', `${n.type} · ${n.id}`));
+  if (spec) head.append(el('span', 'ctx', spec.blurb));
+  box.append(head);
+  if (!spec) {
+    box.append(el('div', 'empty', `The engine has no "${n.type}" node — this step will fail at run time.`));
+    return box;
+  }
+
+  const config = (n.config ??= {});
+  for (const [key, kind, options] of spec.fields) {
+    const row = el('label', 'srow');
+    row.append(el('span', 'note', key));
+    let input;
+    if (kind === 'select') {
+      input = document.createElement('select');
+      for (const o of options) {
+        const opt = document.createElement('option');
+        opt.value = opt.textContent = o;
+        if (config[key] === o) opt.selected = true;
+        input.append(opt);
+      }
+      input.onchange = () => { config[key] = input.value; onEdit(); };
+    } else if (kind === 'json') {
+      input = document.createElement('textarea');
+      input.rows = 3;
+      input.spellcheck = false;
+      input.value = config[key] === undefined ? '' : JSON.stringify(config[key], null, 2);
+      input.oninput = () => {
+        if (!input.value.trim()) { delete config[key]; input.classList.remove('bad'); return onEdit(); }
+        try { config[key] = JSON.parse(input.value); input.classList.remove('bad'); onEdit(); }
+        catch { input.classList.add('bad'); }
+      };
+    } else {
+      input = document.createElement('input');
+      input.type = kind === 'number' ? 'number' : 'text';
+      input.className = 'msnew';
+      input.value = config[key] ?? '';
+      input.oninput = () => {
+        const v = kind === 'number' ? Number(input.value) : input.value;
+        if (input.value === '') delete config[key]; else config[key] = v;
+        onEdit();
+      };
+    }
+    row.append(input);
+    box.append(row);
+  }
+
+  // Where this node goes next, as dropdowns as well as wires: dragging is the
+  // fast way, but a graph big enough to scroll makes the target you want a
+  // gesture you cannot complete in one go.
+  const targets = ['', ...nodes.filter((o) => o.id !== n.id).map((o) => o.id)];
+  const branchRow = (label, cur, set) => {
+    const row = el('label', 'srow');
+    row.append(el('span', 'note', label));
+    const sel = document.createElement('select');
+    for (const t of targets) {
+      const o = document.createElement('option');
+      o.value = t;
+      o.textContent = t || '— end of the run —';
+      if ((cur ?? '') === t) o.selected = true;
+      sel.append(o);
+    }
+    sel.onchange = () => { set(sel.value || null); onEdit(); };
+    row.append(sel);
+    box.append(row);
+  };
+  if (spec.branches) {
+    branchRow('then →', n.next?.then, (v) => GR.wire(nodes, n.id, 'then', v));
+    branchRow('else →', n.next?.else, (v) => GR.wire(nodes, n.id, 'else', v));
+  } else {
+    branchRow('next →', typeof n.next === 'string' ? n.next : null, (v) => GR.wire(nodes, n.id, 'out', v));
+  }
+
+  if (!isStart) {
+    const b = el('button', 'link', 'Start the run here');
+    b.title = 'The run begins at the first node; this moves it to the front.';
+    b.onclick = onStart;
+    box.append(b);
+  } else {
+    box.append(el('div', 'note', 'The run starts here.'));
+  }
+  return box;
+}
+
 /**
  * List, run, and edit the court's own automations.
  *
- * The node graph itself is edited as JSON in a textarea rather than a visual
- * builder — a drag-and-drop graph editor is a project of its own, and the
- * engine's node types (http/delay/log/set/condition/bus/transform/foreach)
- * are already a small, readable JSON shape. Add a visual editor later if
- * hand-writing the graph turns out to be the actual friction.
+ * The node graph is drawn and dragged (ui/graph.js) rather than hand-written as
+ * JSON — which it was, with a comment here saying a visual builder was "a
+ * project of its own" and to build one if writing the JSON turned out to be the
+ * real friction. It did. The JSON view survives behind a toggle, because the
+ * shapes a form cannot cover (a foreach body, a graph pasted from elsewhere)
+ * still need a way in.
  */
 export function openWorkflows({ post, toast }) {
   W.toggle('workflows', {
@@ -994,21 +1095,106 @@ export function openWorkflows({ post, toast }) {
           body.append(el('div', 'note', `POST ${location.origin}/api/workflows/hook?id=${encodeURIComponent(wf.id)}`));
         }
 
-        const nodes = document.createElement('textarea');
-        nodes.className = 'style';
-        nodes.rows = 14;
-        nodes.spellcheck = false;
-        nodes.value = JSON.stringify(wf?.nodes ?? [
-          { id: 'a', type: 'log', config: { message: 'hello from a new automation' } },
-        ], null, 2);
-        body.append(el('div', 'note', 'Nodes — a small JSON graph: http, delay, log, set, '
-          + 'condition, bus, transform, foreach. Each has an id, a type, config, and next.'), nodes);
+        // The graph is the editor; the JSON is the escape hatch behind it, for
+        // the shapes no form covers (a foreach body, a hand-pasted graph from
+        // elsewhere) and for seeing what will actually be saved.
+        const nodes = wf?.nodes ? structuredClone(wf.nodes) : [
+          { id: 'log', type: 'log', config: { message: 'hello from a new automation' } },
+        ];
+
+        const pal = el('div', 'wfpal');
+        const surface = el('div');
+        const inspect = el('div', 'wfinspect');
+        const json = document.createElement('textarea');
+        json.className = 'style';
+        json.rows = 14;
+        json.spellcheck = false;
+        json.hidden = true;
+
+        const head = el('div', 'wfhead');
+        head.append(el('div', 'note', 'Nodes'));
+        const asJson = el('button', 'link', 'Edit as JSON');
+        head.append(asJson);
+        body.append(head, pal, surface, json, inspect);
+
+        let G = null;
+        const paintInspector = (n) => {
+          inspect.textContent = '';
+          if (!n) return;
+          inspect.append(nodeForm(n, nodes, {
+            onEdit: () => { G.paint(); },
+            onStart: () => G.start(n.id),
+            isStart: nodes[0]?.id === n.id,
+          }));
+          // The graph is tall enough to push the inspector past the panel's
+          // fold, and clicking a node and seeing nothing happen reads as a dead
+          // click. `nearest` only scrolls what is actually scrollable, and the
+          // canvas pans by transform rather than scroll, so this cannot move
+          // the workspace out from under the sovereign.
+          inspect.scrollIntoView({ block: 'nearest' });
+        };
+        G = GR.mount(surface, nodes, { onSelect: paintInspector, onChange: () => paintInspector(G.selected()) });
+
+        // Drag a type out of the palette and drop it where it belongs. Pointer
+        // events, not the HTML5 drag API: the same gesture then moves the node
+        // once it exists, and one idiom is easier to trust than two.
+        for (const type of GR.PALETTE) {
+          const chip = el('button', 'wfchip', type);
+          chip.title = GR.TYPES[type].blurb + ' — drag onto the canvas, or click to add one';
+          chip.onclick = () => {
+            const r = surface.getBoundingClientRect();
+            G.dropNew(type, r.left + r.width / 2, r.top + r.height / 2);
+          };
+          chip.addEventListener('pointerdown', (e) => {
+            if (e.button !== 0) return;
+            e.preventDefault();
+            const ghost = el('div', 'wfghost', type);
+            const at = (m) => { ghost.style.left = `${m.clientX}px`; ghost.style.top = `${m.clientY}px`; };
+            at(e);
+            document.body.append(ghost);
+            const move = (m) => at(m);
+            const up = (m) => {
+              window.removeEventListener('pointermove', move);
+              window.removeEventListener('pointerup', up);
+              window.removeEventListener('pointercancel', up);
+              ghost.remove();
+              const r = surface.getBoundingClientRect();
+              // Released outside the canvas is a cancelled drag, not a node
+              // dropped at the nearest edge.
+              if (m.clientX >= r.left && m.clientX <= r.right && m.clientY >= r.top && m.clientY <= r.bottom) {
+                G.dropNew(type, m.clientX, m.clientY);
+              }
+            };
+            window.addEventListener('pointermove', move);
+            window.addEventListener('pointerup', up);
+            window.addEventListener('pointercancel', up);
+          });
+          pal.append(chip);
+        }
+
+        asJson.onclick = () => {
+          const toJson = json.hidden;
+          if (toJson) json.value = JSON.stringify(nodes, null, 2);
+          else {
+            let parsed;
+            try { parsed = JSON.parse(json.value); } catch { return toast('Nodes must be valid JSON.', true); }
+            if (!Array.isArray(parsed)) return toast('Nodes must be a JSON array.', true);
+            nodes.length = 0;
+            nodes.push(...parsed);
+            G.paint();
+          }
+          json.hidden = !toJson;
+          pal.hidden = surface.hidden = inspect.hidden = toJson;
+          asJson.textContent = toJson ? 'Back to the graph' : 'Edit as JSON';
+        };
 
         const act = el('div', 'act');
         const save = el('button', 'primary', wf ? 'Save' : 'Create');
         save.onclick = async () => {
-          let parsed;
-          try { parsed = JSON.parse(nodes.value); } catch { return toast('Nodes must be valid JSON.', true); }
+          let parsed = nodes;
+          if (!json.hidden) {
+            try { parsed = JSON.parse(json.value); } catch { return toast('Nodes must be valid JSON.', true); }
+          }
           if (!name.value.trim()) return toast('Give it a name.', true);
           if (triggerType.value === 'daily' && !/^\d{1,2}:\d{2}$/.test(triggerDetail.value.trim())) {
             return toast('Time of day must look like "09:00".', true);
@@ -1023,6 +1209,25 @@ export function openWorkflows({ post, toast }) {
           list();
         };
         act.append(save);
+
+        // Run without leaving the editor, and paint the outcome onto the nodes
+        // themselves. A trace that says which step died, on the step, is the
+        // thing a graph can show that a JSON textarea never could — so the run
+        // button belongs here and not only in the list.
+        if (wf?.id) {
+          const run = el('button', null, 'Run now');
+          run.onclick = async () => {
+            run.disabled = true;
+            const r = await post('workflows/run', { id: wf.id });
+            run.disabled = false;
+            if (!r.ok) return toast(r.error ?? 'Could not run it.', true);
+            G.showRun(r.result.steps);
+            const bad = r.result.steps.find((s) => !s.ok);
+            toast(bad ? `Failed at ${bad.id}: ${bad.error}` : 'Ran successfully.', Boolean(bad));
+          };
+          act.append(run);
+          body.append(el('div', 'note', 'Run now traces the SAVED automation — save first to try an edit.'));
+        }
         body.append(act);
       };
 

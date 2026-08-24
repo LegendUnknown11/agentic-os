@@ -1295,6 +1295,11 @@ function onModeChanged(d) {
   // Chat's roster is at most the orchestrator + briefer, so the rail defaults
   // collapsed on entry — reuses the button's own toggle, not a second flag.
   if (d.mode === 'chat' && d.previous && d.previous !== 'chat') G.collapse();
+  // Automate mode's whole subject is the automations, and its toolbar button is
+  // the one NEEDS now hides everywhere else — arriving in the mode with a blank
+  // workspace and no visible way to the graph is not a mode, it is a dead end.
+  // Same reasoning as Chat collapsing its rail, pointed the other way.
+  if (d.mode === 'automate' && d.previous !== 'automate') P.openWorkflows({ post, toast });
   MODE = d.mode;
   PENDING = d.pending ?? null;
   paintMode();
@@ -2117,7 +2122,11 @@ const KEYS = {
  * own requirement once. In Chat there is nobody to approve, nobody to add and
  * no worktree to diff — three buttons that could only ever say "nothing here".
  */
-const NEEDS = { approve: 'crew', summon: 'crew', diff: 'worktrees' };
+// `workflows` reads modes.js's own flag, the one no UI code used to read: the
+// five workflow_* MCP tools are already automate-only (modes.js:155), so a
+// button that opened the same automations in Code mode offered an editor whose
+// court could not touch what it edited.
+const NEEDS = { approve: 'crew', summon: 'crew', diff: 'worktrees', workflows: 'workflows' };
 const inMode = (ico) => {
   const m = modeOf(MODE);
   const need = NEEDS[ico];

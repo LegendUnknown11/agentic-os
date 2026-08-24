@@ -1568,3 +1568,76 @@ body[data-mode="chat"] footer{display:none}
 .chat-sidebar-search{flex:none;width:26px;height:26px;color:var(--faint);background:none;
   border:0;border-radius:var(--r-sm);cursor:pointer;font-size:13px}
 .chat-sidebar-search:hover{color:var(--ink);background:var(--glass)}
+
+/* ---------- the automation graph (ui/graph.js) ----------
+ * Nodes are absolutely positioned in canvas-local pixels and the wires are one
+ * SVG behind them, sized to the graph's own extent — so the surface scrolls as
+ * one thing and a wire never lands on top of the node it points at.
+ */
+.wfpal{display:flex;flex-wrap:wrap;gap:var(--s1);margin:var(--s2) 0}
+.wfchip{color:var(--dim);background:var(--glass-raised);border:1px solid var(--edge);
+  border-radius:var(--r-sm);padding:3px 9px;font-size:var(--t-micro);font-family:var(--mono);
+  cursor:grab;touch-action:none}
+.wfchip:hover{color:var(--ink);border-color:var(--edge-strong)}
+.wfchip:active{cursor:grabbing}
+/* The drag ghost follows the pointer in SCREEN space, so it is on <body> and
+ * outside every transform the panel sits inside. */
+.wfghost{position:fixed;z-index:9999;transform:translate(-50%,-50%);pointer-events:none;
+  color:var(--accent-ink);background:var(--accent);border-radius:var(--r-sm);
+  padding:3px 9px;font-size:var(--t-micro);font-family:var(--mono);opacity:.9}
+
+.wfhead{display:flex;align-items:center;justify-content:space-between;gap:var(--s2)}
+.wfgraph{position:relative;overflow:auto;height:340px;min-height:160px;resize:vertical;touch-action:none;
+  background:var(--floor-2);border:1px solid var(--edge);border-radius:var(--r-md);
+  background-image:radial-gradient(var(--edge) 1px,transparent 1px);background-size:22px 22px}
+.wfnodes{position:absolute;inset:0}
+.wires{position:absolute;top:0;left:0;pointer-events:none;overflow:visible}
+.wires .wire{fill:none;stroke:var(--edge-strong);stroke-width:1.5}
+.wires .wire.then{stroke:rgb(var(--accent-rgb) / .75)}
+.wires .wire.else{stroke:rgb(var(--danger-rgb) / .6)}
+.wires .wire.live{stroke:var(--accent);stroke-dasharray:4 3}
+
+.wfnode{position:absolute;box-sizing:border-box;display:flex;flex-direction:column;
+  justify-content:center;gap:2px;padding:var(--s2) var(--s3);cursor:grab;touch-action:none;
+  background:var(--glass);border:1px solid var(--edge);border-radius:var(--r-md);
+  box-shadow:var(--lift);user-select:none}
+.wfnode:active{cursor:grabbing}
+.wfnode.sel{border-color:var(--accent);box-shadow:0 0 0 1px rgb(var(--accent-rgb) / .35),var(--lift)}
+.wfnode.start{border-left:3px solid var(--crown)}
+.wfnode.ok{border-color:rgb(var(--accent-rgb) / .5)}
+.wfnode.fail,.wfnode.unknown{border-color:var(--danger)}
+.wfn-head{display:flex;align-items:baseline;gap:var(--s2);min-width:0}
+.wfn-type{color:var(--ink);font-size:var(--t-sm);font-weight:600}
+.wfn-id{color:var(--faint);font-size:var(--t-micro);font-family:var(--mono);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wfn-sub{color:var(--dim);font-size:var(--t-micro);overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.wfn-x{position:absolute;top:2px;right:4px;color:var(--faint);background:none;border:0;
+  cursor:pointer;font-size:13px;line-height:1;opacity:0}
+.wfnode:hover .wfn-x{opacity:1}
+.wfn-x:hover{color:var(--danger)}
+
+/* Ports are the drag handles for wiring, so they are bigger than they look —
+ * an 8px dot is a target you miss. */
+.wfport{position:absolute;width:9px;height:9px;border-radius:99px;
+  background:var(--edge-strong);border:1px solid var(--deep);touch-action:none}
+.wfport::after{content:'';position:absolute;inset:-7px}
+.wfport.in{left:-5px;top:calc(50% - 5px);background:var(--edge)}
+.wfport.out{right:-5px;top:calc(50% - 5px);cursor:crosshair}
+.wfport.then{right:-5px;top:calc(28% - 5px);cursor:crosshair;background:var(--accent)}
+.wfport.else{right:-5px;top:calc(72% - 5px);cursor:crosshair;background:var(--danger)}
+.wfport.out:hover,.wfport.then:hover,.wfport.else:hover{box-shadow:0 0 0 3px rgb(var(--accent-rgb) / .25)}
+
+.wfinspect{margin-top:var(--s3)}
+.wfform{border:1px solid var(--edge);border-radius:var(--r-md);padding:var(--s2) var(--s3)}
+.wfform-head{display:flex;align-items:baseline;gap:var(--s2);flex-wrap:wrap;
+  padding-bottom:var(--s2);border-bottom:1px solid var(--edge)}
+.wfform-head .p{color:var(--ink);font-size:var(--t-sm);font-family:var(--mono)}
+.wfform-head .ctx{color:var(--faint);font-size:var(--t-micro)}
+.wfform .srow>span{flex:none}
+.wfform textarea{flex:1;min-width:0;background:rgba(0,0,0,.32);color:var(--ink);
+  border:1px solid var(--edge);border-radius:var(--r-sm);padding:4px 7px;
+  font-family:var(--mono);font-size:var(--t-micro);resize:vertical}
+/* Unparseable JSON is shown, not silently discarded: the field keeps what was
+ * typed and says it is not usable yet, rather than reverting under the cursor. */
+.wfform textarea.bad{border-color:var(--danger)}
