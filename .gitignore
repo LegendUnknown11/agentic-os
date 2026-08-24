@@ -2,6 +2,16 @@ node_modules/
 dist/
 .kingdom/
 
+# Daemon stdout/stderr from `electron/main.js` spawning the daemon detached —
+# written next to the repo root on every launch, and each one names the repo
+# path it served, so these are per-machine noise, not project state.
+.kingdom-daemon-*.log
+
+# Untracked, unreferenced by any code path, flagged across three sessions with
+# no resolution — see HANDOFF.md. Ignored rather than deleted: not this app's
+# call to make on the user's behalf.
+/Background.jpg
+
 # Per-machine identity and tool config, not project state. .agents/kingdom-id.json
 # holds absolute paths to this machine's db, repo and vault — and peasants run
 # `git add -A`, so anything untracked here gets committed onto a branch and
