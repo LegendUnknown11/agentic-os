@@ -1,0 +1,20 @@
+name: test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    # windows-latest, not a matrix: the daemon needs node:sqlite and every
+    # Windows-only path (src/agent.js's IS_WIN guards) is untested on any
+    # other OS — see PLAN.md's Phase 2.7, cross-platform is deliberately
+    # deferred.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci
+      - run: npm test
