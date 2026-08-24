@@ -20,12 +20,15 @@ const IS_WIN = process.platform === 'win32';
 // npm-shim CLIs have no real .exe; run the package's JS entry with our own node.
 const NPM_ENTRY = {
   codex: '@openai/codex/bin/codex.js',
-  opencode: 'opencode/bin/opencode.js',
+};
+// opencode-ai ships a real native binary via its own postinstall (fetched
+// into the package's own bin/), not a JS shim run under node — spawn it directly.
+const NPM_NATIVE_ENTRY = {
+  opencode: IS_WIN ? 'opencode-ai/bin/opencode.exe' : 'opencode-ai/bin/opencode',
 };
 // agy's own ladder. Narrower than codex's, and it has no 'none' or 'max' —
 // passing one borrowed from another member is rejected outright.
 export const AGY_EFFORTS = new Set(['low', 'medium', 'high']);
-export const OPENCODE_EFFORTS = new Set(['low', 'medium', 'high']);
 // Windows caps a command line at 32,767 chars; leave room for the exe path,
 // the flags, and the model name. Above this an agy or opencode brief goes to a file.
 const AGY_ARGV_BUDGET = 24_000;
@@ -39,17 +42,29 @@ const CLAUDE_SYSPROMPT_ARGV_BUDGET = 24_000;
 
 const cliCache = new Map();
 
-function npmEntry(name) {
-  if (!NPM_ENTRY[name]) return null;
-  const roots = [
+function npmRoots() {
+  return [
     process.env.APPDATA && join(process.env.APPDATA, 'npm', 'node_modules'),
     join(homedir(), '.npm-global', 'lib', 'node_modules'),
     '/usr/local/lib/node_modules',
     '/usr/lib/node_modules',
   ].filter(Boolean);
-  for (const r of roots) {
+}
+
+function npmEntry(name) {
+  if (!NPM_ENTRY[name]) return null;
+  for (const r of npmRoots()) {
     const p = join(r, ...NPM_ENTRY[name].split('/'));
     if (existsSync(p)) return { command: process.execPath, prefixArgs: [p] };
+  }
+  return null;
+}
+
+function npmNativeEntry(name) {
+  if (!NPM_NATIVE_ENTRY[name]) return null;
+  for (const r of npmRoots()) {
+    const p = join(r, ...NPM_NATIVE_ENTRY[name].split('/'));
+    if (existsSync(p)) return { command: p, prefixArgs: [] };
   }
   return null;
 }
@@ -71,6 +86,9 @@ export function resolveCli(name) {
     : { command: override, prefixArgs: [] };
 
   if (!out && IS_WIN && name === 'codex') out = npmEntry(name);
+  // opencode's Windows npm shim is a .cmd/.ps1 wrapper (see the exts comment
+  // below) — go straight to the real .exe the same way codex's is found above.
+  if (!out && IS_WIN && name === 'opencode') out = npmNativeEntry(name);
 
   if (!out) {
     const dirs = [
@@ -96,6 +114,7 @@ export function resolveCli(name) {
   }
 
   if (!out) out = npmEntry(name);
+  if (!out) out = npmNativeEntry(name);
 
   if (!out) throw new Error(`Cannot find the '${name}' CLI. Set KINGDOM_${name.toUpperCase()}_BIN.`);
   cliCache.set(name, out);
@@ -156,6 +175,27 @@ function armTurnWatchdog(agent, cli, proc) {
 function spawnGuarded(agent, cli, command, args, opts) {
   try {
     return spawn(command, args, opts);
+  } catch (e) {
+    agent.busy = false;
+    agent.proc = null;
+    agent.emit('error', `${cli} could not be started: ${e.message}`);
+    agent.emit('turn_end', { usage: null, costUsd: 0, ctx: agent.ctxTokens() });
+    return null;
+  }
+}
+
+/**
+ * resolveCli() throws SYNCHRONOUSLY when a binary can't be found anywhere —
+ * that throw was landing after `busy = true` and before spawnGuarded's own
+ * try/catch, at every one of its four call sites, so a missing CLI wedged
+ * the member busy forever with no 'error' or 'turn_end' emitted at all (the
+ * exact silent-hang failure spawnGuarded exists to prevent). Same recovery,
+ * one place. Returns null when the CLI could not be resolved; the caller
+ * must return.
+ */
+function resolveCliGuarded(agent, cli) {
+  try {
+    return resolveCli(cli);
   } catch (e) {
     agent.busy = false;
     agent.proc = null;
@@ -370,7 +410,9 @@ export class Agent extends EventEmitter {
       );
     }
 
-    const { command, prefixArgs } = resolveCli('claude');
+    const resolved = resolveCliGuarded(this, 'claude');
+    if (!resolved) return;
+    const { command, prefixArgs } = resolved;
     const proc = spawnGuarded(this, 'claude', command, [...prefixArgs, ...args], {
       cwd: this.cwd,
       env: claudeEnv(this.env),
@@ -509,7 +551,9 @@ export class Agent extends EventEmitter {
     // and `exec resume`.
     args.push('-');
 
-    const { command, prefixArgs } = resolveCli('codex');
+    const resolved = resolveCliGuarded(this, 'codex');
+    if (!resolved) return;
+    const { command, prefixArgs } = resolved;
     const proc = spawnGuarded(this, 'codex', command, [...prefixArgs, ...args], {
       cwd: this.cwd,
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -626,9 +670,11 @@ export class Agent extends EventEmitter {
     if (this.spec.skipPermissions !== false) args.push('--dangerously-skip-permissions');
     args.push('--print-timeout', this.spec.printTimeout ?? '20m');
 
-    const { command, prefixArgs } = resolveCli('agy');
     // agy has no stdin prompt, so a long brief still cannot be sent to it —
     // but it must fail LOUDLY rather than wedging the member forever.
+    const resolved = resolveCliGuarded(this, 'agy');
+    if (!resolved) return;
+    const { command, prefixArgs } = resolved;
     const proc = spawnGuarded(this, 'agy', command, [...prefixArgs, ...args], {
       cwd: this.cwd,
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -770,15 +816,24 @@ export class Agent extends EventEmitter {
     const prompt = this.sessionId ? text : `${this.spec.prompt ?? ''}\n\n---\n\n${text}`;
     this.ctxChars += prompt.length;
 
-    const args = ['run', this.#opencodePrompt(prompt), '--format', 'json', '--auto'];
+    // --title skips opencode's own auto-generated-title turn (a separate,
+    // small-model LLM call on every single run) — measured live: with no
+    // title it ran google/gemini-3.7-flash first and, on this account, that
+    // call errored out on an unrelated credit cap before the real turn ever
+    // started streaming.
+    const args = ['run', this.#opencodePrompt(prompt), '--format', 'json', '--auto', '--title', this.name];
     if (this.sessionId) args.push('--session', this.sessionId);
     if (this.spec.model) args.push('--model', this.spec.model);
-    if (this.spec.effort && OPENCODE_EFFORTS.has(this.spec.effort)) {
-      args.push('--effort', this.spec.effort);
-    }
+    // Not gated against a local allowlist, unlike agy: opencode's reasoning
+    // flag is --variant, not --effort, and the valid values are per-model
+    // (kingdom.js's effortsFor()/config.efforts.byModel is what already
+    // decides what's offered — trust it, the same way claude/codex do below).
+    if (this.spec.effort) args.push('--variant', this.spec.effort);
     if (this.spec.agent) args.push('--agent', this.spec.agent);
 
-    const { command, prefixArgs } = resolveCli('opencode');
+    const resolved = resolveCliGuarded(this, 'opencode');
+    if (!resolved) return;
+    const { command, prefixArgs } = resolved;
     const proc = spawnGuarded(this, 'opencode', command, [...prefixArgs, ...args], {
       cwd: this.cwd,
       stdio: ['ignore', 'pipe', 'pipe'],

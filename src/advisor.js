@@ -34,7 +34,9 @@ export function ask(spec, prompt, { cwd = process.cwd(), timeoutMs = TIMEOUT_MS,
   const args = cli === 'opencode'
     ? ['run', prompt, '--format', 'json', '--auto',
       ...(spec.model ? ['--model', spec.model] : []),
-      ...(spec.effort ? ['--effort', spec.effort] : [])]
+      // opencode's reasoning-effort flag is --variant, not --effort —
+      // confirmed against the real CLI's own `run --help`.
+      ...(spec.effort ? ['--variant', spec.effort] : [])]
     : cli === 'agy'
     ? ['--print', '--output-format', 'stream-json',
       ...(spec.model ? ['--model', spec.model] : []),

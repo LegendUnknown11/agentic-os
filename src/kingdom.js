@@ -855,9 +855,25 @@ export class Kingdom extends EventEmitter {
     // (Chat/Research/Build before Code mode ever picks one) there is nothing
     // to isolate from, and every member works directly in the workspace home.
     const inWorktree = role === 'peasant' && modeOf(this.mode()).worktrees && Boolean(this.repo);
+    // opencode has no --tools flag to strip native tools the way claude does,
+    // and it discovers MCP config from a fixed `.opencode.json` in its cwd —
+    // so orchestrator and briefer, who otherwise share the repo root as their
+    // cwd, would clobber each other's identity file on every restart (whoever
+    // spawns second overwrites the first's KINGDOM_AGENT, silently handing
+    // them the wrong role's toolset). Measured live: this is exactly what
+    // made a real run's orchestrator lose its summon tool and fall back to
+    // writing six projects directly into the repo itself, single-threaded, in
+    // one turn that blew a 20-minute watchdog. A small per-officer directory
+    // gives each its own `.opencode.json` with no collision; MCP tools still
+    // reach the real repo via KINGDOM_REPO in that file's environment block,
+    // unaffected by cwd, so nothing here changes what officers can observe.
+    const officerCwd = (spec.cli ?? 'claude') === 'opencode' && role !== 'peasant'
+      ? join(kingdomDir(this.repo), 'officers', name)
+      : this.#cwd();
+    if (officerCwd !== this.#cwd()) mkdirSync(officerCwd, { recursive: true });
     const cwd = inWorktree
       ? await createWorktree(this.repo, name, this.base)
-      : this.#cwd();
+      : officerCwd;
 
     // A reused branch that still holds unmerged work cannot be caught up
     // safely, so the member must be TOLD it is looking at old code rather than
