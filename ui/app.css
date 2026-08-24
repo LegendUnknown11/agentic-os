@@ -1516,7 +1516,7 @@ body[data-mode="chat"] footer{display:none}
 
 .chat-thread{flex:1;overflow-y:auto;padding:var(--s5) var(--s4);
   display:flex;flex-direction:column;gap:var(--s3);
-  max-width:760px;width:100%;margin:0 auto;scrollbar-width:thin}
+  max-width:760px;width:100%;margin:0 auto;scrollbar-width:thin;user-select:text}
 .chat-msg{display:flex;flex-direction:column}
 .chat-msg.mine{align-items:flex-end}
 .chat-msg.theirs{align-items:flex-start}
