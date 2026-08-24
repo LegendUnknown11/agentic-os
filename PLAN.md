@@ -1,5 +1,20 @@
 # Kingdom → shippable app
 
+## Status (2026-08-24)
+
+Shipped: Phase 0 (graph.js landed); 2.1 CSRF gate (`c7fb4e6`); 2.2 neutral
+config template + packaged skills/roles.json (`4f19c37`); 2.3 first-run doctor
+screen (`4237599`); 2.4 Node-version check before daemon spawn (`479587b`);
+2.5's CI workflow (`84fbaab`); 2.6 docs moved under `docs/` (`3306812`). The
+schema-migration concern in 2.5 is already covered by `src/bus.js`'s existing
+guarded, additive kv-flag migrations (`#migrateConversations()`) — no new
+mechanism needed. `npm test`: 65 suites, all green.
+
+Deliberately not done here — the user's call, not mine: a git remote and push,
+a LICENSE choice (asked; user chose CI-only for now), and the clean-machine
+install test in 1.1/1.3 (needs a second physical/VM machine). Phase 2.7 stays
+deferred as written below.
+
 ## Context
 
 Kingdom (`E:\AI\Agentic OS`) is a multi-agent orchestrator: an orchestrator
