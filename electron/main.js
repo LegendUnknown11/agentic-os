@@ -6,7 +6,7 @@
 // Launching again re-attaches to the court that is already running; to end it
 // for real, use "end court" in the throne room.
 import { app, BrowserWindow, dialog, session, ipcMain, screen, shell } from 'electron';
-import { spawn } from 'node:child_process';
+import { spawn, execFileSync } from 'node:child_process';
 import { openSync, existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -61,12 +61,34 @@ function logTail(path, n = 1200) {
 }
 
 /**
+ * Fail with a clear message before spawning, not after. A too-old `node` on
+ * PATH still spawns fine — it just dies inside the daemon on `import
+ * 'node:sqlite'`, and the childExit path below would surface that as a raw
+ * Node stack trace in the log tail instead of "install Node 24+".
+ */
+function checkNodeVersion(node) {
+  let out;
+  try {
+    out = execFileSync(node, ['--version'], { timeout: 5000 }).toString().trim();
+  } catch (e) {
+    throw new Error(`Could not run Node ("${node}"): ${e.message}. `
+      + 'Node 24+ must be on PATH. Get it at https://nodejs.org.');
+  }
+  const major = Number(out.replace(/^v/, '').split('.')[0]);
+  if (!(major >= 24)) {
+    throw new Error(`Node ${out} is on PATH, but the daemon needs Node 24+ for node:sqlite. `
+      + 'Get it at https://nodejs.org.');
+  }
+}
+
+/**
  * Start the court and leave it running. Readiness is decided by asking the
  * port, not by parsing stdout — a detached child's output belongs in the log,
  * and this works whatever the daemon chooses to print.
  */
 async function startDaemon(repo, logPath) {
   const node = process.env.KINGDOM_NODE ?? 'node';
+  checkNodeVersion(node);
   const out = openSync(logPath, 'a');
   const child = spawn(node, [
     join(HERE, '..', 'src', 'daemon.js'), ...(repo ? [repo] : []), '--port', String(PORT),
