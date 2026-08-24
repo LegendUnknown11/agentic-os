@@ -23,7 +23,9 @@
       "electron/**",
       "src/**",
       "ui/**",
+      "skills/**",
       "kingdom.config.json",
+      "roles.json",
       "package.json"
     ],
     "win": {
