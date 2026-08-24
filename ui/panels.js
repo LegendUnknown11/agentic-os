@@ -1306,3 +1306,33 @@ export function openVault(openPath) {
     },
   });
 }
+
+// The first screen a freshly installed app shows when no CLI is signed in
+// yet — src/doctor.js's probes, structured, served live at GET /api/doctor.
+// A pass/fail/warn list rather than a blank throne room and a cryptic error
+// once someone finally tries to summon a member.
+export function openDoctor() {
+  W.toggle('doctor', {
+    title: 'Doctor',
+    build(box) {
+      const body = el('div', 'log settings');
+      box.append(body);
+
+      const draw = async () => {
+        const r = await get('/api/doctor');
+        body.textContent = '';
+        if (!r.checks) { body.append(el('div', 'empty', 'The team is not answering.')); return; }
+        for (const c of r.checks) {
+          const row = el('div', `note ${c.level === 'fail' ? 'bad' : ''}`);
+          if (c.level === 'warn') row.style.color = 'var(--crown)';
+          row.textContent = `${c.level === 'ok' ? '✔' : c.level === 'warn' ? '!' : '✘'} ${c.message}`;
+          body.append(row);
+        }
+        body.append(el('div', 'note', r.ready
+          ? 'Ready. Summon your first member.'
+          : 'Fix the ✘ items above, then reopen this panel.'));
+      };
+      draw();
+    },
+  });
+}

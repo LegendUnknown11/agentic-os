@@ -80,6 +80,7 @@ const suites = [
   ['metrics, diff and vault panels', join(HERE, 't-panels.js')],
   ['cross-origin POSTs are refused', join(HERE, 't-csrf.js')],
   ['the shipped config template is clean', join(HERE, 't-config-template.js')],
+  ['doctor report, structured and served live', join(HERE, 't-doctor-api.js')],
   ['antigravity (agy) backend', join(HERE, 't-agy.js')],
   ['opencode backend', join(HERE, 't-opencode.js')],
   ['turn summaries', join(HERE, 't-summarize.js')],

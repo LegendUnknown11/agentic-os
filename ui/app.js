@@ -2016,6 +2016,7 @@ const TOOLS = [
   ['vault', 'Notes', 'Search your notes', () => P.openVault()],
   ['recall', 'Memory', 'Search everything the court remembers — history and notes together', () => P.openRecall()],
   ['workflows', 'Automations', 'The court’s n8n-style automations', () => P.openWorkflows({ post, toast })],
+  ['doctor', 'Doctor', 'Is everything set up right', () => P.openDoctor()],
   ['target', 'Repository', 'Which codebase Code mode works on', () => openSettings('repo')],
   ['summary', 'Summaries', 'The model that condenses each turn', () => openSettings('summary')],
   ['advisor', 'Advisor', 'Prompt engineer and model selector', () => openSettings('advisor')],
@@ -2426,10 +2427,16 @@ $('#spend').textContent = '0 turns';
  */
 if (!localStorage.getItem('kd.seen')) {
   localStorage.setItem('kd.seen', '1');
-  // MODE checked inside the callback, not before scheduling it: the real SSE
-  // snapshot has set it by the time this fires, and Chat mode has its own
-  // thread — the floating panel would be a redundant, invisible-behind-it copy.
-  setTimeout(() => { if (MODE !== 'chat') openMember('orchestrator'); }, 400);
+  // A blank throne room with no CLI signed in fails silently — the sovereign
+  // would summon a member and get an opaque error minutes later. Check first,
+  // and only open the orchestrator once the doctor has nothing left to say.
+  fetch('/api/doctor').then((r) => r.json()).then((rep) => {
+    if (!rep.ready) { P.openDoctor(); return; }
+    // MODE checked inside the callback, not before scheduling it: the real SSE
+    // snapshot has set it by the time this fires, and Chat mode has its own
+    // thread — the floating panel would be a redundant, invisible-behind-it copy.
+    setTimeout(() => { if (MODE !== 'chat') openMember('orchestrator'); }, 400);
+  }).catch(() => {});
 }
 badge();
 connect();

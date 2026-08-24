@@ -23,6 +23,7 @@ import { Speech } from './stt.js';
 import { deltaOf, totalsOf } from './usage.js';
 import { readApproval } from './approval.js';
 import { listWorkflows, saveWorkflow, deleteWorkflow, runWorkflow, tickScheduler, logRun, runHistory } from './workflows.js';
+import { runDoctor } from './doctor.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PUBLIC = join(HERE, '..', 'ui');
@@ -346,6 +347,15 @@ const handle = async (req, res) => {
   if (url.pathname === '/api/ping') {
     return res.writeHead(ready ? 200 : 503, { 'content-type': 'application/json' })
       .end(JSON.stringify({ ok: ready, starting: !ready, repo: kingdom.repo, base: kingdom.base, pid: process.pid }));
+  }
+
+  // The same probes `npm run doctor` prints, structured — this is what a
+  // freshly installed app shows FIRST, since there is no terminal it can
+  // assume the user will open. Answerable whether or not the court is up:
+  // runDoctor() only shells out to CLI binaries, it never touches `kingdom`.
+  if (url.pathname === '/api/doctor') {
+    const report = await runDoctor({ repo: kingdom.repo ?? undefined });
+    return res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(report));
   }
 
   if (url.pathname === '/stream') {
