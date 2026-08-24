@@ -102,6 +102,25 @@ const MIME = {
   '.csv': 'text/csv', '.json': 'application/json',
 };
 
+/**
+ * Read a request body as a Buffer, aborting the connection past `maxBytes`
+ * rather than growing a string/array without limit. These are the only
+ * routes that read a whole body into memory before validating anything —
+ * without a cap, the size check every JSON parser gets for free (a huge
+ * string just fails to parse, eventually) doesn't apply until the memory is
+ * already spent.
+ */
+async function readBody(req, maxBytes) {
+  const chunks = [];
+  let size = 0;
+  for await (const c of req) {
+    size += c.length;
+    if (size > maxBytes) { req.destroy(); throw Object.assign(new Error('body too large'), { status: 413 }); }
+    chunks.push(c);
+  }
+  return Buffer.concat(chunks);
+}
+
 // Backgrounds and music the sovereign uploads. Kept beside the database, i.e.
 // OUTSIDE the target repo — a wallpaper must never turn up in a diff.
 const ASSETS = join(kingdomDir(homeRepo), 'assets');
@@ -279,6 +298,24 @@ async function shutdown(code = 0) {
   process.exit(code);
 }
 
+// Binding to 127.0.0.1 keeps the outside world off this port, but not the
+// browser sitting on it: any page open in the same browser can still POST
+// here, and a POST with no preflight (content-type: text/plain, say) needs
+// no CORS header back at all. The court's own agents run unconfined by
+// design — bypassPermissions, danger-full-access, --dangerously-skip-
+// permissions (src/agent.js) — so a drive-by POST to /api/command is not a
+// UI bug, it is arbitrary code execution. Two checks kill the whole class:
+// an Origin that doesn't match this server (browsers send Origin on every
+// cross-origin POST; a same-origin fetch sends the server's own origin, and
+// a non-browser caller sends none, so both legitimate cases pass) and a
+// Content-Type that isn't application/json (forces a preflight for anything
+// cross-origin, and the preflight has no matching header to pass it).
+function originAllowed(req) {
+  const origin = req.headers.origin;
+  if (!origin) return true; // no browser sends a POST with no Origin
+  return origin === `http://127.0.0.1:${port}` || origin === `http://localhost:${port}`;
+}
+
 // Named, so createServer can wrap the WHOLE thing in one catch. Anything that
 // throws in here is an unhandled rejection, and Node's default for those is to
 // kill the process — so a single malformed request body took the entire court
@@ -286,6 +323,23 @@ async function shutdown(code = 0) {
 // that the next route forgets.
 const handle = async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
+
+  if (req.method === 'POST' && url.pathname.startsWith('/api/')) {
+    if (!originAllowed(req)) return res.writeHead(403, { 'content-type': 'application/json' })
+      .end(JSON.stringify({ ok: false, error: 'origin not allowed' }));
+    // /api/transcribe and /api/assets (upload, not /delete) post a raw file
+    // as the body with its own mime type, by design (ui/assets.js's own
+    // comment: a multipart boundary parser is a lot of code for one file) —
+    // every other POST /api/* is a JSON action and gets the preflight-forcing
+    // check the raw-body routes cannot.
+    const rawBody = url.pathname === '/api/transcribe'
+      || (url.pathname === '/api/assets' && url.searchParams.has('name'));
+    const ct = (req.headers['content-type'] ?? '').split(';')[0].trim();
+    if (!rawBody && ct !== 'application/json') {
+      return res.writeHead(415, { 'content-type': 'application/json' })
+        .end(JSON.stringify({ ok: false, error: 'expected content-type: application/json' }));
+    }
+  }
 
   // How a launching window discovers whether a court is already up, and which
   // repo it is serving — attaching to the wrong repo would be silent and bad.
@@ -605,8 +659,9 @@ const handle = async (req, res) => {
       return send(200, { ok: true, runs: runHistory(kingdom.bus, id) });
     }
 
-    let body = '';
-    for await (const c of req) body += c;
+    let body;
+    try { body = (await readBody(req, 2 * 1024 * 1024)).toString('utf8'); }
+    catch (e) { return res.writeHead(e.status ?? 500).end(); }
 
     if (url.pathname === '/api/workflows/hook') {
       if (req.method !== 'POST') return res.writeHead(405).end();
@@ -666,8 +721,9 @@ const handle = async (req, res) => {
     if (req.method !== 'POST') return res.writeHead(405).end();
 
     if (url.pathname.endsWith('/delete')) {
-      let body = '';
-      for await (const c of req) body += c;
+      let body;
+      try { body = (await readBody(req, 2 * 1024 * 1024)).toString('utf8'); }
+      catch (e) { return res.writeHead(e.status ?? 500).end(); }
       let request;
       try { request = JSON.parse(body || '{}'); }
       catch { return send(400, { ok: false, error: 'invalid JSON' }); }
@@ -721,12 +777,13 @@ const handle = async (req, res) => {
       return send(400, { ok: false, error: 'SpeechBird not found. Set "speechbird" in '
         + 'kingdom.config.json to the folder holding its .venv.' });
     }
-    const chunks = [];
-    for await (const c of req) chunks.push(c);
+    let buf;
+    try { buf = await readBody(req, 25 * 1024 * 1024); } // a voice note, not a podcast
+    catch (e) { return res.writeHead(e.status ?? 500).end(); }
     // audio/webm;codecs=opus -> webm
     const ext = (req.headers['content-type'] ?? '').split(';')[0].split('/')[1] || 'webm';
     try {
-      return send(200, { ok: true, text: await speech.transcribe(Buffer.concat(chunks), ext) });
+      return send(200, { ok: true, text: await speech.transcribe(buf, ext) });
     } catch (e) {
       return send(502, { ok: false, error: e.message });
     }
@@ -735,8 +792,9 @@ const handle = async (req, res) => {
   if (req.method === 'POST' && url.pathname.startsWith('/api/')) {
     const action = ACTIONS[url.pathname.slice(5)];
     if (!action) return res.writeHead(404).end();
-    let body = '';
-    for await (const c of req) body += c;
+    let body;
+    try { body = (await readBody(req, 2 * 1024 * 1024)).toString('utf8'); }
+    catch (e) { return res.writeHead(e.status ?? 500).end(); }
     let input;
     try { input = body ? JSON.parse(body) : {}; }
     catch {

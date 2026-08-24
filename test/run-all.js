@@ -78,6 +78,7 @@ const suites = [
   ['wallpaper and music assets', join(HERE, 't-assets.js')],
   ['uploaded documents surfaced to the court', join(HERE, 't-uploads.js')],
   ['metrics, diff and vault panels', join(HERE, 't-panels.js')],
+  ['cross-origin POSTs are refused', join(HERE, 't-csrf.js')],
   ['antigravity (agy) backend', join(HERE, 't-agy.js')],
   ['opencode backend', join(HERE, 't-opencode.js')],
   ['turn summaries', join(HERE, 't-summarize.js')],
