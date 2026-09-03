@@ -89,7 +89,7 @@ a.equal(git(outer, 'rev-list', '--count', 'HEAD').trim(), '1', 'no extra commit 
 // The nesting check compared path strings. Two names for one directory made it
 // reject a repo as nested inside ITSELF: on CI, os.tmpdir() gave the 8.3 short
 // form (C:\Users\RUNNER~1\...) while git reported C:/Users/runneradmin/...,
-// and 23 suites died on a machine where all 67 passed locally. A junction is
+// and 23 suites died on a machine where all 68 passed locally. A junction is
 // the portable way to get two names for one directory — Windows allows it
 // without elevation, and on POSIX node makes an ordinary dir symlink.
 const alias = join(dirname(outer), `${basename(outer)}-alias`);

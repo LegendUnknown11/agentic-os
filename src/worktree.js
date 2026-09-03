@@ -111,7 +111,7 @@ export async function assertRepo(repo) {
  * peasant's first diff would contain the entire existing project.
  */
 // resolve() normalises separators and `..`, but NOT Windows 8.3 short names:
-// os.tmpdir() returns C:UsersRUNNER~1... on any account whose name is over
+// os.tmpdir() returns C:\Users\RUNNER~1\... on any account whose name is over
 // 8 chars, while git always reports the long form. Comparing those two strings
 // called a directory nested inside ITSELF — 23 suites failed on CI while every
 // one of them passed locally, where the dev account name is short enough to get

@@ -11,7 +11,7 @@ module map. Read it as instructions, not background. What follows is the rest.
 ## Commands
 
 ```bash
-npm test                       # everything that costs no API quota (~67 suites, 4-wide)
+npm test                       # everything that costs no API quota (68 suites, 4-wide)
 KINGDOM_TEST_WIDTH=1 npm test  # serialize; use when a failure looks like a race
 node test/t-pages.js           # one suite — every test/t-*.js runs standalone
 npm start                      # Electron shell (spawns the daemon)
@@ -70,8 +70,6 @@ View mounts must return their cleanup **synchronously** and guard late
 responses with a request token — navigation has to be able to cancel a view
 before its first request settles.
 
-`PLAN.md` is the authoritative contract for the current UI rebuild; `docs/HANDOFF.md`
-carries the live continuation state, including what has and has not been
-verified at runtime. Read both before changing UI files. The layout table in
-`README.md` predates this rewrite in places (`ui/panels.js`, `ui/app.js`) — the
-directory is the truth.
+`PLAN.md` is the authoritative contract for the current UI rebuild; the root
+`HANDOFF.md` carries the live continuation state, including what has and has not
+been verified at runtime. Read both before changing UI files.

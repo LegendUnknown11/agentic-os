@@ -11,7 +11,7 @@ A multi-agent orchestrator shaped as a kingdom: an orchestrator decomposes and d
 ## Run it
 
 ```bash
-npm test          # 45 suites, no API quota, must be green before you commit
+npm test          # 68 suites, no API quota, must be green before you commit
 npm run ctx -- <repo>   # where a court's context actually went
 npm start         # the Electron app
 node src/cli.js <repo> "first order"   # headless
@@ -52,4 +52,7 @@ node src/doctor.js      # preflight the CLIs — run from a normal terminal
 | `skills/` | The shipped procedures. `<pack>/<name>.md`; the vault overrides |
 | `ui/` | The throne room (vanilla JS, no build step) |
 
-Full workspace map and standing rules: `E:\AI\CLAUDE.md`.
+The sovereign's own machine keeps a wider workspace map at `E:\AI\CLAUDE.md`.
+That file is **not in this repository** and no clone has it — if you cannot read
+it, nothing is missing and there is no instruction there you are failing to
+follow. Everything binding on you is in this file.
