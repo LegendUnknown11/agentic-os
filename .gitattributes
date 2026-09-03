@@ -1,0 +1,14 @@
+# The suite asserts against module SOURCE TEXT (test/t-pages.js:191 matches
+# /toast, refreshLists,\n\s+sovereign/), so a checkout that rewrites LF to CRLF
+# fails tests that pass on the machine that wrote them. core.autocrlf=true did
+# exactly that on the first commit+checkout round-trip here, and would do it to
+# every Windows clone and to CI. Pin the working tree to LF instead.
+* text=auto eol=lf
+
+# Never touch bytes in these.
+*.png binary
+*.jpg binary
+*.ico binary
+*.gif binary
+*.woff binary
+*.woff2 binary
