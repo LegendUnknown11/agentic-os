@@ -38,8 +38,7 @@
     }
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.0.0",
-    "@openai/codex": "^0.150.1"
+    "@modelcontextprotocol/sdk": "^1.0.0"
   },
   "devDependencies": {
     "electron": "^44.0.0",
