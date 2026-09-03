@@ -4,6 +4,13 @@ on:
   push:
   pull_request:
 
+# Two pushes in quick succession ran two full Windows jobs and only the second
+# one's answer was ever read. Scoped by ref, so a branch push never cancels the
+# run on main.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     # windows-latest, not a matrix: the daemon needs node:sqlite and every
@@ -11,10 +18,19 @@ jobs:
     # other OS — see PLAN.md's Phase 2.7, cross-platform is deliberately
     # deferred.
     runs-on: windows-latest
+    # Measured: 143.4s locally at 4-wide, 165.4s here at 2-wide. The runner's
+    # own ceiling is far higher — SUITE_TIMEOUT_MS is 180s and every failure is
+    # retried once serially, so 68 hanging suites would run well over an hour
+    # before test/run-all.js gave up. Without this, GitHub's default is 360
+    # minutes, billed at 2x on Windows: one wedged suite costs six hours.
+    # Thirty is 10x the honest run and still fails fast.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 24
+          # package-lock.json is 169KB and npm ci is most of a three-minute job.
+          cache: npm
       - run: npm ci
       - run: npm test
