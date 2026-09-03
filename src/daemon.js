@@ -936,3 +936,18 @@ for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => shutdown(0));
 // live member's session with it over one stray promise — the SSE stream, the
 // summariser and the advisor are all fire-and-forget from here.
 process.on('unhandledRejection', (e) => console.error('unhandled rejection:', e?.stack ?? e));
+
+// The same argument, for a synchronous throw. Without this the daemon dies and
+// the reason goes nowhere the sovereign can see: electron/main.js spawns this
+// process detached and unref'd, so after boot nothing is watching the exit
+// code, and the log it writes to sits next to the repo root unread.
+//
+// The UI does notice the socket go — ui/main.js:165 flips the connection dot to
+// `down` and retries every second — so this was never a wedge. It was a court
+// that stopped with no stated cause, which rule 4 counts as the same failure.
+// So: say so on the stream first, while the stream is still open, then log.
+process.on('uncaughtException', (e) => {
+  try { push('error', { message: `The court hit an unhandled error: ${e?.message ?? e}` }); }
+  catch { /* the stream is already gone; the log below is all that is left */ }
+  console.error('uncaught exception:', e?.stack ?? e);
+});
