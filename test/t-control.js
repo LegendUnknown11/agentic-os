@@ -40,6 +40,7 @@ process.env.HOME = fakeHome;
 
 const dir = mkdtempSync(join(tmpdir(), 'kingdom-ctl-'));
 const repo = join(dir, 'repo');
+const otherRepo = join(dir, 'other-repo');
 const vault = join(dir, 'vault');
 execFileSync('git', ['init', '-q', repo]);
 execFileSync('git', ['config', 'user.email', 'k@kingdom'], { cwd: repo });
@@ -47,6 +48,12 @@ execFileSync('git', ['config', 'user.name', 'kingdom'], { cwd: repo });
 writeFileSync(join(repo, 'README.md'), '# control\n');
 execFileSync('git', ['add', '-A'], { cwd: repo });
 execFileSync('git', ['commit', '-qm', 'init'], { cwd: repo });
+execFileSync('git', ['init', '-q', otherRepo]);
+execFileSync('git', ['config', 'user.email', 'k@kingdom'], { cwd: otherRepo });
+execFileSync('git', ['config', 'user.name', 'kingdom'], { cwd: otherRepo });
+writeFileSync(join(otherRepo, 'README.md'), '# other control\n');
+execFileSync('git', ['add', '-A'], { cwd: otherRepo });
+execFileSync('git', ['commit', '-qm', 'init'], { cwd: otherRepo });
 
 const workspace = kingdomDir(null);
 mkdirSync(workspace, { recursive: true });
@@ -103,6 +110,8 @@ try {
   const delivered = [];
   k.on('delivered', (d) => delivered.push(d));
   await k.start();
+  a.throws(() => k.reject('missing'), /No pending approval missing/,
+    'a stale rejection must fail instead of looking like it resolved an approval');
 
   /* ---- 1. a live member follows the repo, or the attach did nothing ------ */
   const who = k.config.orchestrator.name;
@@ -127,6 +136,10 @@ try {
   await k.attachRepo(repo);
   a.equal(k.agents.get(who), settled,
     'a member already standing in the repo must be left alone on a re-attach');
+  await a.rejects(k.attachRepo(otherRepo), /requires a fresh court/,
+    'changing repositories mid-court must be refused before old worktrees can survive');
+  a.equal(k.repo, repo, 'a refused repository switch must leave the attached repository unchanged');
+  a.equal(k.agents.get(who), settled, 'a refused repository switch must not restart the settled court');
 
   /* ---- 2. the court can change the court's shape ------------------------- */
   const db = dbPath(null);
@@ -142,7 +155,7 @@ try {
 
   const { said } = mcp([
     { name: 'set_mode', arguments: { mode: 'reserch', why: 'a typo' } },
-    { name: 'set_mode', arguments: { mode: 'research', why: 'this is a research job' } },
+    { name: 'set_mode', arguments: { mode: 'cowork', why: 'this needs delegated workspace work' } },
   ], { db });
 
   a.match(said[0], /No such mode/,
@@ -150,14 +163,31 @@ try {
     + 'so a typo that reached it would quietly put the whole court into Code');
   a.equal(k.mode(), 'chat', 'and nothing may have moved yet');
 
-  a.ok(await until(() => k.mode() === 'research'),
+  a.ok(await until(() => k.mode() === 'cowork'),
     `the court must actually switch, still in ${k.mode()}`);
 
   // The other half of the gate: hidden where they cannot work is only correct
-  // if they are THERE where they can. Research has a bench.
-  const inResearch = mcp([], { db }).tools;
-  a.ok(inResearch.includes('wake_member') && inResearch.includes('dismiss_member'),
+  // if they are THERE where they can. Cowork has a bench.
+  const inCowork = mcp([], { db }).tools;
+  a.ok(inCowork.includes('wake_member') && inCowork.includes('dismiss_member'),
     'and both must appear once the court has a crew to act on');
+
+  // A member process reads this independently of the court. A torn roster
+  // record must reject an assignment, never crash the tool or claim it sent.
+  const savedRoster = k.bus.get('roster');
+  k.bus.set('roster', '{broken');
+  const corruptRoster = mcp([{ name: 'assign', arguments: { to: 'coder', task: 'must not be sent' } }], { db });
+  a.match(corruptRoster.said[0], /roster is unavailable/,
+    'a corrupt roster must turn assignment into an explicit refusal');
+  k.bus.set('roster', savedRoster);
+
+  k.setGoal({ text: 'keep the MCP state readable' });
+  const savedGoal = k.bus.get('goal');
+  k.bus.set('goal', '{broken');
+  const corruptGoal = mcp([{ name: 'goal', arguments: {} }], { db });
+  a.match(corruptGoal.said[0], /standing goal is unreadable/,
+    'a corrupt goal must be explained instead of failing the member tool');
+  k.bus.set('goal', savedGoal);
 
   a.equal(delivered.filter((d) => d.msg?.kind === 'control').length, 0,
     'a control request must never be DELIVERED to a member: it is posted with a null '
@@ -479,6 +509,6 @@ try {
   Object.assign(process.env, savedEnv);
   if (savedPushTimeout == null) delete process.env.KINGDOM_PUSH_TIMEOUT_MS;
   else process.env.KINGDOM_PUSH_TIMEOUT_MS = savedPushTimeout;
-  rmSync(dir, { recursive: true, force: true });
-  rmSync(fakeHome, { recursive: true, force: true });
+  rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 150 });
+  rmSync(fakeHome, { recursive: true, force: true, maxRetries: 10, retryDelay: 150 });
 }

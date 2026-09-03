@@ -12,6 +12,7 @@ create table if not exists messages (
   recipient text,                       -- null = broadcast to all awake agents
   kind      text    not null,           -- message | escalation | done | brief | system
   body      text    not null,
+  attachments text not null default '[]', -- json array of uploaded asset references
   conversation_id text not null default 'default'
 );
 create table if not exists events (
@@ -93,6 +94,26 @@ create index if not exists idx_msg_conv on messages(conversation_id, id);
 create index if not exists idx_evt_conv on events(conversation_id, id);
 `;
 
+// Attachments are references to files already accepted by the asset endpoint,
+// never file contents. Keep only the small public shape needed by the thread;
+// rejecting separators also keeps a malformed row from becoming a traversal
+// link when it is rendered.
+const cleanAttachments = (value) => (Array.isArray(value) ? value : [])
+  .map((item) => {
+    const name = typeof item === 'string' ? item : item?.name;
+    if (typeof name !== 'string' || !name.trim() || name.length > 255 || /[\\/\0]/.test(name)) return null;
+    const out = { name: name.trim() };
+    if (typeof item === 'object' && typeof item.kind === 'string' && item.kind.trim()) out.kind = item.kind.trim();
+    return out;
+  })
+  .filter(Boolean)
+  .slice(0, 32);
+
+const readAttachments = (value) => {
+  try { return cleanAttachments(typeof value === 'string' ? JSON.parse(value) : value); }
+  catch { return []; }
+};
+
 export class Bus {
   constructor(dbPath) {
     if (dbPath !== ':memory:') mkdirSync(dirname(dbPath), { recursive: true });
@@ -113,6 +134,8 @@ export class Bus {
     this.db.exec(SCHEMA);
     this.#rebuildTranscriptSearch();
     this.#migrateConversations();
+    this.#migrateMessageAttachments();
+    this.#migrateApprovals();
     this.db.exec(CONVERSATION_INDEXES);
   }
 
@@ -160,15 +183,50 @@ export class Bus {
     }
   }
 
+  /** Add structured asset references without rewriting the existing transcript. */
+  #migrateMessageAttachments() {
+    this.db.exec('begin immediate');
+    try {
+      if (this.get('schema:messages:attachments:v1') !== '1') {
+        const columns = this.db.prepare('pragma table_info(messages)').all().map((c) => c.name);
+        if (!columns.includes('attachments')) {
+          this.db.exec("alter table messages add column attachments text not null default '[]'");
+        }
+        this.set('schema:messages:attachments:v1', '1');
+      }
+      this.db.exec('commit');
+    } catch (e) {
+      this.db.exec('rollback');
+      throw e;
+    }
+  }
+
+  #messageRows(rows) {
+    return rows.map((row) => ({ ...row, attachments: readAttachments(row.attachments) }));
+  }
+
+  #migrateApprovals() {
+    for (const row of this.db.prepare("select id, ts, sender, recipient, body, conversation_id from messages where kind = 'approval'").all()) {
+      if (!this.get(`approval:${row.id}`)) this.set(`approval:${row.id}`, JSON.stringify(row));
+    }
+  }
+
   // --- messages -------------------------------------------------------
 
   /** recipient=null broadcasts. Returns the new message id. */
-  post(sender, recipient, body, kind = 'message', conversationId = 'default') {
+  post(sender, recipient, body, kind = 'message', conversationId = 'default', attachments = []) {
     const ts = Date.now();
     const { lastInsertRowid } = this.db
-      .prepare('insert into messages (ts, sender, recipient, kind, body, conversation_id) values (?,?,?,?,?,?)')
-      .run(ts, sender, recipient, kind, body, conversationId);
-    return Number(lastInsertRowid);
+      .prepare('insert into messages (ts, sender, recipient, kind, body, attachments, conversation_id) values (?,?,?,?,?,?,?)')
+      .run(ts, sender, recipient, kind, body, JSON.stringify(cleanAttachments(attachments)), conversationId);
+    const id = Number(lastInsertRowid);
+    if (kind === 'approval') this.set(`approval:${id}`, JSON.stringify({ id, ts, sender, recipient, body, conversation_id: conversationId }));
+    return id;
+  }
+
+  approvals({ since = 0 } = {}) {
+    return this.db.prepare("select v from state where k like 'approval:%' and cast(substr(k, 10) as integer) > ? order by cast(substr(k, 10) as integer)")
+      .all(since).flatMap(({ v }) => { try { return [JSON.parse(v)]; } catch { return []; } });
   }
 
   /**
@@ -218,9 +276,9 @@ export class Bus {
     const args = [cursor, agent, agent];
     if (conversation) { where.push("(kind != 'assignment' or conversation_id = ?)"); args.push(conversation); }
     args.push(limit);
-    return this.db
+    return this.#messageRows(this.db
       .prepare(`select * from messages where ${where.join(' and ')} order by id limit ?`)
-      .all(...args);
+      .all(...args));
   }
 
   ack(agent, messageId) {
@@ -244,12 +302,12 @@ export class Bus {
     if (agent) { where += ' and (sender = ? or recipient = ?)'; args.push(agent, agent); }
     if (conversation) { where += ' and conversation_id = ?'; args.push(conversation); }
     args.push(limit);
-    return this.db.prepare(
+    return this.#messageRows(this.db.prepare(
       tail
         ? `select * from (select * from messages where ${where} order by id desc limit ?)
              order by id`
         : `select * from messages where ${where} order by id limit ?`
-    ).all(...args);
+    ).all(...args));
   }
 
   // --- raw agent events (briefer firehose + UI replay) -----------------
@@ -278,7 +336,10 @@ export class Bus {
         ? `select * from (select * from events where ${w} order by id desc limit ?) order by id`
         : `select * from events where ${w} order by id limit ?`
     ).all(...args);
-    return rows.map((r) => ({ ...r, payload: JSON.parse(r.payload) }));
+    return rows.flatMap((r) => {
+      try { return [{ ...r, payload: JSON.parse(r.payload) }]; }
+      catch { return []; }
+    });
   }
 
   /** How many messages there are. Counting them by loading every body is not that. */
@@ -373,12 +434,14 @@ export class Bus {
         join events on events.id = events_fts.rowid
         where events_fts match ? and events.type in ('text','tool','summary','error','workflow_run')
         order by id desc limit ?`
-    ).all(match, limit).map((r) => {
-      const p = JSON.parse(r.payload);
-      const text = r.kind === 'tool' ? `${p.name} ${JSON.stringify(p.input ?? p)}`
-        : r.kind === 'workflow_run' ? `workflow "${p.name}" ${p.ok ? 'succeeded' : `failed: ${p.error}`}`
-        : (p.text ?? p.message ?? JSON.stringify(p));
-      return { ts: r.ts, who: r.who, kind: r.kind, text, source: 'event' };
+    ).all(match, limit).flatMap((r) => {
+      try {
+        const p = JSON.parse(r.payload);
+        const text = r.kind === 'tool' ? `${p.name} ${JSON.stringify(p.input ?? p)}`
+          : r.kind === 'workflow_run' ? `workflow "${p.name}" ${p.ok ? 'succeeded' : `failed: ${p.error}`}`
+          : (p.text ?? p.message ?? JSON.stringify(p));
+        return [{ ts: r.ts, who: r.who, kind: r.kind, text, source: 'event' }];
+      } catch { return []; }
     });
     const messages = this.db.prepare(
       `select messages.ts, messages.sender as who, messages.kind, messages.body as text from messages_fts
@@ -574,7 +637,7 @@ export class Bus {
    * briefer's read_events would happily drag it all into context.
    * Messages are kept longer than events — they are the kingdom's record.
    */
-  prune({ keepMessages = 5000, keepEvents = 20000 } = {}) {
+  prune({ keepMessages = 5000, keepEvents = 20000, keepApprovals = 2000 } = {}) {
     const before = this.db.prepare('select count(*) c from events').get().c;
     this.db.prepare(
       'delete from events where id <= (select max(id) - ? from events)'
@@ -595,6 +658,17 @@ export class Bus {
         + ' and cast(substr(k, instr(k, \':\') + 1) as integer) < ?'
       ).run(oldest);
     }
+    // Approval payloads live outside the message log so pending decisions
+    // survive message pruning. Resolved payloads still need a finite history;
+    // otherwise /api/approvals scans one state row forever per decision.
+    this.db.prepare(
+      "delete from state where (k like 'approval:%' or k like 'resolved:%')"
+      + ' and cast(substr(k, instr(k, \':\') + 1) as integer) in ('
+      + "select cast(substr(a.k, 10) as integer) from state a"
+      + " where a.k like 'approval:%'"
+      + " and exists (select 1 from state r where r.k = 'resolved:' || substr(a.k, 10))"
+      + ' order by cast(substr(a.k, 10) as integer) desc limit -1 offset ?)'
+    ).run(keepApprovals);
     const after = this.db.prepare('select count(*) c from events').get().c;
     return before - after;
   }
@@ -660,6 +734,15 @@ if (process.argv[1]?.endsWith('bus.js')) {
   a.equal(b.events({ agent: 'coder', type: 'turn_end' }).length, 1, 'agent and type compose');
   a.equal(b.events({ type: 'nothing-logs-this' }).length, 0);
   a.equal(b.events({ agent: 'coder' }).length, 2, 'no type means every type, as before');
+
+  b.logEvent('coder', 'summary', { text: 'the readable event survives' });
+  b.db.prepare('insert into events (ts, agent, type, payload, conversation_id) values (?,?,?,?,?)')
+    .run(Date.now(), 'coder', 'summary', '{broken', 'default');
+  a.deepEqual(b.events({ type: 'summary' }).map((e) => e.payload.text), ['the readable event survives'],
+    'one corrupt event payload must not break every event reader');
+  b.logEvent('coder', 'text', { text: 'broken payload recovery remains searchable' });
+  a.equal(b.recall('broken')[0].text, 'broken payload recovery remains searchable',
+    'one corrupt indexed event must not break recall of its readable sibling');
 
   // Counting messages must not mean loading every body.
   a.equal(b.countMessages(), b.history({ limit: 100_000 }).length,

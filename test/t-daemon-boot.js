@@ -67,6 +67,8 @@ try {
     body: JSON.stringify({ path: repo }),
   }).then((r) => r.json());
   a.equal(attached.ok, true, 'attachRepo must succeed against a real git repo');
+  a.equal(attached.repo, resolve(repo), 'attachRepo must return the daemon-canonical repository path');
+  a.ok(attached.base, 'attachRepo must return the discovered base branch');
 
   await fetch(`${base}/api/goal`, {
     method: 'POST', headers: { 'content-type': 'application/json' },

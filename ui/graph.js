@@ -65,7 +65,7 @@ export const TYPES = {
     sub: (c) => `${c.path || '?'} ${c.op || 'eq'} ${c.op === 'exists' ? '' : (c.value ?? '')}`.trim(),
   },
   bus: {
-    blurb: 'Post a message to the court',
+    blurb: 'Post a message to the team',
     defaults: { to: '', body: '' },
     fields: [['to', 'text'], ['body', 'text'], ['from', 'text'], ['kind', 'text']],
     sub: (c) => `→ ${c.to || 'everyone'}`,
@@ -231,6 +231,8 @@ export function mount(host, nodes, { onChange, onSelect } = {}) {
   let selected = null;
   let trace = null;                       // id -> {id, ok, error} from the last run
   let liveWire = null;                    // {from, branch, to:{x,y}} while dragging one
+  let keyboardWire = null;                // {from, branch} selected for keyboard wiring
+  let cancelPointer = () => {};
 
   // Pointer positions arrive in SCREEN pixels; node coordinates are host-local.
   // The panel rides the canvas transform (win.js:28), so at any zoom other than
@@ -296,17 +298,26 @@ export function mount(host, nodes, { onChange, onSelect } = {}) {
       head.append(el('span', 'wfn-type', n.type), el('span', 'wfn-id', n.id));
       node.append(head, el('div', 'wfn-sub', spec?.sub?.(n.config ?? {}) ?? 'unknown node type'));
 
-      const inPort = el('b', 'wfport in');
+      const inPort = el('button', 'wfport in');
+      inPort.type = 'button';
+      inPort.dataset.id = n.id;
+      inPort.dataset.branch = 'in';
+      inPort.setAttribute('aria-label', `Connect to ${n.id}`);
       inPort.title = 'Drop a wire here';
       node.append(inPort);
       for (const which of spec?.branches ? ['then', 'else'] : ['out']) {
-        const p = el('b', `wfport ${which}`);
+        const p = el('button', `wfport ${which}`);
+        p.type = 'button';
         p.dataset.id = n.id;
         p.dataset.branch = which;
+        p.setAttribute('aria-label', `Connect ${which} from ${n.id}`);
+        p.setAttribute('aria-pressed', String(keyboardWire?.from === n.id && keyboardWire.branch === which));
         p.title = which === 'out' ? 'Drag to the next node' : `Drag to the node for “${which}”`;
         node.append(p);
       }
       const x = el('button', 'wfn-x', '×');
+      x.type = 'button';
+      x.setAttribute('aria-label', `Delete node ${n.id}`);
       x.title = 'Delete this node';
       x.onclick = (e) => { e.stopPropagation(); del(n.id); };
       node.append(x);
@@ -323,6 +334,11 @@ export function mount(host, nodes, { onChange, onSelect } = {}) {
     onSelect?.(nodes.find((n) => n.id === id) ?? null);
   }
 
+  function focusPort(id, branch) {
+    [...host.querySelectorAll('.wfport')].find((port) =>
+      port.dataset.id === id && port.dataset.branch === branch)?.focus();
+  }
+
   function del(id) {
     const kept = removeNode(nodes, id);
     nodes.length = 0;
@@ -335,13 +351,54 @@ export function mount(host, nodes, { onChange, onSelect } = {}) {
   // One listener on the surface rather than four per node: paint() rebuilds
   // every element on every edit, and re-attaching handlers each time is work
   // with nothing to show for it.
-  host.addEventListener('pointerdown', (e) => {
+  function onPortKeydown(event) {
+    const port = event.target.closest?.('.wfport');
+    if (!port || !host.contains(port)) return;
+    if (event.key === 'Escape') {
+      if (keyboardWire) {
+        const previous = keyboardWire;
+        keyboardWire = null;
+        paint();
+        focusPort(previous.from, previous.branch);
+      }
+      return;
+    }
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    const id = port.dataset.id;
+    const branch = port.dataset.branch;
+    if (branch === 'in') {
+      if (!keyboardWire) {
+        select(id);
+        focusPort(id, branch);
+        return;
+      }
+      const source = keyboardWire;
+      wire(nodes, source.from, source.branch, id);
+      keyboardWire = null;
+      changed();
+      focusPort(id, branch);
+    } else if (branch) {
+      keyboardWire = { from: id, branch };
+      select(id);
+      focusPort(id, branch);
+    }
+  }
+
+  function onPointerDown(e) {
     if (e.button !== 0) return;
-    const port = e.target.closest('.wfport');
-    if (port?.dataset.branch) return dragWire(e, port);
+    if (e.target.closest?.('.wfn-x')) return;
+    const port = e.target.closest?.('.wfport');
+    if (port) {
+      if (port.dataset.branch !== 'in') dragWire(e, port);
+      return;
+    }
     const node = e.target.closest('.wfnode');
     if (node) return dragNode(e, node);
-  });
+  }
+
+  host.addEventListener('keydown', onPortKeydown);
+  host.addEventListener('pointerdown', onPointerDown);
 
   function dragNode(e, node) {
     const n = nodes.find((x) => x.id === node.dataset.id);
@@ -361,12 +418,18 @@ export function mount(host, nodes, { onChange, onSelect } = {}) {
     // pointercancel, not just pointerup: a touch the system takes back for its
     // own gesture never fires pointerup, and without this the node keeps
     // following the finger forever — win.js:161 hit exactly this.
-    const up = () => {
+    const cleanup = () => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
       window.removeEventListener('pointercancel', up);
+      if (cancelPointer === cleanup) cancelPointer = () => {};
+    };
+    const up = () => {
+      cleanup();
       if (moved) onChange?.();
     };
+    cancelPointer();
+    cancelPointer = cleanup;
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
     window.addEventListener('pointercancel', up);
@@ -377,27 +440,46 @@ export function mount(host, nodes, { onChange, onSelect } = {}) {
     e.stopPropagation();
     liveWire = { from: port.dataset.id, branch: port.dataset.branch, to: local(e) };
     const move = (m) => { liveWire.to = local(m); paintWires(); };
-    const up = (m) => {
+    const cleanup = () => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
-      window.removeEventListener('pointercancel', up);
-      const { from, branch } = liveWire;
+      window.removeEventListener('pointercancel', cancel);
       liveWire = null;
+      if (cancelPointer === cleanup) cancelPointer = () => {};
+    };
+    const up = (m) => {
+      const connection = liveWire;
+      cleanup();
+      if (!connection) return;
+      const { from, branch } = connection;
       // Released on a node connects to it; released on bare surface clears the
       // connection — otherwise unwiring would need a gesture of its own.
       const drop = m?.target?.closest?.('.wfnode');
       wire(nodes, from, branch, drop ? drop.dataset.id : null);
       changed();
     };
+    const cancel = () => { cleanup(); paintWires(); };
+    cancelPointer();
+    cancelPointer = cleanup;
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
-    window.addEventListener('pointercancel', up);
+    window.addEventListener('pointercancel', cancel);
     paintWires();
+  }
+
+  function destroy() {
+    cancelPointer();
+    keyboardWire = null;
+    liveWire = null;
+    host.removeEventListener('keydown', onPortKeydown);
+    host.removeEventListener('pointerdown', onPointerDown);
+    host.textContent = '';
   }
 
   paint();
   return {
     paint,
+    destroy,
     select,
     selected: () => nodes.find((n) => n.id === selected) ?? null,
     /** Drop a new node of `type` at a screen point — the palette's other half. */

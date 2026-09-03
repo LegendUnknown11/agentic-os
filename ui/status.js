@@ -41,6 +41,20 @@ export function verbFor(payload = {}) {
   return VERBS[name] ?? (name ? 'working' : 'thinking');
 }
 
+const STATUS_LABELS = Object.freeze({
+  awake: 'idle', ready: 'idle', idle: 'idle', turn_end: 'idle',
+  resting: 'resting', off: 'off', 'idle-slept': 'resting', exited: 'off',
+  busy: 'working', working: 'working', verifying: 'verifying',
+  limited: 'rate limited', failed: 'failed', blocked: 'blocked',
+});
+const KNOWN_ACTIVITY = new Set([...Object.values(VERBS), ...Object.values(KINGDOM_VERBS)]);
+
+/** Convert backend state names into short copy safe for the Home surface. */
+export function statusLabel(status) {
+  const value = String(status ?? '').trim().toLowerCase();
+  return STATUS_LABELS[value] ?? (KNOWN_ACTIVITY.has(value) ? value : 'working');
+}
+
 /** Colour class for the one word. */
 export function toneOf(status) {
   if (status === 'limited' || status === 'failed' || status === 'blocked') return 'bad';

@@ -6,7 +6,7 @@
 //   node test/t-assets.js
 import { strict as a } from 'node:assert';
 import { execFileSync, spawn } from 'node:child_process';
-import { mkdtempSync, writeFileSync, rmSync, existsSync, readdirSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, mkdirSync, rmSync, existsSync, readdirSync, renameSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -67,9 +67,38 @@ try {
     a.equal(got.status, 200);
     a.equal(got.headers.get('content-type'), 'image/png');
     a.equal(Buffer.from(await got.arrayBuffer()).length, PNG.length, 'served bytes must match');
+    const duplicate = await fetch(`${base}/api/assets?name=${encodeURIComponent('wall paper.png')}`, { method: 'POST', body: Buffer.from('replacement') });
+    a.equal(duplicate.status, 409, 'a second upload must not overwrite an existing attachment');
+
+    // Two request handlers can observe a missing filename before either write
+    // finishes. The filesystem, not a preceding exists check, must pick one.
+    const raced = await Promise.all(['one', 'two'].map((body) =>
+      fetch(`${base}/api/assets?name=race.png`, { method: 'POST', body })));
+    a.deepEqual(raced.map((r) => r.status).sort(), [200, 409],
+      'concurrent uploads with one name must leave exactly one winner');
 
     const listed = await fetch(`${base}/api/assets`).then((x) => x.json());
-    a.deepEqual(listed.assets, [{ name: 'wall paper.png', kind: 'image' }]);
+    a.deepEqual(listed.assets.sort((a, b) => a.name.localeCompare(b.name)), [
+      { name: 'race.png', kind: 'image' },
+      { name: 'wall paper.png', kind: 'image' },
+    ]);
+
+    // A missing directory is the normal empty state; a non-directory is a real
+    // failure and must remain retryable to the browser.
+    const backup = `${ASSETS}.bak`;
+    renameSync(ASSETS, backup);
+    try {
+      const missing = await fetch(`${base}/api/assets`);
+      a.equal(missing.status, 200, 'a missing assets directory is an empty state');
+      a.deepEqual((await missing.json()).assets, []);
+      writeFileSync(ASSETS, 'not a directory');
+      const failed = await fetch(`${base}/api/assets`);
+      a.equal(failed.status, 500, 'a real assets listing failure must be reported');
+      a.equal((await failed.json()).ok, false, 'a real assets listing failure must not masquerade as success');
+    } finally {
+      if (existsSync(ASSETS)) rmSync(ASSETS, { force: true });
+      renameSync(backup, ASSETS);
+    }
     console.log('  upload -> list -> serve round-trips, spaces and all');
   }
 
@@ -123,6 +152,7 @@ try {
       '....//kingdom.db',
       '%2e%2e%5ckingdom.db',
       '../kingdom.db',
+      '%ZZ.png',
     ]) {
       const r = await fetch(`${base}/assets/${p}`);
       a.equal(r.status, 404, `${p} must not be served`);
@@ -147,6 +177,18 @@ try {
     a.equal((await del('wall paper.png')).ok, true);
     a.equal((await fetch(`${base}/assets/${encodeURIComponent('wall paper.png')}`)).status, 404,
       'a deleted asset stops being served');
+    a.equal((await del('wall paper.png')).ok, true, 'deleting a missing asset remains idempotent');
+
+    // Missing files remain idempotent, but a real unlink failure must not be success.
+    const blocked = join(ASSETS, 'blocked.png');
+    mkdirSync(blocked);
+    const failed = await fetch(`${base}/api/assets/delete`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'blocked.png' }),
+    });
+    a.equal(failed.status, 500, 'a real unlink failure must be reported');
+    a.equal((await failed.json()).ok, false, 'a real unlink failure must not masquerade as success');
+    rmSync(blocked, { recursive: true, force: true });
     console.log('  delete is confined too; the database and config are untouchable');
   }
 

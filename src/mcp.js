@@ -21,7 +21,7 @@ import {
   insideVault as vaultInside, walkVault, invalidateVault, noteWritten, searchVault, noteOutline, noteSection,
   mirrorToProject,
 } from './vault.js';
-import { badRole, badQuestions } from './approval.js';
+import { badRole, badQuestions, badSummon } from './approval.js';
 import { composeSkill, listSkills, slugSkill, SKILLS_DIR } from './skills.js';
 import { modeName, modeOf, toolAllowed, MODE_NAMES } from './modes.js';
 
@@ -138,11 +138,21 @@ const str = (description) => ({ type: 'string', description });
 // The roster is published to the bus by the orchestrator on every change
 // (`kingdom.js` roster()), so it is the one view of the court that every
 // member's MCP server shares.
-const rosterNow = () => {
+const stateArray = (key) => {
   try {
-    const r = JSON.parse(bus.get('roster') ?? '[]');
-    return Array.isArray(r) ? r : [];
-  } catch { return []; }
+    const value = JSON.parse(bus.get(key) ?? '[]');
+    return Array.isArray(value) ? value : null;
+  } catch { return null; }
+};
+const rosterNow = () => stateArray('roster') ?? [];
+const summonedNow = () => stateArray('summoned') ?? [];
+const goalNow = () => {
+  const raw = bus.get('goal');
+  if (!raw) return { goal: null };
+  try {
+    const goal = JSON.parse(raw);
+    return goal && typeof goal === 'object' && !Array.isArray(goal) ? { goal } : { unreadable: true };
+  } catch { return { unreadable: true }; }
 };
 
 /**
@@ -246,7 +256,7 @@ const TOOLS = {
     roles: ['peasant', 'briefer', 'orchestrator'],
     description: 'Who is in the court, their role, and whether they are awake.',
     schema: { type: 'object', properties: {} },
-    run: () => JSON.parse(bus.get('roster') ?? '[]'),
+    run: () => rosterNow(),
   },
 
   declare_done: {
@@ -717,8 +727,11 @@ const TOOLS = {
       required: ['to', 'task'],
     },
     run: ({ to, task }) => {
-      const target = JSON.parse(bus.get('roster') ?? '[]').find((member) => member.name === to);
-      const summoned = JSON.parse(bus.get('summoned') ?? '[]');
+      const roster = stateArray('roster');
+      if (!roster) return `Cannot assign to ${to}: roster is unavailable; nothing was sent.`;
+      const target = roster.find((member) => member.name === to);
+      const summoned = stateArray('summoned');
+      if (!summoned) return `Cannot assign to ${to}: summoned crew is unavailable; nothing was sent.`;
       if (target?.role === 'peasant' && !summoned.includes(to)) {
         return `Cannot assign to ${to}: peasant is not summoned.`;
       }
@@ -880,7 +893,8 @@ const TOOLS = {
       if (!t) return `No task #${id}.`;
       if (t.state === 'done') return `Task #${id} is already done — nothing to reassign.`;
       if (t.owner === to) return `Task #${id} is already ${to}'s.`;
-      const summoned = JSON.parse(bus.get('summoned') ?? '[]');
+      const summoned = stateArray('summoned');
+      if (!summoned) return `Cannot reassign to ${to}: summoned crew is unavailable.`;
       if (!summoned.includes(to)) return `Cannot reassign to ${to}: not summoned.`;
       const from = t.owner;
       bus.updateTask(id, { owner: to, state: t.state === 'planning' ? 'planning' : 'active' });
@@ -956,25 +970,10 @@ const TOOLS = {
       required: ['names', 'reason'],
     },
     run: ({ names, reason }) => {
-      if (!Array.isArray(names) || !names.length) {
-        return 'Summon rejected: names must be a non-empty array.';
-      }
-      if (names.length > 32) {
-        return 'Summon rejected: too many names (maximum 32).';
-      }
-      if (names.some((name) => typeof name !== 'string' || !name.trim())) {
-        return 'Summon rejected: names must be non-empty strings.';
-      }
-      const duplicate = names.find((name, i) => names.indexOf(name) !== i);
-      if (duplicate !== undefined) {
-        return `Summon rejected: duplicate name: ${duplicate}.`;
-      }
-      const roster = JSON.parse(bus.get('roster') ?? '[]');
-      const known = new Set(roster.map((member) => member.name));
-      const unknown = names.filter((name) => !known.has(name));
-      if (unknown.length) {
-        return `Summon rejected: unknown roster names: ${unknown.join(', ')}.`;
-      }
+      const roster = stateArray('roster');
+      if (!roster) return 'Cannot propose a summon: roster is unavailable.';
+      const error = badSummon({ names, reason }, { roster });
+      if (error) return error;
       bus.post(ME, null, JSON.stringify({ kind: 'summon', names, reason }), 'approval');
       return 'Proposal sent to the sovereign. Wait for approval before assigning work.';
     },
@@ -987,9 +986,9 @@ const TOOLS = {
       + 'unsure whether a piece of work is worth doing.',
     schema: { type: 'object', properties: {} },
     run: () => {
-      const raw = bus.get('goal');
-      if (!raw) return 'No standing goal. The court works on whatever the sovereign last asked.';
-      const g = JSON.parse(raw);
+      const { goal: g, unreadable } = goalNow();
+      if (unreadable) return 'The standing goal is unreadable. Ask the sovereign to set it again.';
+      if (!g) return 'No standing goal. The court works on whatever the sovereign last asked.';
       return `GOAL: ${g.text}\n`
         + (g.milestones ?? []).map((m, i) => `  ${i}. [${m.done ? 'x' : ' '}] ${m.text}`).join('\n');
     },
@@ -1012,9 +1011,9 @@ const TOOLS = {
       required: ['index', 'evidence'],
     },
     run: ({ index, evidence }) => {
-      const raw = bus.get('goal');
-      if (!raw) return 'There is no standing goal.';
-      const g = JSON.parse(raw);
+      const { goal: g, unreadable } = goalNow();
+      if (unreadable) return 'Cannot record a milestone: the standing goal is unreadable.';
+      if (!g) return 'There is no standing goal.';
       if (!g.milestones?.[index]) return `No milestone at index ${index}.`;
       // Written to the bus, not to the config: the orchestrator owns the config
       // and watches this key, so there is one writer and no lost update.

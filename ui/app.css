@@ -1,1643 +1,859 @@
-/* The throne room.
- *
- * ---------------------------------------------------------------------------
- * HOW TO CHANGE THIS FILE
- *
- * Every selector is declared ONCE, in the section it belongs to. It did not
- * used to be: five stacked "REFIT" blocks had grown on the end, each one
- * re-declaring `.win`, `.rail-row`, `.tool`, `#bg` and `:root` to override the
- * pass before it. `.win` was declared four times, `#bg` three, `:root` three.
- * Nothing could be changed by reading it — you had to scroll to the bottom to
- * find which copy actually won, and every new fix became a sixth copy.
- *
- * So: edit the rule where it lives. Do not append an override block. The
- * reasoning each refit paid for is kept as comments beside the value it
- * produced, because the value without its reason is the thing that gets
- * reverted by the next person who thinks it looks arbitrary.
- * ---------------------------------------------------------------------------
- *
- * The room is a room, not a dashboard. It has a light above the throne, a
- * floor, walls that fall into shadow at the edges, and glass panes floating in
- * front of all of it. Glass only reads as glass if there is something behind it
- * to refract, which is why the backdrop is never allowed to be flat.
- *
- * Every pane is built from the same four ingredients, never improvised:
- *   1. the sheet fill                      (--glass)
- *   2. backdrop blur + saturation          (--frost)
- *   3. a hairline edge, lighter on top     (--edge / --sheen)
- *   4. a soft drop shadow for separation   (--lift)
- *
- * Those four are the MATERIAL, and they are the only thing a material change
- * touches. The default is solid: opaque sheets, no frost, no bevel, a hairline
- * border, and separation carried by value and spacing rather than by four
- * effects at once. `<html data-material="glass">` restores the frosted room —
- * one block, near the top, redeclaring nothing but these variables.
- *
- * Separation comes from ONE mechanism at a time. The panes used to stack a
- * translucent fill, a 30px blur at 165% saturation, an inset bevel and a drop
- * shadow together; four cues where one would do is what reads as busy rather
- * than finished.
- *
- * Contrast is measured, not eyeballed. On the solid sheet --glass #14171a:
- *   --ink #f4f6f9 16.6:1   --dim #aab1bb 8.3:1   --faint #868d98 5.4:1
- * and on the floor --bg #090b0d: 18.2 / 9.1 / 5.9. --edge-strong #646c77 is
- * 3.4:1, the lightest value clearing the 3:1 WCAG asks of a control edge.
- *
- * A wallpaper changes all of these IN GLASS: glass keeps the backdrop's
- * luminance, so a bright photo at low dim washes every pane out. assets.js
- * measures the image and raises the scrim to a readable floor — see safeDim().
- * Solid sheets are unaffected, which is a second reason they are the default.
- */
+/* Flat, fixed shell. Every surface reads the tokens below; palette changes
+ * therefore have one place to land and no geometry is persisted. */
 :root {
-  /* Darker than the panes on purpose. The stage recedes and the cards come
-     forward; when both sat within a few percent of each other no edge read as
-     an edge and nothing looked like a card. */
-  --bg:#090b0d;
-  --deep:#0e1013;
-
-  --ink:#f4f6f9;
-  --dim:#aab1bb;
-  --faint:#868d98;
-
-  /* THE ACCENT IS NOT A COLOUR. It is the chrome lighting up.
-     It used to be a mint that appeared 67 times in this file, on buttons,
-     rules, tab pills, focus rings, status dots and section headings — none of
-     which are signals. Everything wore it, so nothing was marked by it, and a
-     room where every surface is tinted reads as decorated rather than
-     finished. Near-white does the same job (this is selected, this is live)
-     without spending the one thing that can still mean something.
-     Colour is kept for what actually signals: --crown for the sovereign
-     personally, --danger for loss, and the categorical chips. Adding a fourth
-     is how the first one stopped meaning anything.
-     Measured against --glass #14171a: ink 16.6:1, dim 8.3:1, faint 5.4:1;
-     on --bg #090b0d: 18.2 / 9.1 / 5.9. --accent-ink on --accent is 15.3:1. */
-  --accent:#e0e4ea;
-  --accent-ink:#0b0d10;
-  --crown:#f0c97d;
-  --crown-ink:#1a1206;
-  --danger:#e2665f;
-
-  /* The same three colours as channels, because a wash of one is not the same
-     value as the colour itself and CSS cannot take a hex apart. Thirty-nine
-     rules had the components typed out — rgb(var(--accent-rgb) / .45) and its
-     siblings — so changing the accent changed the solid uses and left every
-     tint, glow and focus ring the old hue. The palette looked like one colour
-     and was two.
-     Keep BOTH forms: --accent for a solid fill, --accent-rgb for anything with
-     an alpha. A new tint uses rgb(var(--accent-rgb) / .3) and inherits every
-     future change to the hue for free. Safe here — the shell is Electron, so
-     the space-separated rgb() syntax is Chromium's own. */
-  --accent-rgb:224 228 234;
-  --crown-rgb:240 201 125;
-  --danger-rgb:226 102 95;
-
-  /* The glass system. Tuned together — changing one alone breaks the effect.
-     .72 is not a taste call. Solved for: composite every surface over the
-     wallpaper -> safeDim() scrim -> glass, across bright/midtone/warm/cool/dark
-     images, and take the WORST contrast for --faint (the lightest text in use).
-     .68 gives 4.42:1 and fails AA; .70 gives 4.53:1; .72 gives 4.64:1 and keeps
-     a margin. An earlier pass used .93, at which an 18px blur moves almost
-     nothing — 93% of every pixel is the flat fill, so the panes wore a blur
-     they could not show and the room read as slate. */
-  --glass:#14171a;
-  --glass-strong:#0e1013;
-  --glass-raised:rgba(255,255,255,.045);
-  --frost:none;
-  --frost-lite:none;
-  --edge:#2c3138;
-  /* 3.4:1 on --glass. WCAG asks 3:1 of a non-text control edge, and the
-     obvious pick (#565d67) measures 2.7:1 — close enough to look fine and
-     fail. #646c77 is the lightest value that clears it. */
-  --edge-strong:#646c77;
-  /* Top highlight AND bottom shade: a pane with only a top edge reads as a
-     sticker, one with both reads as a slab with depth. This one pair of lines
-     is most of what sells the material. */
-  --sheen:none;
-  --lift:0 8px 24px -12px rgba(0,0,0,.7);
-
-  /* Gold is the sovereign's alone. Anything wearing it is the throne, the
-     standing decree, or an approval waiting on the sovereign personally. */
-  /* A category is the one thing a hue carries better than position or weight,
-     so the chips keep their colour where the chrome gave its up. Named because
-     they were three hexes and two rgba triples scattered across two rules, and
-     a palette that cannot be read in one place cannot be tuned in one place. */
-  --cat-discovery:69 180 236;   --cat-discovery-ink:#70cbf8;
-  --cat-knowledge:180 140 240;  --cat-knowledge-ink:#c8a4f8;
-
-  /* The floor, in three steps. Darker than every pane so the room recedes and
-     the cards come forward — when both sat within a few percent of each other
-     no edge read as an edge and nothing looked like a card. */
-  --floor-1:#0d1013; --floor-2:#0a0c0f; --floor-3:#06080a;
-  --floor-shade:rgba(4,6,8,.92); --floor-shade-soft:rgba(4,6,8,.5);
-  --scrim:rgba(4,6,8,.5);
-
-  /* The two coloured corner washes. They exist to give GLASS something to
-     refract — a pane over a flat ground shows a blur it cannot demonstrate,
-     which is why the backdrop was never allowed to be flat. With solid sheets
-     there is nothing refracting them, so all they do is tint a floor you can
-     barely see, in two hues that are not signals. Near-neutral by default,
-     their original blue and violet restored with the glass material. */
-  --wash-cool:rgba(28,34,42,.5); --wash-warm:rgba(30,32,42,.42);
-
-  --gold-edge:rgb(var(--crown-rgb) / .18);
-  --gold-wash:rgb(var(--crown-rgb) / .07);
-
-  --ui:"Segoe UI Variable Text","Segoe UI",Inter,system-ui,-apple-system,sans-serif;
-  --mono:"JetBrains Mono","Cascadia Code",Consolas,ui-monospace,monospace;
-  /* The court's own voice. Names, titles and engraved labels are set in it;
-     everything measured or transient stays in --ui or --mono, so the serif
-     marks WHO and WHAT rather than becoming costume.
-     All four faces ship with Windows — no webfont, no build step, no network.
-     Sitka Display is Microsoft's display serif and is the reason this works at
-     all: Georgia alone at 13px on a dark ground goes muddy, Sitka does not. */
-  --display:"Sitka Display","Constantia",Cambria,Georgia,"Palatino Linotype",serif;
-  /* Seven steps for robust hierarchy. Added --t-xxl for dominant member title on right card. */
-  --t-micro:10.5px; --t-sm:12px; --t-base:13px; --t-md:14px; --t-lg:16px; --t-xl:20px; --t-xxl:26px;
-
-  --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:24px; --s6:32px; --s7:40px;
-  --r-sm:6px; --r-md:8px; --r-lg:10px; --r-xl:14px; /* measured 14px gives glass panes true slab presence */
-
-  --ease:cubic-bezier(.16,1,.3,1); /* snappier attack curve with smooth settle */
-  --fast:140ms; --base:240ms; --slow:420ms;
+  --bg: #0d0d0d;
+  --bg-rgb: 13 13 13;
+  --surface: #171717;
+  --surface-rgb: 23 23 23;
+  --raised: #1f1f1f;
+  --raised-rgb: 31 31 31;
+  --shell-alpha: 1;
+  --surface-alpha: 1;
+  --raised-alpha: 1;
+  --text: #ececec;
+  --muted: #9b9b9b;
+  /* Measured contrast: #8a8a8a is 4.77:1 on raised #1f1f1f (old #6e6e6e was 3.23:1). */
+  --faint: #8a8a8a;
+  --line: #2a2a2a;
+  /* Near-white chrome is deliberate: light is reserved for interaction. */
+  --accent: #e0e4ea;
+  --accent-rgb: 224 228 234;
+  --accent-ink: #0d0d0d;
+  --crown: #d8ac54;
+  --crown-rgb: 216 172 84;
+  --danger: #e06b6b;
+  --danger-rgb: 224 107 107;
+  --ok: #84c99a;
+  --ok-rgb: 132 201 154;
+  --r-sm: 8px;
+  --r-md: 12px;
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 24px;
+  --s-6: 32px;
+  --t-xs: 12px;
+  --t-sm: 13px;
+  --t-md: 15px;
+  --t-lg: 20px;
+  --ui: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  --fast: 120ms;
+  --view: 200ms;
 }
 
-/* The old room, kept whole: <html data-material="glass">.
- *
- * THE ONLY OVERRIDE BLOCK IN THIS FILE, and the reason it is allowed where the
- * five stacked REFITs were not: it redeclares nothing but the material
- * variables, in one place, and no rule anywhere else has to know it exists.
- * Every surface already reads --glass / --frost / --sheen / --lift, so the
- * material is a value change, not a cascade fight. The refits lost precisely
- * because they re-declared .win, #bg and :root instead.
- *
- * The names are kept. --glass now holds an opaque fill in the default
- * material, which reads oddly for one line here and would otherwise cost
- * sixty-seven edits across the file for no visual difference at all.
- *
- * Solid is the default because the panes are the app and the room is not. Glass
- * only reads as glass when there is something behind it to refract, so it is a
- * choice that depends on a wallpaper being set and worth looking at — which is
- * exactly the sovereign's call, not a default. The reasoning behind these
- * values is not lost: .72 was solved for, against a wallpaper composited under
- * the scrim assets.js computes, taking the WORST contrast for --faint. .68
- * gives 4.42:1 and fails AA; .70 gives 4.53:1; .72 gives 4.64:1 with a margin.
- * An earlier pass used .93, at which an 18px blur moves almost nothing — 93% of
- * every pixel is the flat fill, so the panes wore a blur they could not show
- * and the room read as slate. */
-:root[data-material="glass"]{
-  --bg:#04060a;
-  --deep:#070a10;
-  --glass:rgba(20,26,36,.72);
-  --glass-strong:rgba(14,19,27,.82);
-  --glass-raised:rgba(255,255,255,.075);
-  --frost:blur(30px) saturate(165%);
-  --frost-lite:blur(20px) saturate(140%);
-  --edge:rgba(255,255,255,.12);
-  --edge-strong:rgba(255,255,255,.22);
-  --sheen:inset 0 1px 0 rgba(255,255,255,.13), inset 0 -1px 0 rgba(0,0,0,.30);
-  --lift:0 20px 48px -18px rgba(0,0,0,.9), 0 4px 12px -4px rgba(0,0,0,.65);
-  --floor-1:#0d131d; --floor-2:#090d15; --floor-3:#050810;
-  --floor-shade:rgba(4,7,12,.92); --floor-shade-soft:rgba(4,7,12,.5);
-  --scrim:rgba(4,7,11,.5);
-  --wash-cool:rgba(24,74,98,.42); --wash-warm:rgba(52,39,94,.34);
+* { box-sizing: border-box; }
+
+html, body { height: 100%; margin: 0; }
+
+body {
+  display: grid;
+  grid-template: "sidebar main" 1fr / 260px minmax(0, 1fr);
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font: 400 var(--t-md)/1.45 var(--ui);
 }
 
-*{box-sizing:border-box;margin:0;padding:0}
-body{
-  background:var(--bg);color:var(--ink);
-  font:400 var(--t-base)/1.45 var(--ui);
-  -webkit-font-smoothing:antialiased;
-  height:100vh;display:flex;flex-direction:column;overflow:hidden;user-select:none;
-}
-main{flex:1;display:flex;min-height:0}
-.icon{flex:none;display:block}
-.num{font-family:var(--mono);font-variant-numeric:tabular-nums;letter-spacing:-.01em}
-
-/* An engraved label: the section headings on the walls of the room. One class,
-   because five places were hand-rolling the same four declarations. Set in the
-   display serif at small caps spacing, which is what makes it read as cut into
-   the wall rather than as a form label. */
-.engraved{font-family:var(--display);font-size:10.5px;font-weight:600;
-  letter-spacing:.2em;text-transform:uppercase;color:var(--faint);opacity:.9}
-
-/* ---------- the banner (header) ----------
-   The top of the room carries who you are, what the court is for, and the
-   tools. Its underline is gold rather than white: it is the sovereign's band,
-   and it is the only horizontal rule in the app that is not neutral. */
-header,footer{flex:none;display:flex;align-items:center;gap:var(--s2);
-  background:var(--glass-strong);backdrop-filter:var(--frost);
-  -webkit-backdrop-filter:var(--frost);position:relative;z-index:20}
-header{padding:var(--s2) var(--s4);border-bottom:1px solid var(--gold-edge);
-  box-shadow:var(--sheen),0 10px 26px -18px rgba(0,0,0,.9)}
-footer{padding:var(--s2) var(--s4);border-top:1px solid var(--edge);box-shadow:var(--sheen),0 -6px 20px -12px rgba(0,0,0,.7)}
-
-.mark{color:var(--crown);display:flex;flex:none;
-  filter:drop-shadow(0 0 8px rgb(var(--crown-rgb) / .5))}
-/* Header overflow is fought in one place: everything is `flex:none` and the
-   goal bar is the only thing allowed to shrink. Before this the whole row
-   competed — the repo path ellipsised to four characters, "0 turns" wrapped
-   onto two lines and pushed the header 6px taller, and the goal read
-   "Set a sta...". Squeeze belongs on the one element that can survive it. */
-#repo{flex:none;color:var(--dim);font-size:11.5px;white-space:nowrap;overflow:hidden;
-  text-overflow:ellipsis;max-width:24ch;transition:color var(--fast) var(--ease)}
-#repo:hover{color:var(--ink)}
-#spend{flex:none;color:var(--dim);font-size:11.5px;white-space:nowrap;opacity:.95;
-  padding:2px 8px;background:var(--glass-raised);border-radius:99px;border:1px solid var(--edge)}
-.grow{flex:1}
-.conn{width:8px;height:8px;border-radius:50%;background:var(--danger);flex:none;
-  transition:background var(--base) var(--ease),box-shadow var(--base) var(--ease);box-shadow:0 0 8px currentColor}
-.conn.up{background:var(--accent)}
-/* Under ~1040px there is genuinely not room for identity AND purpose AND
-   tools. The repo path is stable knowledge you learn once; the standing goal
-   changes and is the thing you must not stop reading. Identity yields. */
-@media (max-width:1040px){#repo{display:none}}
-@media (max-width:880px){#spend{display:none}}
-
-button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;
-  display:inline-flex;align-items:center;gap:var(--s2);
-  transition:color var(--fast) var(--ease),background var(--fast) var(--ease),
-             border-color var(--fast) var(--ease)}
-button:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:var(--r-sm)}
-
-.chip{color:var(--dim);padding:var(--s1) var(--s2);border-radius:var(--r-sm);
-  font-size:var(--t-micro);letter-spacing:.02em}
-.chip:hover{color:var(--ink);background:var(--glass-raised)}
-.chip.on{color:var(--accent)}
-
-/* ---------- the word (footer) ----------
-   Where the sovereign speaks. A pill, not a strip: a bare underline in a bar
-   does not look like something you type into. */
-footer input{flex:1;background:rgba(0,0,0,.32);border:1px solid var(--edge);
-  border-radius:999px;color:var(--ink);font:inherit;font-size:var(--t-base);
-  padding:var(--s2) var(--s4);outline:none;user-select:text;
-  transition:border-color var(--fast) var(--ease),background var(--fast) var(--ease),box-shadow var(--fast) var(--ease)}
-footer input:focus{border-color:var(--edge-strong);background:rgba(0,0,0,.45);box-shadow:0 0 0 1px rgba(255,255,255,.08)}
-input::placeholder{color:var(--faint)}
-.mic{color:var(--faint);padding:var(--s2);border-radius:var(--r-sm);
-  transition:color var(--fast) var(--ease),background var(--fast) var(--ease)}
-.mic:hover{color:var(--ink);background:var(--glass-raised)}
-.mic.on,.mic.thinking{color:var(--accent)}
-.mic.on{animation:breathe 1.5s var(--ease) infinite}
-.mic.thinking{opacity:.55}
-@keyframes breathe{50%{opacity:.4}}
-
-/* The advisor rewrites before anything is sent, so the bar shows it working. */
-footer:has(#cmd.advising) input{border-color:var(--accent);
-  animation:advising 1.4s var(--ease) infinite}
-@keyframes advising{50%{border-color:var(--edge)}}
-
-/* ---------- the court rail ----------
-   The graph is gone. This is how you reach a member now: a list you can read
-   at a glance, which is what the graph stopped being once the court passed six.
-
-   The rail holds the COURT — the king, the jester, and whoever is summoned.
-   Everyone else lives on the summoning screen. Conflating the two is what made
-   this app unusable to open: 107 rows and 4,179px of scroll behind a 580px
-   viewport, 105 of them reading "not summoned". */
-.rail{flex:none;width:214px;display:flex;flex-direction:column;min-height:0;
-  /* Chrome sits a step denser than content: the rail and the member card are
-     the frame, and a frame that competes with the work is noise. */
-  background:var(--glass);backdrop-filter:var(--frost);
-  -webkit-backdrop-filter:var(--frost);
-  border-right:1px solid var(--edge);position:relative;z-index:15;
-  transition:width var(--base) var(--ease)}
-.rail-head{flex:none;display:flex;align-items:center;gap:var(--s2);
-  padding:var(--s3) var(--s3) var(--s2)}
-.rail-list{flex:1;overflow-y:auto;padding:0 var(--s2) var(--s3)}
-
-.rail-row{display:flex;align-items:center;gap:var(--s3);width:100%;min-height:36px;
-  padding:var(--s2) var(--s3);border-radius:var(--r-md);
-  font-size:12.5px;color:var(--dim);text-align:left;position:relative;
-  transition:background var(--fast) var(--ease),opacity var(--fast) var(--ease),transform var(--fast) var(--ease)}
-.rail-row:hover{transform:translateX(1px)}
-.rail-row:hover,.rail-row.open{background:var(--glass-raised);color:var(--ink)}
-.rail-row.open::before{content:"";position:absolute;left:2px;top:50%;translate:0 -50%;
-  width:2px;height:18px;border-radius:2px;background:var(--accent);
-  box-shadow:0 0 8px var(--accent)}
-/* Names are set in the display serif. This is the change that stops the rail
-   reading as a list of strings: a member is a person at court, and the one
-   thing on the row that names them should not be the same face as the byte
-   counts. Everything else on the row stays in --ui. */
-.rail-row .nm{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
-  font:600 var(--t-md)/1.25 var(--display);letter-spacing:.01em;color:var(--dim)}
-/* Members not in the crew fade out entirely; the ones working are the only
-   thing at full contrast. */
-.rail-row:not(.serving){opacity:.5}
-.rail-row:not(.serving):hover{opacity:1}
-.rail-row.serving .nm{color:var(--ink)}
-/* The throne wears gold and sits in a warm pool of it. */
-.rail-row.king{background:linear-gradient(90deg,var(--gold-wash),transparent 72%)}
-.rail-row.king .nm{color:var(--crown)}
-.rail-row .st{font-size:10px;letter-spacing:.02em;color:var(--accent);opacity:.85;
-  white-space:nowrap}
-.rail-row .st.tone-bad{color:var(--danger);opacity:1}
-
-/* A `.dot` class used to live here carrying the same four states as `.av i`,
-   for "anything drawn without an avatar". Nothing in ui/ has produced one since
-   the avatar landed, so it was two copies of one state machine and only one of
-   them was reachable. Deleted with the avatar disc; `.av i` is the single
-   carrier now and it lives with the rest of its states further down. */
-.rail-row.serving:not(.awake) .st{color:var(--faint)}
-
-/* Group headings are engraved into the wall: small caps trailing off into a
-   hairline rule, the way a chapter divider does. */
-.rail-group{display:flex;align-items:center;gap:var(--s2);
-  padding:var(--s5) var(--s2) var(--s1);
-  font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;
-  color:var(--faint);opacity:.8}
-.rail-group::after{content:"";flex:1;height:1px;
-  background:linear-gradient(90deg,var(--edge),transparent 90%)}
-.rail-group.king{color:var(--crown);opacity:.95}
-.rail-group.king::after{background:linear-gradient(90deg,var(--gold-edge),transparent 90%)}
-
-/* The rail's second line: what each member is actually doing, without opening
-   anything. Two lines is the most a 214px rail can carry legibly. */
-.rail-row.two-line{align-items:flex-start;flex-wrap:wrap}
-/* A two-line row starts its children at the top, so the light has to be pushed
-   down onto the name's baseline or it floats above the first letter. */
-.rail-row.two-line .av{margin-top:5px}
-.rail-row .sum{flex-basis:100%;min-width:0;max-width:100%;font-size:var(--t-micro);
-  line-height:1.35;color:var(--faint);margin-top:2px;
-  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.rail-row:hover .sum,.rail-row.open .sum{color:var(--dim)}
-
-body.rail-collapsed .rail{width:52px}
-body.rail-collapsed .rail-head span,
-body.rail-collapsed .rail-row .nm,
-body.rail-collapsed .rail-row .st,
-body.rail-collapsed .rail-row .sum,
-body.rail-collapsed .rail-group{display:none}
-body.rail-collapsed .rail-row{justify-content:center;padding:var(--s2) 0}
-body.rail-collapsed #rail-collapse{rotate:180deg}
-
-/* The collapse chevrons were a 10.5px glyph in --dim at the far edge of a
-   214px column — effectively invisible, so the collapse nobody could find
-   might as well not have been built. */
-.rail-head .chip,.who-head .chip{font-size:15px;line-height:1;color:var(--faint);
-  padding:2px 6px;border-radius:var(--r-sm)}
-.rail-head .chip:hover,.who-head .chip:hover{color:var(--ink);background:var(--glass-raised)}
-
-/* ---------- the hall: stage and backdrop ---------- */
-#stage{flex:1;position:relative;min-height:0;overflow:hidden;isolation:isolate}
-#surface{position:absolute;inset:0;z-index:1;cursor:grab;touch-action:none}
-#surface.panning{cursor:grabbing}
-
-/* The room.
- *
- * A backdrop exists to give glass something to bend; the moment you LOOK at it,
- * it has failed. An early version was three enormous saturated blobs filling
- * the stage and read as a lava lamp. This one is architecture instead: a warm
- * light falling from above the throne, cool washes in the upper corners so no
- * quadrant is dead, and a floor with a visible horizon at the bottom. All of it
- * low-contrast, all of it behind panes. */
-#bg{position:absolute;inset:0;z-index:0;pointer-events:none;overflow:hidden;
-  background:
-    /* the light falling from above the throne */
-    radial-gradient(72% 46% at 50% -14%, rgb(var(--crown-rgb) / .16) 0%,
-                                          rgb(var(--crown-rgb) / .05) 40%, transparent 74%),
-    /* cool washes, upper corners */
-    radial-gradient(48% 42% at 6% 10%,   var(--wash-cool) 0%, transparent 74%),
-    radial-gradient(46% 40% at 96% 14%,  var(--wash-warm) 0%, transparent 74%),
-    /* the floor. The line where it meets the wall is drawn in ::before, so it
-       can fade out at the edges — a hairline running the full width of the
-       stage reads as a rendering seam, not as a horizon. */
-    linear-gradient(to top,
-      var(--floor-shade) 0 11%,
-      var(--floor-shade-soft) 11% 19%,
-      transparent 36%),
-    /* what the floor reflects back */
-    radial-gradient(64% 24% at 50% 100%, rgb(var(--accent-rgb) / .13) 0%, transparent 74%),
-    linear-gradient(168deg, var(--floor-1) 0%, var(--floor-2) 55%, var(--floor-3) 100%);
-  animation:drift 46s var(--ease) infinite alternate}
-@keyframes drift{to{background-position:0 0, 5% 3%, -4% 4%, 0 0, 0 0, center}}
-/* Walls. The room falls into shadow at its edges, which is also what stops the
-   corners of the stage reading as dead black rectangles. Kept under .5: the
-   vignette is what makes the room a room, but it is also the thing that will
-   quietly eat the whole backdrop if it is allowed to, and at .62 it did. */
-#bg::before{content:"";position:absolute;inset:0;
-  background:
-    /* the horizon: brightest under the throne, gone by the walls */
-    linear-gradient(90deg, transparent, rgba(255,255,255,.11) 32%,
-                    rgba(255,255,255,.11) 68%, transparent) 0 89% / 100% 1px no-repeat,
-    radial-gradient(122% 96% at 50% 34%, transparent 52%, rgba(0,0,0,.46) 100%)}
-
-/* A drawn hall used to sit over this backdrop — a `#hall` SVG of windows,
-   columns, a dais and a throne, faded back when panels were open and hidden
-   entirely under a wallpaper. Removed on the sovereign's instruction, along
-   with its rule in AGENTS.md. The wash above is the whole backdrop now. */
-
-/* With a wallpaper up, the room would fight the image, so it steps aside. */
-body.has-bg #bg{background-image:var(--wall);background-repeat:no-repeat;
-  background-size:cover;background-position:center;animation:none}
-body.has-bg #bg::before{display:none}
-#bg::after{content:"";position:absolute;inset:0;background:var(--bg);opacity:0}
-/* The scrim and the glass are ONE system. An earlier pass cut this to 55% of
-   the measured safeDim() floor — correct then, because panes were 93% opaque
-   and the wallpaper only had to survive around them. At .72 it comes straight
-   through the panes instead, and --dim measured 2.74:1 against a bright image
-   with the scrim reduced. The full floor puts it back over 4.5:1. */
-body.has-bg #bg::after{opacity:var(--bg-dim,.5)}
-
-@media (prefers-reduced-motion:reduce){#bg{animation:none}}
-
-/* ---------- panels ----------
-   `#windows` was 0x0 so children positioned from the canvas origin could not be
-   clipped. But an element with a backdrop-filter takes its backdrop from the
-   nearest backdrop root, and a transformed 0x0 layer is a backdrop root with no
-   area — so every .win filtered an EMPTY backdrop and fell back to its bare
-   fill. Two overlapping panels let you read the lower one's text, sharp,
-   straight through the upper one. Overflow stays visible, so a full-size layer
-   clips nothing: same origin, same coordinates, real backdrop. */
-#windows{position:absolute;inset:0;pointer-events:none;z-index:5;overflow:visible}
-
-.win{position:absolute;pointer-events:auto;display:flex;flex-direction:column;
-  background:var(--glass);backdrop-filter:var(--frost);-webkit-backdrop-filter:var(--frost);
-  border:1px solid var(--edge);border-radius:var(--r-xl);
-  box-shadow:var(--lift),var(--sheen);
-  overflow:hidden;resize:both;
-  /* A 430x320 panel in a 1226x810 stage is a postage stamp — 14% of the
-     surface, with the transcript scrolling in a slot six lines tall. */
-  min-width:340px;min-height:200px;
-  transition:border-color var(--fast) var(--ease),box-shadow var(--fast) var(--ease),transform var(--fast) var(--ease);
-  animation:materialize var(--slow) var(--ease)}
-@keyframes materialize{from{opacity:0;scale:.985;translate:0 8px}}
-.win:hover{border-color:var(--edge-strong)}
-.win.asleep{opacity:.72}
-.win.role-king{border-color:rgb(var(--crown-rgb) / .28)}
-/* Focused pane: the accent edge reads THROUGH the glass rather than being
-   swallowed by an opaque fill. */
-.win.focus{border-color:color-mix(in srgb,var(--accent) 40%,var(--edge-strong));
-  box-shadow:var(--lift),var(--sheen),0 0 0 1px color-mix(in srgb,var(--accent) 18%,transparent);
-  transform:translateY(-1px)}
-
-/* Working: a light travelling along the pane's top edge, for as long as the
-   member is mid-turn. Indeterminate on purpose — a turn has no percentage, and
-   a bar that fills to 90% and stops is a worse lie than no bar. It answers only
-   "is anything happening", which is the question you ask of a court of six from
-   across the room while doing something else. The status word beside the name
-   still says WHAT, in text, for anyone reading rather than glancing. */
-.win.working::after{content:"";position:absolute;top:0;left:0;right:0;height:2.5px;
-  pointer-events:none;z-index:2;backdrop-filter:blur(2px);
-  background:linear-gradient(90deg,transparent,var(--accent),transparent) no-repeat;
-  background-size:38% 100%;
-  animation:sweep 1.9s linear infinite;opacity:.9}
-@keyframes sweep{from{background-position:-45% 0}to{background-position:145% 0}}
-
-/* The titlebar catches the light — a diagonal sweep rather than a flat wash,
-   which is what stops a row of panes looking like printed rectangles. */
-.win>.bar{flex:none;display:flex;align-items:center;gap:var(--s1);
-  min-height:46px;padding:0 var(--s2) 0 var(--s4);
-  border-bottom:1px solid var(--edge);cursor:move;
-  background:linear-gradient(145deg,rgba(255,255,255,.10),rgba(255,255,255,.02) 65%)}
-/* The king's plaque is gilded. Nothing else in the app gets this. */
-.win.role-king>.bar{border-bottom-color:var(--gold-edge);
-  background:linear-gradient(145deg,rgb(var(--crown-rgb) / .14),rgba(255,255,255,.02) 65%)}
-/* The titlebar is a plaque, not a strip: the name is cut into it in the
-   display serif, and the band is tall enough to be read as a nameplate on the
-   front of the pane rather than as a row of controls above it. */
-.win .title{font:600 var(--t-md)/1.2 var(--display);letter-spacing:.015em}
-.win.role-king .title{color:var(--crown)}
-/* A status dot before the name — for panels that are not a member. Member
-   panels carry state on the avatar's own corner, and both drawn together read
-   as a rendering fault. */
-.win>.bar::before{content:"";width:7px;height:7px;border-radius:50%;flex:none;
-  background:var(--edge-strong);margin-right:var(--s1)}
-.win:not(.asleep)>.bar::before{background:var(--accent);box-shadow:0 0 6px var(--accent)}
-.win.role-king>.bar::before{background:var(--crown);box-shadow:0 0 6px var(--crown)}
-.win.member>.bar::before{display:none}
-.win>.bar .av{margin-right:var(--s1)}
-.win .stat{font-family:var(--mono);font-size:var(--t-micro);color:var(--faint);
-  letter-spacing:-.01em;white-space:nowrap;opacity:.75}
-/* Close is created with the frame but build() appends its buttons afterwards,
-   so in DOM order close comes first. It belongs last — rightmost, as in every
-   window ever made. `order` fixes the position without fighting the lifecycle. */
-.win .slot{margin-left:auto;display:flex;align-items:center;gap:0}
-.win .slot .x{order:99;margin-left:2px}
-.win .slot>button,.win .x,.win .quiet{padding:5px;border-radius:var(--r-sm);
-  color:var(--faint);opacity:.8}
-.win .slot>button:hover,.win .x:hover,.win .quiet:hover{opacity:1;background:rgba(255,255,255,.06)}
-.win .x:hover{color:var(--danger)}
-
-/* Body. Air on all four sides, and a faint floor of its own so body text is
-   not fighting the wallpaper directly. */
-.win .log{flex:1;overflow-y:auto;padding:var(--s4);
-  font:400 12.5px/1.65 var(--mono);user-select:text;scrollbar-width:thin;
-  scrollbar-color:rgba(255,255,255,.14) transparent;
-  background:linear-gradient(rgba(0,0,0,.10),rgba(0,0,0,.22))}
-.win .log>div{margin-bottom:5px;white-space:pre-wrap;word-break:break-word}
-.win .log>div:last-child{margin-bottom:0}
-/* One card per turn: a run of entries between two turn_end boundaries gets a
-   seam above it, so the transcript reads as a sequence of turns rather than
-   one continuous, undifferentiated stream. */
-.win .log .turn{margin-bottom:var(--s4);padding-top:var(--s3);border-top:1px solid var(--edge)}
-.win .log .turn:first-child{margin-top:0;padding-top:0;border-top:none}
-.win .log .turn>div{margin-bottom:5px;white-space:pre-wrap;word-break:break-word}
-.win .log .turn>div:last-child{margin-bottom:0}
-/* A card the size of the stage containing nothing at all was the single most
-   damning thing in the first screenshot that ever rendered. */
-.win .log:empty{display:flex;align-items:center;justify-content:center;padding:var(--s5)}
-/* A headline, not a caption — same weight the reference gives its empty
-   composer, in the court's own display serif rather than a borrowed font. */
-.win .log:empty::after{content:"What should " attr(data-who) " work on?";
-  color:var(--dim);font:600 var(--t-xl)/1.3 var(--display);text-align:center;
-  max-width:22ch;opacity:.9}
-
-/* The prompt: its own band, input on its own line, small chips underneath.
-   The reference never puts model pickers in a title bar and neither does this. */
-.win form{flex:none;display:flex;flex-direction:column;align-items:stretch;gap:0;
-  padding:var(--s3) var(--s3) var(--s3);border-top:1px solid var(--edge-strong);
-  background:rgba(0,0,0,.22)}
-/* The input band is its own pill, like the reference's composer, so the
-   mic and send controls read as part of ONE control instead of three
-   separate ones sharing a strip. */
-.win form .row1{display:flex;align-items:center;gap:var(--s1);
-  background:var(--glass-raised);border:1px solid var(--edge);border-radius:999px;
-  padding:var(--s1) var(--s1) var(--s1) var(--s3);margin-bottom:var(--s2)}
-.win form input{flex:1;background:none;border:0;color:var(--ink);font:inherit;
-  font-size:12.5px;padding:var(--s2) 0;outline:none;user-select:text}
-.win form input::placeholder{color:var(--faint);opacity:.85}
-.win form .chips{display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap;padding:0}
-/* Model and effort as pills — a leading icon plus the value, the same shape
-   as a chip anywhere else in the app, rather than a bare <select>. */
-.win form .chips .chip{display:inline-flex;align-items:center;gap:5px;
-  background:var(--glass-raised);border:1px solid var(--edge);border-radius:999px;
-  padding:3px var(--s2) 3px 7px;cursor:pointer;color:var(--faint);flex:0 1 auto;min-width:0}
-.win form .chips .chip:hover{color:var(--ink);border-color:var(--edge-strong)}
-.win form .chips .chip svg{flex:none;width:12px;height:12px;opacity:.85}
-/* A <select> reports scrollWidth from its WIDEST option, not its shown value,
-   so a long model name made the chip overflow its own box. text-overflow does
-   nothing on a select; the fix is to let it shrink and clip cleanly. */
-.win form .chips .chip select{background:none;border:0;color:inherit;
-  font:400 10.5px/1 var(--ui);padding:0;border-radius:0;
-  cursor:pointer;outline:none;max-width:14ch;
-  text-overflow:ellipsis;overflow:hidden;white-space:nowrap;min-width:0;flex:0 1 auto}
-.win form .chips .sep{width:1px;height:10px;background:var(--edge);flex:none;opacity:.6}
-/* The send button is the one filled control in the panel — every other
-   action reads as glass, this one reads as "go", same as the reference's
-   solid circular arrow. */
-.win form .send{flex:none;color:var(--accent-ink);background:var(--accent);
-  width:26px;height:26px;padding:0;border-radius:50%;
-  display:flex;align-items:center;justify-content:center}
-.win form .send:hover{opacity:.88;background:var(--accent)}
-.win form .send svg{width:13px;height:13px}
-.win form .mic{border-radius:50%}
-
-.power{font-size:var(--t-micro);color:var(--faint);padding:2px var(--s2);
-  border:1px solid var(--edge);border-radius:var(--r-sm)}
-.power:hover{color:var(--ink);border-color:var(--edge-strong);background:var(--glass-raised)}
-.win.asleep .power:hover{color:var(--accent)}
-
-/* transcript lines.
-   Accent is for the exception, not for half the screen: measured on a real
-   transcript, 64 of 146 lines were .t-msg, all painted accent cyan. Forty-four
-   percent of the content shouting is why this read as noise. A delivered
-   message is ordinary content with a quiet marker in the gutter to say where it
-   came from. */
-.t-text{color:var(--ink)}
-.t-tool{color:var(--faint);font-size:11px}
-.t-sys{color:var(--dim);font-style:normal;opacity:.85;font-size:11.5px}
-.t-error{color:var(--danger);border-left:2px solid rgb(var(--danger-rgb) / .5);
-  padding-left:var(--s2);margin-left:-2px}
-.t-msg{color:var(--ink);border-left:2px solid rgb(var(--accent-rgb) / .45);
-  padding-left:var(--s2);margin-left:-2px}
-.t-end{height:var(--s3)}
-.more{color:var(--accent);cursor:pointer}
-
-/* What mdToHtml (ui/markdown.js) produces inside a .t-text/.t-sum line. Every
-   CLI answers in markdown, so this is what "the AI's own formatting" looks
-   like once it is actually rendered instead of shown as raw asterisks. */
-.t-text p,.t-sum p{margin:0 0 var(--s2)}
-.t-text p:last-child,.t-sum p:last-child{margin-bottom:0}
-.t-text code,.t-sum code{font-family:var(--mono);font-size:.92em;
-  background:var(--glass-raised);border:1px solid var(--edge);border-radius:4px;
-  padding:1px 5px}
-.t-text pre,.t-sum pre{font-family:var(--mono);font-size:var(--t-sm);line-height:1.5;
-  background:var(--glass-strong);border:1px solid var(--edge);border-radius:var(--r-sm);
-  padding:var(--s2) var(--s3);margin:var(--s2) 0;overflow-x:auto;white-space:pre}
-.t-text pre code,.t-sum pre code{background:none;border:0;padding:0}
-.t-text ul,.t-text ol,.t-sum ul,.t-sum ol{margin:0 0 var(--s2);padding-left:1.4em}
-.t-text li,.t-sum li{margin-bottom:2px}
-.t-text a,.t-sum a{color:var(--accent);text-decoration:underline;text-underline-offset:2px}
-.t-text a:hover,.t-sum a:hover{opacity:.85}
-.t-text strong,.t-sum strong{font-weight:650}
-
-/* The line the cheap model wrote. Given the accent and a rule, because in
-   summary-only mode it is the entire content of the panel. */
-.t-sum{color:var(--ink);font-family:var(--ui);font-size:var(--t-sm);line-height:1.5;
-  padding:var(--s2) 0 var(--s2) var(--s3);margin:var(--s1) 0;
-  border-left:2px solid var(--accent)}
-/* Summary-only: everything except summaries, errors and system lines is hidden.
-   Not `display:none` on the whole log — scrollback and scroll position must
-   survive the toggle, so only the rows disappear. */
-.win.summary-only .log .t-text,
-.win.summary-only .log .t-tool,
-.win.summary-only .log .t-end{display:none}
-.quiet{color:var(--faint);padding:var(--s1);border-radius:var(--r-sm)}
-.quiet:hover{color:var(--ink);background:var(--glass-raised)}
-.quiet.on{color:var(--accent)}
-
-/* selects in a panel bar */
-.model{background:var(--glass-raised);color:var(--dim);border:1px solid var(--edge);
-  border-radius:var(--r-sm);font:400 var(--t-micro)/1 var(--ui);padding:var(--s1) var(--s2);
-  max-width:120px;cursor:pointer;outline:none}
-.model:hover:not(:disabled){color:var(--ink);border-color:var(--edge-strong)}
-.model:focus{border-color:var(--accent)}
-.model:disabled{opacity:.4;cursor:not-allowed}
-.model.custom{max-width:150px}
-.model option,.model optgroup{background:var(--glass-strong);color:var(--ink)}
-
-/* ---------- the state light per member ----------
-   This used to be a hue-derived monogram disc with the state dot pinned to its
-   corner. The disc was removed on the sovereign's instruction; the dot was
-   never decoration and stays. It is now the whole element rather than a badge
-   on one, so the offsets and the ring that lifted it off the disc are gone —
-   but every state rule below is untouched, because each answers a question the
-   rail cannot answer any other way. */
-.av{flex:none;position:relative;width:8px;height:8px}
-.av i{position:absolute;inset:0;border-radius:50%;
-  background:var(--edge-strong);box-shadow:0 0 0 2px var(--glass);
-  transition:background var(--base) var(--ease),box-shadow var(--base) var(--ease)}
-.rail-row.awake .av i,.win:not(.asleep)>.bar .av i,.who-id.awake .av i{
-  background:var(--accent);box-shadow:0 0 0 2px var(--glass),0 0 7px var(--accent)}
-/* Resting is "in the crew, not awake, not broken" — a hollow ring, present but
-   unlit. `:not(.dead)` is load-bearing: a member that died is still `serving`,
-   and this selector carries one more class than the dead rule below, so it won
-   the tie and painted a failed member as quietly resting. Measured in the
-   renderer: class `rail-row serving dead` resolved to the ring, not to red. */
-.rail-row.serving:not(.awake):not(.dead) .av i{background:transparent;
-  box-shadow:0 0 0 2px var(--glass),inset 0 0 0 1.5px color-mix(in srgb,var(--accent) 60%,transparent)}
-.rail-row.dead .av i{background:var(--danger);box-shadow:0 0 0 2px var(--glass),0 0 7px var(--danger)}
-/* Busy is the one state worth animating: it is the difference between waiting
-   for a member and waiting for nothing. */
-.rail-row.busy .av i{animation:pip 1.4s var(--ease) infinite}
-@keyframes pip{50%{box-shadow:0 0 0 2px var(--glass),0 0 14px var(--accent);opacity:.6}}
-
-/* ---------- bus panel ---------- */
-.m{padding:var(--s2) 0;border-bottom:1px solid var(--edge);font-size:var(--t-sm)}
-.m:last-child{border-bottom:0}
-.m .who{color:var(--dim);font-size:var(--t-micro)}
-.m .arrow{color:var(--faint)}
-.m .kind{color:var(--faint);font-size:var(--t-micro)}
-.m .body{color:var(--ink);white-space:pre-wrap;word-break:break-word;margin-top:2px}
-
-/* ---------- approvals ---------- */
-#approvals{position:absolute;right:var(--s4);bottom:var(--s4);z-index:30;
-  display:flex;flex-direction:column;gap:var(--s2);max-width:420px}
-.approval{background:var(--glass-strong);backdrop-filter:var(--frost);
-  -webkit-backdrop-filter:var(--frost);border:1px solid var(--edge-strong);
-  border-radius:var(--r-lg);padding:var(--s3) var(--s4);box-shadow:var(--lift),var(--sheen);
-  animation:rise var(--slow) var(--ease)}
-.approval summary{cursor:pointer;font-size:var(--t-sm);list-style:none}
-.approval summary::-webkit-details-marker{display:none}
-.approval summary .who{color:var(--crown)}
-.approval summary .kind{color:var(--faint);font-size:var(--t-micro)}
-.approval pre{font:400 var(--t-micro)/1.5 var(--mono);color:var(--dim);
-  margin-top:var(--s2);max-height:180px;overflow:auto;white-space:pre-wrap}
-.approval .btns{display:flex;gap:var(--s2);margin-top:var(--s3)}
-.approval button{border:1px solid var(--edge-strong);border-radius:var(--r-sm);
-  padding:var(--s2) var(--s4);font-size:var(--t-sm);font-weight:600}
-.approval .go{color:var(--accent);border-color:rgb(var(--accent-rgb) / .45)}
-.approval .go:hover{background:rgb(var(--accent-rgb) / .12)}
-.approval .no{color:var(--dim)}
-.approval .no:hover{color:var(--danger);border-color:rgb(var(--danger-rgb) / .45)}
-
-.approval.question .qlist{display:flex;flex-direction:column;gap:var(--s4);margin-top:var(--s2)}
-.approval.question .q{display:flex;flex-direction:column;gap:var(--s2)}
-.approval.question .qhead{display:inline-flex;align-self:flex-start;
-  background:var(--glass-raised);border:1px solid var(--edge);border-radius:999px;
-  padding:2px var(--s2);font:600 var(--t-micro)/1.4 var(--ui);color:var(--faint);
-  text-transform:uppercase;letter-spacing:.04em}
-.approval.question .qtext{font-size:var(--t-sm);color:var(--ink)}
-.approval.question .opts{display:flex;flex-wrap:wrap;gap:var(--s2)}
-.approval.question .opt{display:flex;flex-direction:column;gap:1px;text-align:left;
-  background:var(--glass-raised);border:1px solid var(--edge);border-radius:var(--r-md);
-  padding:var(--s2) var(--s3);max-width:100%}
-.approval.question .opt:hover{border-color:var(--edge-strong)}
-.approval.question .opt b{font:600 var(--t-sm)/1.3 var(--ui);color:var(--ink)}
-.approval.question .opt small{font:400 var(--t-micro)/1.3 var(--ui);color:var(--faint)}
-.approval.question .opt.picked{border-color:rgb(var(--accent-rgb) / .45);background:rgb(var(--accent-rgb) / .1)}
-.approval.question .opt.picked b{color:var(--accent)}
-.approval.question .other{width:100%;background:var(--glass-raised);border:1px solid var(--edge);
-  border-radius:var(--r-sm);color:var(--ink);font:400 var(--t-sm)/1.4 var(--ui);
-  padding:var(--s2) var(--s3);outline:none}
-.approval.question .other::placeholder{color:var(--faint)}
-
-/* ---------- toast ---------- */
-#toast{position:absolute;left:50%;translate:-50% 0;bottom:var(--s4);z-index:40;
-  display:flex;flex-direction:column;gap:var(--s2);align-items:center;pointer-events:none;max-width:480px}
-#toast div{background:var(--glass-strong);backdrop-filter:var(--frost-lite);
-  -webkit-backdrop-filter:var(--frost-lite);border:1px solid var(--edge);
-  border-radius:999px;padding:var(--s2) var(--s5);font-size:var(--t-sm);
-  box-shadow:var(--lift),var(--sheen);animation:rise var(--base) var(--ease)}
-#toast div.bad{border-color:rgb(var(--danger-rgb) / .45);color:var(--danger);
-  box-shadow:var(--lift),var(--sheen),0 0 16px -4px rgb(var(--danger-rgb) / .3)}
-/* A toast carrying an action is the only clickable one, so the whole strip has
-   to accept the pointer again — #toast itself is pointer-events:none so that a
-   notice never eats a click meant for the canvas underneath.
-   And it stops being a pill. The 999px radius above is right for one line of
-   text; with a sentence and a button beside it the toast wraps, and a 999px
-   radius on a five-line box draws a circle with the words crushed inside it. */
-#toast div:has(.undo){pointer-events:auto;border-radius:var(--r-xl);
-  display:flex;align-items:center;gap:var(--s3);padding:var(--s2) var(--s3) var(--s2) var(--s4);
-  text-align:left}
-#toast .undo{flex:none;color:var(--accent);font-size:var(--t-sm);
-  padding:3px var(--s3);border-radius:999px;white-space:nowrap;
-  box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent) 40%,transparent)}
-#toast .undo:hover{background:color-mix(in srgb,var(--accent) 16%,transparent)}
-@keyframes rise{from{opacity:0;translate:0 8px}}
-
-/* ---------- command palette ---------- */
-#palette{position:fixed;inset:0;z-index:100;display:flex;justify-content:center;
-  padding-top:14vh;background:var(--scrim);backdrop-filter:blur(6px)}
-#palette[hidden]{display:none}
-#palette .sheet{width:min(560px,92vw);height:fit-content;max-height:66vh;
-  display:flex;flex-direction:column;overflow:hidden;
-  background:var(--glass-strong);backdrop-filter:var(--frost);
-  -webkit-backdrop-filter:var(--frost);border:1px solid var(--edge-strong);
-  border-radius:var(--r-xl);box-shadow:var(--lift),var(--sheen);
-  animation:pop var(--base) var(--ease)}
-@keyframes pop{from{opacity:0;translate:0 -6px;scale:.985}}
-#palette input{width:100%;background:none;border:0;border-bottom:1px solid var(--edge);
-  color:var(--ink);font:400 var(--t-lg)/1 var(--ui);padding:var(--s4);outline:none;user-select:text}
-#palette ul{list-style:none;overflow-y:auto;padding:var(--s2)}
-#palette li{padding:var(--s2) var(--s3);border-radius:var(--r-md);cursor:pointer;
-  display:flex;gap:var(--s3);align-items:baseline;font-size:var(--t-sm)}
-#palette li .grp{color:var(--faint);font-size:var(--t-micro);min-width:8ch}
-#palette li.on{background:var(--glass-raised)}
-#palette li.on .lbl{color:var(--accent)}
-
-/* ---------- settings panels (advisor, wallpaper, music) ---------- */
-.win .log.settings{font-family:var(--ui);font-size:var(--t-sm);line-height:1.55;
-  padding:var(--s4) var(--s5) var(--s4) var(--s4)}
-.srow{display:flex;align-items:center;justify-content:space-between;gap:var(--s3);
-  padding:var(--s3) var(--s2);border-bottom:1px solid var(--edge);cursor:pointer;
-  border-radius:var(--r-sm);transition:background var(--fast) var(--ease)}
-.srow:hover{background:var(--glass-raised)}
-.srow:last-child{border-bottom:0}
-.srow>span{display:flex;flex-direction:column;gap:2px;min-width:0}
-.srow em{font-style:normal;font-size:var(--t-micro);color:var(--faint);line-height:1.4}
-.srow.tick>span{font-family:var(--mono);font-size:var(--t-micro);color:var(--dim)}
-.srow input[type=checkbox]{flex:none;width:18px;height:18px;accent-color:var(--accent);cursor:pointer}
-.srow select{flex:none;max-width:52%}
-.srow input[type=text]{flex:1;min-width:0;background:rgba(0,0,0,.32);
-  border:1px solid var(--edge);border-radius:var(--r-sm);color:var(--ink);font:inherit;
-  font-size:var(--t-sm);padding:var(--s2);outline:none;user-select:text}
-.srow input[type=text]:focus{border-color:var(--edge-strong);background:rgba(0,0,0,.45)}
-.srow button{color:var(--ink);background:var(--glass-raised);border:1px solid var(--edge);
-  border-radius:var(--r-sm);padding:var(--s2) var(--s4);font:inherit;font-size:var(--t-sm)}
-.srow button.primary{color:var(--accent);
-  border-color:color-mix(in srgb,var(--accent) 45%,transparent)}
-.srow.entry{justify-content:flex-start;cursor:default}
-.shead{margin-top:var(--s5);padding-bottom:var(--s2);border-bottom:1px solid var(--edge-strong);
-  font-weight:600;display:flex;flex-direction:column;gap:2px}
-.shead em{font-style:normal;font-weight:400;font-size:var(--t-micro);color:var(--faint);line-height:1.4}
-
-/* ---------- wallpaper & music ---------- */
-.gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));
-  gap:var(--s2);padding:var(--s3) 0}
-.tile{position:relative;aspect-ratio:16/10;border-radius:var(--r-md);overflow:hidden;
-  border:1px solid var(--edge);background:var(--glass-raised) no-repeat center/cover;
-  cursor:pointer;padding:0;display:block;width:100%;
-  transition:border-color var(--fast) var(--ease),transform var(--fast) var(--ease)}
-.tile:hover{border-color:var(--edge-strong);transform:translateY(-1px)}
-.tile.on{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
-.tile .cap{position:absolute;inset:auto 0 0 0;padding:3px var(--s2);
-  background:linear-gradient(transparent,rgba(0,0,0,.8));color:var(--ink);
-  font-size:var(--t-micro);text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.tile .kill{position:absolute;top:3px;right:3px;color:var(--ink);opacity:0;
-  background:rgba(0,0,0,.6);border-radius:var(--r-sm);padding:2px;
-  transition:opacity var(--fast) var(--ease)}
-.tile:hover .kill{opacity:1}
-.tile .kill:hover{color:var(--danger)}
-.tile.none{display:flex;align-items:center;justify-content:center;color:var(--faint);
-  font-size:var(--t-micro)}
-
-.act{display:flex;gap:var(--s2);flex-wrap:wrap;padding-bottom:var(--s2)}
-.act button{border:1px solid var(--edge);border-radius:var(--r-sm);
-  padding:var(--s1) var(--s3);font-size:var(--t-sm);color:var(--dim)}
-.act button:hover{color:var(--ink);background:var(--glass-raised);border-color:var(--edge-strong)}
-.act button.primary{color:var(--accent);border-color:rgb(var(--accent-rgb) / .4)}
-
-.slider{display:flex;align-items:center;gap:var(--s3);padding:var(--s2) 0;
-  font-size:var(--t-micro);color:var(--faint)}
-.slider input[type=range]{flex:1;accent-color:var(--accent);cursor:pointer}
-.slider b{font:400 var(--t-micro)/1 var(--mono);color:var(--dim);min-width:4ch;text-align:right}
-
-.now{display:flex;align-items:center;gap:var(--s3);padding:var(--s2) 0 var(--s3)}
-.now .title{flex:1;min-width:0;font-size:var(--t-sm);white-space:nowrap;
-  overflow:hidden;text-overflow:ellipsis}
-.now .title.idle{color:var(--faint)}
-.now .t{font:400 var(--t-micro)/1 var(--mono);color:var(--faint);white-space:nowrap}
-.transport{display:flex;align-items:center;gap:var(--s1)}
-.transport button{color:var(--dim);padding:var(--s2);border-radius:var(--r-sm)}
-.transport button:hover{color:var(--ink);background:var(--glass-raised)}
-.transport button.on{color:var(--accent)}
-.tracks{display:flex;flex-direction:column}
-.trk{display:flex;align-items:center;gap:var(--s2);padding:var(--s2) var(--s1);
-  border-bottom:1px solid var(--edge);cursor:pointer;font-size:var(--t-sm)}
-.trk:last-child{border-bottom:0}
-.trk:hover{background:var(--glass-raised)}
-.trk span{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.trk.on{color:var(--accent)}
-.trk .kill{color:var(--faint);opacity:0}
-.trk:hover .kill{opacity:1}
-.trk .kill:hover{color:var(--danger)}
-.empty{padding:var(--s5) 0;text-align:center;color:var(--faint);font-size:var(--t-sm)}
-
-/* Scrollbars, so a glass pane never gets a slab of opaque grey down its edge. */
-::-webkit-scrollbar{width:9px;height:9px}
-::-webkit-scrollbar-track{background:transparent}
-::-webkit-scrollbar-thumb{background:rgba(255,255,255,.13);border-radius:99px;
-  border:2px solid transparent;background-clip:content-box}
-::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,.24);background-clip:content-box}
-
-/* ---------- metrics ---------- */
-.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(88px,1fr));
-  gap:var(--s2);padding:var(--s2) 0 var(--s3)}
-.stat-cell{background:var(--glass-raised);border:1px solid var(--edge);
-  border-radius:var(--r-md);padding:var(--s4) var(--s3) var(--s3);min-width:0;
-  transition:border-color var(--fast) var(--ease),transform var(--fast) var(--ease)}
-.stat-cell:hover{border-color:var(--edge-strong);transform:translateY(-1px)}
-.stat-cell .v{font:600 var(--t-lg)/1.1 var(--mono);color:var(--ink);
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.stat-cell .k{font-size:var(--t-micro);color:var(--faint);letter-spacing:.06em;
-  text-transform:uppercase;margin-top:4px}
-.stat-cell .sub{font-size:var(--t-micro);color:var(--dim);margin-top:2px;
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-
-.meter{height:5px;border-radius:99px;background:var(--glass-raised);overflow:hidden;
-  margin-bottom:var(--s2)}
-.meter i{display:block;height:100%;background:var(--accent);border-radius:99px;
-  transition:width var(--base) var(--ease)}
-.meter i.hot{background:var(--danger)}
-
-.grid{width:100%;border-collapse:collapse;font-size:var(--t-sm);table-layout:fixed}
-.grid th{font-weight:500;font-size:var(--t-micro);color:var(--faint);text-align:left;
-  letter-spacing:.06em;text-transform:uppercase;padding:var(--s2) var(--s1);
-  border-bottom:1px solid var(--edge)}
-.grid td{padding:var(--s2) var(--s1);border-bottom:1px solid var(--edge);
-  color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.grid tr:last-child td{border-bottom:0}
-.grid .r{text-align:right}
-.grid td:first-child{color:var(--ink);display:flex;align-items:center;gap:var(--s2)}
-.grid tr.king td:first-child{color:var(--crown)}
-.grid tbody tr:hover td{background:var(--glass-raised)}
-
-.note{font-size:var(--t-micro);color:var(--faint);padding:var(--s3) 0 var(--s1)}
-
-/* ---------- diff ---------- */
-.files{display:flex;flex-direction:column;padding:var(--s2) 0}
-.file{display:flex;align-items:center;gap:var(--s3);width:100%;text-align:left;
-  padding:var(--s2) var(--s2);border-radius:var(--r-sm);font-size:var(--t-sm);color:var(--dim)}
-.file:hover{background:var(--glass-raised);color:var(--ink)}
-.file .p{flex:1;min-width:0;font-family:var(--mono);font-size:var(--t-micro);
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;direction:rtl;text-align:left}
-.file .ch{display:flex;gap:var(--s2);font:400 var(--t-micro)/1 var(--mono);flex:none}
-.file .ch i,.diff .add,.diff .del{font-style:normal}
-.file .ch .add,.diff .add{color:var(--accent)}
-.file .ch .del,.diff .del{color:var(--danger)}
-
-pre.diff{font:400 var(--t-micro)/1.55 var(--mono);white-space:pre;overflow-x:auto;
-  padding:var(--s3);margin:var(--s2) 0;background:rgba(0,0,0,.22);
-  border:1px solid var(--edge);border-radius:var(--r-md);max-height:420px;overflow-y:auto}
-pre.diff span{display:block;color:var(--dim)}
-pre.diff .meta{color:var(--faint)}
-pre.diff .hunk{color:var(--crown)}
-pre.diff .add{background:rgb(var(--accent-rgb) / .08)}
-pre.diff .del{background:rgb(var(--danger-rgb) / .08)}
-
-.act.sticky{position:sticky;bottom:0;padding:var(--s3) 0 var(--s2);
-  background:linear-gradient(transparent,var(--glass) 35%)}
-.link{color:var(--accent);font-size:var(--t-sm);padding:var(--s2) 0}
-.link:hover{text-decoration:underline}
-
-/* ---------- vault ---------- */
-.searchbar{flex:none;display:flex;flex-direction:column;gap:var(--s2);
-  padding:var(--s2) var(--s4);border-bottom:1px solid var(--edge);
-  background:rgba(255,255,255,.02)}
-.searchbar input{width:100%;background:none;border:0;color:var(--ink);
-  font:400 var(--t-sm)/1 var(--ui);padding:var(--s2) 0;outline:none;user-select:text}
-/* min-width:0 on both the row and the lines inside it. Without it a long note
-   path sets the flex item's intrinsic width and pushes the panel sideways —
-   the ellipsis on .p never gets a chance to apply. */
-.note-row{display:flex;flex-direction:column;gap:2px;width:100%;min-width:0;max-width:100%;
-  text-align:left;padding:var(--s2) var(--s2);border-radius:var(--r-sm);
-  border-bottom:1px solid var(--edge);overflow:hidden}
-.note-row:last-child{border-bottom:0}
-.note-row:hover{background:var(--glass-raised)}
-.note-row .p{font-size:var(--t-sm);color:var(--ink);white-space:nowrap;min-width:0;max-width:100%;
-  overflow:hidden;text-overflow:ellipsis}
-.note-row .ctx{display:flex;flex-direction:column;gap:1px;min-width:0;max-width:100%}
-.note-row .ctx i{font-style:normal;font-size:var(--t-micro);color:var(--faint);
-  white-space:nowrap;min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis}
-.note-title{font-family:var(--mono);font-size:var(--t-micro);color:var(--faint);
-  padding:var(--s2) 0;word-break:break-all}
-.note-body{font:400 var(--t-sm)/1.65 var(--ui);color:var(--ink);white-space:pre-wrap;
-  word-break:break-word;user-select:text}
-.note.bad{color:var(--danger)}
-
-/* ---------- the toolbar ----------
-   Replaces the Ctrl+K palette, which made every global action a search — and
-   searching for "wallpaper" is worse than looking at a picture of one.
-
-   Seven icons stay out here; the rest live behind the More button, which shows
-   their actual names. Unlabelled 16px hairlines in a row are a memory test, and
-   no amount of spacing fixes an icon nobody can name — so every one of these
-   carries a real tooltip that appears instantly, rather than the browser's
-   native one that arrives a second late in a system font. */
-/* Held in a plate, like the mode switch beside it. Eight hairline glyphs
-   floating loose in a bar is the single most dashboard-looking thing left in
-   the room; framed, they read as one instrument with eight controls rather
-   than as eight stray marks. */
-.tools{display:flex;align-items:center;gap:1px;
-  padding:2px;border-radius:var(--r-md);
-  background:rgba(0,0,0,.24);border:1px solid var(--edge)}
-.tool{color:var(--dim);padding:7px;border-radius:var(--r-sm);position:relative}
-.tool:hover{color:var(--ink);background:var(--glass-raised)}
-.tool.on{color:var(--accent)}
-.tool::before{content:attr(data-tip);position:absolute;top:calc(100% + 7px);left:50%;
-  translate:-50% -3px;z-index:70;pointer-events:none;
-  padding:5px var(--s2);border-radius:var(--r-sm);
-  background:var(--glass-strong);border:1px solid var(--edge-strong);
-  box-shadow:var(--lift);color:var(--ink);
-  font:500 var(--t-micro)/1 var(--ui);letter-spacing:.02em;white-space:nowrap;
-  opacity:0;transition:opacity var(--fast) var(--ease),translate var(--fast) var(--ease)}
-.tool:hover::before,.tool:focus-visible::before{opacity:1;translate:-50% 0}
-/* The rightmost tools would push their tooltip off the window. */
-.tool:nth-last-child(-n+2)::before{left:auto;right:0;translate:0 -3px}
-.tool:nth-last-child(-n+2):hover::before{translate:0 0}
-/* A hairline between the working tools and the destructive one, so ending the
-   court is not just another icon. It hangs off whichever tool is last before
-   the More button; `data-edge` is set in app.js so this never has to name one. */
-.tool[data-edge]{margin-right:var(--s3)}
-.tool[data-edge]::after{content:"";position:absolute;
-  right:calc(var(--s3) / -2 - 1px);top:22%;height:56%;width:1px;background:var(--edge)}
-.tool[data-tool="power"]{margin-left:var(--s1);border-left:1px solid var(--edge);
-  padding-left:var(--s3);border-radius:0 var(--r-sm) var(--r-sm) 0}
-.tool[data-tool="power"]:hover{color:var(--danger)}
-/* Armed: the next click ends the court. Red and pulsing, not subtle.
-   `blip` used to be declared beside the rail's `.dot`, which is gone — it lives
-   here now, with its only remaining user. */
-@keyframes blip{50%{opacity:.35}}
-.tool.arm{color:var(--danger);background:rgb(var(--danger-rgb) / .14);
-  animation:blip .8s var(--ease) infinite}
-/* Approvals are the sovereign's own business, so the badge is gold. */
-.tool[data-tool="approve"].waiting{color:var(--crown)}
-.tool[data-tool="approve"].waiting::after{
-  content:attr(data-count);position:absolute;top:1px;right:1px;
-  min-width:14px;height:14px;padding:0 3px;border-radius:99px;
-  background:var(--crown);color:var(--crown-ink);
-  font:600 9.5px/14px var(--ui);text-align:center;
-  box-shadow:0 0 0 2px var(--glass-strong)}
-
-.menu{position:absolute;top:calc(100% + 6px);right:var(--s3);z-index:60;min-width:236px;
-  padding:var(--s2);border-radius:var(--r-lg);
-  background:var(--glass-strong);backdrop-filter:var(--frost);
-  -webkit-backdrop-filter:var(--frost);border:1px solid var(--edge-strong);
-  box-shadow:var(--lift),var(--sheen);animation:pop var(--fast) var(--ease)}
-.menu[hidden]{display:none}
-.menu button{display:flex;align-items:center;gap:var(--s3);width:100%;text-align:left;
-  padding:var(--s2) var(--s3);border-radius:var(--r-md);color:var(--dim);font-size:var(--t-sm)}
-.menu button:hover{color:var(--ink);background:var(--glass-raised)}
-.menu button .k{margin-left:auto;font:400 10px/1 var(--mono);color:var(--faint);
-  border:1px solid var(--edge);border-radius:4px;padding:3px 5px}
-.menu button:hover .k{color:var(--dim);border-color:var(--edge-strong)}
-.menu button.on{color:var(--accent)}
-.tool.more.on{color:var(--ink);background:var(--glass-raised)}
-
-/* ---------- the standing decree ----------
-   In the header, not behind a panel: a goal you have to go looking for is one
-   you stop checking work against, which is the failure it exists to prevent.
-   It is the only thing in the header allowed to shrink. */
-.goalbar{display:flex;align-items:center;gap:var(--s2);
-  flex:0 1 auto;min-width:8ch;max-width:38ch;
-  padding:var(--s1) var(--s3);border-radius:99px;
-  border:1px solid var(--gold-edge);background:var(--gold-wash);
-  backdrop-filter:var(--frost-lite);-webkit-backdrop-filter:var(--frost-lite);
-  box-shadow:inset 0 1px 0 rgb(var(--crown-rgb) / .15);
-  color:var(--dim);font-size:var(--t-sm);transition:border-color var(--fast) var(--ease),color var(--fast) var(--ease)}
-/* `display:flex` above outranks the UA's [hidden] rule, so with no goal set an
-   empty 26px pill sat in the header doing nothing. */
-.goalbar[hidden]{display:none}
-.goalbar:hover{color:var(--ink);border-color:rgb(var(--crown-rgb) / .4)}
-/* The decree is set in the court's own voice too — it is the one line of text
-   in the header that came from the sovereign rather than from the machine. */
-.goalbar .gtext{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
-  font-family:var(--display);font-size:var(--t-base)}
-.goalbar .gcount{flex:none;font-size:var(--t-micro);color:var(--faint)}
-.goalbar .gcount.done{color:var(--accent)}
-/* An unset goal is a prompt, not a value: same slot, quieter, and it reads as
-   something to do rather than something that is true. */
-.goalbar.unset{border-color:var(--edge);background:none}
-/* Not italic. `overflow:hidden` clips an italic's right-hand overhang, so the
-   last letter of "Set a standing goal" lost its stem and the pill read as
-   truncated when it was not. Quieter ink says the same thing without lying. */
-.goalbar.unset .gtext{color:var(--faint)}
-.goalbar.unset:hover .gtext{color:var(--dim)}
-
-.goal-progress{display:flex;align-items:center;gap:var(--s3);margin:var(--s2) 0 var(--s3)}
-.gp-bar{flex:1;height:6px;background:rgba(255,255,255,.08);border-radius:99px;overflow:hidden}
-.gp-bar i{display:block;height:100%;background:linear-gradient(90deg,var(--crown),var(--accent));
-  border-radius:99px;transition:width var(--base) var(--ease)}
-.gp-label{font-size:var(--t-micro);color:var(--faint);white-space:nowrap}
-
-.srow.ms .mtext{overflow-wrap:anywhere}
-.srow.ms.done .mtext{color:var(--faint);text-decoration:line-through}
-input.msnew{flex:1;min-width:0;background:rgba(0,0,0,.22);color:var(--ink);
-  border:1px solid var(--edge);border-radius:var(--r-sm);padding:var(--s1) var(--s3);
-  font:400 var(--t-sm)/1.6 var(--ui);outline:none;user-select:text}
-input.msnew:focus{border-color:var(--accent)}
-
-/* ---------- approvals panel ---------- */
-.appr{border:1px solid var(--edge);border-radius:var(--r-md);padding:var(--s3);
-  margin:var(--s2) 0;background:var(--glass-raised)}
-.appr.open{border-color:rgb(var(--crown-rgb) / .4)}
-.appr .hd{display:flex;align-items:baseline;gap:var(--s2);flex-wrap:wrap}
-.appr .kind{font:600 var(--t-micro)/1 var(--mono);letter-spacing:.08em;color:var(--crown)}
-.appr .who{font-size:var(--t-micro);color:var(--dim)}
-.appr .when{margin-left:auto;font-size:var(--t-micro);color:var(--faint);white-space:nowrap}
-.appr .what{font-size:var(--t-sm);color:var(--ink);margin-top:var(--s2);
-  overflow-wrap:anywhere}
-.appr .why{font-size:var(--t-micro);color:var(--dim);line-height:1.5;margin-top:var(--s1);
-  overflow-wrap:anywhere}
-/* The summon forecast reuses .grid and .note verbatim; these two lines are
-   the whole of its own styling — spacing, and a crew total that reads as a
-   total rather than as one more member. */
-.appr .forecast{margin-top:var(--s2)}
-.appr .forecast tr.sum td{color:var(--crown)}
-.appr .btns{display:flex;gap:var(--s2);margin-top:var(--s3)}
-.appr .btns button{border:1px solid var(--edge-strong);border-radius:var(--r-sm);
-  padding:var(--s1) var(--s3);font-size:var(--t-sm)}
-.appr .go{color:var(--accent);border-color:rgb(var(--accent-rgb) / .45)}
-.appr .go:hover{background:rgb(var(--accent-rgb) / .12)}
-.appr .no{color:var(--dim)}
-.appr .no:hover{color:var(--danger);border-color:rgb(var(--danger-rgb) / .45)}
-.appr .verdict{margin-top:var(--s2);font-size:var(--t-micro);letter-spacing:.04em}
-.appr .verdict.approved{color:var(--accent)}
-.appr .verdict.rejected{color:var(--faint)}
-.appr.approved,.appr.rejected{opacity:.72}
-
-/* ---------- the chronicle ---------- */
-.filters{display:flex;gap:var(--s1);flex-wrap:wrap;padding-bottom:var(--s2)}
-.filt{font-size:var(--t-micro);color:var(--faint);padding:2px var(--s2);
-  border:1px solid var(--edge);border-radius:99px}
-.filt.on{color:var(--accent);border-color:rgb(var(--accent-rgb) / .4)}
-.filt:hover{color:var(--ink)}
-
-.chron-day{font-size:var(--t-micro);letter-spacing:.08em;text-transform:uppercase;
-  color:var(--faint);padding:var(--s4) 0 var(--s2);position:sticky;top:0;
-  background:linear-gradient(var(--glass) 70%,transparent)}
-.chron{padding:var(--s2) 0 var(--s2) var(--s3);margin-bottom:var(--s1);
-  border-left:2px solid var(--edge)}
-.chron.sum{border-left-color:var(--accent)}
-.chron.done{border-left-color:var(--crown)}
-.chron.err{border-left-color:var(--danger)}
-.chron .ch{display:flex;align-items:baseline;gap:var(--s2);min-width:0}
-.chron .cwho{font-size:var(--t-micro);color:var(--dim);padding:0}
-.chron .cwho:hover{color:var(--accent);text-decoration:underline}
-.chron .cto{font-size:var(--t-micro);color:var(--faint)}
-.chron .ctime{margin-left:auto;font-size:var(--t-micro);color:var(--faint);flex:none}
-.chron .ctext{font-size:var(--t-sm);color:var(--ink);line-height:1.5;margin-top:2px;
-  overflow-wrap:anywhere;white-space:pre-wrap}
-.chron.err .ctext{color:var(--danger)}
-.chron.msg .ctext{color:var(--dim)}
-
-/* ---------- Hall and Grounds ----------
-   Two ways to arrange the room, not two applications. Grounds is the free
-   canvas: you place panels, they stay where you put them, the surface pans.
-   Hall tiles whatever is open into an even grid that fills the stage.
-
-   It is entirely CSS: the same panels, the same DOM, the same state. Hall
-   overrides the inline geometry the canvas writes (hence the !important —
-   inline styles are the thing being overridden), so switching back restores
-   the arrangement untouched. The class name stays `board` for the same reason
-   the localStorage key does: renaming a label is not renaming a state. */
-.layout,.court-mode{display:flex;align-items:center;gap:2px;padding:2px;border-radius:var(--r-md);
-  background:rgba(0,0,0,.24);border:1px solid var(--edge);flex:none}
-.layout button,.court-mode button{font-size:11px;color:var(--faint);
-  padding:3px var(--s3);border-radius:var(--r-sm);letter-spacing:.01em}
-.layout button:hover,.court-mode button:hover{color:var(--ink)}
-.layout button.on,.court-mode button.on{color:var(--ink);background:var(--glass-raised);
-  box-shadow:var(--sheen)}
-
-/* What the court is doing carries more weight than how the panels are stacked,
-   so the selected one is tinted rather than only lifted — but with --accent and
-   never --crown, which is the sovereign's alone. */
-.court-mode button.on{color:var(--accent);
-  background:color-mix(in srgb,var(--accent) 14%,var(--glass-raised))}
-/* Chosen but not yet in force: a member is mid-turn and the flip is held until
-   it finishes. Shown rather than hidden, because otherwise pressing the button
-   appears to do nothing. */
-.court-mode button.pending{color:var(--accent);opacity:.62;
-  box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent) 45%,transparent)}
-.court-mode button.pending::after{content:'…';margin-left:2px}
-/* Code mode with no repository attached. Dimmed so it does not read as
-   available, but still clickable — clicking it opens the repo picker,
-   which is the only way to make it available. */
-.court-mode button.needs-repo{opacity:.45}
-.court-mode button.needs-repo:hover{opacity:.8}
-
-#stage.board #surface{pointer-events:none;cursor:default}
-#stage.board #windows{position:absolute;inset:0;
-  transform:none!important;pointer-events:auto;overflow-y:auto;
-  display:grid;gap:var(--s3);padding:var(--s3);align-content:stretch;
-  /* min() rather than a bare 360px: a fixed track minimum wider than the stage
-     overflows it, and a narrow window (rail + member card + a 322px stage) got
-     a permanent horizontal scrollbar under a grid holding nothing. */
-  grid-template-columns:repeat(auto-fit,minmax(min(360px,100%),1fr));
-  grid-auto-rows:minmax(220px,1fr)}
-#stage.board .win{position:static!important;
-  width:auto!important;height:auto!important;
-  min-width:0;min-height:0;resize:none}
-#stage.board .win>.bar{cursor:default}
-/* An empty grid used to carry a sentence here telling you to pick someone. The
-   Overview says the same thing and answers four more questions besides, so the
-   sentence went and the layer behind shows through instead — but only if this
-   stops swallowing clicks. In Grid mode #windows covers the whole stage and
-   takes pointer events, which sat on top of the Overview at z-index 0 and made
-   every row in it dead. Empty grid, no grid. */
-#stage.board #windows:empty{pointer-events:none}
-
-/* ---------- who: the member card on the right ----------
-   The rail says a member exists. This says what it is for. */
-.who{flex:none;width:280px;display:flex;flex-direction:column;min-height:0;
-  background:var(--glass);backdrop-filter:var(--frost);
-  -webkit-backdrop-filter:var(--frost);
-  border-left:1px solid var(--edge);position:relative;z-index:15}
-body.who-collapsed .who{display:none}
-.who-head{flex:none;display:flex;align-items:center;justify-content:space-between;
-  padding:var(--s3)}
-.who-body{flex:1;overflow-y:auto;padding:0 var(--s4) var(--s4)}
-.who-empty{color:var(--faint);font-size:var(--t-sm);line-height:1.6;padding:var(--s3) 0}
-
-.who-id{display:flex;align-items:center;gap:var(--s3);
-  font:600 var(--t-xxl)/1.15 var(--display);letter-spacing:.01em;flex-wrap:wrap}
-.who-id .rl{margin-left:auto;font:600 10.5px/1 var(--display);letter-spacing:.2em;
-  text-transform:uppercase;color:var(--faint)}
-.who-cat{width:100%;font:600 9.5px/1 var(--mono);padding:4px 9px;border-radius:99px;
-  background:rgba(255,255,255,.08);color:var(--dim);border:1px solid var(--edge);
-  letter-spacing:.03em;text-transform:uppercase;margin-top:2px}
-.who-cat[data-cat="discovery"]{background:rgb(var(--cat-discovery) / .12);color:var(--cat-discovery-ink);
-  border-color:rgb(var(--cat-discovery) / .25)}
-.who-cat[data-cat="craft"]{background:rgb(var(--accent-rgb) / .12);color:var(--accent);border-color:rgb(var(--accent-rgb) / .25)}
-.who-cat[data-cat="verification"]{background:rgb(var(--crown-rgb) / .12);color:var(--crown);border-color:rgb(var(--crown-rgb) / .25)}
-.who-cat[data-cat="security-ops"]{background:rgb(var(--danger-rgb) / .12);color:var(--danger);border-color:rgb(var(--danger-rgb) / .25)}
-.who-cat[data-cat="knowledge"]{background:rgb(var(--cat-knowledge) / .12);color:var(--cat-knowledge-ink);
-  border-color:rgb(var(--cat-knowledge) / .25)}
-.who-id.role-king{color:var(--crown)}
-.who-id.role-king .rl{color:rgb(var(--crown-rgb) / .7)}
-/* The awake case is already covered by the shared `.who-id.awake .av i` rule.
-   Only the throne's gold is special here — the one place the crown's colour
-   still lands now that the gilded disc is gone. */
-.who-id.role-king.awake .av i{background:var(--crown);box-shadow:0 0 7px var(--crown)}
-.who-title{font-size:var(--t-sm);color:var(--faint);margin-top:var(--s2)}
-.who-desc{font-size:var(--t-sm);color:var(--dim);line-height:1.6;margin-top:var(--s3);
-  padding-top:var(--s3);border-top:1px solid var(--edge);overflow-wrap:anywhere}
-
-.who-facts{display:grid;grid-template-columns:auto 1fr;gap:var(--s3) var(--s4);
-  margin-top:var(--s3);padding-top:var(--s3);border-top:1px solid var(--edge);
-  font-size:var(--t-micro);align-items:baseline}
-.who-facts dt{color:var(--faint);letter-spacing:.04em;white-space:nowrap}
-.who-facts dd{color:var(--ink);min-width:0;overflow-wrap:anywhere}
-.who-facts dd.mono{font-family:var(--mono);font-size:10.5px;color:var(--dim)}
-
-.who-sum{margin-top:var(--s3);padding:var(--s2) 0 var(--s2) var(--s3);
-  border-left:2px solid var(--accent);font-size:var(--t-sm);line-height:1.5;color:var(--ink)}
-.who .act{margin-top:var(--s4);padding-bottom:0}
-
-/* ---------- the court dog ----------
-   He lives at the foot of the rail, not on the stage. On the stage he had to
-   choose between being buried under a panel (win.js hands each focused card an
-   ever-increasing z-index) or floating on top of one — and on top he sat
-   squarely over the bottom-left card's prompt input. The rail's foot is the one
-   place on screen that never holds content.
-
-   image-rendering:pixelated matters: the sheet is chunky-outlined art at 192px
-   drawn down to 76px, and the default smooth scale turns the black keylines
-   into grey mush. */
-.rail-pet{flex:none;display:flex;align-items:flex-end;justify-content:center;
-  padding:var(--s2) 0 var(--s3);border-top:1px solid var(--edge)}
-body.no-pet .rail-pet{display:none}
-#pet{position:relative;width:76px;height:82px;padding:0;
-  background-repeat:no-repeat;image-rendering:pixelated;
-  filter:drop-shadow(0 6px 10px rgba(0,0,0,.55));
-  transition:transform var(--fast) var(--ease),opacity var(--base) var(--ease)}
-#pet:hover{transform:translateY(-2px) scale(1.04)}
-#pet:active{transform:translateY(0) scale(.98)}
-#pet[data-clip="sleep"]{opacity:.85}
-body.no-pet #pet{display:none}
-/* Collapsed rail is 52px wide; he shrinks to fit rather than being clipped.
-   background-size is in percentages, so the sheet follows the box for free. */
-body.rail-collapsed #pet{width:40px;height:43px}
-@media (prefers-reduced-motion:reduce){#pet{transition:none}}
-
-/* ---------- the `/` skill menu ----------
-   Opens UPWARD from the input, because both places it attaches — the command
-   bar and a member pane's composer — sit at the bottom of their container,
-   where a downward menu would open off-screen.
-
-   It is a plain absolutely-positioned div rather than a <datalist> or a popover:
-   datalist cannot show two columns or be styled, and this needs the trigger
-   text next to the name or the menu is 27 opaque slugs. */
-.skillmenu{position:absolute;left:0;right:0;bottom:calc(100% + var(--s2));z-index:40;
-  max-height:min(46vh,340px);overflow-y:auto;overscroll-behavior:contain;
-  background:var(--glass-strong);backdrop-filter:var(--frost);-webkit-backdrop-filter:var(--frost);
-  border:1px solid var(--edge-strong);border-radius:var(--r-lg);
-  box-shadow:0 18px 48px rgba(0,0,0,.5);padding:var(--s1)}
-.skillmenu .srow{display:flex;align-items:baseline;gap:var(--s2);cursor:pointer;
-  padding:var(--s1) var(--s2);border-radius:var(--r-sm);border-bottom:0}
-.skillmenu .srow.on{background:var(--glass-raised)}
-.skillmenu .srow b{color:var(--accent);font-weight:600;white-space:nowrap}
-/* The trigger is the whole point of the menu, so it gets the room and the name
-   never wraps; a long trigger is clipped rather than pushing the name around. */
-.skillmenu .srow i{color:var(--dim);font-style:normal;font-size:.86em;flex:1;
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-/* --dim, not --faint: measured over the glass against a bright wallpaper,
-   --faint came out at 3.88:1 — under AA for text this size. It is set apart by
-   size and position instead, which is the better signal anyway. */
-.skillmenu .srow em{color:var(--dim);font-style:normal;font-size:.78em;white-space:nowrap}
-
-/* ---------- the party and the summoning ----------
- *
- * The rail used to render every configured role — 107 rows and 4,179px of
- * scroll in a 580px viewport, 105 of them reading "not summoned". The rail now
- * holds the court and this holds everyone else, which is the same split a
- * party-based game makes between the party and the recruitment screen.
- */
-
-/* The rail's primary action, and the only filled button in the app: on a first
-   run it is the only thing there is to do, and an empty court with no visible
-   way to staff it is the dead end this whole section exists to remove. Filled,
-   but not a flat mint slab — a lit surface with a glow beneath it, so it reads
-   as a thing you raise rather than a form control. */
-.summon-btn{
-  flex:none;margin:0 var(--s2) var(--s2);padding:var(--s2) var(--s3);
-  display:flex;align-items:center;justify-content:center;gap:var(--s2);
-  background:var(--accent);
-  color:var(--accent-ink);border:0;border-radius:var(--r-md);cursor:pointer;
-  font:600 var(--t-sm)/1 var(--ui);letter-spacing:.02em;
-  box-shadow:0 8px 20px -10px rgb(var(--accent-rgb) / .7),inset 0 1px 0 rgba(255,255,255,.35);
-  transition:filter var(--fast) var(--ease),transform var(--fast) var(--ease),
-             box-shadow var(--fast) var(--ease);
-}
-.summon-btn:hover{filter:brightness(1.07);
-  box-shadow:0 10px 26px -10px rgb(var(--accent-rgb) / .85),inset 0 1px 0 rgba(255,255,255,.4)}
-.summon-btn:active{transform:translateY(1px);
-  box-shadow:0 4px 12px -8px rgb(var(--accent-rgb) / .7),inset 0 1px 0 rgba(255,255,255,.25)}
-#court-count{color:var(--faint);font-size:var(--t-micro)}
-body.rail-collapsed #court-count{display:none}
-/* Collapsed, the rail is 52px of avatars — a word would not fit, so the button
-   becomes the standard alone rather than disappearing. */
-body.rail-collapsed .summon-btn{font-size:0;padding:var(--s2);margin:0 6px var(--s2)}
-body.rail-collapsed .summon-btn::after{content:"+";font-size:15px;line-height:1}
-
-/* A container, so the rows can answer the PANEL's width rather than the
-   window's. This panel is opened at any size, and in Hall mode it is whatever
-   width the grid gives it — a viewport media query would be measuring the
-   wrong box. */
-.win.summon .log{padding:0 0 var(--s2);font-family:var(--ui);container-type:inline-size}
-.sum-cat-tabs{display:flex;gap:var(--s1);padding:var(--s2) var(--s3);overflow-x:auto;
-  border-bottom:1px solid var(--edge);background:rgba(0,0,0,.18);flex-wrap:wrap}
-.sum-cat-tab{font:500 11px/1.4 var(--ui);color:var(--faint);background:none;border:1px solid transparent;
-  padding:4px 10px;border-radius:99px;cursor:pointer;transition:all var(--fast) var(--ease)}
-.sum-cat-tab:hover{color:var(--ink);background:var(--glass-raised)}
-.sum-cat-tab.on{color:var(--crown);background:var(--gold-wash);border-color:var(--gold-edge);font-weight:600}
-
-@container (max-width:420px){.sum-model{display:none}}
-.sum-row{
-  display:grid;grid-template-columns:auto 1fr auto;gap:var(--s2) var(--s3);align-items:center;
-  width:100%;text-align:left;padding:var(--s3) var(--s4);
-  background:none;border:0;border-radius:var(--r-md);color:var(--dim);
-  cursor:pointer;transition:background var(--fast) var(--ease),transform var(--fast) var(--ease);
-}
-.sum-row:hover{background:var(--glass-raised);color:var(--ink);transform:translateX(2px)}
-.sum-row.in{border-left:2px solid var(--accent)}
-.sum-content{min-width:0;display:flex;flex-direction:column;gap:2px}
-.sum-main{display:flex;align-items:baseline;gap:var(--s2);min-width:0;flex-wrap:wrap}
-.sum-name{color:var(--ink);font:600 var(--t-md)/1.25 var(--display);letter-spacing:.01em;
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.sum-row.in .sum-name{color:var(--accent)}
-.sum-title{color:var(--faint);font-size:var(--t-sm);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.sum-cat{font:600 9.5px/1 var(--mono);padding:2px 6px;border-radius:99px;
-  background:rgba(255,255,255,.07);color:var(--dim);border:1px solid var(--edge);text-transform:uppercase}
-.sum-desc{color:var(--faint);font-size:var(--t-sm);line-height:1.4;
-  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.sum-meta{display:flex;align-items:center;gap:var(--s2);flex:none}
-.sum-model{color:var(--faint);font-size:var(--t-micro);font-family:var(--mono)}
-.sum-act{
-  font-size:var(--t-micro);font-weight:600;letter-spacing:.04em;text-transform:uppercase;
-  padding:4px var(--s2);border-radius:var(--r-sm);
-  border:1px solid var(--edge-strong);color:var(--faint);
-  opacity:0;transform:scale(.95);
-  transition:opacity var(--fast) var(--ease),background var(--fast) var(--ease),transform var(--fast) var(--ease);
-}
-.sum-row:hover .sum-act{opacity:1;transform:scale(1);color:var(--accent-ink);background:var(--accent);border-color:transparent}
-.sum-row.in:hover .sum-act{color:#fff;background:var(--danger)}
-.sum-row.pending{opacity:.6;cursor:default}
-.sum-row.pending .sum-act{opacity:1;transform:scale(1);background:none;border-color:var(--edge-strong);color:var(--faint)}
-
-/* ---------- the overview: the floor of the room ----------
- * Sits behind the panels rather than over them: it is the ground you land on
- * when nothing is open, never a thing you have to dismiss before you can work.
- * Two states share the layer — the three-step empty state (centred, flex) and
- * the five live blocks (a grid) — because both answer the same question and
- * only one of them can be true at a time.
- *
- * In Grid mode it steps aside once a panel is open: the grid fills the stage
- * and covers most of it anyway, and a half-visible Overview under an opaque
- * grid reads as a rendering fault. In Canvas mode it stays — #windows there is
- * pointer-events:none, so the floor keeps working under floating panels. */
-#overview{
-  position:absolute;inset:0;display:flex;flex-direction:column;
-  align-items:center;justify-content:center;gap:var(--s2);
-  pointer-events:none;z-index:0;padding:var(--s6);text-align:center;
-}
-#overview[hidden]{display:none}
-#stage.board:has(.win) #overview{display:none}
-#overview h1{
-  font:600 32px/1.15 var(--display);color:var(--ink);letter-spacing:-.01em;
-  margin-bottom:var(--s2);
-  /* The one place gold is used at size: this is the throne addressing you. */
-  background:linear-gradient(180deg,var(--ink),rgb(var(--crown-rgb) / .85));
-  -webkit-background-clip:text;background-clip:text;color:transparent;
-}
-/* Scoped to the empty state: the live blocks have their own paragraphs, and a
-   16px bottom margin under every one of them opened gaps inside the cards. */
-#overview:not(.ov) p{color:var(--faint);font-size:var(--t-base);margin-bottom:var(--s4)}
-.fr-step{
-  pointer-events:auto;                 /* the text is scenery, the steps are not */
-  display:grid;grid-template-columns:auto 1fr;gap:0 var(--s3);
-  width:min(340px,100%);text-align:left;
-  padding:var(--s3) var(--s4);margin-bottom:var(--s2);
-  background:var(--glass);backdrop-filter:var(--frost-lite);
-  -webkit-backdrop-filter:var(--frost-lite);
-  border:1px solid var(--edge);border-radius:var(--r-lg);box-shadow:var(--sheen);
-  color:var(--dim);cursor:pointer;
-  transition:border-color var(--fast) var(--ease),transform var(--fast) var(--ease),
-             box-shadow var(--fast) var(--ease);
-}
-.fr-step:hover{border-color:var(--edge-strong);transform:translateY(-3px);
-  box-shadow:var(--sheen),0 14px 30px -18px rgba(0,0,0,.9)}
-.fr-n{
-  grid-row:1 / span 2;align-self:center;
-  width:26px;height:26px;display:grid;place-items:center;
-  border-radius:50%;border:1px solid var(--edge-strong);
-  color:var(--accent);font-size:var(--t-sm)
-}
-.fr-label{color:var(--ink);font-weight:600}
-.fr-hint{color:var(--faint);font-size:var(--t-sm)}
-
-/* The five live blocks. Deliberately NOT built from the glass recipe: they are
-   the floor, and panels are the things that float in front of it. Given the
-   same fill and blur as a .win they competed with the panels for depth and the
-   room lost its front-to-back order. A hairline top rule and an engraved
-   heading is enough structure — the readability comes from the scrim
-   assets.js already maintains under the wallpaper. */
-#overview.ov{display:block;overflow-y:auto;
-  padding:var(--s5) var(--s5) var(--s6);text-align:left;scrollbar-width:thin}
-.ov-grid{display:grid;gap:var(--s5) var(--s5);align-content:start;
-  max-width:1080px;margin:0 auto;
-  grid-template-columns:repeat(auto-fit,minmax(min(280px,100%),1fr))}
-/* The objective is the thing everything else is in service of, so it gets the
-   full width and the top of the page rather than a quarter of a row. */
-.ov-objective{grid-column:1/-1}
-.ov-block{
-  pointer-events:auto;                 /* the layer is scenery, the blocks are not */
-  display:flex;flex-direction:column;gap:var(--s2);min-width:0;
-  padding-top:var(--s2);border-top:1px solid var(--edge);
-  max-height:40vh;overflow-y:auto;scrollbar-width:thin;
-}
-.ov-head{display:flex;align-items:baseline;gap:var(--s2);margin-bottom:var(--s1)}
-.ov-count{color:var(--accent);font-size:var(--t-sm)}
-.ov-empty{color:var(--faint);font-size:var(--t-sm);line-height:1.6;max-width:44ch}
-.ov-note,.ov-more{color:var(--faint);font-size:var(--t-sm);opacity:.8}
-.ov-cta{align-self:flex-start;padding:var(--s2) var(--s3);border-radius:var(--r-sm);
-  border:1px solid var(--edge-strong);color:var(--dim);cursor:pointer}
-.ov-cta:hover{color:var(--accent);border-color:var(--accent)}
-.ov-goal{font:400 var(--t-lg)/1.4 var(--display);color:var(--ink);cursor:pointer;max-width:60ch}
-.ov-goal:hover{color:var(--crown)}
-.ov-next{color:var(--dim);font-size:var(--t-sm)}
-
-/* One row shape for all four lists: a grid rather than flex so the state word
-   and the name line up down the column instead of tracking the text above. */
-.ov-task,.ov-agent,.ov-ask,.ov-change{
-  display:grid;grid-template-columns:auto 1fr auto;align-items:baseline;
-  gap:var(--s1) var(--s3);width:100%;text-align:left;
-  padding:var(--s2) 0;border-bottom:1px solid rgba(255,255,255,.05);
-  color:var(--dim);font-size:var(--t-sm);
-}
-.ov-agent,.ov-ask,.ov-change{cursor:pointer}
-.ov-agent:hover,.ov-ask:hover,.ov-change:hover{color:var(--ink)}
-.ov-task-state,.ov-agent-status,.ov-ask-kind{
-  font-size:var(--t-sm);letter-spacing:.06em;text-transform:uppercase;
-  font-family:var(--mono);color:var(--faint)}
-.state-blocked .ov-task-state{color:var(--danger)}
-.state-active .ov-task-state,.state-planning .ov-task-state{color:var(--accent)}
-.ov-task-title,.ov-agent-name{color:var(--ink);min-width:0;
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.ov-agent-name,.ov-change-who{font-family:var(--display)}
-.ov-task-who,.ov-change-files{color:var(--faint);font-size:var(--t-sm)}
-/* The summary spans the whole row underneath: at 214px in the rail it is a
-   fragment, and this is the one place with room for the sentence. */
-.ov-agent-sum{grid-column:1/-1;color:var(--faint);font-size:var(--t-sm);line-height:1.5}
-.ov-ask-kind{color:var(--crown)}          /* an approval is the sovereign's alone */
-.ov-ask.failed .ov-ask-kind{color:var(--danger)}
-.ov-ask-what,.ov-change-who{color:var(--ink)}
-.ov-change .ch{font-family:var(--mono);font-size:var(--t-sm);white-space:nowrap}
-.ov-change .ch .add{color:var(--accent);font-style:normal}
-.ov-change .ch .del{color:var(--danger);font-style:normal;margin-left:6px}
-
-/* ---------- fallbacks ---------- */
-/* backdrop-filter IS the effect. Without it every pane would be a
-   near-transparent smear of unreadable text, so fall back to solid fills. */
-@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
-  .win,.rail,.who,header,footer,.approval,.menu,#palette .sheet,#toast div,.skillmenu,.fr-step
-    {background:var(--glass)}
-}
-/* Somebody who has asked the OS for less transparency gets the solid material,
-   whichever one is selected. Expressed as the material's own variables rather
-   than by re-declaring .rail and .who: every surface already reads them, and a
-   selector in here is how this file grew five stacked override blocks the last
-   time. */
-@media (prefers-reduced-transparency:reduce){
-  :root,:root[data-material="glass"]{
-    --glass:#14171a;--glass-strong:#0e1013;
-    --frost:none;--frost-lite:none;--sheen:none;
-  }
-}
-/* Every entrance in this file is a fade with a small offset, so switching them
-   all off in one place is honest — nothing here carries meaning that only the
-   movement conveys. */
-@media (prefers-reduced-motion:reduce){
-  .win,#toast div,.approval,.menu,#palette .sheet{animation:none}
-  .rail-row.busy .av i,.tool.arm,.mic.on{animation:none}
-  /* The sweep stays VISIBLE and stops moving: it is the only signal that a
-     member is mid-turn, and deleting it would take information with it. A
-     static accent rule says the same thing without the movement. */
-  .win.working::after{animation:none;background:var(--accent);opacity:.55}
-  *{transition-duration:1ms!important}
+#bg {
+  position: fixed;
+  /* Keep the optional layer above the body paint and below the shell. */
+  z-index: 0;
+  inset: 0;
+  background: var(--bg);
+  background-image: var(--wall, none);
+  background-position: center;
+  background-size: cover;
+  opacity: var(--bg-dim, 0);
+  pointer-events: none;
 }
 
-/* ---------- Chat mode: a dedicated ChatGPT/T3-Chat-style thread ----------
-   #chat-view sits beside #overview inside #stage and is shown/hidden purely
-   by the mode attribute paintMode() already sets on <body> — everything
-   else in the app (the floating #windows panel system, every other mode)
-   is untouched by this block. */
-#chat-view{position:absolute;inset:0;z-index:0;display:none;flex-direction:row;min-height:0}
-body[data-mode="chat"] #chat-view{display:flex}
-body[data-mode="chat"] #overview{display:none}
-body[data-mode="chat"] footer{display:none}
+body.has-bg {
+  /* Default alpha tokens remain 1, so the no-wallpaper shell stays flat. */
+  --shell-alpha: .82;
+  --surface-alpha: .88;
+  --raised-alpha: .90;
+}
 
-.chat-main{flex:1;min-width:0;display:flex;flex-direction:column;min-height:0}
+button, input, select, textarea { font: inherit; }
 
-.chat-sidebar{flex:none;width:240px;display:flex;flex-direction:column;min-height:0;
-  border-right:1px solid var(--edge);background:var(--glass)}
-.chat-sidebar.collapsed{width:0;border-right:0;overflow:hidden}
-.chat-sidebar-head{flex:none;display:flex;align-items:center;gap:var(--s2);
-  padding:var(--s3) var(--s3) var(--s2)}
-.chat-sidebar-new{flex:1;text-align:left;background:var(--glass-raised);border:1px solid var(--edge);
-  border-radius:var(--r-sm);color:var(--ink);padding:var(--s2) var(--s3);font-size:var(--t-sm);cursor:pointer}
-.chat-sidebar-new:hover{border-color:var(--edge-strong)}
-.chat-sidebar-collapse{flex:none;width:24px;height:24px;color:var(--faint);
-  background:none;border:0;border-radius:var(--r-sm);cursor:pointer;font-size:14px}
-.chat-sidebar-collapse:hover{color:var(--ink);background:var(--glass-raised)}
-.chat-sidebar-list{flex:1;overflow-y:auto;padding:0 var(--s2) var(--s3);scrollbar-width:thin}
-.chat-sidebar-row{display:flex;align-items:center;gap:2px;border-radius:var(--r-sm);
-  padding:1px;margin-bottom:1px}
-.chat-sidebar-row:hover,.chat-sidebar-row.active{background:var(--glass-raised)}
-.chat-sidebar-main{flex:1;min-width:0;text-align:left;background:none;border:0;
-  color:var(--dim);padding:var(--s2) var(--s2);border-radius:var(--r-sm);cursor:pointer;font-size:var(--t-sm)}
-.chat-sidebar-row.active .chat-sidebar-main{color:var(--ink)}
-.chat-sidebar-title{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.chat-sidebar-act{flex:none;width:22px;height:22px;color:var(--faint);background:none;
-  border:0;border-radius:var(--r-sm);cursor:pointer;font-size:11px;opacity:0;transition:opacity .1s}
-.chat-sidebar-row:hover .chat-sidebar-act{opacity:1}
-.chat-sidebar-act:hover{color:var(--ink);background:var(--glass)}
+button { color: inherit; }
 
-.chat-thread{flex:1;overflow-y:auto;padding:var(--s5) var(--s4);
-  display:flex;flex-direction:column;gap:var(--s3);
-  max-width:760px;width:100%;margin:0 auto;scrollbar-width:thin;user-select:text}
-.chat-msg{display:flex;flex-direction:column}
-.chat-msg.mine{align-items:flex-end}
-.chat-msg.theirs{align-items:flex-start}
-.chat-msg .bubble{max-width:min(640px,80%);padding:var(--s3) var(--s4);
-  border-radius:var(--r-lg);white-space:pre-wrap;word-break:break-word;
-  font-size:var(--t-base);line-height:1.55}
-.chat-msg.mine .bubble{background:var(--accent);color:var(--accent-ink);
-  border-bottom-right-radius:var(--r-sm)}
-.chat-msg.theirs .bubble{background:var(--glass-raised);border:1px solid var(--edge);
-  color:var(--ink);border-bottom-left-radius:var(--r-sm)}
-.chat-msg .bubble.failed{border-color:rgb(var(--danger-rgb) / .6)}
-.chat-msg-acts{display:flex;gap:2px;padding:2px var(--s1) 0;opacity:0;transition:opacity .1s}
-.chat-msg:hover .chat-msg-acts{opacity:1}
-.chat-msg-act{background:none;border:0;color:var(--faint);font-size:10.5px;
-  cursor:pointer;padding:2px 6px;border-radius:var(--r-sm)}
-.chat-msg-act:hover{color:var(--ink);background:var(--glass)}
-.chat-status{color:var(--dim);opacity:.85;font-size:11.5px;padding:0 var(--s2)}
+button, select { cursor: pointer; }
 
-.chat-composer{flex:none;max-width:760px;width:100%;margin:0 auto;
-  padding:var(--s3) var(--s4) var(--s5);display:flex;flex-direction:column}
-.chat-composer .row1{display:flex;align-items:center;gap:var(--s1);
-  background:var(--glass-raised);border:1px solid var(--edge);border-radius:999px;
-  padding:var(--s1);margin-bottom:var(--s2)}
-.chat-composer .attach{color:var(--faint);padding:var(--s2);border-radius:var(--r-sm)}
-.chat-composer .attach:hover{color:var(--ink);background:var(--glass-raised)}
-.chat-composer input{flex:1;background:none;border:0;color:var(--ink);font:inherit;
-  font-size:var(--t-base);padding:var(--s2) 0;outline:none;user-select:text}
-.chat-composer input::placeholder{color:var(--faint);opacity:.85}
-.chat-composer .chips{display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap;padding:0 var(--s2)}
-.chat-composer .chips .chip{display:inline-flex;align-items:center;gap:5px;
-  background:var(--glass-raised);border:1px solid var(--edge);border-radius:999px;
-  padding:3px var(--s2) 3px 7px;cursor:pointer;color:var(--faint)}
-.chat-composer .chips .chip:hover{color:var(--ink);border-color:var(--edge-strong)}
-.chat-composer .chips .chip select{background:none;border:0;color:inherit;
-  font:400 10.5px/1 var(--ui);padding:0;cursor:pointer;outline:none;max-width:16ch;
-  text-overflow:ellipsis;overflow:hidden;white-space:nowrap}
-.chat-composer .send{flex:none;color:var(--accent-ink);background:var(--accent);
-  width:30px;height:30px;padding:0;border-radius:50%;display:flex;align-items:center;justify-content:center}
-.chat-attach-row{display:flex;flex-wrap:wrap;gap:var(--s2);padding:0 var(--s2) var(--s2)}
-.chat-attach-row[hidden]{display:none}
-.chat-attach-chip{display:inline-flex;align-items:center;gap:6px;
-  background:var(--glass-raised);border:1px solid var(--edge);border-radius:999px;
-  padding:4px var(--s1) 4px var(--s3);font-size:var(--t-sm);color:var(--dim);
-  max-width:26ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.chat-attach-chip button{flex:none;width:18px;height:18px;border-radius:50%;
-  color:var(--faint);display:flex;align-items:center;justify-content:center;font-size:10px}
-.chat-attach-chip button:hover{color:var(--ink);background:var(--glass)}
-.chat-thread.drag-over{outline:2px dashed var(--accent);outline-offset:-8px;border-radius:var(--r-lg)}
-.chat-sidebar-search{flex:none;width:26px;height:26px;color:var(--faint);background:none;
-  border:0;border-radius:var(--r-sm);cursor:pointer;font-size:13px}
-.chat-sidebar-search:hover{color:var(--ink);background:var(--glass)}
+a:focus-visible, summary:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
 
-/* ---------- the automation graph (ui/graph.js) ----------
- * Nodes are absolutely positioned in canvas-local pixels and the wires are one
- * SVG behind them, sized to the graph's own extent — so the surface scrolls as
- * one thing and a wire never lands on top of the node it points at.
- */
-.wfpal{display:flex;flex-wrap:wrap;gap:var(--s1);margin:var(--s2) 0}
-.wfchip{color:var(--dim);background:var(--glass-raised);border:1px solid var(--edge);
-  border-radius:var(--r-sm);padding:3px 9px;font-size:var(--t-micro);font-family:var(--mono);
-  cursor:grab;touch-action:none}
-.wfchip:hover{color:var(--ink);border-color:var(--edge-strong)}
-.wfchip:active{cursor:grabbing}
-/* The drag ghost follows the pointer in SCREEN space, so it is on <body> and
- * outside every transform the panel sits inside. */
-.wfghost{position:fixed;z-index:9999;transform:translate(-50%,-50%);pointer-events:none;
-  color:var(--accent-ink);background:var(--accent);border-radius:var(--r-sm);
-  padding:3px 9px;font-size:var(--t-micro);font-family:var(--mono);opacity:.9}
+#sidebar {
+  grid-area: sidebar;
+  position: relative;
+  z-index: 1;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  gap: var(--s-4);
+  padding: var(--s-4) var(--s-3);
+  border-right: 1px solid var(--line);
+  background: rgb(var(--surface-rgb) / var(--surface-alpha));
+  overflow: hidden;
+}
 
-.wfhead{display:flex;align-items:center;justify-content:space-between;gap:var(--s2)}
-.wfgraph{position:relative;overflow:auto;height:340px;min-height:160px;resize:vertical;touch-action:none;
-  background:var(--floor-2);border:1px solid var(--edge);border-radius:var(--r-md);
-  background-image:radial-gradient(var(--edge) 1px,transparent 1px);background-size:22px 22px}
-.wfnodes{position:absolute;inset:0}
-.wires{position:absolute;top:0;left:0;pointer-events:none;overflow:visible}
-.wires .wire{fill:none;stroke:var(--edge-strong);stroke-width:1.5}
-.wires .wire.then{stroke:rgb(var(--accent-rgb) / .75)}
-.wires .wire.else{stroke:rgb(var(--danger-rgb) / .6)}
-.wires .wire.live{stroke:var(--accent);stroke-dasharray:4 3}
+#main {
+  grid-area: main;
+  position: relative;
+  z-index: 1;
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  grid-template: "header" auto "view" 1fr "composer" auto / 1fr;
+  background: linear-gradient(135deg, rgb(var(--accent-rgb) / .035), transparent 34%), rgb(var(--bg-rgb) / var(--shell-alpha));
+}
 
-.wfnode{position:absolute;box-sizing:border-box;display:flex;flex-direction:column;
-  justify-content:center;gap:2px;padding:var(--s2) var(--s3);cursor:grab;touch-action:none;
-  background:var(--glass);border:1px solid var(--edge);border-radius:var(--r-md);
-  box-shadow:var(--lift);user-select:none}
-.wfnode:active{cursor:grabbing}
-.wfnode.sel{border-color:var(--accent);box-shadow:0 0 0 1px rgb(var(--accent-rgb) / .35),var(--lift)}
-.wfnode.start{border-left:3px solid var(--crown)}
-.wfnode.ok{border-color:rgb(var(--accent-rgb) / .5)}
-.wfnode.fail,.wfnode.unknown{border-color:var(--danger)}
-.wfn-head{display:flex;align-items:baseline;gap:var(--s2);min-width:0}
-.wfn-type{color:var(--ink);font-size:var(--t-sm);font-weight:600}
-.wfn-id{color:var(--faint);font-size:var(--t-micro);font-family:var(--mono);
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.wfn-sub{color:var(--dim);font-size:var(--t-micro);overflow:hidden;
-  text-overflow:ellipsis;white-space:nowrap}
-.wfn-x{position:absolute;top:2px;right:4px;color:var(--faint);background:none;border:0;
-  cursor:pointer;font-size:13px;line-height:1;opacity:0}
-.wfnode:hover .wfn-x{opacity:1}
-.wfn-x:hover{color:var(--danger)}
+#header {
+  grid-area: header;
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--s-4);
+  min-height: 72px;
+  padding: var(--s-3) var(--s-6);
+  border-bottom: 1px solid var(--line);
+}
 
-/* Ports are the drag handles for wiring, so they are bigger than they look —
- * an 8px dot is a target you miss. */
-.wfport{position:absolute;width:9px;height:9px;border-radius:99px;
-  background:var(--edge-strong);border:1px solid var(--deep);touch-action:none}
-.wfport::after{content:'';position:absolute;inset:-7px}
-.wfport.in{left:-5px;top:calc(50% - 5px);background:var(--edge)}
-.wfport.out{right:-5px;top:calc(50% - 5px);cursor:crosshair}
-.wfport.then{right:-5px;top:calc(28% - 5px);cursor:crosshair;background:var(--accent)}
-.wfport.else{right:-5px;top:calc(72% - 5px);cursor:crosshair;background:var(--danger)}
-.wfport.out:hover,.wfport.then:hover,.wfport.else:hover{box-shadow:0 0 0 3px rgb(var(--accent-rgb) / .25)}
+#view {
+  grid-area: view;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--s-6);
+  scrollbar-width: thin;
+  transition: opacity var(--view) ease, transform var(--view) ease;
+}
 
-.wfinspect{margin-top:var(--s3)}
-.wfform{border:1px solid var(--edge);border-radius:var(--r-md);padding:var(--s2) var(--s3)}
-.wfform-head{display:flex;align-items:baseline;gap:var(--s2);flex-wrap:wrap;
-  padding-bottom:var(--s2);border-bottom:1px solid var(--edge)}
-.wfform-head .p{color:var(--ink);font-size:var(--t-sm);font-family:var(--mono)}
-.wfform-head .ctx{color:var(--faint);font-size:var(--t-micro)}
-.wfform .srow>span{flex:none}
-.wfform textarea{flex:1;min-width:0;background:rgba(0,0,0,.32);color:var(--ink);
-  border:1px solid var(--edge);border-radius:var(--r-sm);padding:4px 7px;
-  font-family:var(--mono);font-size:var(--t-micro);resize:vertical}
-/* Unparseable JSON is shown, not silently discarded: the field keeps what was
- * typed and says it is not usable yet, rather than reverting under the cursor. */
-.wfform textarea.bad{border-color:var(--danger)}
+#view.view-changing { opacity: 0; transform: translateY(var(--s-1)); }
+
+#composer {
+  grid-area: composer;
+  min-width: 0;
+  padding: var(--s-3) var(--s-6) var(--s-4);
+  border-top: 1px solid var(--line);
+  background: rgb(var(--raised-rgb) / var(--raised-alpha));
+}
+
+#composer:empty { display: none; }
+
+#toast {
+  position: fixed;
+  z-index: 10;
+  right: var(--s-4);
+  bottom: var(--s-4);
+  display: grid;
+  gap: var(--s-2);
+  width: min(360px, calc(100vw - var(--s-5)));
+  pointer-events: none;
+}
+
+#sidebar-scrim { display: none; }
+
+#toast > * {
+  padding: var(--s-3) var(--s-4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--raised);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, .35);
+  color: var(--text);
+  pointer-events: auto;
+}
+
+.brand, .repo, .header-title { min-width: 0; }
+
+.brand { color: var(--accent); font-weight: 700; }
+
+.app-identity { display: none; flex: none; gap: 1px; }
+
+body.sidebar-collapsed .app-identity { display: grid; }
+
+.brand-tag { color: var(--faint); font-size: 10px; letter-spacing: .04em; }
+
+.mode-switcher { display: flex; gap: var(--s-1); min-width: 0; }
+
+.mode-option { display: grid; min-width: 92px; padding: var(--s-2) var(--s-3); border: 1px solid transparent; border-radius: var(--r-sm); background: transparent; color: var(--muted); text-align: left; transition: border-color var(--fast) ease, background-color var(--fast) ease, color var(--fast) ease; }
+
+.mode-option strong { color: var(--text); font-size: var(--t-sm); }
+
+.mode-option:hover, .mode-option.selected { border-color: rgb(var(--accent-rgb) / .45); background: var(--surface); }
+
+.mode-option.selected strong { color: var(--accent); }
+
+.mode-option:disabled { cursor: wait; opacity: .6; }
+
+.mode-explainer { display: grid; min-width: 120px; max-width: 230px; gap: 1px; }
+
+.mode-name { color: var(--text); font-size: var(--t-sm); }
+
+.mode-blurb { overflow: hidden; color: var(--muted); font-size: var(--t-xs); text-overflow: ellipsis; }
+
+.header-context { display: grid; min-width: 0; gap: 1px; }
+
+.goal-context { overflow: hidden; max-width: 52ch; color: var(--faint); font-size: var(--t-xs); text-overflow: ellipsis; white-space: nowrap; }
+
+.repo { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.muted, .header-meta, .note { color: var(--muted); }
+
+.note { margin: 0; }
+
+.faint { color: var(--faint); }
+
+.grow { flex: 1; }
+
+.connection { display: inline-flex; align-items: center; gap: var(--s-1); color: var(--muted); font-size: var(--t-xs); white-space: nowrap; }
+
+.connection::before { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); content: ""; }
+
+.connection.up::before { background: var(--ok); }
+
+.connection.down::before { background: var(--danger); }
+
+.status-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--faint); }
+
+.status-dot.awake { background: var(--ok); }
+
+.status-dot.resting { background: var(--accent); }
+
+.status-dot.off { background: var(--faint); }
+
+.status-dot.failed { background: var(--danger); }
+
+.status-dot.busy { box-shadow: 0 0 0 4px rgb(var(--accent-rgb) / .14); animation: busy 1.1s ease-in-out infinite alternate; }
+
+.sidebar-heading { display: flex; align-items: center; gap: var(--s-2); margin: 0; padding: 0 var(--s-2); color: var(--faint); font-size: var(--t-xs); letter-spacing: .08em; text-transform: uppercase; }
+
+.sidebar-empty { margin: 0; padding: var(--s-2); color: var(--faint); font-size: var(--t-xs); }
+
+.sidebar-footer { display: grid; gap: var(--s-2); margin-top: auto; padding-top: var(--s-3); border-top: 1px solid var(--line); }
+
+.sidebar-repo { width: 100%; overflow: hidden; padding: var(--s-1) var(--s-2); border: 0; background: transparent; color: var(--muted); font-size: var(--t-sm); text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+
+.sidebar-repo:hover { color: var(--text); }
+
+.button, .icon-button {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-2);
+  padding: var(--s-2) var(--s-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--raised);
+  color: var(--text);
+  transition: border-color var(--fast) ease, background-color var(--fast) ease, color var(--fast) ease, opacity var(--fast) ease;
+}
+
+.button:hover, .icon-button:hover { border-color: var(--accent); }
+
+.button.primary { border-color: transparent; background: var(--accent); color: var(--accent-ink); }
+
+.button.danger { border-color: rgb(var(--danger-rgb) / .6); color: var(--danger); }
+
+.button.link { min-height: 28px; padding: var(--s-1) 0; border-color: transparent; background: transparent; color: var(--muted); }
+
+.button.link:hover { border-color: transparent; background: transparent; color: var(--text); }
+
+.button.chip { min-height: 28px; padding: var(--s-1) var(--s-2); font-family: var(--mono); font-size: var(--t-xs); }
+
+.button:disabled, .icon-button:disabled { cursor: not-allowed; opacity: .5; }
+
+.icon-button { width: 32px; padding: var(--s-2); }
+
+.field { display: grid; gap: var(--s-1); color: var(--muted); font-size: var(--t-sm); }
+
+.field-label { display: flex; min-width: 0; align-items: baseline; justify-content: space-between; gap: var(--s-2); }
+
+.field-value { flex: none; color: var(--text); font-family: var(--mono); font-size: var(--t-xs); }
+
+.field-check { grid-template-columns: 18px minmax(0, 1fr); align-items: center; column-gap: var(--s-2); }
+
+.field-check > input { grid-column: 1; grid-row: 1 / span 2; }
+
+.field-check > .field-label, .field-check > small { grid-column: 2; }
+
+.field input:not([type="checkbox"]):not([type="range"]), .field select, .field textarea {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  color: var(--text);
+}
+
+.field input:not([type="checkbox"]):not([type="range"]), .field select { height: 36px; padding: 0 var(--s-3); }
+
+.field textarea { min-height: 100px; padding: var(--s-3); resize: vertical; }
+
+.field input[type="checkbox"] { width: 18px; height: 18px; margin: 2px 0; accent-color: var(--accent); }
+
+.field input[type="range"] { width: 100%; height: 24px; padding: 0; border: 0; border-radius: 0; background: transparent; accent-color: var(--accent); cursor: pointer; }
+
+.thread { display: grid; gap: var(--s-5); max-width: 820px; margin: 0 auto; }
+
+.question { display: grid; gap: var(--s-3); padding: var(--s-4); border: 1px solid var(--line); border-radius: var(--r-md); background: var(--raised); }
+
+.question label { display: flex; align-items: flex-start; gap: var(--s-2); padding: var(--s-2); border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg); cursor: pointer; }
+
+.question label:hover { border-color: var(--accent); }
+
+.question label input { flex: none; margin: 3px 0 0; accent-color: var(--accent); }
+
+.approval-actions { display: flex; flex-wrap: wrap; gap: var(--s-2); }
+
+.approval-title { font-weight: 650; }
+
+.approval-from, .approval-detail { color: var(--muted); }
+
+.question-block { display: grid; gap: var(--s-2); margin: 0; padding: var(--s-3); border: 1px solid var(--line); border-radius: var(--r-sm); }
+
+.question-block legend { padding: 0 var(--s-1); font-weight: 650; }
+
+.question-text { color: var(--muted); }
+
+.question-option { display: grid; width: 100%; gap: 2px; padding: var(--s-3); border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg); color: var(--text); text-align: left; }
+
+.question-option:hover, .question-option.selected { border-color: var(--accent); background: var(--surface); }
+
+.question-option small { color: var(--muted); }
+
+.question-other { width: 100%; height: 36px; padding: 0 var(--s-3); border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg); color: var(--text); }
+
+.message-attachment { display: inline-flex; max-width: 100%; margin: var(--s-1) var(--s-2) 0 0; overflow: hidden; color: var(--accent); font-size: var(--t-xs); text-overflow: ellipsis; white-space: nowrap; }
+
+.drag-over { outline: 2px dashed var(--accent); outline-offset: -8px; border-radius: var(--r-md); }
+
+.empty { margin: 0; padding: var(--s-5); color: var(--muted); text-align: center; }
+
+.mono { font-family: var(--mono); }
+
+.danger { color: var(--danger); }
+
+.success { color: var(--ok); }
+
+.hidden, [hidden] { display: none !important; }
+
+/* Components shipped with the shell use these small structural classes. They
+ * share the same flat tokens instead of recreating a second visual system. */
+.sidebar-header { display: flex; align-items: center; gap: var(--s-2); padding-bottom: var(--s-2); border-bottom: 1px solid var(--line); }
+
+.mobile-menu, .sidebar-mobile-close { min-height: 30px; padding: var(--s-1) var(--s-2); border: 1px solid var(--line); border-radius: var(--r-sm); background: transparent; color: var(--muted); }
+
+.mobile-menu { display: none; }
+
+.sidebar-mobile-close { display: none; }
+
+.mobile-menu:hover, .sidebar-mobile-close:hover { border-color: var(--accent); color: var(--text); }
+
+.sidebar-brand { min-width: 0; overflow: hidden; color: var(--text); font-size: var(--t-lg); font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+
+.sidebar-new { flex: 1; min-width: 0; min-height: 34px; overflow: hidden; padding: 0 var(--s-3); border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--raised); color: var(--text); text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+
+.sidebar-new:hover { border-color: var(--accent); }
+
+.sidebar-section { display: grid; gap: var(--s-2); min-height: 0; }
+
+.sidebar-nav-list { display: grid; gap: 2px; }
+
+/* The header owns mode switching on wide screens; the drawer keeps it reachable on phones. */
+.sidebar-mode { display: none; }
+
+.sidebar-mode-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2px; }
+
+.sidebar-mode-option { min-width: 0; padding: var(--s-2) var(--s-1); border: 1px solid transparent; border-radius: var(--r-sm); background: transparent; color: var(--muted); font-size: var(--t-xs); transition: border-color var(--fast) ease, background-color var(--fast) ease, color var(--fast) ease; }
+
+.sidebar-mode-option:hover, .sidebar-mode-option.selected { border-color: rgb(var(--accent-rgb) / .45); background: var(--raised); color: var(--text); }
+
+.sidebar-mode-option.selected { color: var(--accent); }
+
+.sidebar-more { display: grid; gap: var(--s-2); }
+
+.sidebar-more > summary { cursor: pointer; list-style: none; }
+
+.sidebar-more > summary::-webkit-details-marker { display: none; }
+
+.sidebar-more > summary::after { margin-left: auto; content: "+"; }
+
+.sidebar-more[open] > summary::after { content: "−"; }
+
+.sidebar-nav-button { display: flex; width: 100%; align-items: center; gap: var(--s-2); padding: var(--s-2) var(--s-3); border: 1px solid transparent; border-radius: var(--r-sm); background: transparent; color: var(--muted); text-align: left; transition: border-color var(--fast) ease, background-color var(--fast) ease, color var(--fast) ease; }
+
+.sidebar-nav-button .icon { flex: none; opacity: .72; }
+
+.sidebar-nav-button.selected .icon { opacity: 1; }
+
+.sidebar-nav-button:hover, .sidebar-nav-button.selected { border-color: var(--line); background: var(--raised); color: var(--text); }
+
+.sidebar-conversations { max-height: 34%; }
+
+.sidebar-team { flex: 1; min-height: 0; }
+
+.conversation-list, .team-list { display: grid; gap: var(--s-1); min-height: 0; overflow: auto; scrollbar-width: thin; }
+
+.conversation-row, .team-row { display: flex; min-width: 0; align-items: center; gap: var(--s-2); padding: var(--s-2); border: 1px solid transparent; border-radius: var(--r-sm); background: transparent; color: var(--muted); text-align: left; transition: border-color var(--fast) ease, background-color var(--fast) ease, color var(--fast) ease; }
+
+.conversation-row:hover, .conversation-row.selected, .team-row:hover, .team-row.selected { border-color: var(--line); background: var(--raised); color: var(--text); }
+
+.conversation-open { min-width: 0; flex: 1; overflow: hidden; border: 0; background: transparent; color: inherit; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+
+.conversation-actions { display: flex; flex: none; gap: var(--s-1); opacity: 0; }
+
+.conversation-row:hover .conversation-actions, .conversation-row.selected .conversation-actions, .conversation-row:focus-within .conversation-actions { opacity: 1; }
+
+.conversation-action { min-height: 28px; padding: var(--s-1); border: 0; background: transparent; color: var(--faint); font-size: var(--t-xs); white-space: nowrap; }
+
+.conversation-action:hover { color: var(--text); }
+
+.conversation-edit { display: flex; flex: 1; gap: var(--s-1); }
+
+.conversation-edit input { min-width: 0; flex: 1; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg); color: var(--text); }
+
+.team-group-heading { margin: var(--s-3) var(--s-2) var(--s-1); color: var(--faint); font-size: var(--t-xs); font-weight: 600; text-transform: uppercase; }
+
+.team-details { display: grid; min-width: 0; gap: 1px; }
+
+.team-name, .team-summary { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.team-row.role-orchestrator .team-name { color: var(--crown); }
+
+.team-summary, .team-status { color: var(--faint); font-size: var(--t-xs); }
+
+.sidebar-settings, .sidebar-collapse { min-height: 30px; padding: var(--s-1) var(--s-2); border: 1px solid var(--line); border-radius: var(--r-sm); background: transparent; color: var(--muted); }
+
+.sidebar-settings:hover, .sidebar-collapse:hover { border-color: var(--accent); color: var(--text); }
+
+
+
+
+
+
+
+.sidebar-spend { color: var(--muted); font-size: var(--t-xs); }
+
+.thread-header { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-3); padding-bottom: var(--s-4); border-bottom: 1px solid var(--line); }
+
+.thread-heading { min-width: 0; flex: 1 1 320px; }
+
+.thread-heading h1 { margin: 0; font-size: var(--t-lg); }
+
+.thread-subtitle { margin: var(--s-1) 0 0; color: var(--muted); font-size: var(--t-sm); overflow-wrap: anywhere; }
+
+.thread-controls { display: flex; min-width: 0; flex: 0 1 auto; flex-wrap: wrap; justify-content: flex-end; gap: var(--s-2); }
+
+.thread-control { display: grid; min-width: 0; gap: 2px; color: var(--faint); font-size: var(--t-xs); }
+
+.thread-control-label { padding-inline: var(--s-1); }
+
+.thread-model, .thread-effort { width: 18ch; min-width: 0; max-width: 100%; height: 32px; padding: 0 var(--s-2); border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--raised); color: var(--muted); }
+
+.thread-power { height: 32px; padding: 0 var(--s-3); border: 1px solid var(--line); border-radius: var(--r-sm); background: transparent; color: var(--muted); }
+
+.thread-power:hover { border-color: var(--accent); color: var(--text); }
+
+.thread-messages { display: grid; align-content: start; gap: var(--s-3); min-height: 200px; padding-bottom: var(--s-5); }
+
+.thread-message { display: grid; max-width: 85%; gap: var(--s-1); }
+
+.thread-message.mine { justify-self: end; }
+
+.message-meta { padding: 0 var(--s-2); color: var(--faint); font-size: var(--t-xs); }
+
+.thread-message.mine .message-meta { text-align: right; }
+
+.message-body { padding: var(--s-3) var(--s-4); border: 1px solid var(--line); border-radius: var(--r-md); overflow-wrap: anywhere; }
+
+.message-body > :first-child { margin-top: 0; }
+
+.message-body > :last-child { margin-bottom: 0; }
+
+.message-body pre { max-width: 100%; overflow: auto; padding: var(--s-3); border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg); font: var(--t-xs)/1.5 var(--mono); white-space: pre; }
+
+.message-body code { font-family: var(--mono); font-size: .92em; }
+
+.message-body :not(pre) > code { padding: 1px var(--s-1); border: 1px solid var(--line); border-radius: 4px; background: var(--bg); }
+
+.message-body ul, .message-body ol { margin: 0; padding-left: 1.4em; }
+
+.thread-message.mine .message-body { border-color: transparent; background: var(--accent); color: var(--accent-ink); }
+
+.thread-message.theirs .message-body { background: var(--raised); }
+
+.thread-message.failed .message-body { border-color: rgb(var(--danger-rgb) / .65); }
+
+.thread-empty { padding: var(--s-6) 0; color: var(--muted); text-align: center; }
+
+.thread-composer { display: grid; gap: var(--s-2); max-width: 820px; margin: 0 auto; }
+
+.thread-input-row { display: flex; align-items: end; gap: var(--s-2); }
+
+.thread-input { min-width: 0; min-height: 42px; max-height: 180px; flex: 1 1 auto; padding: var(--s-3); border: 1px solid var(--line); border-radius: var(--r-md); background: var(--raised); color: var(--text); resize: vertical; }
+
+.thread-input:focus { border-color: var(--accent); }
+
+.thread-attach, .thread-send { min-height: 42px; padding: 0 var(--s-3); border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--raised); color: var(--text); transition: border-color var(--fast) ease, background-color var(--fast) ease, opacity var(--fast) ease, filter var(--fast) ease; }
+
+.thread-send { border-color: transparent; background: var(--accent); color: var(--accent-ink); }
+
+.thread-attach:hover { border-color: var(--accent); }
+
+.thread-send:hover { filter: brightness(1.06); }
+
+.thread-attach:disabled, .thread-send:disabled { cursor: not-allowed; opacity: .5; }
+
+.thread-attachments { display: flex; flex-wrap: wrap; gap: var(--s-2); }
+
+.attachment-chip { display: inline-flex; max-width: min(100%, 280px); align-items: center; gap: var(--s-1); padding: var(--s-1) var(--s-2); border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: var(--t-xs); }
+
+.attachment-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.attachment-chip button { width: 20px; min-height: 20px; flex: none; padding: 0; border: 0; background: transparent; color: var(--faint); }
+
+.attachment-chip button:hover { border-color: transparent; background: var(--surface); color: var(--text); }
+
+.skill-menu { display: grid; gap: var(--s-1); padding: var(--s-2); border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--raised); }
+
+.skill-option { display: grid; gap: 2px; padding: var(--s-2); border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text); text-align: left; }
+
+.skill-option:hover, .skill-option.selected { background: var(--surface); }
+
+.skill-option small { color: var(--muted); }
+
+.view-page { display: grid; gap: var(--s-5); max-width: 960px; margin: 0 auto; }
+
+.boot-failure { display: grid; max-width: 520px; gap: var(--s-3); margin: var(--s-6) auto; }
+
+.boot-failure h1, .boot-failure p { margin: 0; }
+
+.boot-failure p { color: var(--muted); }
+
+.view-page h1, .view-page h2, .view-page h3, .view-page h4, .view-page p { margin: 0; }
+
+.view-heading { display: grid; gap: var(--s-1); }
+
+.view-heading h1 { margin: 0; font-size: 28px; }
+
+.view-description { margin: 0; color: var(--muted); }
+
+.view-section { display: grid; gap: var(--s-3); padding: var(--s-4); border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); }
+
+.view-section h2 { margin: 0; font-size: var(--t-md); }
+
+.button-row, .search-row, .form-grid, .stats { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); }
+
+.button-row > .note { min-width: 0; flex: 1 1 240px; overflow-wrap: anywhere; }
+
+.form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
+
+.form-grid > label { display: grid; gap: var(--s-1); color: var(--muted); font-size: var(--t-sm); }
+
+.form-grid > label:last-child { grid-column: 1 / -1; }
+
+.form-grid > input, .form-grid > select, .form-grid > label input, .form-grid > label select, .form-grid > label textarea { width: 100%; min-width: 0; height: 36px; padding: 0 var(--s-3); border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg); color: var(--text); }
+
+.form-grid > label textarea { height: auto; min-height: 100px; padding-block: var(--s-3); resize: vertical; }
+
+.form-grid > input:last-child { grid-column: 1 / -1; }
+
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); }
+
+.stat { display: grid; gap: var(--s-1); padding: var(--s-3); border: 1px solid var(--line); border-radius: var(--r-sm); }
+
+.stat span, .card-meta { color: var(--muted); font-size: var(--t-xs); }
+
+.agent-heading { display: flex; min-width: 0; align-items: flex-start; gap: var(--s-3); }
+
+.agent-heading > div:last-child { min-width: 0; }
+
+.agent-heading h3, .agent-heading p { margin: 0; }
+
+.agent-heading h3 { font-size: var(--t-md); }
+
+.approval-card, .agent-card, .home-card, .workflow-row, .activity-row, .message-row { display: grid; gap: var(--s-2); padding: var(--s-4); border: 1px solid var(--line); border-radius: var(--r-md); background: var(--raised); }
+
+.approval-card.pending { border-color: rgb(var(--accent-rgb) / .55); }
+
+.approval-card.resolved { opacity: .7; }
+
+.activity-row.error { border-color: rgb(var(--danger-rgb) / .6); }
+
+.activity-row.done { border-color: rgb(var(--ok-rgb) / .55); }
+
+.question-card, .question-options, .check-row { display: grid; gap: var(--s-2); }
+
+.diff { margin: 0; padding: var(--s-3); overflow: auto; background: var(--bg); color: var(--muted); }
+
+.diff .add { color: var(--ok); }
+
+.diff .del { color: var(--danger); }
+
+.diff .hunk { color: var(--accent); }
+
+.merge-result.merged { border-color: rgb(var(--ok-rgb) / .6); }
+
+.merge-result.failed { border-color: rgb(var(--danger-rgb) / .6); }
+
+.merge-result.requested { border-color: rgb(var(--accent-rgb) / .55); }
+
+.table-wrap { min-width: 0; overflow-x: auto; }
+
+.data-table { width: 100%; min-width: 600px; border-collapse: collapse; }
+
+.data-table th, .data-table td { padding: var(--s-2); border-bottom: 1px solid var(--line); text-align: left; }
+
+.data-table th { color: var(--muted); font-size: var(--t-xs); font-weight: 600; }
+
+.home-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: var(--s-3); }
+
+.home-card h2, .home-card p { margin: 0; }
+
+.home-lead { display: grid; grid-column: 1 / -1; grid-template-columns: minmax(220px, .8fr) minmax(0, 1.2fr); gap: var(--s-3); min-width: 0; }
+
+.home-lead > * { min-width: 0; }
+
+.home-mode-card { min-height: 0; border-color: rgb(var(--accent-rgb) / .45); background: linear-gradient(145deg, rgb(var(--accent-rgb) / .1), transparent 70%), var(--raised); }
+
+.home-mode-card h2 { font-size: 28px; }
+
+.home-objective { min-width: 0; }
+
+.home-attention { border-color: rgb(var(--danger-rgb) / .6); }
+
+.home-attention h2 { color: var(--danger); }
+
+.home-next-step { grid-column: 1 / -1; border-color: rgb(var(--accent-rgb) / .55); }
+
+.home-next-step h2 { margin: 0; font-size: 24px; }
+
+.mode-kicker { margin: 0; color: var(--accent); font-size: var(--t-xs); font-weight: 650; letter-spacing: .08em; text-transform: uppercase; }
+
+.home-actions { display: flex; flex-wrap: wrap; gap: var(--s-2); }
+
+.home-empty { grid-column: 1 / -1; margin: 0; padding: var(--s-4) 0; color: var(--faint); }
+
+.task-row, .list-row, .doctor-row, .quota { display: flex; align-items: center; justify-content: space-between; gap: var(--s-2); padding: var(--s-2) 0; border-bottom: 1px solid var(--line); }
+
+.task-row b { flex: none; color: var(--muted); font-size: var(--t-xs); font-weight: 650; letter-spacing: .04em; text-transform: uppercase; }
+
+.task-row.task-blocked b { color: var(--danger); }
+
+.task-row.task-planning b { color: var(--accent); }
+
+.task-row.task-active b { color: var(--accent); }
+
+.task-row > span { display: grid; min-width: 0; flex: 1; gap: var(--s-1); overflow-wrap: anywhere; text-align: left; }
+
+.task-row small { color: var(--muted); font-size: var(--t-xs); }
+
+.button.list-row { width: 100%; justify-content: flex-start; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: transparent; text-align: left; }
+
+.button.list-row:hover { border-color: var(--line); background: var(--surface); }
+
+.quota { display: grid; justify-content: stretch; }
+
+.meter-wrap { display: grid; gap: var(--s-1); color: var(--muted); font-size: var(--t-xs); }
+
+.meter { height: 7px; overflow: hidden; border-radius: 999px; background: var(--surface); }
+
+.meter i { display: block; height: 100%; border-radius: inherit; background: var(--accent); }
+
+.search-row input, .search-row select { min-width: 160px; height: 36px; padding: 0 var(--s-3); border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg); color: var(--text); }
+
+.search-row input { flex: 1 1 280px; min-width: min(100%, 240px); }
+
+.markdown { overflow-wrap: anywhere; }
+
+.markdown > * + *, .message-body > * + * { margin-top: var(--s-3); }
+
+.markdown h1, .markdown h2, .markdown h3 { margin: 0; color: var(--text); line-height: 1.25; }
+
+.markdown h1 { font-size: var(--t-lg); }
+
+.markdown h2 { font-size: var(--t-md); }
+
+.markdown h3 { font-size: var(--t-sm); }
+
+.markdown blockquote { margin: var(--s-3) 0; padding: var(--s-2) 0 var(--s-2) var(--s-3); border-left: 2px solid var(--accent); color: var(--muted); }
+
+.markdown table { display: block; max-width: 100%; overflow: auto; border-collapse: collapse; }
+
+.markdown th, .markdown td { padding: var(--s-2); border: 1px solid var(--line); text-align: left; overflow-wrap: anywhere; }
+
+.markdown th { background: var(--surface); color: var(--text); font-size: var(--t-xs); }
+
+.markdown a:hover { color: var(--text); }
+
+.markdown a { color: var(--accent); }
+
+.vault-link { display: grid; gap: var(--s-1); padding: var(--s-2) 0; border-bottom: 1px solid var(--line); color: var(--text); text-decoration: none; }
+
+.vault-link:hover { color: var(--accent); }
+
+.settings-tabs { display: flex; flex-wrap: nowrap; gap: var(--s-1); max-width: 100%; padding-bottom: var(--s-1); overflow-x: auto; scrollbar-width: thin; }
+
+.settings-tabs button { flex: 0 0 auto; padding: var(--s-2) var(--s-3); border: 1px solid var(--line); border-radius: var(--r-sm); background: transparent; color: var(--muted); white-space: nowrap; }
+
+.settings-tabs button.selected, .settings-tabs button:hover { background: var(--raised); color: var(--text); }
+
+.asset-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: var(--s-2); }
+
+.asset-tile { min-height: 80px; padding: var(--s-2); border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg); background-position: center; background-size: cover; color: var(--text); }
+
+.asset-tile.selected { border-color: var(--accent); }
+
+.notes-body, .note-body { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.note-body { margin: 0; padding: var(--s-3); background: var(--bg); }
+
+.now-playing { color: var(--muted); }
+
+.workflow-graph { min-height: 180px; }
+
+.graph-shell { display: grid; gap: var(--s-3); min-height: 180px; }
+
+.wfgraph { position: relative; height: 340px; min-height: 180px; overflow: auto; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--bg); background-image: radial-gradient(rgb(var(--accent-rgb) / .12) 1px, transparent 1px); background-size: 22px 22px; touch-action: none; }
+
+.wfnodes { position: absolute; inset: 0; }
+
+.wires { position: absolute; top: 0; left: 0; overflow: visible; pointer-events: none; }
+
+.wires .wire { fill: none; stroke: var(--faint); stroke-width: 1.5; }
+
+.wires .wire.then { stroke: rgb(var(--accent-rgb) / .75); }
+
+.wires .wire.else { stroke: rgb(var(--danger-rgb) / .65); }
+
+.wires .wire.live { stroke: var(--accent); stroke-dasharray: 4 3; }
+
+.wfnode { position: absolute; display: flex; flex-direction: column; justify-content: center; gap: 2px; padding: var(--s-2) var(--s-3); border: 1px solid var(--line); border-radius: var(--r-md); background: var(--raised); user-select: none; cursor: grab; touch-action: none; }
+
+.wfnode:active { cursor: grabbing; }
+
+.wfnode.sel { border-color: var(--accent); box-shadow: 0 0 0 1px rgb(var(--accent-rgb) / .35); }
+
+.wfnode.start { border-left: 3px solid var(--accent); }
+
+.wfnode.ok { border-color: rgb(var(--ok-rgb) / .65); }
+
+.wfnode.fail, .wfnode.unknown { border-color: var(--danger); }
+
+.wfn-head { display: flex; min-width: 0; align-items: baseline; gap: var(--s-2); }
+
+.wfn-type { overflow: hidden; color: var(--text); font-size: var(--t-sm); font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+
+.wfn-id, .wfn-sub { overflow: hidden; color: var(--faint); font-family: var(--mono); font-size: var(--t-xs); text-overflow: ellipsis; white-space: nowrap; }
+
+.wfn-sub { font-family: var(--ui); }
+
+.wfn-x { position: absolute; top: 2px; right: 4px; min-width: 28px; min-height: 28px; padding: var(--s-1); border: 0; background: transparent; color: var(--faint); cursor: pointer; font-size: 13px; line-height: 1; opacity: 0; }
+
+.wfnode:hover .wfn-x, .wfn-x:focus-visible { opacity: 1; }
+
+.wfn-x:hover { color: var(--danger); }
+
+.wfport { position: absolute; width: 9px; height: 9px; padding: 0; border: 1px solid var(--bg); border-radius: 50%; appearance: none; background: var(--faint); touch-action: none; }
+
+.wfport[aria-pressed="true"] { box-shadow: 0 0 0 3px rgb(var(--accent-rgb) / .35); }
+
+.wfport::after { position: absolute; inset: -7px; content: ''; }
+
+.wfport.in { top: calc(50% - 5px); left: -5px; cursor: crosshair; }
+
+.wfport.out { top: calc(50% - 5px); right: -5px; cursor: crosshair; }
+
+.wfport.then { top: calc(28% - 5px); right: -5px; cursor: crosshair; background: var(--accent); }
+
+.wfport.else { top: calc(72% - 5px); right: -5px; cursor: crosshair; background: var(--danger); }
+
+.wfport.out:hover, .wfport.then:hover, .wfport.else:hover { box-shadow: 0 0 0 3px rgb(var(--accent-rgb) / .25); }
+
+.workflow-inspector:empty { display: none; }
+
+.workflow-inspector .bad { border-color: var(--danger); }
+
+.workflow-inspector { display: grid; gap: var(--s-2); }
+
+.workflow-palette { display: flex; flex-wrap: wrap; gap: var(--s-1); }
+
+.doctor-row.ok { color: var(--ok); }
+
+.doctor-row.warn { color: var(--accent); }
+
+.doctor-row.error { color: var(--danger); }
+
+@keyframes busy { to { opacity: .45; transform: scale(.8); } }
+
+@media (min-width: 721px) {
+  body.sidebar-collapsed { grid-template-columns: 64px minmax(0, 1fr); }
+
+  .sidebar.collapsed .sidebar-conversations, .sidebar.collapsed .sidebar-team, .sidebar.collapsed .sidebar-footer > :not(.sidebar-collapse), .sidebar.collapsed .sidebar-brand { display: none; }
+
+  .sidebar.collapsed .sidebar-nav-button { justify-content: center; gap: 0; padding-inline: var(--s-2); font-size: 0; }
+
+  .sidebar.collapsed .sidebar-nav-button .icon { opacity: 1; }
+
+  .sidebar.collapsed .sidebar-nav > .sidebar-heading { display: none; }
+
+  .sidebar.collapsed .sidebar-more > summary { justify-content: center; padding-inline: var(--s-2); font-size: 0; }
+
+  .sidebar.collapsed .sidebar-more > summary::after { margin-left: 0; font-size: 16px; }
+
+  .sidebar.collapsed .sidebar-header { justify-content: center; border-bottom: 0; }
+
+  .sidebar.collapsed .sidebar-new { flex: 0; width: 34px; overflow: hidden; padding: 0; font-size: 0; text-indent: 0; }
+
+  .sidebar.collapsed .sidebar-new::before { color: var(--text); content: "+"; font-size: 18px; line-height: 1; }
+
+  .sidebar.collapsed .sidebar-collapse { width: 34px; overflow: hidden; padding: 0; font-size: 0; }
+
+  .sidebar.collapsed .sidebar-collapse::before { content: "›"; font-size: 18px; line-height: 1; }
+}
+
+@media (max-width: 900px) {
+  #header { flex-wrap: wrap; gap: var(--s-2); padding-inline: var(--s-4); }
+  .brand-tag, .mode-explainer, .header-context { display: none; }
+  .mode-switcher { flex: 1; }
+  .mode-option { min-width: 0; flex: 1; }
+}
+
+@media (max-width: 720px) {
+  body { grid-template: "main" 1fr / 1fr; }
+  #sidebar { display: none; }
+  body.sidebar-open #sidebar { position: fixed; z-index: 5; inset: 0 auto 0 0; display: flex; width: min(320px, 85vw); box-shadow: 12px 0 28px rgba(0, 0, 0, .4); }
+  body.sidebar-open #sidebar-scrim { position: fixed; z-index: 4; inset: 0; display: block; width: 100%; height: 100%; border: 0; border-radius: 0; background: rgb(0 0 0 / .52); cursor: default; }
+  body.sidebar-open #sidebar .sidebar-mode { display: grid; }
+  .mobile-menu, .sidebar-mobile-close { display: inline-flex; align-items: center; justify-content: center; }
+  .sidebar-mobile-close { flex: none; }
+  .conversation-actions { opacity: 1; }
+  .wfn-x { opacity: 1; }
+  .app-identity { display: grid; }
+  .mode-switcher { display: none; }
+  .mode-explainer { display: grid; min-width: 0; flex: 1 1 72px; }
+  .mode-blurb { display: none; }
+  .grow { display: none; }
+  #view { padding: var(--s-4); }
+  #header { min-height: 56px; }
+  #composer { padding-inline: var(--s-4); }
+  .form-grid { grid-template-columns: 1fr; }
+  .form-grid > input:last-child { grid-column: auto; }
+  .search-row input { flex: 1 1 100%; min-width: 0; }
+  .search-row select { flex: 1 1 140px; min-width: 0; }
+  .search-row .button { flex: 0 0 auto; }
+  .thread-controls { width: 100%; justify-content: stretch; }
+  .thread-control { flex: 1 1 120px; }
+  .thread-model, .thread-effort { width: 100%; }
+  .home-lead { grid-template-columns: 1fr; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition-duration: 1ms !important; }
+}

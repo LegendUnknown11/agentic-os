@@ -171,14 +171,12 @@ directly actionable. Rules:
 
 Then classify what the sovereign is actually asking for, as exactly one of:
 - "code"     — write, change, fix, test or review code in this repository
-- "research" — find something out: investigate, compare, explain, read up on it
 - "chat"     — talk it through; a question about this court itself; thinking out loud
-- "build"    — extend the court: a new skill, a note, standing instructions, configuration
-- "automate" — build or change a saved automation/workflow that runs on its own (a trigger, a schedule, a webhook)
+- "cowork"   — delegate multi-step research, writing, notes, tasks, configuration, or an automation/workflow
 When it is genuinely both, pick the one the sovereign wants FIRST.
 
 Reply with ONLY this JSON object and nothing else:
-{"mode":"code|research|chat|build|automate","brief":"the rewritten brief"}`;
+{"mode":"chat|cowork|code","brief":"the rewritten brief"}`;
 
 /**
  * Rewrite the sovereign's message, and say what kind of work it is.

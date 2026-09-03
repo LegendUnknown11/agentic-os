@@ -7,6 +7,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Kingdom, CROWN } from '../src/kingdom.js';
+import { Bus } from '../src/bus.js';
 import { kingdomDir } from '../src/worktree.js';
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -32,8 +33,8 @@ const seen = [];
 k.on('approval', (p) => seen.push(p));
 a.match(k.briefFor('orchestrator'), /call the summon tool immediately/,
   'the orchestrator must create an approval record through the tool, not prose');
-k.bus.post('orchestrator', null,
-  JSON.stringify({ kind: 'summon', names: ['designer'], reason: 'design probe' }), 'approval');
+a.deepEqual(k.requestSummon(['designer'], 'design probe'), { ok: true, requested: true },
+  'the Team page must create the same durable summon approval as the MCP tool');
 await k.start();
 
 a.ok(k.approvals.size, 'a pending approval must survive startup');
@@ -84,15 +85,72 @@ a.equal(k.approvals.size, 2, 'new approval must be picked up by the delivery loo
 }
 
 await k.wake('designer');
+// Approval records must outlive the bounded transcript, not merely a clean stop.
+k.bus.prune({ keepMessages: 0 });
+const pendingId = [...k.approvals.keys()][0];
+a.ok(k.bus.approvals().some((p) => p.id === pendingId),
+  'the approval payload remains in durable state after message pruning');
 await k.stop();
 const k2 = new Kingdom(repo, configPath);
 await k2.start();
+a.ok(k2.approvals.has(pendingId), 'a pruned pending approval survives restart');
 const roster = JSON.parse(k2.bus.get('roster'));
 const designer = roster.find((r) => r.name === 'designer');
 a.equal(designer.summoned, true, 'a woken member stays in the standing crew');
 a.equal(designer.awake, false, 'a standing member may restore asleep after restart');
 
+// A failed sibling must not leave a half-approved crew or a still-pending card.
+{
+  const started = [];
+  k2.config.peasants.push({ name: 'tester', cli: 'codex' });
+  k2.summoned.delete('designer');
+  k2.bus.set('summoned', JSON.stringify([...k2.summoned]));
+  k2.approvals.set(901, { kind: 'summon', names: ['designer', 'tester'], from: 'orchestrator' });
+  const originalWake = k2.wake;
+  k2.wake = async (name) => {
+    if (name === 'tester') throw new Error('worktree unavailable');
+    k2.agents.set(name, { stop() {} });
+    k2.summoned.add(name);
+    started.push(name);
+  };
+  await a.rejects(k2.approve(901), /summons, but it was not completed: tester: worktree unavailable/,
+    'a blocked summon must report failure instead of looking approved to the action caller');
+  k2.wake = originalWake;
+  a.deepEqual(started, ['designer'], 'the successful sibling may start before the failure is known');
+  a.equal(k2.approvals.has(901), false, 'a failed summon approval is consumed');
+  a.equal(k2.bus.get('resolved:901'), 'blocked', 'the failed summon remains visibly blocked');
+  a.equal(k2.agents.has('designer'), false, 'a partial crew is rolled back');
+  a.equal(k2.summoned.has('designer'), false, 'rollback removes only newly summoned standing state');
+}
+
+// Resolved approval history is bounded, while an unanswered record survives
+// message pruning independently of the transcript.
+{
+  const b = new Bus(':memory:');
+  const old = b.post('orchestrator', null, JSON.stringify({ kind: 'push', reason: 'old' }), 'approval');
+  const pending = b.post('orchestrator', null, JSON.stringify({ kind: 'push', reason: 'pending' }), 'approval');
+  const newest = b.post('orchestrator', null, JSON.stringify({ kind: 'push', reason: 'newest' }), 'approval');
+  b.set(`resolved:${old}`, 'approved');
+  b.set(`resolved:${newest}`, 'rejected');
+  b.prune({ keepMessages: 0, keepApprovals: 1 });
+  a.deepEqual(b.approvals().map((p) => p.id), [pending, newest],
+    'pending and newest resolved approvals survive bounded pruning');
+  a.equal(b.get(`approval:${old}`), undefined, 'old resolved approval payload is pruned');
+  a.equal(b.get(`resolved:${old}`), undefined, 'old resolved status is pruned with its payload');
+  b.close();
+}
+
 await k2.stop();
+
+// A damaged persisted crew list must not make a restart unavailable. There is
+// no safe peasant crew to infer from corrupt state; the crown still starts.
+const recovered = new Kingdom(repo, configPath);
+recovered.bus.set('summoned', '{broken');
+await recovered.start();
+a.equal(recovered.summoned.has('designer'), false,
+  'a corrupt summoned state must not restore a previously summoned peasant');
+await recovered.stop();
+
 try { rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 150 }); } catch {}
 try { rmSync(kingdomDir(repo), { recursive: true, force: true, maxRetries: 10, retryDelay: 150 }); } catch {}
 console.log('t-approvals.js OK â€” pending approvals and resting crew survive restart');

@@ -1,135 +1,183 @@
-// One place decides what a colour is, and one place decides what a pane is
-// made of.
-//
-// The stylesheet had the accent in two forms that could not be changed
-// together: `--accent:#45ecc6` for a solid fill, and the channels typed out
-// wherever it appeared with an alpha — rgba(69,236,198,.45), .12, .7, sixteen
-// of them, plus fourteen of the crown gold and nine of the danger red. Change
-// the accent and the solid uses moved while every wash, glow and focus ring
-// kept the old hue. The palette looked like one colour and was two.
-//
-// Worse, the loudest use of it was not in that set at all. The summon button
-// was `linear-gradient(158deg,#63f4d6,#2fc4a4)` — two hexes, neither of them
-// the accent — so a sweep looking for the accent could never have found it.
-// After the whole palette had been retuned to near-white, that one button was
-// still mint, and only looking at the running app showed it.
-//
-// So this file does not check taste. It checks that a palette change REACHES
-// everything: that no colour is written where a change cannot find it, and
-// that the material is a set of variables rather than a pile of overrides.
-//
-//   node test/t-theme.js
+// The new shell is intentionally one flat material. This test keeps palette
+// changes cheap: colours belong in :root and selectors consume variables.
 import { strict as a } from 'node:assert';
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-const UI = join(import.meta.dirname, '..', 'ui');
-const css = readFileSync(join(UI, 'app.css'), 'utf8');
+const css = readFileSync(join(import.meta.dirname, '..', 'ui', 'app.css'), 'utf8');
+const main = readFileSync(join(import.meta.dirname, '..', 'ui', 'main.js'), 'utf8');
+const sidebar = readFileSync(join(import.meta.dirname, '..', 'ui', 'sidebar.js'), 'utf8');
+const util = readFileSync(join(import.meta.dirname, '..', 'ui', 'views', 'util.js'), 'utf8');
+const thread = readFileSync(join(import.meta.dirname, '..', 'ui', 'thread.js'), 'utf8');
+const avatar = readFileSync(join(import.meta.dirname, '..', 'ui', 'avatar.js'), 'utf8');
+const root = /:root\s*\{([\s\S]*?)\n\}/.exec(css)?.[1] ?? '';
+const rules = css.replace(/\/\*[\s\S]*?\*\//g, '').slice(css.indexOf('* { box-sizing'));
 
-/** The first :root — where writing a colour IS the point. */
-const tokenBlock = css.slice(0, css.indexOf('*{box-sizing'));
-/**
- * Everything else, with every OTHER `:root{...}` taken out too: the glass
- * material and the reduced-transparency fallback are token blocks that happen
- * to live further down. The line is not where a colour appears but what it is
- * doing — a value on a `--name` inside a :root is a declaration, and the same
- * value on `background:` anywhere else is a hardcode.
- */
-const rules = css.slice(css.indexOf('*{box-sizing'))
-  .replace(/:root[^{]*\{[^}]*\}/g, '');
+const token = (name) => new RegExp(`${name}\\s*:\\s*([^;]+);`).exec(root)?.[1].trim();
+a.equal(token('--bg'), '#0d0d0d');
+a.equal(token('--bg-rgb'), '13 13 13');
+a.equal(token('--surface'), '#171717');
+a.equal(token('--surface-rgb'), '23 23 23');
+a.equal(token('--raised'), '#1f1f1f');
+a.equal(token('--raised-rgb'), '31 31 31');
+a.equal(token('--text'), '#ececec');
+a.equal(token('--muted'), '#9b9b9b');
+a.equal(token('--faint'), '#8a8a8a');
+a.equal(token('--line'), '#2a2a2a');
+a.equal(token('--accent'), '#e0e4ea');
+a.equal(token('--accent-rgb'), '224 228 234');
+a.equal(token('--crown'), '#d8ac54');
+a.equal(token('--danger'), '#e06b6b');
+a.match(css, /grid-template:\s*"sidebar main" 1fr \/ 260px/);
+a.match(css, /#bg\s*\{[\s\S]*?z-index:\s*0;/, 'wallpaper must sit between the body and shell');
+a.match(css, /body\.has-bg\s*\{[\s\S]*?--shell-alpha:\s*\.82;/, 'wallpaper selection must open the shell surfaces');
+a.match(css, /--surface-alpha\s*:\s*1;/, 'shell opacity must be tokenised with an opaque default');
+a.equal(/backdrop-filter/i.test(css), false, 'flat surfaces must not reintroduce glass');
+a.match(css, /#composer:empty\s*\{\s*display:\s*none;/, 'non-chat pages must not leave an empty composer bar');
+a.match(css, /#view\.view-changing\s*\{[^}]*opacity:\s*0;[^}]*transform:/, 'view changes need a bounded visual entry state');
+a.match(css, /\.sidebar-nav-button/, 'the primary workspace navigation needs an explicit, testable treatment');
+a.match(css, /\.sidebar-nav-button\s*\{[^}]*display:\s*flex;[^}]*align-items:\s*center;[^}]*gap:/, 'navigation labels and icons must share one alignment spine');
+a.match(css, /\.sidebar-nav-button \.icon\s*\{[^}]*flex:\s*none;/, 'navigation icons must not collapse before their labels');
+a.match(css, /\.sidebar-heading\s*\{[^}]*margin:\s*0;/, 'sidebar headings must not retain browser margins');
+a.match(css, /\.sidebar-empty\s*\{[^}]*margin:\s*0;[^}]*padding:/, 'sidebar empty states must use the shell spacing rhythm');
+a.match(css, /\.sidebar-new\s*\{[^}]*padding:\s*0 var\(--s-3\);/, 'the new-conversation control must have an intentional hit area');
+a.match(css, /\.sidebar-brand\s*\{[^}]*min-width:\s*0;[^}]*overflow:\s*hidden;[^}]*text-overflow:\s*ellipsis;[^}]*white-space:\s*nowrap;/, 'narrow drawers must let the brand yield to its controls');
+a.match(css, /\.sidebar-new\s*\{[^}]*min-width:\s*0;[^}]*overflow:\s*hidden;[^}]*text-overflow:\s*ellipsis;[^}]*white-space:\s*nowrap;/, 'narrow drawers must keep the new-conversation control inside the header');
+a.match(css, /\.app-identity\s*\{[^}]*display:\s*none;/, 'expanded desktop must not repeat the rail identity in the main header');
+a.match(css, /body\.sidebar-collapsed \.app-identity\s*\{[^}]*display:\s*grid;/, 'the collapsed rail must restore a readable app identity in the header');
+a.match(css, /\.mode-switcher/, 'the shell needs a visible mode switcher');
+a.match(css, /\.sidebar-mode/, 'the sidebar needs the same mode choices');
+a.match(sidebar, /options\.modes/, 'the sidebar renders the shared mode choices');
+a.match(sidebar, /dataset\.action = 'mode'/, 'sidebar mode choices use the shared action path');
+a.match(sidebar, /role-\$\{member\.role \?\? 'peasant'\}/, 'the rail must expose role identity to the visual hierarchy');
+a.match(css, /\.team-row\.role-orchestrator \.team-name\s*\{[^}]*var\(--crown\)/, 'gold must identify the orchestrator');
+a.doesNotMatch(css, /\.brand\s*\{[^}]*var\(--crown\)/, 'the brand must not compete with the orchestrator identity');
+a.doesNotMatch(css, /\.mode-option\.selected strong\s*\{[^}]*var\(--crown\)/, 'mode selection must use the shared accent, not role gold');
+a.doesNotMatch(css, /\.sidebar-mode-option\.selected\s*\{[^}]*var\(--crown\)/, 'sidebar mode selection must use the shared accent, not role gold');
+a.match(util, /class: `button \$\{cls\}`/, 'page controls inherit the shared button treatment');
+a.match(css, /\.button, \.icon-button \{[^}]*transition:/, 'primary controls need a restrained interaction transition');
+a.match(css, /a:focus-visible, summary:focus-visible, button:focus-visible, input:focus-visible/, 'links and native disclosures must retain a visible keyboard focus ring');
+a.match(css, /\.button\.link\s*\{[^}]*min-height:\s*28px;[^}]*padding:\s*var\(--s-1\) 0;/, 'quiet link buttons must retain a touch-sized target');
+a.match(thread, /tag === 'button'.*`button \$\{className/, 'thread controls inherit the shared button treatment');
+a.match(avatar, /className = 'status-dot'/, 'member status uses the shared status-dot surface');
+a.match(sidebar, /classList\.add\(stateName\)/, 'sidebar status uses the defined state classes');
+a.match(css, /\.home-mode-card/, 'the home mode card needs a clear visual anchor');
+a.match(css, /\.home-attention\s*\{[^}]*border-color:\s*rgb\(var\(--danger-rgb\)/, 'Home attention states need a local danger treatment');
+a.match(css, /\.home-lead\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:/, 'the Home lead must keep mode and objective together on wide screens');
+a.match(css, /@media \(max-width: 720px\)[\s\S]*?\.home-lead\s*\{[^}]*grid-template-columns:\s*1fr;/, 'the Home lead must collapse to one column on phones');
+a.match(css, /\.home-empty\s*\{[^}]*grid-column:\s*1 \/ -1;[^}]*color:\s*var\(--faint\);/, 'an empty Home must use one quiet full-width cue');
+a.match(css, /\.sidebar-mode\s*\{\s*display:\s*none;/, 'desktop must not duplicate the header mode switcher in the sidebar');
+a.match(css, /@media \(max-width: 720px\)[\s\S]*?body\.sidebar-open #sidebar \.sidebar-mode\s*\{\s*display:\s*grid;/, 'the mobile navigation drawer must retain the mode switcher');
+a.match(css, /@media \(min-width: 721px\)[\s\S]*?body\.sidebar-collapsed\s*\{[^}]*grid-template-columns:\s*64px/, 'collapsed rail width must be desktop-only');
+a.match(css, /@media \(min-width: 721px\)[\s\S]*?\.sidebar\.collapsed \.sidebar-conversations/, 'collapsed rail detail hiding must be desktop-only so mobile navigation can reopen');
+a.match(css, /\.sidebar\.collapsed \.sidebar-conversations[\s\S]*?\.sidebar\.collapsed \.sidebar-team/, 'collapsed rail must hide dense details without hiding navigation');
+a.match(css, /\.sidebar\.collapsed \.sidebar-nav-button\s*\{[^}]*font-size:\s*0;/, 'collapsed rail navigation must retain icon-only controls');
+a.match(css, /\.sidebar\.collapsed \.sidebar-nav > \.sidebar-heading\s*\{[^}]*display:\s*none;/, 'collapsed rail must not clip its workspace heading');
+a.match(css, /\.sidebar\.collapsed \.sidebar-more > summary::after\s*\{[^}]*font-size:\s*16px;/, 'collapsed rail must keep the More tools disclosure glyph visible');
+a.match(css, /\.task-row\.task-blocked b\s*\{[^}]*color:\s*var\(--danger\)/, 'blocked queue work must have a danger cue');
+a.match(css, /\.task-row\.task-planning b\s*\{[^}]*color:\s*var\(--accent\)/, 'planning queue work must have an accent cue');
+a.match(css, /\.task-row\.task-active b\s*\{[^}]*color:\s*var\(--accent\)/, 'active queue work must have an active cue');
+a.match(css, /\.task-row > span\s*\{[^}]*flex:\s*1;[^}]*text-align:\s*left;/, 'queue titles must scan from the status label into a readable left-aligned measure');
+a.match(css, /\.question-option/, 'inline question choices need an intentional control treatment');
+a.match(css, /\.question label\s*\{[^}]*display:\s*flex;[^}]*padding:\s*var\(--s-2\);[^}]*border:/, 'approval question choices must read as interactive rows');
+a.match(css, /\.question label input\s*\{[^}]*accent-color:\s*var\(--accent\)/, 'approval question controls must use the shared accent');
+a.match(css, /\.note\s*\{[^}]*margin:\s*0;/, 'inline notes must not inherit browser paragraph margins');
+a.match(css, /\.button-row > \.note\s*\{[^}]*min-width:\s*0;[^}]*flex:\s*1 1 240px;[^}]*overflow-wrap:\s*anywhere;/, 'long action feedback must wrap without displacing its retry control');
+a.match(css, /\.merge-result\.merged\s*\{[^}]*border-color:\s*rgb\(var\(--ok-rgb\)/, 'merged work needs a positive result treatment');
+a.match(css, /\.merge-result\.failed\s*\{[^}]*border-color:\s*rgb\(var\(--danger-rgb\)/, 'failed merges need a danger result treatment');
+a.match(css, /\.merge-result\.requested\s*\{[^}]*border-color:\s*rgb\(var\(--accent-rgb\)/, 'pending merges need an accent result treatment');
+a.match(css, /\.activity-row\.error\s*\{[^}]*border-color:\s*rgb\(var\(--danger-rgb\)/, 'timeline errors need a danger cue');
+a.match(css, /\.activity-row\.done\s*\{[^}]*border-color:\s*rgb\(var\(--ok-rgb\)/, 'completed timeline work needs a positive cue');
+a.match(css, /\.settings-tabs\s*\{[^}]*flex-wrap:\s*nowrap;[^}]*overflow-x:\s*auto;/, 'Settings tabs must stay compact and scroll inside their strip');
+a.match(css, /\.search-row input\s*\{[^}]*flex:\s*1 1 280px;[^}]*min-width:\s*min\(100%, 240px\);/, 'search fields must use the available row width before wrapping');
+a.match(css, /\.thread-header\s*\{[^}]*flex-wrap:\s*wrap;/, 'thread header controls must wrap instead of widening narrow viewports');
+a.match(css, /\.thread-control\s*\{[^}]*display:\s*grid;[^}]*gap:/, 'thread model controls need visible compact labels');
+a.match(css, /\.thread-input\s*\{[^}]*min-width:\s*0;/, 'thread composer input must surrender intrinsic width on narrow screens');
+a.doesNotMatch(css, /\.thread-input:focus\s*\{[^}]*outline:\s*none;/, 'thread composer focus must not erase the shared keyboard ring');
+a.match(css, /\.thread-attach:hover[^}]*border-color:\s*var\(--accent\)/, 'thread attach must expose the shared hover affordance');
+a.match(css, /\.thread-attach:disabled, \.thread-send:disabled[^}]*opacity:\s*\.5/, 'thread actions must look unavailable while sending or uploading');
+a.match(css, /\.wfgraph/, 'the surviving workflow editor needs a visible editing surface');
+a.match(css, /\.wfport\[aria-pressed="true"\]\s*\{[^}]*box-shadow:/, 'keyboard-selected graph ports need a visible pending cue');
+a.match(css, /\.table-wrap\s*\{[^}]*overflow-x:\s*auto;/, 'dense usage tables must scroll inside their section instead of widening the page');
+a.match(css, /\.form-grid > label input/, 'nested workflow form controls must inherit the shell field treatment');
+a.match(css, /\.form-grid > label:last-child\s*\{[^}]*grid-column:\s*1 \/ -1;/, 'conditional form details must span the full form measure');
+a.match(css, /\.field input:not\(\[type="checkbox"\]\):not\(\[type="range"\]\), \.field select, \.field textarea/, 'text fields must not style native checkbox and range controls as text boxes');
+a.match(css, /\.field input\[type="checkbox"\]\s*\{[^}]*accent-color:\s*var\(--accent\)/, 'checkboxes need a compact native control treatment');
+a.match(css, /\.field-check\s*\{[^}]*grid-template-columns:\s*18px minmax\(0, 1fr\)/, 'checkbox fields must align the control beside its label');
+a.match(css, /\.field-check > input\s*\{[^}]*grid-column:\s*1;[^}]*grid-row:\s*1 \/ span 2;/, 'checkbox fields must keep the control beside both label lines');
+a.match(css, /\.field input\[type="range"\]\s*\{[^}]*border:\s*0;[^}]*background:\s*transparent;[^}]*accent-color:\s*var\(--accent\)/, 'range controls need a compact native control treatment');
+a.match(css, /\.field-label\s*\{[^}]*display:\s*flex;[^}]*justify-content:\s*space-between;/, 'field labels must make room for live range values');
+a.match(css, /\.field-value\s*\{[^}]*font-family:\s*var\(--mono\);/, 'range values must use the compact metadata treatment');
+a.match(css, /@media \(max-width: 900px\)/, 'the compact header must protect the required 800px layout');
+a.match(css, /@media \(max-width: 720px\)[\s\S]*?\.search-row input\s*\{[^}]*flex:\s*1 1 100%;[^}]*min-width:\s*0;/, 'phone search rows must give the query its own full-width line');
+a.match(css, /@media \(max-width: 720px\)[\s\S]*?\.thread-controls\s*\{[^}]*width:\s*100%;[^}]*justify-content:\s*stretch;/, 'phone thread controls must use the available row width');
+a.match(css, /@media \(max-width: 720px\)[\s\S]*?\.thread-control\s*\{[^}]*flex:\s*1 1 120px;/, 'phone thread controls must share one compact row before wrapping');
+a.match(css, /\.agent-heading/, 'agent cards need a horizontal identity row');
+a.match(css, /\.status-dot\.failed/, 'failed members need a distinct status state');
+a.match(css, /\.empty\s*\{[^}]*padding:\s*var\(--s-5\)/, 'empty cards must stay compact in the flat dashboard');
+a.match(css, /\.view-page h1, \.view-page h2, \.view-page h3, \.view-page h4,\s*\.view-page p \{ margin: 0; \}/, 'page copy must use the shell spacing rhythm instead of browser defaults');
+a.match(css, /\.view-section\s*\{[^}]*background:\s*var\(--surface\);/, 'sections must sit below raised cards in the material hierarchy');
+a.match(css, /\.boot-failure\s*\{[^}]*display:\s*grid;[^}]*max-width:/, 'module-load failures must have a styled recovery surface');
+a.match(css, /\.markdown > \* \+ \*, \.message-body > \* \+ \* \{ margin-top: var\(--s-3\); \}/, 'multi-paragraph content must retain readable separation after the margin reset');
+a.match(css, /\.message-meta\s*\{[^}]*color:\s*var\(--faint\)/, 'thread metadata must recede behind message content');
+a.match(css, /\.thread-message\.theirs \.message-body\s*\{[^}]*background:\s*var\(--raised\)/, 'incoming thread messages need a stable raised surface');
+a.match(css, /\.message-body > :first-child\s*\{[^}]*margin-top:\s*0;/, 'thread markdown must not keep a browser margin before its first paragraph');
+a.match(css, /\.markdown h1, \.markdown h2, \.markdown h3\s*\{[^}]*margin:\s*0;[^}]*line-height:/, 'markdown headings must use the thread type rhythm');
+a.match(css, /\.markdown blockquote\s*\{[^}]*margin:[^;]+;[^}]*padding:[^;]+;[^}]*border-left:/, 'markdown quotes need a bounded readable treatment');
+a.match(css, /\.markdown table\s*\{[^}]*max-width:\s*100%;[^}]*overflow:\s*auto;/, 'markdown tables must stay inside the message width');
+a.match(css, /\.message-body pre\s*\{[^}]*max-width:\s*100%;[^}]*overflow:\s*auto;/, 'thread code blocks must stay readable inside the message width');
+a.match(css, /\.thread-message\.failed \.message-body\s*\{[^}]*border-color:\s*rgb\(var\(--danger-rgb\)/, 'failed thread messages need a local danger cue');
+a.match(css, /\.attachment-chip\s*\{[^}]*display:\s*inline-flex;[^}]*max-width:/, 'attachment chips must stay bounded and align their controls');
+a.match(css, /\.attachment-name\s*\{[^}]*overflow:\s*hidden;[^}]*text-overflow:\s*ellipsis;/, 'long attachment names must truncate before the remove control');
+a.match(css, /\.attachment-chip button\s*\{[^}]*min-height:\s*20px;[^}]*border:\s*0;/, 'attachment removal must be a compact borderless control');
+a.match(css, /body\.sidebar-open #sidebar/, 'small screens need an explicit open-sidebar state');
+a.match(css, /body\.sidebar-open #sidebar\s*\{[^}]*width:\s*min\(320px,\s*85vw\)/, 'mobile navigation drawer must cap at 320px without widening narrow phones');
+a.match(css, /body\.sidebar-open #sidebar-scrim/, 'small screens need a scrim behind the open navigation');
+a.match(css, /@media \(max-width: 720px\)[\s\S]*?\.mode-switcher \{ display: none; \}[\s\S]*?\.mode-explainer \{ display: grid;[\s\S]*?flex: 1 1 72px;/, 'phone headers must show the current mode and move mode switching into the menu');
+a.match(css, /\.sidebar-mobile-close\s*\{\s*display:\s*none;/, 'the mobile close control must stay out of the desktop rail');
+a.match(css, /\.sidebar-repo\s*\{[^}]*border:\s*0;[^}]*background:\s*transparent;/, 'the repository control must not inherit native button chrome');
+a.match(css, /\.sidebar\.collapsed \.sidebar-new\s*\{[^}]*font-size:\s*0;[^}]*text-indent:\s*0;/, 'the collapsed rail must keep a visible new-conversation affordance');
+a.match(css, /\.sidebar\.collapsed \.sidebar-new::before\s*\{[^}]*content:\s*"\+";/, 'the collapsed new button must render its plus glyph');
+a.match(css, /\.sidebar\.collapsed \.sidebar-collapse\s*\{[^}]*width:\s*34px;[^}]*font-size:\s*0;/, 'the collapsed rail control must fit its 64px column');
+a.match(css, /\.sidebar\.collapsed \.sidebar-collapse::before\s*\{[^}]*content:\s*"[^"}]+";/, 'the collapsed rail must retain a visible expand affordance');
+a.match(css, /\.conversation-row:hover \.conversation-actions, \.conversation-row\.selected \.conversation-actions, \.conversation-row:focus-within \.conversation-actions/, 'conversation actions must be visible to keyboard users');
+a.match(css, /\.conversation-actions\s*\{[^}]*flex:\s*none;/, 'conversation actions must keep their own width beside the title');
+a.match(css, /\.conversation-action\s*\{[^}]*min-height:\s*28px;[^}]*padding:[^;]+;[^}]*white-space:\s*nowrap;/, 'conversation actions need stable touch-sized labels');
+a.match(css, /@media \(max-width: 720px\)[\s\S]*?\.conversation-actions\s*\{\s*opacity:\s*1;/, 'conversation actions must remain reachable on touch-sized navigation drawers');
+a.match(css, /\.wfn-x\s*\{[^}]*min-width:\s*28px;[^}]*min-height:\s*28px;[^}]*padding:\s*var\(--s-1\);/, 'workflow deletion needs a compact touch-sized target');
+a.match(css, /@media \(max-width: 720px\)[\s\S]*?\.wfn-x\s*\{\s*opacity:\s*1;/, 'workflow deletion must remain reachable on touch-sized editors');
+a.match(css, /@media \(prefers-reduced-motion: reduce\)[\s\S]*?animation:\s*none\s*!important;/, 'reduced-motion users must not receive a running animation');
+a.doesNotMatch(css, /\.section\s*\{|\.card\s*\{|\.row\s*\{|\.nav\s*\{|\.composer-form\s*\{|\.message\s*\{/, 'deleted window components must not leave a second styling vocabulary');
+a.match(main, /class="mobile-menu"/, 'small screens need a menu control');
+a.match(main, /sidebar-scrim/, 'small screens need a native close target outside the rail');
+a.doesNotMatch(main, /const action = document\.createElement\('small'\)/, 'mode tabs must not repeat the header explainer copy');
+a.doesNotMatch(css, /\.mode-option small/, 'mode tabs must not reserve space for duplicate explainer copy');
+a.match(main, /button\.disabled = modeRequest > 0 \|\| !ready/, 'mode controls must wait for the first workspace snapshot');
+a.match(main, /if \(state\.ready === false \|\| !backend \|\| !choice \|\| modeRequest\)/, 'mode changes must reject requests before the workspace snapshot');
+a.match(sidebar, /button\.disabled = currentState\.ready === false/, 'mobile mode controls must wait for the first workspace snapshot');
+a.match(main, /const selected = ready && button\.dataset\.mode === choice\.id/, 'the header must not visually select a default mode before the workspace is ready');
+a.match(main, /modeName\.textContent = ready \? choice\.label : 'Loading'/, 'the header must not claim a default mode before the workspace is ready');
+a.match(main, /conn\.textContent = state\.conn === 'up' \? 'Connected' : state\.conn === 'down' \? 'Reconnecting' : 'Connecting\.\.\.'/ , 'the header must show a readable connection state');
+a.match(main, /event\.key === 'Escape'/, 'Escape must close the open mobile navigation');
+a.match(main, /let mountSequence = 0/, 'view mounts need a stale-completion guard');
+a.match(main, /const root = document\.createElement\('div'\)/, 'each view needs its own detached render root');
+a.match(main, /view-changing/, 'route changes must drive the view transition contract');
+a.match(sidebar, /sidebar-mobile-close/, 'the mobile sidebar needs a close control');
 
-/* ---------- 1. the two forms of a brand colour must agree ---------- */
-const BRANDS = [
-  { hex: '--accent', rgb: '--accent-rgb' },
-  { hex: '--crown', rgb: '--crown-rgb' },
-  { hex: '--danger', rgb: '--danger-rgb' },
-];
+const userModes = /export const USER_MODES = Object\.freeze\(\[(.*?)\]\);/s.exec(main)?.[1] ?? '';
+a.deepEqual([...userModes.matchAll(/id: '([^']+)'/g)].map((m) => m[1]), ['chat', 'cowork', 'code']);
+a.deepEqual([...userModes.matchAll(/backend: '([^']+)'/g)].map((m) => m[1]), ['chat', 'cowork', 'code']);
+a.match(userModes, /Chat.*direct conversation/s);
+a.match(userModes, /Cowork.*multi-step workspace work/s);
+a.match(userModes, /Code.*repository.*tests.*review/s);
 
-const hexOf = (channels) => '#' + channels.trim().split(/\s+/)
-  .map((n) => Number(n).toString(16).padStart(2, '0')).join('');
+// A literal colour outside the token block cannot follow a palette change.
+const hex = [...rules.matchAll(/#[0-9a-fA-F]{3,8}\b/g)].map((m) => m[0]);
+a.deepEqual(hex, [], `stray literal colours: ${hex.join(', ')}`);
+const rgb = [...rules.matchAll(/rgba?\(\s*\d+\s*[, ]\s*\d+\s*[, ]\s*\d+/g)].map((m) => m[0]);
+a.deepEqual(rgb.filter((v) => {
+  const n = v.match(/(\d+)\s*[, ]\s*(\d+)\s*[, ]\s*(\d+)/).slice(1).map(Number);
+  return !(n[0] === n[1] && n[1] === n[2]);
+}), [], 'coloured rgb literals must come from channel tokens');
 
-for (const b of BRANDS) {
-  const chan = new RegExp(`${b.rgb}\\s*:\\s*([0-9 ]+);`).exec(tokenBlock);
-  a.ok(chan, `${b.rgb} must be declared — it is what every alpha use reads`);
-  const hex = new RegExp(`${b.hex}\\s*:\\s*(#[0-9a-f]{6})\\s*;`).exec(tokenBlock);
-  a.ok(hex, `${b.hex} must be declared for solid fills`);
-  a.equal(hex[1], hexOf(chan[1]),
-    `${b.hex} and ${b.rgb} are one colour in two forms and must hold the same value — `
-    + 'when they drift, a fill and its own glow are two different colours');
-}
-
-/* ---------- 2. no colour is written where a palette change cannot find it -- */
-// The check that actually holds the line. Everything after :root must reach a
-// colour through a variable. A literal looks correct the day it is written and
-// silently stops following the palette forever after.
-const strayHex = [...rules.matchAll(/#[0-9a-fA-F]{3,8}\b/g)]
-  .map((m) => m[0])
-  // #fff on --danger is contrast, not palette: it must stay white whatever the
-  // red becomes, and naming it would invite somebody to tune it.
-  .filter((h) => h.toLowerCase() !== '#fff');
-a.deepEqual(strayHex, [],
-  `a colour outside :root must come from a token, found: ${strayHex.join(', ')}. `
-  + 'This is the check the summon button gradient would have failed.');
-
-const strayRgb = [...rules.matchAll(/rgba?\(\s*\d+\s*,\s*\d+\s*,\s*\d+/g)].map((m) => m[0]);
-// Neutral blacks and whites at an alpha are shading, not palette: a shadow is
-// black in every theme, and naming forty of them buys nothing.
-const coloured = strayRgb.filter((v) => {
-  const [r, g, b] = /(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/.exec(v).slice(1).map(Number);
-  return !(r === g && g === b);
-});
-a.deepEqual(coloured, [],
-  `a coloured rgb() outside :root must come from a token, found: ${coloured.join(', ')}`);
-
-/* ---------- 3. and the renderer obeys the same rule ---------- */
-// Two animations held the accent as a string: the rail's arrival flash and
-// feel.js's pulse ring. They are the loudest uses of the colour in the app and
-// were the last two a palette change could not reach.
-for (const f of readdirSync(UI).filter((n) => n.endsWith('.js'))) {
-  const src = readFileSync(join(UI, f), 'utf8');
-  const hits = [...src.matchAll(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/g)]
-    .filter((m) => !(m[1] === m[2] && m[2] === m[3])).map((m) => m[0]);
-  a.deepEqual(hits, [],
-    `${f} must not carry a coloured rgb() — read it with brand() from feel.js. Found: ${hits.join(', ')}`);
-}
-
-/* ---------- 4. the material is variables, not overrides ---------- */
-// Solid is the default and glass is a mode. The rule that makes that possible
-// is that a material change redeclares ONLY these variables — the five stacked
-// REFIT blocks this file used to end with lost precisely because they
-// re-declared .win, #bg and :root instead, and nothing could be changed by
-// reading it.
-const MATERIAL = ['--glass', '--glass-strong', '--frost', '--edge', '--sheen', '--lift'];
-const glassBlock = /:root\[data-material="glass"\]\s*\{([^}]*)\}/.exec(css);
-a.ok(glassBlock, 'the glass material must exist — the old room is a mode, not deleted work');
-
-for (const t of MATERIAL) {
-  a.ok(new RegExp(`${t}\\s*:`).test(tokenBlock), `${t} must have a default in :root`);
-  a.ok(new RegExp(`${t}\\s*:`).test(glassBlock[1]), `${t} must be answered by the glass material too`);
-}
-a.equal(/--frost\s*:\s*none/.test(tokenBlock), true,
-  'the DEFAULT material must be solid: no frost. Separation comes from value and spacing, '
-  + 'and a pane over a flat ground wears a blur it cannot show.');
-a.equal(/--frost\s*:\s*blur/.test(glassBlock[1]), true, 'and glass must restore the blur');
-
-// Nothing but variables in there: a selector inside would be an override block
-// by another name, and this file has been down that road.
-a.equal(/[^-\s{][^:]*\{/.test(glassBlock[1]), false,
-  'the glass block must declare variables only — a rule inside it is a REFIT block reborn');
-
-/* ---------- 5. brand() hands the animations a colour, not a var() ---------- */
-// Deliberately NOT `rgb(var(--accent-rgb) / a)`: a keyframe holding a custom
-// property comes back from getKeyframes() unparsed where a literal comes back
-// normalised — measured — and whether it still interpolates or degrades to a
-// discrete jump was not something worth taking on faith for a 900ms fade.
-globalThis.matchMedia = () => ({ matches: false, addEventListener() {}, addListener() {} });
-globalThis.document = { documentElement: {} };
-globalThis.getComputedStyle = () => ({ getPropertyValue: () => ' 224 228 234 ' });
-const { brand } = await import('../ui/feel.js');
-
-a.equal(brand('--accent-rgb', .22), 'rgb(224 228 234 / 0.22)',
-  'brand() must hand back a plain colour the browser can interpolate');
-a.equal(/var\(/.test(brand('--accent-rgb', .5)), false,
-  'if a var() survives into a keyframe, resolving it was pointless');
-
-console.log('t-theme.js OK — a palette change reaches every colour, and the material is one block');
+console.log('t-theme.js OK — the dark flat palette is tokenised and has one fixed layout');

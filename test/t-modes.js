@@ -1,10 +1,10 @@
-// Four shapes, and the promises each one makes.
+// Three shapes, and the promises each one makes.
 //
 // src/modes.js already checks its own table. What it CANNOT check is whether
 // the court honours it, and every one of these is a promise made to the
 // sovereign in the interface:
 //
-//   * Research and Build never touch the base branch — including from the
+//   * Cowork never touches the base branch — including from the
 //     sovereign's own Merge button, which does not go through the MCP tool
 //     gate that the model sees;
 //   * a flip never lands mid-turn, so nobody finishes under rules it did not
@@ -61,10 +61,10 @@ try {
 
   /* ---------- 2. the shape reaches the prompt ------------------------------ */
   a.ok(!k.briefFor('coder').includes('NOTHING MERGES'), 'Code merges, and says nothing about it');
-  k.setMode('research');
-  a.match(k.briefFor('coder'), /RESEARCH MODE/);
+  k.setMode('cowork');
+  a.match(k.briefFor('coder'), /COWORK MODE/);
   a.match(k.briefFor('coder'), /NOTHING MERGES/, 'a mode that cannot merge must say so');
-  a.match(k.briefFor('coder'), /Research\//, 'and must say where the deliverable goes');
+  a.match(k.briefFor('coder'), /workflow_save/, 'Cowork carries its real workspace capabilities');
 
   /* ---------- 3. a live flip TELLS; it does not restart -------------------- */
   // The whole reason a flip is a bus notice: `prompt:${name}` is byte-stable on
@@ -73,22 +73,22 @@ try {
   const seen = [];
   k.on('mode', (m) => seen.push(m));
 
-  const r = k.setMode('build', { why: 'writing a skill' });
+  const r = k.setMode('chat', { why: 'talking it through' });
   a.equal(r.changed, true);
-  a.equal(r.previous, 'research', 'the previous shape comes back, or undo has nothing to restore');
-  a.equal(seen.at(-1).mode, 'build');
+  a.equal(r.previous, 'cowork', 'the previous shape comes back, or undo has nothing to restore');
+  a.equal(seen.at(-1).mode, 'chat');
   a.deepEqual([...k.agents.keys()], before, 'a flip must not respawn anybody');
 
   const notices = k.bus.history({ limit: 50, tail: true })
-    .filter((m) => m.kind === 'notice' && /BUILD MODE/i.test(m.body));
+    .filter((m) => m.kind === 'notice' && /CHAT MODE/i.test(m.body));
   a.ok(notices.length >= before.length,
     'every live member must be told, on the bus, rather than have its prompt rewritten');
-  a.ok(notices.some((m) => m.body.includes('writing a skill')), 'and told why');
+  a.ok(notices.some((m) => m.body.includes('talking it through')), 'and told why');
 
   // Setting the mode it is already in changes nothing and says nothing — the
   // advisor re-classifies on every message and most of them do not move it.
   const quiet = k.bus.countMessages();
-  a.equal(k.setMode('build').changed, false);
+  a.equal(k.setMode('chat').changed, false);
   a.equal(k.bus.countMessages(), quiet, 'a no-op flip must not spam the bus');
 
   // A live flip must carry the SAME substance a fresh spawn's prompt gets —
@@ -96,19 +96,16 @@ try {
   // spawned after the flip. Measured failure without this: an orchestrator
   // live-flipped into Automate mode did not know it owned workflow_save and
   // tried to delegate the work to a nonexistent "coder" peasant instead.
-  k.setMode('automate');
-  const automateNotices = k.bus.history({ limit: 50, tail: true })
-    .filter((m) => m.kind === 'notice' && /AUTOMATE MODE/i.test(m.body));
-  a.ok(automateNotices.some((m) => m.body.includes('workflow_save')),
-    'a live flip into Automate must carry the node/trigger vocabulary, not just the label');
-  a.ok(automateNotices.some((m) => /no crew/i.test(m.body)),
-    'and must say there is no crew to delegate to');
-  k.setMode('build');   // restore, so the sections below see the mode they expect
+  k.setMode('cowork');
+  const coworkNotices = k.bus.history({ limit: 50, tail: true })
+    .filter((m) => m.kind === 'notice' && /COWORK MODE/i.test(m.body));
+  a.ok(coworkNotices.some((m) => m.body.includes('workflow_save')),
+    'a live flip into Cowork must carry the node/trigger vocabulary, not just the label');
 
   /* ---------- 4. nothing merges outside Code ------------------------------- */
   // Not the MCP tool gate — this is the sovereign's own Merge button, which
   // reaches merge() directly and never sees the model's tool list.
-  for (const mode of ['research', 'build']) {
+  for (const mode of ['cowork', 'chat']) {
     k.setMode(mode);
     await a.rejects(() => k.merge('coder'), /Nothing merges/,
       `${mode} must refuse a merge even when it is asked for directly`);
@@ -131,17 +128,18 @@ try {
   a.equal(seen.at(-1).pending, 'chat', 'the UI is told it is pending, so it can say so');
 
   // The newest classification wins: it read the newest message.
-  k.queueMode('research');
-  a.equal(k.pendingMode.mode, 'research', 'a second request replaces the first');
+  k.queueMode('cowork');
+  a.equal(k.pendingMode.mode, 'cowork', 'a second request replaces the first');
 
   orchestrator.busy = false;
   // Polled rather than slept: this rides the real 300ms tick loop, and a fixed
   // wait is exactly the shape run-all.js documents as failing under contention
   // and passing alone. Waiting FOR the condition tests the same thing and does
   // not encode this machine's load into the assertion.
-  for (let i = 0; i < 40 && k.mode() !== 'research'; i++) await wait(150);
-  a.equal(k.mode(), 'research', 'and lands the moment the court goes idle');
-  a.equal(k.bus.get('mode'), 'research');
+  const idle = () => [...k.agents.values()].every((agent) => !agent.busy);
+  for (let i = 0; i < 40 && (k.mode() !== 'cowork' || !idle()); i++) await wait(150);
+  a.equal(k.mode(), 'cowork', 'and lands the moment the court goes idle');
+  a.equal(k.bus.get('mode'), 'cowork');
   a.equal(k.pendingMode, null, 'and is not applied twice');
 
   // Idle already? Then there is nothing to wait for.
@@ -184,7 +182,7 @@ try {
   console.log('  a live flip tells the court instead of rewriting its prompts');
   console.log('  nothing merges outside Code, including from the Merge button');
   console.log('  a mid-turn flip waits for idle; the newest request wins');
-  console.log('t-modes.js OK — four shapes, and the court honours them');
+  console.log('t-modes.js OK — three shapes, and the court honours them');
 } finally {
   for (const d of [repo, kingdomDir(repo)]) {
     try { rmSync(d, { recursive: true, force: true, maxRetries: 10, retryDelay: 150 }); } catch {}

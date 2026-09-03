@@ -22,7 +22,7 @@
  */
 export function statusDot(_name, _role) {
   const el = document.createElement('span');
-  el.className = 'av';
+  el.className = 'status-dot';
   el.setAttribute('aria-hidden', 'true');
   el.append(document.createElement('i'));
   return el;

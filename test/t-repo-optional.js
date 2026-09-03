@@ -1,6 +1,6 @@
 // A repo is now optional, and only Code mode needs one.
 //
-// Chat, Research and Build must all run against nothing but the workspace
+// Chat and Cowork must both run against nothing but the workspace
 // home (kingdomDir(null)) — no repo, no worktree, no crash. Code mode is the
 // one shape that edits a real codebase, so it is refused until a repo is
 // attached, live, from inside the app (Kingdom#attachRepo) rather than on
@@ -8,7 +8,7 @@
 //   node test/t-repo-optional.js
 import { strict as a } from 'node:assert';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, existsSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir, homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { Kingdom } from '../src/kingdom.js';
@@ -46,26 +46,27 @@ writeFileSync(configPath, JSON.stringify({
 }));
 
 try {
-  /* ---------- 2. Chat/Research/Build work with no repo at all ------------- */
+  /* ---------- 2. Chat/Cowork work with no repo at all -------------------- */
   const k = new Kingdom(null, configPath);
   k.on('error', () => {});
   await k.start();
 
   a.equal(k.repo, null);
   a.equal(k.base, null, 'no repo means no base branch to speak of');
-  a.equal(k.mode(), 'research');
+  a.equal(k.mode(), 'cowork');
+  a.equal(JSON.parse(readFileSync(configPath, 'utf8')).mode, 'cowork', 'legacy mode keys are persisted as Cowork on start');
 
   /* ---------- 3. Code is refused; the others degrade instead of throwing -- */
   a.throws(() => k.setMode('code'), /needs a repository/i,
     'Code mode has nothing else to edit, so it is refused rather than silently allowed');
-  a.equal(k.mode(), 'research', 'a refused switch must not change anything');
+  a.equal(k.mode(), 'cowork', 'a refused switch must not change anything');
 
   const queued = k.queueMode('code', { by: 'advisor' });
   a.equal(queued.changed, false,
     'the advisor classifies in the background — it must degrade like any other advisor miss, not throw');
-  a.equal(k.mode(), 'research');
+  a.equal(k.mode(), 'cowork');
 
-  /* ---------- 4. Research still gets worktrees=true, but skips the worktree */
+  /* ---------- 4. Cowork gets worktrees=true, but skips the worktree ------- */
   await k.wake('coder');
   const coder = k.agents.get('coder');
   a.ok(coder, 'a peasant must still spawn with no repo attached');
@@ -110,7 +111,7 @@ try {
   await k2.stop();
   try { rmSync(repo, { recursive: true, force: true, maxRetries: 10, retryDelay: 150 }); } catch {}
 
-  console.log('  no repo: Chat/Research/Build run, Code is refused by name, nothing else degrades silently');
+  console.log('  no repo: Chat/Cowork run, Code is refused by name, nothing else degrades silently');
   console.log('  a worktrees:true mode skips the worktree entirely when nothing needs isolating');
   console.log('  attachRepo makes Code reachable live, and never migrates workspace state');
   console.log('t-repo-optional.js OK — a repo is optional, and only Code needs one');

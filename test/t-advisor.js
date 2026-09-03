@@ -144,6 +144,12 @@ process.stdout.write(JSON.stringify({ type: 'item.completed',
   const short = await engineerPrompt({ cli: 'codex' }, 'login redirect broken', { cwd: dir });
   a.deepEqual(short, { text: 'Fix the login redirect on /auth/callback.', mode: 'code' });
 
+  says(JSON.stringify({ mode: 'cowork', brief: 'Compare the two vendors and save the decision note.' }));
+  const { engineerPrompt: coworkPrompt } = await import(`../src/advisor.js?cowork=${Math.random()}`);
+  a.deepEqual(await coworkPrompt({ cli: 'codex' }, 'research the vendors', { cwd: dir }),
+    { text: 'Compare the two vendors and save the decision note.', mode: 'cowork' },
+    'Cowork is a first-class advisor result, not a UI-only translation');
+
   // A model that answers instead of rewriting produces something far longer
   // than what it was given. Feeding that to the orchestrator as if the sovereign said
   // it would put an invented plan in their mouth.
@@ -243,7 +249,9 @@ process.stdout.write(JSON.stringify({ type: 'item.completed',
   // be reconfigured later; reading its current dropdown would relabel history.
   const captured = join(repo, 'measured-model-prompt.txt');
   stub(`
-require('node:fs').writeFileSync(${JSON.stringify(captured)}, process.argv.at(-1));
+// Court members read their prompt from stdin and therefore end their argv with
+// '-'. Only the advisor receives the model-selection prompt as an argument.
+if (process.argv.at(-1) !== '-') require('node:fs').writeFileSync(${JSON.stringify(captured)}, process.argv.at(-1));
 process.stdout.write(JSON.stringify({ type: 'item.completed', item: { type: 'agent_message',
   text: ${JSON.stringify(JSON.stringify({ coder: { model: 'codex/gpt-5.6-luna', effort: 'medium' } }))} } }) + '\\n');
 `);

@@ -6,6 +6,7 @@
 import { strict as a } from 'node:assert';
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
+import { DatabaseSync } from 'node:sqlite';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Bus } from '../src/bus.js';
@@ -105,6 +106,32 @@ a.deepEqual(bus.history({ limit: 100_000 }), bus.history({ limit: 100_000, tail:
 // `agent` and `type` still compose with it.
 a.equal(bus.history({ limit: 5, tail: true, agent: 'coder' }).at(-1).body, 'line 59');
 a.equal(bus.events({ limit: 5, tail: true, type: 'tool' }).at(-1).payload.name, 'Tool59');
+
+// Structured attachment references must survive the bus round-trip separately
+// from the display text, so a reload can render real asset links.
+const attached = [{ name: 'notes.txt', kind: 'document' }, { name: 'diagram.png', kind: 'image' }];
+const attachedId = bus.post('sovereign', 'orchestrator', 'read these', 'assignment', 'attachments', attached);
+a.deepEqual(bus.history({ since: attachedId - 1 }).at(-1).attachments, attached,
+  'message attachments must persist as structured metadata');
+
+// Existing courts have no attachments column; opening one must migrate it and
+// make old rows readable with an empty list rather than dropping the transcript.
+const legacyDir = mkdtempSync(join(tmpdir(), 'kingdom-attachments-legacy-'));
+const legacyPath = join(legacyDir, 'kingdom.db');
+const legacy = new DatabaseSync(legacyPath);
+legacy.exec(`create table messages (id integer primary key autoincrement, ts integer not null, sender text not null, recipient text, kind text not null, body text not null);
+  create table events (id integer primary key autoincrement, ts integer not null, agent text not null, type text not null, payload text not null);
+  create table state (k text primary key, v text not null);`);
+legacy.prepare('insert into messages (ts,sender,recipient,kind,body) values (?,?,?,?,?)')
+  .run(Date.now(), 'sovereign', 'orchestrator', 'assignment', 'before migration');
+legacy.close();
+const migrated = new Bus(legacyPath);
+a.deepEqual(migrated.history().at(-1).attachments, [],
+  'pre-attachment messages must migrate to an empty attachment list');
+a.ok(migrated.db.prepare('pragma table_info(messages)').all().some((column) => column.name === 'attachments'),
+  'the migration must add messages.attachments');
+migrated.close();
+try { rmSync(legacyDir, { recursive: true, force: true }); } catch {}
 
 bus.close();
 try { rmSync(dir, { recursive: true, force: true }); } catch {}

@@ -1,6 +1,179 @@
-# Handoff — Agentic OS (Kingdom) — 2026-08-19
+# Handoff — Agentic OS (Kingdom) — 2026-08-28
 
-## Goal & status
+## Current handoff update - 2026-08-28
+
+This section is the authoritative continuation point. The older sections below
+are retained as historical context from 2026-08-19 and are not the current
+status.
+
+## Current State Summary
+
+The UI rebuild described by `PLAN.md` is substantially implemented in the
+working tree, but it is not visually signed off. The remaining work is real
+browser/runtime QA and any polish or fixes that QA exposes. Do not treat the
+plan checkboxes or passing source-level tests as proof that the interface
+looks correct at runtime.
+
+## Architecture Overview
+
+The current shell is a vanilla ES-module UI with no build step. `ui/store.js`
+owns state and reducer notifications; `ui/main.js` owns routing, the single
+stream/poll lifecycle, and route cleanup; `ui/sidebar.js`, `ui/thread.js`, and
+`ui/views/` render the sidebar, conversation thread, and pages. Preferences are
+kept in the single `kd.prefs` path described by `PLAN.md`.
+
+## Critical Files
+
+- `PLAN.md` - authoritative UI rebuild contract.
+- `ui/main.js` - route mounting and cleanup ownership.
+- `ui/store.js` - shared state and reducer notifications.
+- `ui/sidebar.js`, `ui/thread.js`, `ui/views/`, `ui/app.css` - current UI
+  surface and responsive behavior.
+- `test/t-pages.js`, `test/t-store.js`, `test/t-thread.js`, `test/t-theme.js` -
+  focused UI regression contracts.
+
+## Work Completed
+
+- `PLAN.md` was reconciled with the dirty rewrite: source work is complete;
+  browser and Electron evidence remain explicit release gates.
+- A renderer/daemon action-route audit covered every literal UI action and
+  supported GET route; no contract mismatch was found. A live daemon smoke
+  served all 39 UI paths plus `/api/ping` successfully.
+- Rejected inline approval/question requests in `ui/thread.js` now recover
+  their controls and show the existing failure toast instead of leaking an
+  unhandled rejection. `test/t-thread.js` proves the rejected approval path.
+- The mobile drawer now caps at 320px (`min(320px, 85vw)`) so it cannot exceed
+  a 320px phone viewport; `test/t-theme.js` pins that contract.
+- Sidebar conversation requests now catch both synchronous and asynchronous
+  transport failures; a failed branch refresh reports a toast rather than
+  leaving a rejected promise. The route-level page contract remains green.
+- `ui/main.js` now owns route lifecycle cleanup without waiting for an async
+  view mount to settle.
+- Async data views mount synchronously, return cleanup immediately, and guard
+  late responses after navigation or unmount.
+- `ui/views/automations.js` has request tokens and connection/editor guards so
+  stale reloads, saves, deletes, and subscriptions cannot repaint a dead
+  route.
+- `ui/sidebar.js` now exposes native hover labels for navigation, collapsed
+  More tools, and the collapse/expand control.
+- The broader UI rewrite remains in the dirty worktree: vanilla ES modules,
+  one store/reducer/stream/poll/prefs path, sidebar plus thread views, and
+  the fixed dark flat shell described in `PLAN.md`.
+
+## Files Modified
+
+The latest iteration focused on `ui/main.js`, the async data views under
+`ui/views/`, `ui/sidebar.js`, and `test/t-pages.js`. The working tree also
+contains broader user-owned UI rewrite changes; preserve them all and inspect
+`git status --short` before making further edits.
+
+## Decisions Made
+
+- View mounts return cleanup synchronously so navigation can cancel lifecycle
+  work before the first request settles.
+- Request tokens and connection checks guard asynchronous responses at the
+  route boundary instead of adding ad-hoc guards to unrelated callers.
+- Native `title` attributes provide the sidebar hover labels without adding a
+  tooltip library or another UI layer.
+
+## Verification actually run
+
+- `KINGDOM_TEST_WIDTH=1 npm.cmd test`: **67 suites passed, 1-wide, 116.4s**
+  after the thread and drawer fixes. SpeechBird was cleanly skipped because it
+  is not installed.
+- `node test/t-thread.js`, `node --check ui/thread.js`, and
+  `node test/t-theme.js` passed after their respective fixes.
+- After the sidebar resilience pass, `node test/t-pages.js`,
+  `node --check ui/views/agents.js`, and `node --check ui/sidebar.js` passed.
+- Daemon smoke: `node src/daemon.js E:\AI\Agentic OS --port 7788`, then all
+  39 current UI paths and `/api/ping` returned successfully. This proves
+  static serving, not rendered layout.
+- Electron runtime was attempted twice. The default profile/cache path was
+  access-denied; a second hidden-window harness used a workspace-local profile
+  and disabled GPU, but timed out before its renderer loaded. Do not treat
+  either attempt as UI failure or visual evidence; rerun the viewport grid in
+  a normal interactive Electron session.
+- Chrome headless was also attempted at 320px with an isolated temporary
+  profile. Its GPU process was killed by the host before a screenshot could be
+  written, even with `--disable-gpu`; this confirms the current environment
+  cannot supply browser composition for the planned viewport evidence.
+- `git diff --check` passed; its only output was pre-existing Git
+  ignore-permission and line-ending warnings.
+- The last full run was `KINGDOM_TEST_WIDTH=1 npm.cmd test`: **67 suites
+  passed**. `court self-control` failed once in the parallel pool and passed
+  when retried alone; retain this as a known concurrency flake. That full run
+  occurred immediately before the final tooltip-only edit.
+- After the final edit: `node test/t-pages.js` passed, `node --check
+  ui/sidebar.js` passed, and `git diff --check` passed. The diff check emitted
+  only existing Git ignore-permission and line-ending warnings.
+- Browser/Electron visual QA was not available in this environment. No
+  screenshot or layout claim has been verified at runtime.
+
+## Immediate Next Steps
+
+1. When a real browser/runtime preview is available, QA at 320, 375, 390, 768,
+   and 1280 widths. Check overflow, focus states, drawer behavior, thread
+   rendering, settings, the automations graph, and reduced-motion behavior.
+2. Run `npm start` only with a usable visual environment and verify the repo
+   picker and pet window; do not infer those results from static source.
+3. If substantive changes are made, rerun `npm test` and record the actual
+   result, including the known pool/retry behavior.
+4. Do not commit or push until the user gives fresh explicit authorization.
+
+## Important Context
+
+- Preserve the current user-owned dirty worktree. It contains many modified,
+  deleted, and untracked files from the UI rebuild; no commit or push was made.
+- Do not restore the removed hall, avatar, canvas, chat, rail, voice, overview,
+  panels, or win files. The status dot and `#bg` wash are still intentional.
+- Keep `ui/app.css` selectors declared once; edit the owning rule instead of
+  appending override blocks.
+- The Browser pane reports reduced motion and screenshots require the pane to
+  be displayed, so source checks are not a substitute for runtime inspection.
+- Continue from the current UI source and `PLAN.md`; inspect
+  `ui/views/settings.js`, `ui/thread.js`, and responsive CSS first when visual
+  QA is available. Avoid speculative feature work.
+
+## Assumptions Made
+
+- The user-owned UI rewrite is the active implementation, even though it is
+  uncommitted and the older handoff history describes a different surface.
+- Runtime visual QA will be performed in an environment that can display the
+  browser pane or Electron; static checks cannot answer layout questions.
+
+## Potential Gotchas
+
+- The full suite's `court self-control` pool failure is a known concurrency
+  flake when it passes on the isolated retry; investigate a repeatable failure
+  separately.
+- Do not restore removed hall/avatar/canvas/window files or append duplicate
+  CSS override blocks.
+
+## Current pointers
+
+- Project: `E:\AI\Agentic OS`; branch and exact dirty state must be checked
+  before resuming with `git status --short`.
+- Contract: `PLAN.md`; current context: this section of `docs\HANDOFF.md`.
+- Main UI files: `ui/main.js`, `ui/store.js`, `ui/sidebar.js`, `ui/thread.js`,
+  `ui/views/`, and `ui/app.css`.
+- Test commands: `node test/t-pages.js` for the focused UI contract;
+  `KINGDOM_TEST_WIDTH=1 npm.cmd test` for the full suite.
+
+## Environment State
+
+- Node/npm checks were available. The prescribed Python handoff validator could
+  not run because neither `python` nor `py` is installed on this machine.
+- No daemon, browser preview, or Electron process was started by this
+  iteration; visual verification remains open.
+- No commit, push, or release was made.
+
+## Related Resources
+
+- `PLAN.md` - the UI rebuild contract.
+- `AGENTS.md` and `RTK.md` - repository operating rules.
+- `docs/HANDOFF.md` - this current continuation record plus retained history.
+
+## Historical goal & status (2026-08-19)
 
 Agentic OS at `E:\AI\Agentic OS` is a multi-agent orchestrator shaped as a
 kingdom: an orchestrator decomposes and delegates, a cheap briefer watches the
@@ -28,7 +201,7 @@ No source-code changes came out of the four loop cycles that followed the
 feature work — that investigation's conclusion (the cost architecture is
 already sound) IS the deliverable of those cycles, not a placeholder for one.
 
-## Current state (what exists now)
+## Historical state recorded on 2026-08-19
 
 ### Verified as of this writing
 
@@ -234,7 +407,7 @@ rather than reported as a finding; a successor should recognize the same
 shape (tiny turn count, every member's first context reading near 0)
 before trusting a low-cache-reuse signal from this specific db file.
 
-## Next steps
+## Historical next steps (2026-08-19)
 
 1. **Decide what to do with `Background.jpg`** at the repo root — it is
    still untracked, still not referenced by any code path (the app's asset
@@ -293,7 +466,7 @@ new commit, even within the same session. No remote is configured today.
 outside the repo, at `<repoParent>/.kingdom/<repoName>/tokens.json` (or the
 workspace home when no repo is attached).
 
-## Open questions for the user
+## Historical open questions (2026-08-19)
 
 1. **What should happen to `Background.jpg`?** Untracked at the repo root,
    inert either way, flagged repeatedly across sessions with no answer yet.
@@ -314,7 +487,7 @@ workspace home when no repo is attached).
    leave it shelved?** Full plan exists (see *Next steps* #3) but was not
    started this session.
 
-## Pointers
+## Historical pointers (2026-08-19)
 
 - Project root: `E:\AI\Agentic OS`; branch `main`, HEAD `66039f4`, no
   remote, working tree clean except `Background.jpg` (untracked).

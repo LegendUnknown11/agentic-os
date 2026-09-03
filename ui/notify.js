@@ -5,18 +5,16 @@
 // to dismiss without reading, and then the one that mattered gets dismissed
 // too. Only four things qualify: something is WAITING on you, something BROKE,
 // something was REFUSED, or the money ran out.
-const KEY = 'kd.notify';
-const load = () => { try { return JSON.parse(localStorage.getItem(KEY)) ?? {}; } catch { return {}; } };
+import { setPrefs, state } from './store.js';
 
-const prefs = { approvals: true, failures: true, budget: true, done: false, ...load() };
-export const settings = () => ({ ...prefs, permission: perm() });
+const prefs = () => ({ approvals: true, failures: true, budget: true, done: false, ...(state.prefs.notifications ?? {}) });
+export const settings = () => ({ ...prefs(), permission: perm() });
 
 export const perm = () =>
   (typeof Notification === 'undefined' ? 'unsupported' : Notification.permission);
 
 export function setPref(patch) {
-  Object.assign(prefs, patch);
-  localStorage.setItem(KEY, JSON.stringify(prefs));
+  setPrefs({ notifications: { ...prefs(), ...patch } });
 }
 
 /** Asking on page load is the thing everyone blocks, so this is only ever
@@ -60,32 +58,33 @@ function fire(title, body, tag) {
  * used by the test hook — callers do not care.
  */
 export function onEvent(d) {
+  const enabled = prefs();
   switch (d.type) {
     case 'approval':
-      return prefs.approvals && fire('The team is waiting on you',
+      return enabled.approvals && fire('The team is waiting on you',
         `${d.from ?? 'A member'} asks to ${d.kind ?? 'proceed'}.`, 'approval');
 
     case 'failure':
-      return prefs.failures && fire(`${d.name} has failed`, d.message, 'failure');
+      return enabled.failures && fire(`${d.name} has failed`, d.message, 'failure');
 
     case 'mergeFailed':
-      return prefs.failures && fire('Merge refused', `${d.peasant}: ${d.message}`, 'merge');
+      return enabled.failures && fire('Merge refused', `${d.peasant}: ${d.message}`, 'merge');
 
     case 'limited':
-      return prefs.failures && fire(`${d.name} is rate limited`,
+      return enabled.failures && fire(`${d.name} is rate limited`,
         `Resets ${d.resetsAt}. Retrying will not help.`, 'limited');
 
     case 'budget':
       if (d.scope === 'quota') {
-        return prefs.budget && fire(`${d.label} quota reached`,
+        return enabled.budget && fire(`${d.label} quota reached`,
           `${(d.used ?? 0).toLocaleString()} of ${(d.cap ?? 0).toLocaleString()} tokens. ${d.cli} members stopped.`, 'budget');
       }
-      return prefs.budget && fire(
+      return enabled.budget && fire(
         d.scope === 'kingdom' ? 'Team spend ceiling reached' : `${d.name} hit its ceiling`,
         `$${(d.spent ?? 0).toFixed(2)} of $${d.cap}. Everyone stopped.`, 'budget');
 
     case 'merged':
-      return prefs.done && fire('Merged', `${d.peasant} is in the base branch.`, 'done');
+      return enabled.done && fire('Merged', `${d.peasant} is in the base branch.`, 'done');
 
     default:
       return false;

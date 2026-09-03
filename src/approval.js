@@ -38,6 +38,19 @@ export function readApproval(body) {
   return p;
 }
 
+export function badSummon({ names } = {}, { roster = [] } = {}) {
+  if (!Array.isArray(names) || !names.length) return 'Summon rejected: names must be a non-empty array.';
+  if (names.length > 32) return 'Summon rejected: too many names (maximum 32).';
+  if (names.some((name) => typeof name !== 'string' || !name.trim())) {
+    return 'Summon rejected: names must be non-empty strings.';
+  }
+  const duplicate = names.find((name, i) => names.indexOf(name) !== i);
+  if (duplicate !== undefined) return `Summon rejected: duplicate name: ${duplicate}.`;
+  const known = new Set(roster.map((member) => typeof member === 'string' ? member : member?.name));
+  const unknown = names.filter((name) => !known.has(name));
+  return unknown.length ? `Summon rejected: unknown roster names: ${unknown.join(', ')}.` : null;
+}
+
 /** The CLIs a role may name. An unknown one silently ran codex. */
 export const ROLE_CLIS = ['claude', 'codex', 'agy', 'opencode'];
 

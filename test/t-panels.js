@@ -199,12 +199,59 @@ try {
       a.equal(r.status, 400, `${path} must reject malformed JSON without looking like a daemon failure`);
       a.deepEqual(await r.json(), { ok: false, error: 'invalid JSON' });
     }
+    for (const path of ['/api/workflows', '/api/workflows/delete', '/api/workflows/run']) {
+      const r = await fetch(base + path, {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: 'null',
+      });
+      a.equal(r.status, 400, `${path} must reject a non-object JSON body without looking like a daemon failure`);
+      a.deepEqual(await r.json(), { ok: false, error: 'invalid workflow body' });
+    }
+    const badSchedule = await fetch(base + '/api/workflows', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ id: 'bad-schedule', name: 'bad schedule', trigger: { type: 'interval', everyMs: -1 }, nodes: [] }),
+    });
+    a.equal(badSchedule.status, 400, 'a negative interval must be rejected instead of firing every scheduler tick');
+    a.match((await badSchedule.json()).error, /positive finite everyMs/);
+    const badDaily = await fetch(base + '/api/workflows', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ id: 'bad-daily', name: 'bad daily', trigger: { type: 'daily', at: '25:99' }, nodes: [] }),
+    });
+    a.equal(badDaily.status, 400, 'an invalid daily time must not be normalized into another day');
+    a.match((await badDaily.json()).error, /00:00 to 23:59/);
+    const badNodes = await fetch(base + '/api/workflows', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ id: 'bad-nodes', name: 'bad nodes', trigger: { type: 'manual' }, nodes: {} }),
+    });
+    a.equal(badNodes.status, 400, 'a non-array workflow graph must not be persisted as a runnable automation');
+    a.match((await badNodes.json()).error, /workflow nodes must be an array/);
+    const badBus = await fetch(base + '/api/workflows', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ id: 'bad-bus', name: 'bad bus', trigger: { type: 'bus', pattern: '   ' }, nodes: [] }),
+    });
+    a.equal(badBus.status, 400, 'a blank bus trigger must not be saved as a silent no-op');
+    a.match((await badBus.json()).error, /non-empty pattern/);
     const made = await post('/api/workflows', {
       id: 'post-bad-json', name: 'still usable', trigger: { type: 'manual' }, nodes: [], enabled: true,
     });
     a.equal(made.ok, true, 'a valid workflow write after malformed input must still work');
     a.equal((await post('/api/workflows/delete', { id: made.workflow.id })).ok, true);
-    console.log('  workflow mutations reject malformed JSON as 400 and stay usable');
+    console.log('  workflow mutations reject invalid bodies as 400 and stay usable');
+  }
+
+  {
+    const r = await fetch(base + '/api/workflows', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ id: '..\\..\\kingdom.config', name: 'escape', nodes: [] }),
+    });
+    a.equal(r.status, 400, 'workflow IDs must not escape the workflow directory');
+    a.deepEqual(await r.json(), { ok: false, error: 'invalid workflow id' });
+  }
+
+  {
+    const made = await post('/api/workflows', { id: 'disabled-hook', name: 'disabled', trigger: { type: 'webhook' }, nodes: [], enabled: false });
+    const r = await fetch(`${base}/api/workflows/hook?id=${made.workflow.id}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+    a.equal(r.status, 409, 'a disabled webhook must not run outside the scheduler');
+    a.deepEqual(await r.json(), { ok: false, error: 'workflow is disabled' });
   }
 
   /* ---------- 2b. a node's canvas position survives the round trip ------- */
@@ -236,6 +283,12 @@ try {
     });
     a.equal(r.status, 400, 'a malformed action body must not look like a daemon failure');
     a.deepEqual(await r.json(), { ok: false, error: 'invalid JSON' });
+
+    const emptyObject = await fetch(`${base}/api/wake`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: 'null',
+    });
+    a.equal(emptyObject.status, 400, 'a JSON primitive must not reach object-shaped action handlers as a server error');
+    a.deepEqual(await emptyObject.json(), { ok: false, error: 'invalid action body' });
     console.log('  action routes reject malformed JSON as 400');
   }
 
@@ -283,6 +336,9 @@ try {
     const only = await get('/api/chronicle?kinds=summary');
     a.ok(only.rows.every((r) => r.kind === 'summary'), 'the kind filter is honoured');
     a.equal(only.total, 2);
+
+    const bounded = await get('/api/chronicle?limit=-1');
+    a.equal(bounded.rows.length, 1, 'a hostile negative limit must not turn the chronicle into an unbounded page');
     console.log('  chronicle: two tables merged, newest first, filtered and searchable');
   }
 

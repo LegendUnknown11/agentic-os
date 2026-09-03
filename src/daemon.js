@@ -3,7 +3,7 @@
 //
 //   node src/daemon.js [repo] [--port 7777] [--config path]
 //
-// repo is optional: Chat/Research/Build run with none attached, and Code
+// repo is optional: Chat and Cowork run with none attached, and Code
 // mode is refused (see Kingdom#setMode) until one is picked in the app —
 // POST /api/attachRepo, or a repo attached on a previous run and saved to
 // the workspace config.
@@ -22,7 +22,7 @@ import { searchVault, recentNotes, readNote } from './vault.js';
 import { Speech } from './stt.js';
 import { deltaOf, totalsOf } from './usage.js';
 import { readApproval } from './approval.js';
-import { listWorkflows, saveWorkflow, deleteWorkflow, runWorkflow, tickScheduler, logRun, runHistory } from './workflows.js';
+import { listWorkflows, saveWorkflow, deleteWorkflow, runWorkflow, tickScheduler, logRun, runHistory, validWorkflowId } from './workflows.js';
 import { runDoctor } from './doctor.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -35,7 +35,7 @@ const repoArg = argv.find((a) => !a.startsWith('--') && argv[argv.indexOf(a) - 1
 
 /**
  * No repo on the command line: look for one attached from inside the app on
- * a previous run before settling for none at all. Chat/Research/Build don't
+ * a previous run before settling for none at all. Chat and Cowork don't
  * need one; Code mode is refused until /api/attachRepo gives it one live.
  */
 function savedRepo() {
@@ -159,8 +159,8 @@ const ACTIONS = {
   // NOT awaited: with the advisor on, this runs a model call before the message
   // reaches the bus, and holding the POST open for that would look like a hung
   // UI. Progress and failure both arrive on the stream as `advising`.
-  command: (b) => { kingdom.command(b.text, b.conversationId).catch((e) => push('error', { message: e.message })); },
-  speak: (b) => kingdom.speakTo(b.name, b.text, b.conversationId),
+  command: (b) => { kingdom.command(b.text, b.conversationId, b.attachments).catch((e) => push('error', { message: e.message })); },
+  speak: (b) => kingdom.speakTo(b.name, b.text, b.conversationId, b.attachments),
   switchConversation: (b) => kingdom.switchConversation(b.name, b.conversationId),
   // Plain bus CRUD, no orchestration — but other tabs still need to hear
   // about it live, the same as every other state change on this stream.
@@ -174,6 +174,11 @@ const ACTIONS = {
   attachRepo: (b) => kingdom.attachRepo(b.path),
   milestone: (b) => kingdom.setMilestone(Number(b.index), Boolean(b.done)),
   wake: (b) => kingdom.wake(b.name),
+  summon: (b) => {
+    const result = kingdom.requestSummon(b.names, b.reason ?? 'Requested from the Team page.');
+    if (!result.ok) throw new Error(result.error);
+    return result;
+  },
   sleep: (b) => kingdom.sleep(b.name),
   pause: (b) => kingdom.pause(b.why ?? ''),
   resume: () => kingdom.resume(),
@@ -365,7 +370,15 @@ const handle = async (req, res) => {
     // Reconnecting with a cursor wants only what it missed, oldest first — a
     // fresh tab wants the room repainted from the newest rows backward. Same
     // distinction bus.js's own tail flag exists for.
-    const since = Number(url.searchParams.get('since') || 0);
+    const requestedSince = Number(url.searchParams.get('since') || 0);
+    const since = Number.isSafeInteger(requestedSince) && requestedSince > 0 ? requestedSince : 0;
+    let roster = [];
+    try {
+      const savedRoster = JSON.parse(kingdom.bus.get('roster') ?? '[]');
+      roster = Array.isArray(savedRoster) ? savedRoster : [];
+    } catch {
+      process.stderr.write('daemon: persisted roster is unreadable — stream sent an empty roster\n');
+    }
     res.writeHead(200, {
       'content-type': 'text/event-stream',
       'cache-control': 'no-cache',
@@ -376,7 +389,7 @@ const handle = async (req, res) => {
       type: 'snapshot',
       repo: kingdom.repo,
       base: kingdom.base,
-      roster: JSON.parse(kingdom.bus.get('roster') ?? '[]'),
+      roster,
       models: kingdom.models(),
       efforts: kingdom.efforts(),
       advisor: kingdom.advisor(),
@@ -415,8 +428,7 @@ const handle = async (req, res) => {
     // be rendered, and say on stderr that it was dropped — a bad row must
     // cost its own line and nothing else.
     const rows = [];
-    for (const m of kingdom.bus.history({ limit: 2000, tail: true })) {
-      if (m.kind !== 'approval') continue;
+    for (const m of kingdom.bus.approvals()) {
       const p = readApproval(m.body);
       if (!p) {
         process.stderr.write(`daemon: approval #${m.id} from ${m.sender} is unreadable — skipped\n`);
@@ -487,7 +499,8 @@ const handle = async (req, res) => {
   // sixteen members said a thing. This is both.
   if (url.pathname === '/api/chronicle') {
     const q = (url.searchParams.get('q') ?? '').trim().toLowerCase();
-    const limit = Math.min(500, Number(url.searchParams.get('limit') ?? 200));
+    const requestedLimit = Number(url.searchParams.get('limit') ?? 200);
+    const limit = Number.isSafeInteger(requestedLimit) ? Math.min(500, Math.max(1, requestedLimit)) : 200;
     const kinds = new Set((url.searchParams.get('kinds') ?? 'summary,message,error,done')
       .split(',').filter(Boolean));
     const requestedCampaign = url.searchParams.get('campaign');
@@ -679,6 +692,7 @@ const handle = async (req, res) => {
       const wf = (await listWorkflows(WORKFLOWS_DIR)).find((w) => w.id === id);
       if (!wf) return send(404, { ok: false, error: 'no such workflow' });
       if (wf.trigger?.type !== 'webhook') return send(400, { ok: false, error: 'not a webhook-triggered workflow' });
+      if (wf.enabled === false) return send(409, { ok: false, error: 'workflow is disabled' });
       let input; try { input = body ? JSON.parse(body) : {}; } catch { input = body; }
       const result = await runWorkflow(wf, { bus: kingdom.bus, input });
       logRun(kingdom.bus, wf, result);
@@ -689,9 +703,11 @@ const handle = async (req, res) => {
     let b;
     try { b = body ? JSON.parse(body) : {}; }
     catch { return send(400, { ok: false, error: 'invalid JSON' }); }
+    if (!b || typeof b !== 'object' || Array.isArray(b)) return send(400, { ok: false, error: 'invalid workflow body' });
 
     if (url.pathname === '/api/workflows/delete') {
       if (!b.id) return send(400, { ok: false, error: 'id required' });
+      if (!validWorkflowId(b.id)) return send(400, { ok: false, error: 'invalid workflow id' });
       await deleteWorkflow(WORKFLOWS_DIR, b.id);
       return send(200, { ok: true });
     }
@@ -705,6 +721,7 @@ const handle = async (req, res) => {
     if (url.pathname === '/api/workflows') {
       if (!b.name) return send(400, { ok: false, error: 'name required' });
       const wf = { ...b, id: b.id || `wf-${Date.now()}` };
+      if (!validWorkflowId(wf.id)) return send(400, { ok: false, error: 'invalid workflow id' });
       await saveWorkflow(WORKFLOWS_DIR, wf);
       return send(200, { ok: true, workflow: wf });
     }
@@ -724,8 +741,9 @@ const handle = async (req, res) => {
       try {
         const files = (await readdir(ASSETS)).filter(kindOf);
         return send(200, { ok: true, assets: files.map((f) => ({ name: f, kind: kindOf(f) })) });
-      } catch {
-        return send(200, { ok: true, assets: [] });   // nothing uploaded yet
+      } catch (e) {
+        if (e.code === 'ENOENT') return send(200, { ok: true, assets: [] });   // nothing uploaded yet
+        throw e;
       }
     }
     if (req.method !== 'POST') return res.writeHead(405).end();
@@ -739,7 +757,8 @@ const handle = async (req, res) => {
       catch { return send(400, { ok: false, error: 'invalid JSON' }); }
       const name = safeAsset(request.name);
       if (!name) return send(400, { ok: false, error: 'not a media file' });
-      try { await unlink(join(ASSETS, name)); } catch {}
+      try { await unlink(join(ASSETS, name)); }
+      catch (e) { if (e.code !== 'ENOENT') throw e; }
       return send(200, { ok: true });
     }
 
@@ -755,12 +774,18 @@ const handle = async (req, res) => {
       chunks.push(c);
     }
     await mkdir(ASSETS, { recursive: true });
-    await writeFile(join(ASSETS, name), Buffer.concat(chunks));
+    try { await writeFile(join(ASSETS, name), Buffer.concat(chunks), { flag: 'wx' }); }
+    catch (e) {
+      if (e.code === 'EEXIST') return send(409, { ok: false, error: 'an asset with that name already exists' });
+      throw e;
+    }
     return send(200, { ok: true, name, kind: kindOf(name) });
   }
 
   if (url.pathname.startsWith('/assets/')) {
-    const name = safeAsset(decodeURIComponent(url.pathname.slice(8)));
+    let name;
+    try { name = safeAsset(decodeURIComponent(url.pathname.slice(8))); }
+    catch { return res.writeHead(404).end(); }
     if (!name) return res.writeHead(404).end();
     try {
       const buf = await readFile(join(ASSETS, name));
@@ -811,9 +836,14 @@ const handle = async (req, res) => {
       return res.writeHead(400, { 'content-type': 'application/json' })
         .end(JSON.stringify({ ok: false, error: 'invalid JSON' }));
     }
+    if (!input || typeof input !== 'object' || Array.isArray(input)) {
+      return res.writeHead(400, { 'content-type': 'application/json' })
+        .end(JSON.stringify({ ok: false, error: 'invalid action body' }));
+    }
     try {
-      await action(input);
-      res.writeHead(200, { 'content-type': 'application/json' }).end('{"ok":true}');
+      const result = await action(input);
+      res.writeHead(200, { 'content-type': 'application/json' })
+        .end(JSON.stringify({ ok: true, ...(result && typeof result === 'object' ? result : {}) }));
     } catch (e) {
       res.writeHead(500, { 'content-type': 'application/json' })
         .end(JSON.stringify({ ok: false, error: e.message }));
@@ -855,7 +885,7 @@ const handle = async (req, res) => {
 
 createServer((req, res) => handle(req, res).catch((e) => {
   console.error(e?.stack ?? e);
-  if (!res.headersSent) res.writeHead(500, { 'content-type': 'application/json' });
+  if (!res.headersSent) res.writeHead(e?.status ?? 500, { 'content-type': 'application/json' });
   res.end(JSON.stringify({ ok: false, error: String(e?.message ?? e) }));
 })).listen(port, '127.0.0.1', async () => {
   try {

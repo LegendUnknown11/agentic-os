@@ -66,8 +66,8 @@ let once = null;   // a non-looping clip to finish before returning to mood
 export function initPet(host) {
   el = document.createElement('button');
   el.id = 'pet';
-  el.title = 'HappyDog — asleep when the court is, running when it is working';
-  el.setAttribute('aria-label', 'Court pet');
+  el.title = 'HappyDog — asleep when the team is, running when it is working';
+  el.setAttribute('aria-label', 'Team pet');
   el.style.backgroundImage = `url("${SHEET}")`;
   // One place decides the on-screen size; the sheet scales to match.
   el.style.backgroundSize = `${COLS * 100}% ${ROWS * 100}%`;
@@ -137,13 +137,15 @@ function apply() {
 }
 
 /* ---------- showing and hiding ---------- */
+import { setPrefs, state } from './store.js';
+
 const applyHidden = () =>
-  document.body.classList.toggle('no-pet', localStorage.getItem('kd.pet') === '0');
+  document.body.classList.toggle('no-pet', state.prefs.pet === false);
 
 export function toggle() {
-  localStorage.setItem('kd.pet', localStorage.getItem('kd.pet') === '0' ? '1' : '0');
+  setPrefs({ pet: state.prefs.pet === false });
   applyHidden();
-  return localStorage.getItem('kd.pet') !== '0';
+  return state.prefs.pet !== false;
 }
 
 export const aspect = () => ({ CW, CH });

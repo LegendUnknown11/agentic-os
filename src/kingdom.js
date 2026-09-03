@@ -17,7 +17,7 @@ import { Bus } from './bus.js';
 import { inputTokens, deltaOf, totalsOf } from './usage.js';
 import { costOf, tableFrom } from './price.js';
 import { forecast as forecastOf } from './forecast.js';
-import { readApproval, badRole } from './approval.js';
+import { readApproval, badRole, badSummon } from './approval.js';
 import { parseWindow, autoWindow, fmtTokens } from './compact.js';
 import { ripeness, checkTiming } from './ripeness.js';
 import { argue, pickPanel, verdictNote } from './argue.js';
@@ -658,9 +658,19 @@ export class Kingdom extends EventEmitter {
     // Said now rather than in the constructor, which had nobody listening.
     if (this.configBroken) this.emit('failure', { name: 'orchestrator', message: this.configBroken });
 
+    // Keep persisted state and the bus on the same public vocabulary. Old
+    // Research, Build, and Automate courts become Cowork once, before anybody
+    // can read the mode key through MCP.
+    const savedMode = this.config.mode;
+    const canonicalMode = modeName(savedMode);
+    if (savedMode !== canonicalMode) {
+      this.config.mode = canonicalMode;
+      this.#persistConfig();
+    }
+
     // Creates the repository if the folder is not one yet — you point the
     // kingdom at a folder, not at a checkout you prepared first. No repo at
-    // all is now a valid start: Chat/Research/Build don't need one, and Code
+    // all is now a valid start: Chat and Cowork don't need one, and Code
     // mode is refused (see setMode) until one is attached.
     if (this.repo) {
       this.base = await ensureRepo(this.repo, {
@@ -676,7 +686,14 @@ export class Kingdom extends EventEmitter {
     // handed its mail again — a silent stall, the worst failure mode there is.
     // They are left asleep; the first message addressed to one revives it with
     // its session intact.
-    for (const n of JSON.parse(this.bus.get('summoned') ?? '[]')) {
+    let restored = [];
+    try {
+      const saved = JSON.parse(this.bus.get('summoned') ?? '[]');
+      restored = Array.isArray(saved) ? saved : [];
+    } catch {
+      this.#warn('The saved crew list is unreadable; no previous crew was restored.');
+    }
+    for (const n of restored) {
       if (this.specOf(n)) this.summoned.add(n);
     }
     // Survives a restart for the same reason `summoned` does: a pause is a
@@ -760,8 +777,8 @@ export class Kingdom extends EventEmitter {
    * and an unanswered proposal is by definition a recent one.
    */
   #reloadApprovals() {
-    for (const m of this.bus.history({ limit: 1000, tail: true })) {
-      if (m.kind !== 'approval' || this.bus.get(`resolved:${m.id}`)) continue;
+    for (const m of this.bus.approvals()) {
+      if (this.bus.get(`resolved:${m.id}`)) continue;
       const p = readApproval(m.body);
       if (!p) {
         console.warn(`kingdom: approval #${m.id} from ${m.sender} is unreadable — skipped`);
@@ -1334,6 +1351,7 @@ export class Kingdom extends EventEmitter {
    */
   async #summarizeTurn(name) {
     const events = this.turnBuf.get(name) ?? [];
+    const conversationId = this.agents.get(name)?.conversationId ?? 'default';
     this.turnBuf.set(name, []);
     const s = summarizerSettings(this.config);
     if (!s.enabled || !events.length) return;
@@ -1353,8 +1371,8 @@ export class Kingdom extends EventEmitter {
       if (!line) return;
       // Recorded as an event, not just emitted: a summary that vanished on
       // reload would be worth less than the raw text it replaces.
-      this.bus.logEvent(name, 'summary', { text: line });
-      this.emit('event', { name, kind: 'summary', payload: { text: line } });
+      this.bus.logEvent(name, 'summary', { text: line }, conversationId);
+      this.emit('event', { name, kind: 'summary', payload: { text: line }, conversationId });
     } catch { /* cosmetic; never surfaces as a failure */ }
     finally { this.summarising--; }
   }
@@ -1419,9 +1437,9 @@ export class Kingdom extends EventEmitter {
       this.bus.supersede(who, '--- THIS COURT IS IN ');
       // modeBlock(), not a hand-rolled label+blurb: a live flip used to send
       // only those two things, dropping the crew-empty line and the pipeline
-      // vocabulary (Automate's node/trigger syntax, Research's fact-checker
-      // nudge) that a freshly-spawned member gets baked into its prompt.
-      // Measured effect: a live-flipped orchestrator in Automate mode did not
+      // vocabulary (Cowork's automation syntax and fact-checker nudge) that a
+      // freshly-spawned member gets baked into its prompt. Measured effect: a
+      // live-flipped orchestrator without that guidance did not
       // know it owned workflow_save, delegated the request to a "coder"
       // peasant that does not exist in this mode, and needed three rounds of
       // the sovereign hand-writing the exact tool call before it worked.
@@ -1488,10 +1506,12 @@ export class Kingdom extends EventEmitter {
    * gives Code mode something to point its worktrees at. Attaching a
    * DIFFERENT repo later still needs a fresh court, same as switching repos
    * always has (see electron/main.js's "already running" dialog).
-   */
+  */
   async attachRepo(path) {
-    this.base = await assertRepo(path);
-    this.repo = resolve(path);
+    const repo = resolve(path);
+    if (this.repo && this.repo !== repo) throw new Error('A different repository requires a fresh court.');
+    this.base = await assertRepo(repo);
+    this.repo = repo;
     const usesAgy = [this.config.orchestrator, this.config.briefer, ...this.config.peasants]
       .some((s) => (s?.cli ?? 'claude') === 'agy');
     if (usesAgy) this.#excludeAgentsDir();
@@ -2175,12 +2195,11 @@ export class Kingdom extends EventEmitter {
   /** Surface approval requests to the sovereign exactly once. */
   #surfaceApprovals() {
     const seen = Number(this.bus.get('approvals:cursor') ?? 0);
-    const rows = this.bus.history({ since: seen, limit: 50 });
+    const rows = this.bus.approvals({ since: seen });
     // Once, after the sweep — see #applyMilestones. Idempotent here too: a
     // re-scan is guarded by `resolved:${m.id}` and by approvals being a Map.
     if (rows.length) this.bus.set('approvals:cursor', String(rows[rows.length - 1].id));
     for (const m of rows) {
-      if (m.kind !== 'approval') continue;
       if (this.bus.get(`resolved:${m.id}`)) continue;
       const payload = readApproval(m.body);
       if (!payload) {
@@ -2265,11 +2284,18 @@ export class Kingdom extends EventEmitter {
     const tag = msg.kind === 'assignment' ? 'ORDER FROM'
       : msg.kind === 'notice' ? 'FYI — NO ACTION REQUIRED, FROM'
       : 'MESSAGE FROM';
+    const attachments = Array.isArray(msg.attachments) ? msg.attachments
+      .map((item) => typeof item === 'string' ? item : item?.name)
+      .filter(Boolean) : [];
+    const files = attachments.length
+      ? `\n\nATTACHED ASSETS (uploaded beside the court; use list_uploads for their paths):\n`
+        + attachments.map((name) => `- ${name}`).join('\n')
+      : '';
     const control = msg.recipient === this.config.orchestrator.name && msg.kind === 'assignment'
       ? '\n\n[COURT CONTROL] If specialist help is needed, call the summon MCP tool now. '
         + 'Do not ask for approval only in prose; prose does not create an approval card.'
       : '';
-    return `[${tag} ${msg.sender}]\n${msg.body}${control}`;
+    return `[${tag} ${msg.sender}]\n${msg.body}${files}${control}`;
   }
 
   /** peasant done -> run its tests -> hand the diff to the briefer to digest. */
@@ -2795,6 +2821,7 @@ export class Kingdom extends EventEmitter {
     if (this.agents.has(name)) return this.agents.get(name);
     this.spawnFailed?.delete(name);   // a sovereign asking again is not the retry storm
     const agent = await this.#spawn(name);
+    if (!agent) throw new Error(`Could not wake "${name}".`);
     // `summoned` is the durable history a Set cannot carry: a restart can
     // restore a member, but it must never look like a second sovereign spend.
     this.bus.logEvent(name, 'summoned', { by, approvalId });
@@ -2891,7 +2918,7 @@ export class Kingdom extends EventEmitter {
    * way to discover what it was supposed to be doing and asked the sovereign
    * to re-explain. Everything the court is told must be reconstructable.
    */
-  async command(text, conversationId = null) {
+  async command(text, conversationId = null, attachments = []) {
     // Settings are not work. This must precede the advisor: a prompt engineer
     // handed `/autocompact 300k` would rewrite it into a paragraph asking the
     // court to please consider compacting, and bill a turn for it.
@@ -2912,7 +2939,7 @@ export class Kingdom extends EventEmitter {
     if (a.autoModel) this.#autoModelInBackground(a, text);
 
     if (!a.promptEngineer) {
-      this.bus.post('sovereign', this.config.orchestrator.name, text, 'assignment', convId);
+      this.bus.post('sovereign', this.config.orchestrator.name, text, 'assignment', convId, attachments);
       return { text, campaign };
     }
 
@@ -2952,9 +2979,9 @@ export class Kingdom extends EventEmitter {
     if (rewritten && rewritten !== text) {
       this.bus.post('sovereign', this.config.orchestrator.name,
         `${final}\n\n---\nSovereign's original wording (for reference; the brief above is authoritative):\n${text}`,
-        'assignment', convId);
+        'assignment', convId, attachments);
     } else {
-      this.bus.post('sovereign', this.config.orchestrator.name, final, 'assignment', convId);
+      this.bus.post('sovereign', this.config.orchestrator.name, final, 'assignment', convId, attachments);
     }
     return { text: final, rewritten: rewritten ?? null, models: applied, campaign };
   }
@@ -3059,17 +3086,18 @@ export class Kingdom extends EventEmitter {
   }
 
   /** You type into a peasant's pane directly; the orchestrator is told so it stays coherent. */
-  speakTo(name, text, conversationId = null) {
+  speakTo(name, text, conversationId = null, attachments = []) {
     // Before the orchestrator delegation: `/autocompact` in a pane is about THAT
     // member's window, and routing the orchestrator's pane to command() would quietly
     // turn it into the court-wide default.
     const local = this.#compactCommand(text, name) ?? this.#argueCommand(text);
     if (local) return { text: local, local: true };
     text = this.#skillCommand(text);
-    if (name === this.config.orchestrator.name) return this.command(text, conversationId);
+    if (name === this.config.orchestrator.name) return this.command(text, conversationId, attachments);
     this.#beginCampaign(text);
-    // A peasant has no multi-conversation UI, so its pane always stays 'default'.
-    this.bus.post('sovereign', name, text, 'assignment'); // recorded, like command()
+    // A peasant has no multi-conversation UI, so its pane always stays
+    // 'default'. Attachments still travel with that durable assignment.
+    this.bus.post('sovereign', name, text, 'assignment', 'default', attachments);
     if (name !== this.config.orchestrator.name) {
       // Framing matters: an earlier version phrased this as a plain report and
       // the orchestrator obediently carried out the peasant's instruction itself.
@@ -3085,11 +3113,6 @@ export class Kingdom extends EventEmitter {
   async approve(id) {
     const p = this.approvals.get(id);
     if (!p) throw new Error(`No pending approval ${id}`);
-    if (p.kind !== 'summon' && p.kind !== 'memory' && p.kind !== 'push') {
-      this.approvals.delete(id);
-      this.bus.set(`resolved:${id}`, 'approved');
-    }
-
     if (p.kind === 'summon') {
       // The bench is the mode's, and this is where that is enforced — not at
       // the summon tool. A proposal can outlive the mode it was made in: the
@@ -3107,9 +3130,34 @@ export class Kingdom extends EventEmitter {
         return;
       }
       // In parallel: each wake is its own git worktree, and they do not touch
-      // each other. Serially, an approved crew of six paid for six worktree
-      // creations end to end before the sovereign saw anyone wake up.
-      await Promise.all(p.names.map((n) => this.wake(n, { by: p.from ?? 'orchestrator', approvalId: id })));
+      // each other. If one fails, the approval is blocked and only members
+      // started by this approval are stood down; an existing standing member
+      // remains untouched.
+      const beforeAgents = new Set(this.agents.keys());
+      const beforeSummoned = new Set(this.summoned);
+      const results = await Promise.allSettled(p.names.map((n) =>
+        this.wake(n, { by: p.from ?? 'orchestrator', approvalId: id })));
+      const failed = results
+        .map((r, i) => r.status === 'rejected' ? `${p.names[i]}: ${r.reason?.message ?? r.reason}` : null)
+        .filter(Boolean);
+      if (failed.length) {
+        for (const name of p.names) {
+          if (!beforeAgents.has(name) && this.agents.has(name)) {
+            this.sleep(name);
+            if (beforeSummoned.has(name)) this.summoned.add(name);
+          } else if (!beforeSummoned.has(name)) {
+            this.summoned.delete(name);
+          }
+        }
+        this.bus.set('summoned', JSON.stringify([...this.summoned]));
+        this.#publishRoster();
+        this.approvals.delete(id);
+        this.bus.set(`resolved:${id}`, 'blocked');
+        const message = `The sovereign approved your summons, but it was not completed: ${failed.join('; ')}.`;
+        this.bus.post(CROWN, this.config.orchestrator.name, message, 'notice');
+        this.emit('resolved', { id, approved: false, blocked: true });
+        throw new Error(message);
+      }
       this.approvals.delete(id);
       this.bus.set(`resolved:${id}`, 'approved');
       this.bus.post(CROWN, this.config.orchestrator.name,
@@ -3128,10 +3176,14 @@ export class Kingdom extends EventEmitter {
       });
       this.#persistConfig();
       this.#publishRoster();
+      this.approvals.delete(id);
+      this.bus.set(`resolved:${id}`, 'approved');
       this.bus.post(CROWN, this.config.orchestrator.name,
         `The sovereign approved the new role "${p.name}". It is in the roster permanently.`);
     } else if (p.kind === 'merge') {
       await this.merge(p.peasant);
+      this.approvals.delete(id);
+      this.bus.set(`resolved:${id}`, 'approved');
     } else if (p.kind === 'push') {
       // A push approval is consumed exactly once. Whether Git succeeds is a
       // separate fact, recorded on the historical card instead of retried.
@@ -3178,9 +3230,17 @@ export class Kingdom extends EventEmitter {
     return { requested: true };
   }
 
+  requestSummon(names, reason = '', from = 'sovereign') {
+    const roster = [this.config.orchestrator, this.config.briefer, ...this.config.peasants];
+    const error = badSummon({ names, reason }, { roster });
+    if (error) return { ok: false, error };
+    this.bus.post(from, null, JSON.stringify({ kind: 'summon', names, reason: String(reason) }), 'approval');
+    return { ok: true, requested: true };
+  }
+
   reject(id, why = '') {
     const p = this.approvals.get(id);
-    if (!p) return;
+    if (!p) throw new Error(`No pending approval ${id}`);
     this.approvals.delete(id);
     this.bus.set(`resolved:${id}`, 'rejected');
     this.bus.post(CROWN, this.config.orchestrator.name,
@@ -3209,8 +3269,8 @@ export class Kingdom extends EventEmitter {
     // The last gate, and the one that matters. The MCP tool for this is already
     // withheld outside Code and the prompt already says so, but neither of
     // those is a guarantee: the tool list is advisory to a model, and the
-    // sovereign's own Merge button reaches this method directly. Research and
-    // Build promise that nothing lands on the base branch, and a promise
+    // sovereign's own Merge button reaches this method directly. Cowork
+    // promises that nothing lands on the base branch, and a promise
     // enforced only by asking nicely is not one.
     const m = modeOf(this.mode());
     if (!m.merge) {

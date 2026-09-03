@@ -1,71 +1,29 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<title>Kingdom</title>
-<link rel="stylesheet" href="app.css">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>AgentOS</title>
+  <link rel="stylesheet" href="./app.css">
 </head>
 <body>
-  <header>
-    <span class="mark" id="mark"></span>
-    <span id="repo">—</span>
-    <span id="spend" class="num"></span>
-    <!-- Two different things, both once called "mode". #court is what the court
-         is DOING (Code / Research / Chat / Build); #layout is only how the
-         panels are arranged. The first one changes what the court can do and
-         sits first because of it. -->
-    <nav class="court-mode" id="court"></nav>
-    <nav class="layout" id="layout"></nav>
-    <button class="goalbar" id="goalbar" hidden></button>
-    <span class="grow"></span>
-    <nav class="tools" id="tools"></nav>
-    <span class="conn" id="conn" title="stream"></span>
-    <div class="menu" id="menu" hidden></div>
-  </header>
-
-  <main>
-    <aside class="rail" id="rail">
-      <div class="rail-head">
-        <span class="engraved">Team</span>
-        <span class="num" id="court-count"></span>
-        <span class="grow"></span>
-        <button class="chip" id="rail-collapse" title="Collapse">‹</button>
-      </div>
-      <button class="summon-btn" id="summon-btn">Add agent…</button>
-      <div class="rail-list" id="rail-list"></div>
-      <div class="rail-pet" id="rail-pet"></div>
-    </aside>
-
-    <div id="stage">
-      <!-- The backdrop, and nothing drawn on top of it.
-           A drawn throne room used to sit here — windows, columns, a dais, a
-           throne. It was removed on the sovereign's instruction. #bg stays:
-           it is the low-contrast wash that gives the glass something to bend,
-           and it is what a wallpaper replaces. -->
-      <div id="bg"></div>
-
-      <div id="surface"></div>
-      <div id="overview" hidden></div>
-      <div id="chat-view"></div>
-      <div id="windows"></div>
-      <div id="approvals"></div>
-      <div id="toast"></div>
-    </div>
-
-    <aside class="who" id="who">
-      <div class="who-head">
-        <span class="engraved">Selected</span>
-        <button class="chip" id="who-collapse" title="Hide">›</button>
-      </div>
-      <div class="who-body" id="who-body"></div>
-    </aside>
+  <div id="bg" aria-hidden="true"></div>
+  <aside id="sidebar" aria-label="Navigation"></aside>
+  <main id="main">
+    <header id="header"></header>
+    <section id="view">
+      <noscript>
+        <div class="view-mount boot-failure">
+          <h1>AgentOS needs JavaScript</h1>
+          <p>Enable JavaScript to connect this window to your local team.</p>
+        </div>
+      </noscript>
+    </section>
+    <footer id="composer"></footer>
   </main>
-
-  <footer>
-    <input id="cmd" placeholder="Tell the orchestrator what to do…" autocomplete="off">
-    <button class="mic" id="cmd-mic"></button>
-  </footer>
-
-  <script type="module" src="app.js"></script>
+  <button id="sidebar-scrim" type="button" aria-label="Close navigation" aria-hidden="true" tabindex="-1"></button>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <script type="module" src="./main.js"></script>
 </body>
 </html>

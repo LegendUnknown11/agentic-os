@@ -13,6 +13,7 @@ import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { Bus } from '../src/bus.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -107,6 +108,18 @@ try {
   const snapAll = await snapshotOf('');
   a.ok(snapAll.messages.some((m) => m.body === 'alpha msg') && snapAll.messages.some((m) => m.body === 'beta msg'),
     'an unscoped tab (every non-Chat panel) must still see everything');
+
+  const invalidCursor = await snapshotOf('?since=Infinity');
+  a.ok(invalidCursor.messages.some((m) => m.body === 'alpha msg') && invalidCursor.messages.some((m) => m.body === 'beta msg'),
+    'an invalid reconnect cursor must recover as a fresh snapshot, not appear empty');
+
+  // The roster is persisted separately from the live process. A torn older
+  // write must not turn a new SSE connection into a wedged response.
+  const state = new Bus(join(fakeHome, '.kingdom', 'workspace', 'kingdom.db'));
+  state.set('roster', '{broken');
+  state.close();
+  const corruptRoster = await snapshotOf('');
+  a.deepEqual(corruptRoster.roster, [], 'a corrupt persisted roster must degrade to an empty SSE roster');
 
   console.log('  /stream scopes its snapshot to the requested conversation, and stays unfiltered without one');
 

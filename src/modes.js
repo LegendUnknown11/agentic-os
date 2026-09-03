@@ -30,7 +30,7 @@
  * `crew: 'all'` is the whole configured bench; an array is a shortlist; an
  * empty array means this mode summons nobody at all.
  */
-export const MODES = {
+const LEGACY_MODES = {
   code: {
     label: 'Code',
     blurb: 'Write and change code. A crew in isolated worktrees, tests, review, merge.',
@@ -102,8 +102,24 @@ export const MODES = {
   },
 };
 
+export const MODES = {
+  chat: LEGACY_MODES.chat,
+  cowork: {
+    ...LEGACY_MODES.build,
+    label: 'Cowork',
+    blurb: 'Delegate research, writing, tasks, and automations. Code changes stay isolated until Code mode.',
+    crew: ['researcher', 'writer', 'strategist', 'auditor', 'fact-checker', 'defendant', 'critic', 'architect'],
+    workflows: true,
+    pipeline: `${LEGACY_MODES.research.pipeline}\n${LEGACY_MODES.automate.pipeline}`,
+  },
+  code: LEGACY_MODES.code,
+};
+
 export const MODE_NAMES = Object.keys(MODES);
 export const DEFAULT_MODE = 'code';
+// Existing courts may still have one of these persisted. They continue as
+// Cowork, then Kingdom#start rewrites the config to the canonical key.
+export const MODE_ALIASES = Object.freeze({ research: 'cowork', build: 'cowork', automate: 'cowork' });
 
 /**
  * Never undefined.
@@ -114,11 +130,14 @@ export const DEFAULT_MODE = 'code';
  * behaviour the court had before this file existed.
  */
 export function modeOf(name) {
-  return MODES[name] ?? MODES[DEFAULT_MODE];
+  return MODES[MODE_ALIASES[name] ?? name] ?? MODES[DEFAULT_MODE];
 }
 
 /** Normalise anything to a real mode key. */
-export const modeName = (name) => (MODES[name] ? name : DEFAULT_MODE);
+export const modeName = (name) => {
+  const canonical = MODE_ALIASES[name] ?? name;
+  return MODES[canonical] ? canonical : DEFAULT_MODE;
+};
 
 /**
  * Can this member be summoned in this mode?
@@ -207,7 +226,7 @@ if (typeof process !== 'undefined' && process.argv?.[1]?.endsWith('modes.js')) {
   const a = assert.default ?? assert;
 
   // --- the table itself ---
-  a.deepEqual(MODE_NAMES, ['code', 'research', 'chat', 'build', 'automate']);
+  a.deepEqual(MODE_NAMES, ['chat', 'cowork', 'code']);
   for (const n of MODE_NAMES) {
     const m = MODES[n];
     a.ok(m.label && m.blurb, `${n} needs a label and a blurb — both reach the UI`);
@@ -215,16 +234,12 @@ if (typeof process !== 'undefined' && process.argv?.[1]?.endsWith('modes.js')) {
   }
   // The two the sovereign chose deliberately, asserted rather than assumed.
   a.equal(MODES.code.merge, true);
-  a.equal(MODES.research.merge, false, 'research never merges');
-  a.equal(MODES.build.merge, false, 'build never merges');
-  a.equal(MODES.research.worktrees, true, 'isolation IS the read-only mechanism');
-  a.equal(MODES.build.worktrees, true);
+  a.equal(MODES.cowork.merge, false, 'cowork never merges');
+  a.equal(MODES.cowork.worktrees, true, 'isolation still protects delegated work');
   a.deepEqual(MODES.chat.crew, [], 'chat is the orchestrator alone');
   a.equal(MODES.chat.worktrees, false, 'nobody to give a worktree to');
-  a.deepEqual(MODES.automate.crew, [], 'automate is the orchestrator alone');
-  a.equal(MODES.automate.merge, false);
-  a.equal(MODES.automate.workflows, true);
-  a.equal(MODES.code.workflows, undefined, 'workflow tools are automate-only');
+  a.equal(MODES.cowork.workflows, true);
+  a.equal(MODES.code.workflows, undefined, 'workflow tools are Cowork-only');
 
   // --- modeOf never returns undefined ---
   a.equal(modeOf('code'), MODES.code);
@@ -232,12 +247,13 @@ if (typeof process !== 'undefined' && process.argv?.[1]?.endsWith('modes.js')) {
   a.equal(modeOf(undefined), MODES.code);
   a.equal(modeOf(null), MODES.code);
   a.equal(modeName('chat'), 'chat');
+  a.equal(modeName('research'), 'cowork', 'legacy modes migrate to Cowork');
   a.equal(modeName('nonsense'), 'code');
 
   // --- who may be summoned ---
   a.equal(canSummon('code', 'compiler-engineer'), true, 'code offers the whole bench');
-  a.equal(canSummon('research', 'researcher'), true);
-  a.equal(canSummon('research', 'compiler-engineer'), false, 'not on the research bench');
+  a.equal(canSummon('cowork', 'researcher'), true);
+  a.equal(canSummon('cowork', 'compiler-engineer'), false, 'not on the Cowork bench');
   a.equal(canSummon('chat', 'researcher'), false, 'chat summons nobody');
   // The officers are never filtered: a mode that could not reach its own
   // orchestrator would have nothing to say.
@@ -246,19 +262,18 @@ if (typeof process !== 'undefined' && process.argv?.[1]?.endsWith('modes.js')) {
 
   const bench = ['researcher', 'coder', 'writer', 'compiler-engineer'];
   a.deepEqual(crewFor('code', bench), bench);
-  a.deepEqual(crewFor('research', bench), ['researcher', 'writer']);
+  a.deepEqual(crewFor('cowork', bench), ['researcher', 'writer']);
   a.deepEqual(crewFor('chat', bench), []);
 
   // --- the tool gate agrees with the table ---
   a.equal(toolAllowed('code', 'request_merge'), true);
-  a.equal(toolAllowed('research', 'request_merge'), false);
-  a.equal(toolAllowed('build', 'request_merge'), false);
+  a.equal(toolAllowed('cowork', 'request_merge'), false);
   a.equal(toolAllowed('chat', 'summon'), false, 'nobody to summon');
   a.equal(toolAllowed('chat', 'add_task'), false, 'no task list in chat');
-  a.equal(toolAllowed('research', 'add_task'), true);
-  a.equal(toolAllowed('automate', 'workflow_save'), true);
-  a.equal(toolAllowed('code', 'workflow_save'), false, 'workflow tools are automate-only');
-  a.equal(toolAllowed('automate', 'summon'), false, 'nobody to summon');
+  a.equal(toolAllowed('cowork', 'add_task'), true);
+  a.equal(toolAllowed('cowork', 'workflow_save'), true);
+  a.equal(toolAllowed('code', 'workflow_save'), false, 'workflow tools are Cowork-only');
+  a.equal(toolAllowed('cowork', 'summon'), true, 'Cowork has a crew');
   // The report survives everywhere; only the merge after it is withheld.
   for (const n of MODE_NAMES) {
     a.equal(toolAllowed(n, 'declare_done'), true, `${n} must still be able to report work`);
@@ -267,15 +282,13 @@ if (typeof process !== 'undefined' && process.argv?.[1]?.endsWith('modes.js')) {
   }
 
   // --- the prompt block says the load-bearing thing in each mode ---
-  a.match(modeBlock('research'), /NOTHING MERGES/);
-  a.match(modeBlock('research'), /Research\//, 'research must be told where the note goes');
-  a.match(modeBlock('research'), /fact-checker/i, 'research must nudge toward verifying contestable claims');
-  a.doesNotMatch(modeBlock('code'), /fact-checker/i, 'the pipeline nudge is research-only');
-  a.match(modeBlock('build'), /NOTHING MERGES/);
+  a.match(modeBlock('cowork'), /NOTHING MERGES/);
+  a.match(modeBlock('cowork'), /fact-checker/i, 'Cowork must nudge toward verifying contestable claims');
+  a.match(modeBlock('cowork'), /workflow_save/, 'Cowork must explain automation work');
+  a.doesNotMatch(modeBlock('code'), /fact-checker/i, 'the pipeline nudge is Cowork-only');
   a.doesNotMatch(modeBlock('code'), /NOTHING MERGES/);
   a.match(modeBlock('chat'), /no crew|nobody to propose/i);
-  a.match(modeBlock('automate'), /workflow_save/, 'automate must be told how to build a workflow');
   a.match(modeBlock('nonsense'), /CODE MODE/, 'an unknown mode still produces a usable block');
 
-  console.log('modes ok — 5 shapes, merge withheld in 3, chat and automate summon nobody');
+  console.log('modes ok — Chat, Cowork, Code; only Code merges');
 }

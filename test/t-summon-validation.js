@@ -8,6 +8,10 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Bus } from '../src/bus.js';
+import { badSummon } from '../src/approval.js';
+
+a.match(badSummon({ names: ['ghost'] }, { roster: [{ name: 'coder' }] }), /unknown roster names/,
+  'the shared summon guard must reject names outside the roster');
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const dir = mkdtempSync(join(tmpdir(), 'kingdom-summon-'));

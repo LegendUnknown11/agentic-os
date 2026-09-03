@@ -2,13 +2,12 @@
 // database (outside the target repo, so a wallpaper never turns up in a diff);
 // the browser only remembers WHICH one is chosen, not the bytes. That keeps
 // localStorage small and survives a reload, a restart and a second window.
-import { setIcon } from './icons.js';
+import { setPrefs, state as appState } from './store.js';
 
-const load = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } };
-const save = (k, v) => localStorage.setItem(k, JSON.stringify(v));
+const pref = (key, fallback) => appState.prefs[key] ?? fallback;
 
 const DEFAULTS = { image: null, dim: 55, blur: 0, fixed: true };
-let bg = { ...DEFAULTS, ...load('kd.bg', {}) };
+let bg = { ...DEFAULTS, ...pref('background', {}) };
 let assets = [];
 let onChange = () => {};
 
@@ -18,16 +17,22 @@ export const src = (name) => `/assets/${encodeURIComponent(name)}`;
 
 export async function refresh() {
   try {
-    const r = await fetch('/api/assets').then((x) => x.json());
-    assets = r.assets ?? [];
+    const response = await fetch('/api/assets');
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || result?.ok === false) return assets;
+    assets = result.assets ?? [];
+    syncQueue();
   } catch {
-    assets = [];
+    return assets;
   }
   onChange();
   return assets;
 }
 
-export const onAssets = (fn) => { onChange = fn; };
+export const onAssets = (fn) => {
+  onChange = typeof fn === 'function' ? fn : () => {};
+  return () => { if (onChange === fn) onChange = () => {}; };
+};
 
 /**
  * Upload with the raw file as the body. Not multipart: the daemon is a
@@ -39,34 +44,52 @@ export async function upload(file) {
     method: 'POST',
     headers: { 'content-type': file.type || 'application/octet-stream' },
     body: file,
-  }).then((x) => x.json()).catch(() => ({ ok: false, error: 'upload failed' }));
+  }).then(async (response) => {
+    const body = await response.json().catch(() => ({}));
+    return response.ok ? body : { ...body, ok: false, error: body.error ?? 'upload failed' };
+  }).catch(() => ({ ok: false, error: 'upload failed' }));
   if (r.ok) await refresh();
   return r;
 }
 
 export async function remove(name) {
-  await fetch('/api/assets/delete', {
+  const result = await fetch('/api/assets/delete', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ name }),
-  }).catch(() => {});
+  }).then(async (response) => {
+    const body = await response.json().catch(() => ({}));
+    return response.ok ? body : { ...body, ok: false, error: body.error ?? 'delete failed' };
+  }).catch(() => ({ ok: false, error: 'delete failed' }));
+  if (result?.ok === false) return result;
   if (bg.image === name) setBackground({ image: null });
   if (track()?.name === name) stop();
   await refresh();
+  return result;
 }
 
 /** Opens the OS file picker. Returns the chosen files, or an empty list. */
 export function pick(accept, multiple = true) {
   return new Promise((resolve) => {
     const i = document.createElement('input');
+    let settled = false;
+    let focusTimer = null;
+    const onFocus = () => { focusTimer = setTimeout(() => finish([...(i.files ?? [])]), 0); };
+    const finish = (files = []) => {
+      if (settled) return;
+      settled = true;
+      if (focusTimer) clearTimeout(focusTimer);
+      globalThis.removeEventListener?.('focus', onFocus);
+      resolve(files);
+    };
     i.type = 'file';
     i.accept = accept;
     i.multiple = multiple;
-    i.onchange = () => resolve([...(i.files ?? [])]);
-    // No 'cancel' event in every engine: a picker that is dismissed just never
-    // resolves, and an unresolved promise here leaks nothing but the closure.
-    i.addEventListener('cancel', () => resolve([]));
-    i.click();
+    i.onchange = () => finish([...(i.files ?? [])]);
+    // The focus-return fallback covers engines which do not dispatch `cancel`.
+    i.addEventListener('cancel', () => finish([]));
+    globalThis.addEventListener?.('focus', onFocus);
+    try { i.click(); } catch { finish([]); }
   });
 }
 
@@ -80,7 +103,7 @@ export function initBackground(el) {
 
 export function setBackground(patch) {
   bg = { ...bg, ...patch };
-  save('kd.bg', bg);
+  setPrefs({ background: bg });
   applyBackground();
 }
 
@@ -140,11 +163,12 @@ function applyBackground() {
   if (!bgEl) return;
   // The image goes in as a CSS variable rather than as an inline
   // background-image, so the stylesheet keeps ownership of the layering: with
-  // no wallpaper the default aurora shows through the same rule, and there is
-  // no inline style left behind to fight it.
+  // no wallpaper the flat body fill stays in the same layer, and there is no
+  // inline style left behind to fight it.
   document.body.classList.toggle('has-bg', Boolean(bg.image));
   if (!bg.image) {
     bgEl.style.removeProperty('--wall');
+    bgEl.style.removeProperty('--bg-dim');
     bgEl.style.filter = '';
     bgEl.style.transform = '';
     return;
@@ -166,7 +190,20 @@ let queue = [];
 let at = -1;
 let listeners = new Set();
 
-const player = load('kd.music', { volume: 0.35, loop: true, shuffle: false });
+function syncQueue() {
+  const names = assets.filter((asset) => asset.kind === 'audio').map((asset) => asset.name);
+  const current = track()?.name;
+  const nextQueue = [
+    ...queue.map((item) => item.name).filter((name) => names.includes(name)),
+    ...names.filter((name) => !queue.some((item) => item.name === name)),
+  ].map((name) => ({ name }));
+  if (nextQueue.length === queue.length && nextQueue.every((item, index) => item.name === queue[index]?.name)) return;
+  queue = nextQueue;
+  at = current ? queue.findIndex((item) => item.name === current) : (queue.length ? 0 : -1);
+  announce();
+}
+
+const player = { volume: 0.35, loop: true, shuffle: false, ...pref('music', {}) };
 audio.volume = player.volume;
 audio.loop = false;   // looping is handled across the queue, not per track
 
@@ -242,7 +279,7 @@ export function next(step = 1) {
 export function setPlayer(patch) {
   Object.assign(player, patch);
   if (patch.volume !== undefined) audio.volume = patch.volume;
-  save('kd.music', player);
+  setPrefs({ music: { ...player } });
   announce();
 }
 

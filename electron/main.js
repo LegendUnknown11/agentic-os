@@ -330,9 +330,9 @@ ipcMain.on('pet:scale', (_e, raw) => {
 });
 
 // For this session only. His own tooltip promises he comes back next launch,
-// so persisting the dismissal would make that a lie — and there is no way to
-// summon him back from the throne room, which has no IPC bridge.
+// so persisting the dismissal would make that a lie.
 ipcMain.on('pet:hide', () => petWin?.destroy());
+ipcMain.on('pet:open', openPet);
 
 // The throne room's own request for a repository — Code mode asks for this
 // when none is attached yet, rather than the app blocking on it at launch.

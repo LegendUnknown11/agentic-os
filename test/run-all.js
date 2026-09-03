@@ -34,9 +34,9 @@ const suites = [
   // Self-checking, like court.js: the display-name map is pure, and a role that
   // resolves to nothing prints "undefined" into the rail.
   ['display names', join(HERE, '..', 'ui', 'names.js')],
-  // Same again: the overview's shaping decides what the home screen SAYS is
+  // Same again: the home screen's shaping decides what the first screen SAYS is
   // happening, and it is the one screen nobody has to open to be misled by.
-  ['overview shaping', join(HERE, '..', 'ui', 'overview.js')],
+  ['home shaping', join(HERE, '..', 'ui', 'views', 'home.js')],
   // And again: the automation graph's pure half decides what the saved node
   // graph actually IS — a delete that leaves a pointer behind, or a palette
   // that has drifted from the engine's node types, both ship a workflow that
@@ -85,8 +85,8 @@ const suites = [
   ['opencode backend', join(HERE, 't-opencode.js')],
   ['turn summaries', join(HERE, 't-summarize.js')],
   ['the standing goal', join(HERE, 't-goal.js')],
-  ['four modes', join(HERE, 't-modes.js')],
-  // The repo becomes optional on top of the four modes: Chat/Research/Build
+  ['three modes', join(HERE, 't-modes.js')],
+  // The repo becomes optional on top of the three modes: Chat/Cowork
   // must run with none attached, and only Code may ever require one.
   ['repo becomes optional', join(HERE, 't-repo-optional.js')],
   ['court self-control', join(HERE, 't-control.js')],
@@ -97,9 +97,11 @@ const suites = [
   ['stream + actions scope by conversation', join(HERE, 't-daemon-conversations.js')],
   ['conversation branching', join(HERE, 't-branching.js')],
   ['chat mode grants a Read-only tool', join(HERE, 't-chat-read-tool.js')],
+  ['thread draft preservation', join(HERE, 't-thread.js')],
+  ['changes review lifecycle', join(HERE, 't-pages.js')],
   ['skill set + observation masking', join(HERE, 't-skills.js')],
-  ['panel teardown', join(HERE, 't-win.js')],
-  ['palette and material', join(HERE, 't-theme.js')],
+  ['state reducer', join(HERE, 't-store.js')],
+  ['flat palette', join(HERE, 't-theme.js')],
   ['a claude that dies mid-turn', join(HERE, 't-claude-death.js')],
 ];
 
