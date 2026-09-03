@@ -4,7 +4,7 @@
 // inside the main checkout makes git status noisy and confuses file tools.
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, realpathSync } from 'node:fs';
 import { join, basename, dirname, resolve } from 'node:path';
 import { homedir } from 'node:os';
 
@@ -110,6 +110,17 @@ export async function assertRepo(repo) {
  * folder's CURRENT contents as the base rather than an empty tree, or every
  * peasant's first diff would contain the entire existing project.
  */
+// resolve() normalises separators and `..`, but NOT Windows 8.3 short names:
+// os.tmpdir() returns C:UsersRUNNER~1... on any account whose name is over
+// 8 chars, while git always reports the long form. Comparing those two strings
+// called a directory nested inside ITSELF — 23 suites failed on CI while every
+// one of them passed locally, where the dev account name is short enough to get
+// no 8.3 alias. realpath canonicalises short names AND casing; it needs the
+// path to exist, so fall back to resolve() when it does not.
+const canonicalPath = (p) => {
+  try { return realpathSync.native(p); } catch { return resolve(p); }
+};
+
 export async function ensureRepo(repo, { onInit } = {}) {
   // execFile uses cwd before it starts `git`, so an absent project directory
   // surfaces as `spawn git ENOENT` even when Git itself is installed. The CLI
@@ -121,7 +132,7 @@ export async function ensureRepo(repo, { onInit } = {}) {
     top = (await git(repo, 'rev-parse', '--show-toplevel')).stdout.trim();
   } catch { /* not a repo, or git absent — both handled below */ }
 
-  if (top && resolve(top) !== resolve(repo)) {
+  if (top && canonicalPath(top) !== canonicalPath(repo)) {
     throw new Error(
       `${repo} is inside the git repository at ${top}. Refusing to create a `
       + `nested repository — point the kingdom at ${top} instead, or move this `

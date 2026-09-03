@@ -10,9 +10,9 @@
 import { strict as a } from 'node:assert';
 
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, existsSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, dirname, basename } from 'node:path';
 import { ensureRepo } from '../src/worktree.js';
 
 const git = (cwd, ...x) => execFileSync('git', x, { cwd, stdio: 'pipe' }).toString();
@@ -84,6 +84,21 @@ const touched = [];
 a.equal(await ensureRepo(outer, { onInit: (w) => touched.push(w) }), 'main');
 a.equal(touched.length, 0);
 a.equal(git(outer, 'rev-list', '--count', 'HEAD').trim(), '1', 'no extra commit in a real repo');
+
+/* ---------- the SAME repo reached by another name is not "nested" ------- */
+// The nesting check compared path strings. Two names for one directory made it
+// reject a repo as nested inside ITSELF: on CI, os.tmpdir() gave the 8.3 short
+// form (C:\Users\RUNNER~1\...) while git reported C:/Users/runneradmin/...,
+// and 23 suites died on a machine where all 67 passed locally. A junction is
+// the portable way to get two names for one directory — Windows allows it
+// without elevation, and on POSIX node makes an ordinary dir symlink.
+const alias = join(dirname(outer), `${basename(outer)}-alias`);
+symlinkSync(outer, alias, 'junction');
+a.equal(await ensureRepo(alias), 'main',
+  'a second name for a repo is that same repo, not a nested one');
+a.equal(git(outer, 'rev-list', '--count', 'HEAD').trim(), '1',
+  'and reaching it by the alias must not commit anything');
+rmSync(alias, { recursive: true, force: true });
 
 for (const d of [plain, empty, missingParent, outer]) rmSync(d, { recursive: true, force: true });
 console.log('t-ensure-repo.js OK — folders become repos, existing history is never nested or touched');
