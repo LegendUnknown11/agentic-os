@@ -11,7 +11,7 @@ module map. Read it as instructions, not background. What follows is the rest.
 ## Commands
 
 ```bash
-npm test                       # everything that costs no API quota (68 suites, 4-wide)
+npm test                       # everything that costs no API quota (67 suites, 4-wide)
 KINGDOM_TEST_WIDTH=1 npm test  # serialize; use when a failure looks like a race
 node test/t-pages.js           # one suite — every test/t-*.js runs standalone
 npm start                      # Electron shell (spawns the daemon)

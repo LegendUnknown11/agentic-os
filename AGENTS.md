@@ -11,7 +11,7 @@ A multi-agent orchestrator shaped as a kingdom: an orchestrator decomposes and d
 ## Run it
 
 ```bash
-npm test          # 68 suites, no API quota, must be green before you commit
+npm test          # 67 suites, no API quota, must be green before you commit
 npm run ctx -- <repo>   # where a court's context actually went
 npm start         # the Electron app
 node src/cli.js <repo> "first order"   # headless
