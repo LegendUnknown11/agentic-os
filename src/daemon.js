@@ -322,6 +322,269 @@ function originAllowed(req) {
   return origin === `http://127.0.0.1:${port}` || origin === `http://localhost:${port}`;
 }
 
+// Every GET that answers with JSON, keyed by path.
+//
+// This mirrors ACTIONS above. The POST side has had a dispatch table since it
+// was written; the GET side was sixteen sequential `url.pathname ===` compares
+// inside handle(), which is how that one function reached 554 lines. Each
+// handler returns [status, body] and the dispatcher serialises — so the
+// `const send = (code, o) => res.writeHead(...)` that had been copy-pasted into
+// five separate route bodies now exists nowhere.
+//
+// Routes that do NOT answer with JSON stay as explicit blocks in handle():
+// /stream (SSE), /api/workflows and /api/assets and /api/transcribe (GET and
+// POST on one path), /assets/* (bytes) and /modes.js (JavaScript).
+const READS = {
+  // How a launching window discovers whether a court is already up, and which
+  // repo it is serving — attaching to the wrong repo would be silent and bad.
+  '/api/ping': async (url, req) => {
+    return [ready ? 200 : 503, { ok: ready, starting: !ready, repo: kingdom.repo, base: kingdom.base, pid: process.pid }];
+  },
+
+  // The same probes `npm run doctor` prints, structured — this is what a
+  // freshly installed app shows FIRST, since there is no terminal it can
+  // assume the user will open. Answerable whether or not the court is up:
+  // runDoctor() only shells out to CLI binaries, it never touches `kingdom`.
+  '/api/doctor': async (url, req) => {
+    const report = await runDoctor({ repo: kingdom.repo ?? undefined });
+    return [200, report];
+  },
+
+  // ---- what the sovereign has been asked, and what they answered -------
+  // Pending AND decided. Approvals used to exist only while unanswered, so
+  // with an empty queue there was no sign the feature existed at all, and no
+  // record of what had already been agreed to.
+  '/api/approvals': async (url, req) => {
+    // An approval whose body will not parse used to come through as `{}` —
+    // an entry with an id, a sender, and no `kind`. The throne room renders
+    // one with `TITLES[a.kind] ?? a.kind.toUpperCase()` (`ui/app.js`), so an
+    // undefined kind threw, and the throw took the whole approvals pass with
+    // it: one unreadable row and the sovereign stopped being shown ANY of
+    // them, including the ones still waiting on a decision. Drop what cannot
+    // be rendered, and say on stderr that it was dropped — a bad row must
+    // cost its own line and nothing else.
+    const rows = [];
+    for (const m of kingdom.bus.approvals()) {
+      const p = readApproval(m.body);
+      if (!p) {
+        process.stderr.write(`daemon: approval #${m.id} from ${m.sender} is unreadable — skipped\n`);
+        continue;
+      }
+      const resolved = kingdom.bus.get(`resolved:${m.id}`) ?? null;
+      const row = { id: m.id, ts: m.ts, from: m.sender, ...p, resolved };
+      if (p.kind === 'push') {
+        try { row.push = JSON.parse(kingdom.bus.get(`push:${m.id}`) ?? 'null'); } catch { /* card still renders */ }
+      }
+      // The cost of the crew being proposed, and ONLY while it is still
+      // being proposed. A forecast is a trimming aid and there is nothing
+      // left to trim once the summon is answered — which also keeps this
+      // off the 2,000 historical rows the loop above walks on every poll.
+      //
+      // Guarded because this is the one line here that reads the event log:
+      // AGENTS.md rule 4, degrade rather than wedge. A card with no number
+      // on it is a worse card; a card that never renders is a court the
+      // sovereign cannot answer at all.
+      if (!resolved && p.kind === 'summon') {
+        try {
+          row.forecast = kingdom.forecast(p.names);
+        } catch (e) {
+          process.stderr.write(`daemon: forecast for approval #${m.id} failed — ${e.message}\n`);
+        }
+      }
+      rows.push(row);
+    }
+    rows.reverse();
+    return [200, { ok: true, approvals: rows, pending: [...kingdom.approvals.keys()] }];
+  },
+
+  // ---- the shared task list --------------------------------------------
+  // The one question the panels could not answer: what is still outstanding.
+  // Approvals show what the sovereign must decide and the chronicle shows what
+  // was said, but an assignment nobody acted on appeared in neither.
+  '/api/tasks': async (url, req) => {
+    const tasks = kingdom.bus.tasks();
+    return [200, {
+      ok: true,
+      tasks,
+      open: tasks.filter((t) => t.state !== 'done').length,
+      available: kingdom.bus.availableTasks().length,
+    }];
+  },
+
+  '/api/campaigns': async (url, req) => {
+    return [200, { ok: true, campaigns: kingdom.bus.campaigns() }];
+  },
+
+  // Sidebar boot: the list of threads for one member, without waiting on the
+  // stream. `?member=` defaults to the orchestrator — the only member Chat
+  // mode talks to today.
+  '/api/conversations': async (url, req) => {
+    const member = url.searchParams.get('member') || kingdom.config.orchestrator.name;
+    return [200, {
+      ok: true,
+      active: kingdom.activeConversation.get(member) ?? 'default',
+      conversations: kingdom.bus.conversations(member),
+    }];
+  },
+
+  // ---- the chronicle: everything that happened, in order ---------------
+  // The bus panel shows messages; a member's panel shows one transcript. There
+  // was no view of the court as a whole over time, and no way to find which of
+  // sixteen members said a thing. This is both.
+  '/api/chronicle': async (url, req) => {
+    const q = (url.searchParams.get('q') ?? '').trim().toLowerCase();
+    const requestedLimit = Number(url.searchParams.get('limit') ?? 200);
+    const limit = Number.isSafeInteger(requestedLimit) ? Math.min(500, Math.max(1, requestedLimit)) : 200;
+    const kinds = new Set((url.searchParams.get('kinds') ?? 'summary,message,error,done')
+      .split(',').filter(Boolean));
+    const requestedCampaign = url.searchParams.get('campaign');
+    const campaign = requestedCampaign ? kingdom.bus.campaign(requestedCampaign) : null;
+    if (requestedCampaign && !campaign) {
+      return [404, { ok: false, error: 'No such campaign.' }];
+    }
+    const inCampaign = (id, start, end) => !campaign || (id > start && (end == null || id <= end));
+
+    const rows = [];
+
+    // Summaries and errors — one line per turn, which is the readable layer.
+    if (kinds.has('summary') || kinds.has('error')) {
+      for (const e of kingdom.bus.events({ limit: 20_000, tail: true })) {
+        if (!inCampaign(e.id, campaign?.eventStart, campaign?.eventEnd)) continue;
+        if (e.type !== 'summary' && e.type !== 'error') continue;
+        if (!kinds.has(e.type)) continue;
+        let p;
+        try { p = typeof e.payload === 'string' ? JSON.parse(e.payload) : e.payload; } catch { continue; }
+        const text = p?.text ?? p?.message ?? '';
+        if (!text) continue;
+        rows.push({ id: `e${e.id}`, ts: e.ts, who: e.agent, kind: e.type, text });
+      }
+    }
+
+    if (kinds.has('message') || kinds.has('done')) {
+      for (const m of kingdom.bus.history({ limit: 20_000, tail: true })) {
+        if (!inCampaign(m.id, campaign?.messageStart, campaign?.messageEnd)) continue;
+        const kind = m.kind === 'done' ? 'done' : 'message';
+        if (!kinds.has(kind)) continue;
+        // Approvals and notices are machinery, not narrative.
+        if (m.kind === 'approval' || m.kind === 'notice' || m.kind === 'milestone') continue;
+        rows.push({
+          id: `m${m.id}`, ts: m.ts, who: m.sender, to: m.recipient ?? null,
+          kind, text: m.body,
+        });
+      }
+    }
+
+    // A name matches BOTH directions. Searching "tester" and being shown only
+    // what the tester said — not what was said to them — is half an answer,
+    // and the half you usually wanted is the conversation.
+    const hits = q
+      ? rows.filter((r) => r.text.toLowerCase().includes(q)
+        || r.who.toLowerCase().includes(q)
+        || (r.to ?? '').toLowerCase().includes(q))
+      : rows;
+    hits.sort((a, b) => b.ts - a.ts);
+
+    return [200, {
+      ok: true,
+      query: q,
+      campaign,
+      total: hits.length,
+      // Bodies can be enormous; the chronicle is for scanning, and the member's
+      // own panel is where you go for the whole thing.
+      rows: hits.slice(0, limit).map((r) => ({
+        ...r,
+        text: r.text.length > 400 ? `${r.text.slice(0, 400)}…` : r.text,
+      })),
+    }];
+  },
+
+  '/api/metrics': async (url, req) => {
+    return [200, { ok: true, ...metrics() }];
+  },
+
+  // ---- a peasant's work, before you merge it ---------------------------
+  '/api/diff': async (url, req) => {
+    const peasant = url.searchParams.get('peasant');
+    // roleOf is a CLASSIFIER, not a membership test — it answers "peasant" for
+    // any name that is not the orchestrator or the briefer, including one that does not
+    // exist. specOf is the question actually being asked here.
+    if (!peasant || !kingdom.specOf(peasant) || kingdom.roleOf(peasant) !== 'peasant') {
+      return [400, { ok: false, error: `"${peasant}" is not a peasant of this court.` }];
+    }
+    if (!existsSync(worktreePath(kingdom.repo, peasant))) {
+      return [200, { ok: true, peasant, none: true, reason: 'This member has no worktree yet.' }];
+    }
+    try {
+      const file = url.searchParams.get('file');
+      const [stat, diff] = await Promise.all([
+        statOf(kingdom.repo, peasant, kingdom.base),
+        diffOf(kingdom.repo, peasant, kingdom.base, file),
+      ]);
+      // The diff is the expensive part, and an enormous one helps nobody read
+      // it — the panel offers per-file diffs for anything past this.
+      const CAP = 120_000;
+      return [200, {
+        ok: true, peasant, base: kingdom.base, stat,
+        diff: diff.length > CAP ? `${diff.slice(0, CAP)}\n\n[truncated — open a single file to see the rest]` : diff,
+        truncated: diff.length > CAP,
+      }];
+    } catch (e) {
+      return [502, { ok: false, error: e.message }];
+    }
+  },
+
+  // ---- who has unmerged work waiting ------------------------------------
+  // The overview's "ready to review" block. /api/diff answers this one member
+  // at a time and returns up to 120KB of patch to do it, which is the wrong
+  // shape for a list — the question here is only "who has anything", and the
+  // stat line is enough to answer it. The client parses it with the same
+  // parseStat() the diff panel already uses.
+  '/api/changes': async (url, req) => {
+    const names = [...kingdom.summoned].filter((n) => kingdom.roleOf(n) === 'peasant');
+    const changed = [];
+    for (const peasant of names) {
+      if (!existsSync(worktreePath(kingdom.repo, peasant))) continue;
+      try {
+        const stat = await statOf(kingdom.repo, peasant, kingdom.base);
+        if (stat?.trim()) changed.push({ peasant, stat });
+      } catch {
+        // One member's worktree being mid-rebase must not blank the whole
+        // block — degrade, never wedge.
+      }
+    }
+    return [200, { ok: true, base: kingdom.base, changed }];
+  },
+
+  // ---- the sovereign's vault, from the throne room ---------------------
+  '/api/vault': async (url, req) => {
+    const root = kingdom.config.vault || null;
+    if (!root) return [200, { ok: true, configured: false, notes: [] }];
+
+    const path = url.searchParams.get('path');
+    if (path) {
+      const body = readNote(root, path);
+      // readNote returns null both for "escaped the vault" and "no such note".
+      // The browser does not need to be told which.
+      return body === null
+        ? [404, { ok: false, error: 'No such note.' }]
+        : [200, { ok: true, path, body }];
+    }
+    const q = url.searchParams.get('q');
+    return [200, {
+      ok: true, configured: true, query: q ?? '',
+      notes: q?.trim() ? searchVault(root, q) : recentNotes(root),
+    }];
+  },
+
+  // ---- recall: search everything the court has said or done ------------
+  '/api/recall': async (url, req) => {
+    const q = url.searchParams.get('q');
+    if (!q?.trim()) return [200, { ok: true, query: '', hits: [] }];
+    return [200, { ok: true, query: q, hits: kingdom.bus.recall(q, { limit: 40 }) }];
+  },
+
+};
+
 // Named, so createServer can wrap the WHOLE thing in one catch. Anything that
 // throws in here is an unhandled rejection, and Node's default for those is to
 // kill the process — so a single malformed request body took the entire court
@@ -347,20 +610,13 @@ const handle = async (req, res) => {
     }
   }
 
-  // How a launching window discovers whether a court is already up, and which
-  // repo it is serving — attaching to the wrong repo would be silent and bad.
-  if (url.pathname === '/api/ping') {
-    return res.writeHead(ready ? 200 : 503, { 'content-type': 'application/json' })
-      .end(JSON.stringify({ ok: ready, starting: !ready, repo: kingdom.repo, base: kingdom.base, pid: process.pid }));
-  }
 
-  // The same probes `npm run doctor` prints, structured — this is what a
-  // freshly installed app shows FIRST, since there is no terminal it can
-  // assume the user will open. Answerable whether or not the court is up:
-  // runDoctor() only shells out to CLI binaries, it never touches `kingdom`.
-  if (url.pathname === '/api/doctor') {
-    const report = await runDoctor({ repo: kingdom.repo ?? undefined });
-    return res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(report));
+
+  const read = READS[url.pathname];
+  if (read) {
+    const [status, body] = await read(url, req);
+    return res.writeHead(status, { 'content-type': 'application/json' })
+      .end(JSON.stringify(body));
   }
 
   if (url.pathname === '/stream') {
@@ -414,252 +670,17 @@ const handle = async (req, res) => {
     return;
   }
 
-  // ---- what the sovereign has been asked, and what they answered -------
-  // Pending AND decided. Approvals used to exist only while unanswered, so
-  // with an empty queue there was no sign the feature existed at all, and no
-  // record of what had already been agreed to.
-  if (url.pathname === '/api/approvals') {
-    // An approval whose body will not parse used to come through as `{}` —
-    // an entry with an id, a sender, and no `kind`. The throne room renders
-    // one with `TITLES[a.kind] ?? a.kind.toUpperCase()` (`ui/app.js`), so an
-    // undefined kind threw, and the throw took the whole approvals pass with
-    // it: one unreadable row and the sovereign stopped being shown ANY of
-    // them, including the ones still waiting on a decision. Drop what cannot
-    // be rendered, and say on stderr that it was dropped — a bad row must
-    // cost its own line and nothing else.
-    const rows = [];
-    for (const m of kingdom.bus.approvals()) {
-      const p = readApproval(m.body);
-      if (!p) {
-        process.stderr.write(`daemon: approval #${m.id} from ${m.sender} is unreadable — skipped\n`);
-        continue;
-      }
-      const resolved = kingdom.bus.get(`resolved:${m.id}`) ?? null;
-      const row = { id: m.id, ts: m.ts, from: m.sender, ...p, resolved };
-      if (p.kind === 'push') {
-        try { row.push = JSON.parse(kingdom.bus.get(`push:${m.id}`) ?? 'null'); } catch { /* card still renders */ }
-      }
-      // The cost of the crew being proposed, and ONLY while it is still
-      // being proposed. A forecast is a trimming aid and there is nothing
-      // left to trim once the summon is answered — which also keeps this
-      // off the 2,000 historical rows the loop above walks on every poll.
-      //
-      // Guarded because this is the one line here that reads the event log:
-      // AGENTS.md rule 4, degrade rather than wedge. A card with no number
-      // on it is a worse card; a card that never renders is a court the
-      // sovereign cannot answer at all.
-      if (!resolved && p.kind === 'summon') {
-        try {
-          row.forecast = kingdom.forecast(p.names);
-        } catch (e) {
-          process.stderr.write(`daemon: forecast for approval #${m.id} failed — ${e.message}\n`);
-        }
-      }
-      rows.push(row);
-    }
-    rows.reverse();
-    return res.writeHead(200, { 'content-type': 'application/json' })
-      .end(JSON.stringify({ ok: true, approvals: rows, pending: [...kingdom.approvals.keys()] }));
-  }
 
-  // ---- the shared task list --------------------------------------------
-  // The one question the panels could not answer: what is still outstanding.
-  // Approvals show what the sovereign must decide and the chronicle shows what
-  // was said, but an assignment nobody acted on appeared in neither.
-  if (url.pathname === '/api/tasks') {
-    const tasks = kingdom.bus.tasks();
-    return res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({
-      ok: true,
-      tasks,
-      open: tasks.filter((t) => t.state !== 'done').length,
-      available: kingdom.bus.availableTasks().length,
-    }));
-  }
 
-  if (url.pathname === '/api/campaigns') {
-    return res.writeHead(200, { 'content-type': 'application/json' })
-      .end(JSON.stringify({ ok: true, campaigns: kingdom.bus.campaigns() }));
-  }
 
-  // Sidebar boot: the list of threads for one member, without waiting on the
-  // stream. `?member=` defaults to the orchestrator — the only member Chat
-  // mode talks to today.
-  if (url.pathname === '/api/conversations') {
-    const member = url.searchParams.get('member') || kingdom.config.orchestrator.name;
-    return res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({
-      ok: true,
-      active: kingdom.activeConversation.get(member) ?? 'default',
-      conversations: kingdom.bus.conversations(member),
-    }));
-  }
 
-  // ---- the chronicle: everything that happened, in order ---------------
-  // The bus panel shows messages; a member's panel shows one transcript. There
-  // was no view of the court as a whole over time, and no way to find which of
-  // sixteen members said a thing. This is both.
-  if (url.pathname === '/api/chronicle') {
-    const q = (url.searchParams.get('q') ?? '').trim().toLowerCase();
-    const requestedLimit = Number(url.searchParams.get('limit') ?? 200);
-    const limit = Number.isSafeInteger(requestedLimit) ? Math.min(500, Math.max(1, requestedLimit)) : 200;
-    const kinds = new Set((url.searchParams.get('kinds') ?? 'summary,message,error,done')
-      .split(',').filter(Boolean));
-    const requestedCampaign = url.searchParams.get('campaign');
-    const campaign = requestedCampaign ? kingdom.bus.campaign(requestedCampaign) : null;
-    if (requestedCampaign && !campaign) {
-      return res.writeHead(404, { 'content-type': 'application/json' })
-        .end(JSON.stringify({ ok: false, error: 'No such campaign.' }));
-    }
-    const inCampaign = (id, start, end) => !campaign || (id > start && (end == null || id <= end));
-
-    const rows = [];
-
-    // Summaries and errors — one line per turn, which is the readable layer.
-    if (kinds.has('summary') || kinds.has('error')) {
-      for (const e of kingdom.bus.events({ limit: 20_000, tail: true })) {
-        if (!inCampaign(e.id, campaign?.eventStart, campaign?.eventEnd)) continue;
-        if (e.type !== 'summary' && e.type !== 'error') continue;
-        if (!kinds.has(e.type)) continue;
-        let p;
-        try { p = typeof e.payload === 'string' ? JSON.parse(e.payload) : e.payload; } catch { continue; }
-        const text = p?.text ?? p?.message ?? '';
-        if (!text) continue;
-        rows.push({ id: `e${e.id}`, ts: e.ts, who: e.agent, kind: e.type, text });
-      }
-    }
-
-    if (kinds.has('message') || kinds.has('done')) {
-      for (const m of kingdom.bus.history({ limit: 20_000, tail: true })) {
-        if (!inCampaign(m.id, campaign?.messageStart, campaign?.messageEnd)) continue;
-        const kind = m.kind === 'done' ? 'done' : 'message';
-        if (!kinds.has(kind)) continue;
-        // Approvals and notices are machinery, not narrative.
-        if (m.kind === 'approval' || m.kind === 'notice' || m.kind === 'milestone') continue;
-        rows.push({
-          id: `m${m.id}`, ts: m.ts, who: m.sender, to: m.recipient ?? null,
-          kind, text: m.body,
-        });
-      }
-    }
-
-    // A name matches BOTH directions. Searching "tester" and being shown only
-    // what the tester said — not what was said to them — is half an answer,
-    // and the half you usually wanted is the conversation.
-    const hits = q
-      ? rows.filter((r) => r.text.toLowerCase().includes(q)
-        || r.who.toLowerCase().includes(q)
-        || (r.to ?? '').toLowerCase().includes(q))
-      : rows;
-    hits.sort((a, b) => b.ts - a.ts);
-
-    return res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({
-      ok: true,
-      query: q,
-      campaign,
-      total: hits.length,
-      // Bodies can be enormous; the chronicle is for scanning, and the member's
-      // own panel is where you go for the whole thing.
-      rows: hits.slice(0, limit).map((r) => ({
-        ...r,
-        text: r.text.length > 400 ? `${r.text.slice(0, 400)}…` : r.text,
-      })),
-    }));
-  }
 
   // ---- what the court cost --------------------------------------------
   // Turn counts, REAL token totals and context per member.
-  if (url.pathname === '/api/metrics') {
-    return res.writeHead(200, { 'content-type': 'application/json' })
-      .end(JSON.stringify({ ok: true, ...metrics() }));
-  }
 
-  // ---- a peasant's work, before you merge it ---------------------------
-  if (url.pathname === '/api/diff') {
-    const peasant = url.searchParams.get('peasant');
-    const send = (code, o) =>
-      res.writeHead(code, { 'content-type': 'application/json' }).end(JSON.stringify(o));
-    // roleOf is a CLASSIFIER, not a membership test — it answers "peasant" for
-    // any name that is not the orchestrator or the briefer, including one that does not
-    // exist. specOf is the question actually being asked here.
-    if (!peasant || !kingdom.specOf(peasant) || kingdom.roleOf(peasant) !== 'peasant') {
-      return send(400, { ok: false, error: `"${peasant}" is not a peasant of this court.` });
-    }
-    if (!existsSync(worktreePath(kingdom.repo, peasant))) {
-      return send(200, { ok: true, peasant, none: true, reason: 'This member has no worktree yet.' });
-    }
-    try {
-      const file = url.searchParams.get('file');
-      const [stat, diff] = await Promise.all([
-        statOf(kingdom.repo, peasant, kingdom.base),
-        diffOf(kingdom.repo, peasant, kingdom.base, file),
-      ]);
-      // The diff is the expensive part, and an enormous one helps nobody read
-      // it — the panel offers per-file diffs for anything past this.
-      const CAP = 120_000;
-      return send(200, {
-        ok: true, peasant, base: kingdom.base, stat,
-        diff: diff.length > CAP ? `${diff.slice(0, CAP)}\n\n[truncated — open a single file to see the rest]` : diff,
-        truncated: diff.length > CAP,
-      });
-    } catch (e) {
-      return send(502, { ok: false, error: e.message });
-    }
-  }
 
-  // ---- who has unmerged work waiting ------------------------------------
-  // The overview's "ready to review" block. /api/diff answers this one member
-  // at a time and returns up to 120KB of patch to do it, which is the wrong
-  // shape for a list — the question here is only "who has anything", and the
-  // stat line is enough to answer it. The client parses it with the same
-  // parseStat() the diff panel already uses.
-  if (url.pathname === '/api/changes') {
-    const send = (code, o) =>
-      res.writeHead(code, { 'content-type': 'application/json' }).end(JSON.stringify(o));
-    const names = [...kingdom.summoned].filter((n) => kingdom.roleOf(n) === 'peasant');
-    const changed = [];
-    for (const peasant of names) {
-      if (!existsSync(worktreePath(kingdom.repo, peasant))) continue;
-      try {
-        const stat = await statOf(kingdom.repo, peasant, kingdom.base);
-        if (stat?.trim()) changed.push({ peasant, stat });
-      } catch {
-        // One member's worktree being mid-rebase must not blank the whole
-        // block — degrade, never wedge.
-      }
-    }
-    return send(200, { ok: true, base: kingdom.base, changed });
-  }
 
-  // ---- the sovereign's vault, from the throne room ---------------------
-  if (url.pathname === '/api/vault') {
-    const send = (code, o) =>
-      res.writeHead(code, { 'content-type': 'application/json' }).end(JSON.stringify(o));
-    const root = kingdom.config.vault || null;
-    if (!root) return send(200, { ok: true, configured: false, notes: [] });
 
-    const path = url.searchParams.get('path');
-    if (path) {
-      const body = readNote(root, path);
-      // readNote returns null both for "escaped the vault" and "no such note".
-      // The browser does not need to be told which.
-      return body === null
-        ? send(404, { ok: false, error: 'No such note.' })
-        : send(200, { ok: true, path, body });
-    }
-    const q = url.searchParams.get('q');
-    return send(200, {
-      ok: true, configured: true, query: q ?? '',
-      notes: q?.trim() ? searchVault(root, q) : recentNotes(root),
-    });
-  }
-
-  // ---- recall: search everything the court has said or done ------------
-  if (url.pathname === '/api/recall') {
-    const send = (code, o) =>
-      res.writeHead(code, { 'content-type': 'application/json' }).end(JSON.stringify(o));
-    const q = url.searchParams.get('q');
-    if (!q?.trim()) return send(200, { ok: true, query: '', hits: [] });
-    return send(200, { ok: true, query: q, hits: kingdom.bus.recall(q, { limit: 40 }) });
-  }
 
   // ---- automation workflows, n8n-style ----------------------------------
   // GET  /api/workflows            list them all

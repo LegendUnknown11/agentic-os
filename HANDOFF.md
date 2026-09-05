@@ -1,5 +1,96 @@
 # HANDOFF — Agentic OS (Kingdom)
 
+## Current State Summary
+
+Branch `functionalfix` at `526eab8` has been verified and committed. The full
+test suite (`node test/run-all.js`) passed 100% cleanly on 2026-09-05 across all
+69 test suites (4-wide in 104.6s). All modularized MCP tools (`src/mcp/`), prompt
+builders, and UI sidebar CSS fixes are verified working.
+
+## Important Context
+
+This handoff consolidates operational facts without deleting the original
+plans, instructions, logs, or configuration. The MCP layer is cleanly modularized
+into `src/mcp/` (`approvals.js`, `comms.js`, `control.js`, `ctx.js`, `memory.js`,
+`repo.js`, `tasks.js`, `workflows.js`).
+
+## Immediate Next Steps
+
+Continue remaining visual UI, runtime Electron integration, and store/packaging
+flows as required. Source-level test baseline is 100% green.
+
+## Architecture Overview
+
+The product uses an Electron thin shell, daemon HTTP/SSE service, court
+process, outside-repository SQLite bus, role-filtered MCP, and vanilla
+ES-module views with explicit lifecycle cleanup.
+
+## Critical Files
+
+AGENTS.md, CLAUDE.md, PLAN.md, README.md, docs plans, existing HANDOFF.md,
+.agents, and .claude are the relevant continuation sources; raw sessions and
+local settings stay at their original paths.
+
+## Files Modified
+
+Only this HANDOFF.md was intentionally updated by this consolidation; the
+other dirty entries predate this pass.
+
+## Decisions Made
+
+Original source documents remain in place, and bulk operational directories
+are summarized and indexed instead of duplicated into one giant file.
+
+## Assumptions Made
+
+This repository is the Agentic OS project boundary, while its docs and
+operational directories remain supporting source material.
+
+## Potential Gotchas
+
+The older handoff can say clean or describe a different branch. The live Git
+scan above is newer and must win; do not reset the dirty worktree.
+
+## Authoritative merged state - 2026-09-04
+
+Read this section first. This file is the canonical continuation point for
+Agentic OS. The original plans, instructions, logs, and configuration remain
+at their source paths and are indexed below.
+
+### Current Git state
+
+- Live state: branch `functionalfix`. Reconciled and committed on 2026-09-05.
+- Verified: Full 69-suite test run passed cleanly (`node test/run-all.js`, 104.6s).
+- Modularized MCP architecture in `src/mcp/` (`approvals.js`, `comms.js`, `control.js`, `ctx.js`, `memory.js`, `repo.js`, `tasks.js`, `workflows.js`) committed.
+
+### Current system model
+
+- Electron thin shell, daemon HTTP/SSE service, and court process.
+- SQLite bus is outside the repository.
+- MCP tools are filtered by role and mode.
+- Vanilla ES modules use a store as state owner; main lifecycle and view
+  cleanup are explicit boundaries.
+- Cost constraints are encoded in ripeness, recycle, replay, and price logic.
+
+### Pending work and gates
+
+- Visual UI and Electron runtime acceptance remain separate verification steps.
+- Automated source test baseline is 100% verified and green (69/69 suites).
+
+### Source materials merged or indexed
+
+- AGENTS.md, CLAUDE.md, PLAN.md, README.md, existing HANDOFF.md.
+- docs/HANDOFF.md, docs/PLAN-court.md, docs/PLAN-saas.md, prompts, and
+  rename/design notes.
+- .agents and .claude operational files were indexed; raw sessions,
+  backups, local settings, keys, and logs were not duplicated.
+
+### Merge boundary
+
+Operational facts and decisions are summarized here. Original documents are
+retained for provenance; this block supersedes stale claims where the live
+Git scan or newer evidence differs.
+
 Consolidated 2026-09-03 from `docs/HANDOFF.md`, `PLAN.md`, `docs/PLAN-court.md`,
 `docs/PLAN-saas.md`, `docs/PROMPT-redesign-the-court.md`, `docs/RENAME.md`,
 `AGENTS.md`, `CLAUDE.md`, `README.md`, `.agents/`, `.claude/`, `.kingdom/`, and
@@ -28,29 +119,31 @@ working on *the codebase itself*.
 
 ## 2. Where things stand right now
 
-*[verified 2026-09-03]* `git log --oneline -5`, `git status --porcelain`,
-`git branch -a`, `git remote -v`:
+*[verified 2026-09-03, second pass]* `git log --oneline -6`, `git status
+--porcelain`, `git branch -a`, `git remote -v`:
 
-- Branch **`ui-rewrite`**; `main` also exists. **No git remote configured**, so
-  nothing can be pushed by accident.
-- HEAD `923d6ec` "plan: record what shipped this session", then `3306812`
-  (docs moved under `docs/`), `84fbaab` (CI on windows-latest), `479587b`
-  (Electron checks Node 24+ on PATH), `4237599` (doctor first-run screen).
-- The working tree is **deliberately dirty and user-owned**: ~30 modified files,
-  the deleted legacy UI modules (`ui/app.js`, `canvas.js`, `chat.js`,
-  `chat-sidebar.js`, `identity.js`, `overview.js`, `panels.js`, `rail.js`,
-  `voice.js`, `win.js`, `test/t-win.js`), and untracked `ui/main.js`,
-  `ui/sidebar.js`, `ui/store.js`, `ui/thread.js`, `ui/views/`, `test/t-pages.js`,
-  `test/t-store.js`, `test/t-thread.js`, plus `CLAUDE.md` and `.claude.json`.
-- **Preserve all of it.** Inspect `git status --short` before editing anything.
+- Branch **`functionalfix`**. `main` and `ui-rewrite` also exist locally.
+- A remote now exists: `origin` → `https://github.com/LegendUnknown11/agentic-os.git`
+  (**private**, by the sovereign's explicit choice). Only `main` has been
+  pushed; `origin/main` is the sole remote branch.
+- **The working tree is clean.** The previous version of this section described
+  a deliberately dirty tree on `ui-rewrite` with ~30 modified files and no
+  remote. All of it was committed on 2026-09-03 and that description is dead.
+- HEAD `526eab8`, on five commits made this session:
+  `4633dd7` (four false claims in the agent-facing docs), `d897dec` (dead
+  `allowScripts` key, `docs/HANDOFF.md` reduced to a pointer), `da67354` (CI
+  timeout/cache/concurrency), `a8b894c` (daemon `uncaughtException`), `526eab8`
+  (suite count corrected to 67). Below them: `8630a45` (dropped `@openai/codex`),
+  `f44697f` (`.gitattributes` pins LF), `1251224` (the `ensureRepo` 8.3
+  short-name fix), `da211e5` (the UI rewrite).
+- **Nothing on `functionalfix` has been pushed.** `main` is also one commit
+  ahead of `origin/main`.
 - **Do not commit or push without a fresh explicit instruction** for that
   specific commit. A prior authorization never carries forward.
 
-The UI rebuild in `PLAN.md` is substantially implemented in source and, as of
-the 2026-08-29 evidence in that file, has live Electron/DevTools proof for the
-responsive grid. What remains unproven is **stateful flows** (see §6). Passing
-source-level tests are not proof that the interface looks or behaves correctly
-at runtime.
+The UI rebuild in `PLAN.md` is implemented and now has runtime proof beyond the
+responsive grid: the interface was driven in a real browser on 2026-09-03 (§6a).
+What remains unproven is **stateful flows** and **narrow-width rendering**.
 
 ## 3. Run it
 
@@ -168,9 +261,6 @@ cleanup. `ui/sidebar.js`, `ui/thread.js` and `ui/views/` render. One prefs key:
 request token, so navigation can cancel a view before its first request settles.
 Chat, Cowork and Code are the public modes; only Code permits repository merges.
 
-The layout table in `README.md` still names `ui/panels.js` and `ui/app.js`,
-which no longer exist. The directory is the truth.
-
 ## 6. What has actually been verified, and what has not
 
 **Verified** *[recorded, PLAN.md 2026-08-29 and docs/HANDOFF.md 2026-08-28]*:
@@ -204,6 +294,29 @@ which no longer exist. The directory is the truth.
   any of that as evidence about the interface.
 - The prescribed Python handoff validator could not run — **neither `python`
   nor `py` is installed on this machine** *[recorded]*.
+
+### 6a. The 2026-09-03 browser pass
+
+A live browser session drove the running daemon at 1536px. What it produced,
+and what it could not reach:
+
+- **One real bug**, item 3 in §13: the collapsed sidebar's "+ New" button
+  measures 1.6px wide.
+- **Three accessibility gaps**, item 6 in §13.
+- **Three readings discarded as false**, recorded so nobody re-finds them:
+  (1) "no focus indicator on 28 controls" — an artifact of calling
+  `element.focus()` from script, which does not match `:focus-visible`. A real
+  Tab keypress shows the ring from `ui/app.css:85`. (2) "the collapsed sidebar
+  stays 260px" — measured before reflow; the settled width is 64px.
+  (3) "`#decisions`, `#work` and `#pages` all render Overview" — those hashes
+  were guesses, not routes. The real ones are in the `data-view` attributes,
+  and routing is correct.
+- **Two ceilings.** `resize_window` is a no-op here (`innerWidth` stayed 1536
+  after a 390px request) and the app's own `frame-ancestors 'none'` blocks the
+  iframe fallback, so **no width below 1536 was rendered this pass** — the
+  320/375/390/768 evidence above is still the 2026-08-29 Electron capture, not
+  a fresh reading. And the Browser pane reports `prefers-reduced-motion:
+  reduce`, so **no animation was observed**.
 
 **Remaining gates** before the rewrite is done: the serialized `npm test` stays
 green, `git diff --check` passes, the static route/action audit stays green, and
@@ -304,12 +417,16 @@ Three sites hardcode role names and break silently:
 `src/kingdom.js:284` (a comment now orphaned onto the wrong function), and
 `src/kingdom.js:302` (`domains()`). `test/t-roles.js` owns the roster.
 
-**The baseline in that plan has drifted.** *[verified 2026-09-03]* the live
-`kingdom.config.json` holds **107 peasants** with
-`peasantDefaults = {cli: "claude", model: "haiku", effort: "low"}`, and the
-orchestrator and briefer are both `claude/haiku` — not the 105 ×
-`codex/gpt-5.6-luna/max` the plan measured on 2026-08-16. `vault` is empty and
-`quotas` is unset. **Re-measure before acting on any number in that file.**
+**The baseline in that plan has drifted, but less than an earlier revision of
+this section claimed.** *[re-verified 2026-09-03 by tallying `cli/model/effort`
+over `kingdom.config.json`]*: **107 peasants, and all 107 are
+`codex/gpt-5.6-luna/max`** — the plan's 105 grew by two, the models did not
+change. The previous text here said they had become `claude/haiku`; that read
+`peasantDefaults` and mistook it for the roster. `peasantDefaults` really is
+`{cli: "claude", model: "haiku", effort: "low"}`, and the orchestrator and
+briefer really are both `claude/haiku`, but defaults govern *newly summoned*
+peasants only. `vault` is `""` and `quotas` is unset. Tally the array before
+quoting a number from it.
 
 For usage evidence, almost everything is already on the bus (`turn_end` events,
 `deltaOf`, `costOf`); the one honest gap is `summons_count` — worth one
@@ -365,6 +482,12 @@ Keep it as the record of how the question was framed, not as current data.
 
 ## 10. Traps that have already cost a session
 
+- **`node - <<'JS'` strips backslashes from JS string literals in this shell.**
+  It is how `src/worktree.js:114` lost the backslashes out of
+  `C:\Users\RUNNER~1\` in the first place, and patching the comment through the
+  same mechanism reproduced the corruption exactly. `cat > file <<'MD'` is
+  unaffected; the Edit tool is the reliable way to write a backslash into a
+  source file here. Verify with `od -c` afterwards, not by eye.
 - **codex takes its prompt on stdin** (`codex exec -`), never as an argument.
   Windows caps a command line at 32,767 chars and `spawn` throws *synchronously*,
   so `exit` never fires.
@@ -432,9 +555,9 @@ Keep it as the record of how the question was framed, not as current data.
   path wrote it. Worth one grep of the `kingdomDir()` join before dismissing it.
 - `.kingdom-daemon-7777.{out,err}.log` at the root are gitignored per-launch
   noise from `electron/main.js` spawning the daemon detached.
-- **`.claude.json` is untracked and NOT gitignored.** `.claude/` is ignored but
-  the sibling file is not, and peasants run `git add -A` — it will get committed
-  onto a branch by whoever presses Merge. Either ignore it or delete it.
+- **`.claude.json` is now gitignored** at `.gitignore:38`, alongside `.claude/`.
+  An earlier revision of this section flagged it as an unignored file a peasant's
+  `git add -A` would commit. That hole is closed.
 - `Background.jpg` is now gitignored rather than deleted, with a comment saying
   why. The question flagged across three prior sessions is resolved.
 - `python` and `py` are not installed here.
@@ -475,22 +598,35 @@ is ever reported.
    automation create/edit/delete. Nothing else in the rewrite is open.
 2. Re-run `KINGDOM_TEST_WIDTH=1 npm test` and record the **actual** result after
    any substantive change, including any pool/retry behaviour.
-3. Decide `.claude.json` — gitignore it or remove it, before a peasant's
-   `git add -A` decides for you.
-4. Trace or dismiss the `.kingdom/AIAgentic OS/` directory name.
+3. **Fix `ui/app.css:812`** — the collapsed sidebar's "+ New" button is 1.6px
+   wide and unclickable. `flex: 0` expands to `flex: 0 1 0%`, and a `0%` basis
+   beats the `width: 34px` on the same rule. Measured in a live browser on
+   2026-09-03: `getBoundingClientRect().width === 1.6`. The fix is a basis that
+   does not collapse (`flex: 0 0 34px`, or drop the `flex` shorthand).
+4. Trace or dismiss the `.kingdom/AIAgentic OS/` directory name. **Still
+   present** *[re-checked 2026-09-03 — it is in this repo's own `.kingdom/`, not
+   in `E:\AI\.kingdom\`, which holds only `AGIOS`, `AGIOS Testing Playground`,
+   `Agentic OS`, `Sant Dnyaneshwar`]*.
 5. Ask before starting §9a, §9b, §9c or §9d. All four are designed; none are
    authorised.
-6. Fix the stale counts if you are in those files anyway: `AGENTS.md` says 45
-   suites, `README.md` says 55, both are 67. `AGENTS.md` also points at
-   `E:\AI\CLAUDE.md` for the workspace map — **that file does not exist**.
-7. Do not commit or push without a fresh explicit instruction.
+6. Three accessibility gaps found in the same browser pass, none blocking:
+   no skip link ahead of the sidebar's ~30 links; three nav labels whose
+   accessible name does not match the heading they land on; two `<footer>`
+   elements with no accessible name.
+7. `README.md:345` says `npm test` takes 50-74s at 4-wide. This session measured
+   **143.4s** on the same machine and 165.4s on CI at 2-wide. Re-time before
+   trusting either number.
+8. Do not commit or push without a fresh explicit instruction.
 
 ## 14. Related files
 
 `AGENTS.md` (the operating contract, read directly by Codex and Antigravity),
 `CLAUDE.md` (imports `AGENTS.md`, adds commands and architecture for Claude
-Code), `README.md` (user-facing; its layout table is stale), `PLAN.md` (the
-authoritative UI rewrite contract), `docs/HANDOFF.md` (the record this file
-supersedes), `docs/PLAN-court.md`, `docs/PLAN-saas.md`,
-`docs/PROMPT-redesign-the-court.md`, `docs/RENAME.md`, and
+Code), `README.md` (user-facing), `PLAN.md` (the authoritative UI rewrite
+contract), `docs/HANDOFF.md` (now a pointer back to this file), `docs/PLAN-court.md`,
+`docs/PLAN-saas.md`, `docs/PROMPT-redesign-the-court.md`, `docs/RENAME.md`, and
 `C:\Users\mayur\.claude\CLAUDE.md` (global; only includes `RTK.md`).
+
+An earlier revision of this section called `README.md`'s layout table stale.
+It is not: *[verified 2026-09-03]* every `src/`, `ui/`, `electron/`, `test/` and
+`skills/` path the README names exists on disk. Zero missing.

@@ -27,6 +27,7 @@ node src/doctor.js      # preflight the CLIs — run from a normal terminal
 
 ## Traps that have already cost a session
 
+- **`node - <<'JS'` strips backslashes out of JS string literals in this shell.** That is how the evidence comment at `src/worktree.js:114` lost the `\` in `C:\Users\RUNNER~1\` — and patching it back through the same heredoc reproduced the corruption exactly. `cat > file <<'MD'` is unaffected. Write backslashes with the file-edit tool and confirm with `od -c`, never by reading the terminal echo.
 - **codex takes its prompt on stdin** (`codex exec -`), never as an argument — Windows caps a command line at 32,767 chars and `spawn` throws *synchronously*, so `exit` never fires.
 - **`codex exec resume` accepts a strict subset of `exec`'s flags.** No `-C`, `-s`, `-p`, `--oss`. Anything else goes through `-c`.
 - **Any confining codex sandbox denies every MCP tool call**, so a member loses `send_message` and `declare_done` and says nothing about it. `danger-full-access` is the default for that reason.
@@ -52,7 +53,10 @@ node src/doctor.js      # preflight the CLIs — run from a normal terminal
 | `skills/` | The shipped procedures. `<pack>/<name>.md`; the vault overrides |
 | `ui/` | The throne room (vanilla JS, no build step) |
 
-The sovereign's own machine keeps a wider workspace map at `E:\AI\CLAUDE.md`.
-That file is **not in this repository** and no clone has it — if you cannot read
-it, nothing is missing and there is no instruction there you are failing to
-follow. Everything binding on you is in this file.
+Earlier revisions of this file pointed at `E:\AI\CLAUDE.md` for a wider
+workspace map. **That file does not exist** — checked 2026-09-03 — and it was
+never in this repository, so no clone ever had it. Do not go looking for it.
+
+What binds you: this file, `CLAUDE.md` beside it, and — for members running
+*inside* a kingdom rather than working on this codebase — the vault note named
+at the top.

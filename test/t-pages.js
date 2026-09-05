@@ -378,7 +378,10 @@ a.match(threadSource, /model\.setAttribute\('aria-label', 'Model'\)/, 'thread mo
 a.match(threadSource, /effort\.setAttribute\('aria-label', 'Reasoning effort'\)/, 'thread effort control must have an accessible name');
 a.match(threadSource, /Rest requested|Wake requested/, 'successful wake and sleep actions must remain visible before SSE catches up');
 a.match(threadSource, /previousMessages\.scrollHeight - previousMessages\.scrollTop/, 'live thread updates must not steal the reader\'s scroll position');
-a.match(threadSource, /currentState\.ready === false[\s\S]*Loading conversation/, 'Thread must distinguish the first snapshot from an empty transcript');
+// Deliberately not anchored to a variable name: the empty-state branch moved
+// from render()'s closure into threadMessages(state, ...) and this assertion
+// failed on the rename alone, while the behaviour it guards was untouched.
+a.match(threadSource, /\.ready === false[\s\S]*Loading conversation/, 'Thread must distinguish the first snapshot from an empty transcript');
 a.match(threadSource, /message-meta/, 'Thread messages must identify their sender and time');
 a.match(threadSource, /thread-control-label/, 'Thread model controls must have visible labels');
 a.match(threadSource, /approval-card pending/, 'Inline decisions must retain a pending visual state');

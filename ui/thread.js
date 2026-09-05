@@ -282,6 +282,137 @@ function renderApprovalCard(card, approval, questionPicks, questionOthers) {
 }
 
 /** Mount one flat transcript for either the user-facing chat or a team member. */
+/**
+ * The three DOM regions render() used to build inline.
+ *
+ * They are top level and take everything they read as arguments, so each can be
+ * reasoned about — and called — without the 13 mutable locals mountThread holds.
+ * render() keeps what genuinely belongs to the closure: draft capture, scroll
+ * restoration, and the key bookkeeping around them.
+ */
+function threadHeader(state, { name, member, sovereign, ready, label, conversationId }) {
+  const header = node('header', 'thread-header');
+  const heading = node('div', 'thread-heading');
+  heading.append(node('h1', '', `Chat with ${label}`));
+  const subtitle = [!sovereign && (member.title || member.description), workContext(state, conversationId)]
+    .filter(Boolean).join(' · ');
+  heading.append(node('p', 'thread-subtitle', subtitle));
+  const controls = node('div', 'thread-controls');
+  const model = node('select', 'thread-model');
+  model.dataset.control = 'model';
+  model.title = 'Model';
+  model.setAttribute('aria-label', 'Model');
+  fillModel(model, state, member);
+  model.disabled = !ready;
+  const modelControl = node('label', 'thread-control');
+  modelControl.append(node('span', 'thread-control-label', 'Model'), model);
+  controls.append(modelControl);
+  const effort = node('select', 'thread-effort');
+  effort.dataset.control = 'effort';
+  effort.title = 'Reasoning effort';
+  effort.setAttribute('aria-label', 'Reasoning effort');
+  fillEffort(effort, state, member);
+  effort.disabled = !ready || effort.disabled;
+  const effortControl = node('label', 'thread-control');
+  effortControl.append(node('span', 'thread-control-label', 'Effort'), effort);
+  controls.append(effortControl);
+  if (!sovereign) {
+    const power = node('button', 'thread-power', member.awake ? 'Sleep' : 'Wake');
+    power.type = 'button';
+    power.dataset.action = member.awake ? 'sleep' : 'wake';
+    power.dataset.name = name;
+    power.title = member.awake ? 'Stop this agent while keeping its session' : 'Wake this agent';
+    power.disabled = !ready;
+    controls.append(power);
+  }
+  header.append(heading, controls);
+  return header;
+}
+
+// Prunes questionOthers and submittedApprovals as a side effect: an approval
+// that has left the state must not keep its typed "other" text or its disabled
+// flag alive for whatever approval reuses the id next.
+function threadMessages(state, { name, sovereign, conversationId, questionPicks, questionOthers, submittedApprovals }) {
+  const messages = node('section', 'thread-messages');
+  const entries = entriesFor(state, name, conversationId);
+  for (const entry of entries) {
+    const row = node('article', `thread-message ${entry.mine ? 'mine' : 'theirs'}${entry.failed ? ' failed' : ''}`);
+    row.append(node('div', 'message-meta', `${entry.mine ? 'You' : displayName(entry.sender ?? name)}${entry.ts ? ` · ${date(entry.ts)}` : ''}`));
+    const body = node('div', 'message-body markdown');
+    const markdown = !entry.mine && (entry.kind === 'text' || entry.kind === 'summary' || !entry.kind);
+    if (markdown) body.innerHTML = mdToHtml(entry.text);
+    else body.textContent = entry.text;
+    if (!body.textContent && !body.innerHTML) body.textContent = '…';
+    row.append(body);
+    appendAttachments(row, entry.attachments);
+    messages.append(row);
+  }
+  const approvals = approvalsOf(state).filter((approval) => pendingApproval(approval, name, sovereign));
+  const liveApprovalIds = new Set(approvals.map((approval) => String(approval.id)));
+  for (const id of submittedApprovals.keys()) if (!liveApprovalIds.has(id)) submittedApprovals.delete(id);
+  for (const key of questionOthers.keys()) if (!liveApprovalIds.has(key.split(':', 1)[0])) questionOthers.delete(key);
+  for (const approval of approvals) {
+    const card = node('article');
+    renderApprovalCard(card, approval, questionPicks, questionOthers);
+    const submitted = submittedApprovals.get(String(approval.id));
+    if (submitted) {
+      card.dataset.submitted = '1';
+      card.querySelectorAll('button, input').forEach((control) => { control.disabled = true; });
+      card.append(node('div', 'approval-detail', submitted));
+    }
+    messages.append(card);
+  }
+  if (!entries.length && !approvals.length) messages.append(node('div', 'thread-empty', state.ready === false
+    ? 'Loading conversation…' : sovereign ? 'Start a conversation.' : 'No transcript yet.'));
+  return messages;
+}
+
+function threadComposer({ name, label, conversationId, pendingFiles, sending, uploading, ready }) {
+  const composer = node('form', 'thread-composer');
+  composer.dataset.conversation = conversationId;
+  composer.dataset.recipient = name;
+  composer.setAttribute('aria-label', `Message ${label}`);
+  composer.setAttribute('aria-busy', String(sending || uploading));
+  const attachmentRow = node('div', 'thread-attachments');
+  attachmentRow.hidden = !pendingFiles.length;
+  for (const file of pendingFiles) {
+    const chip = node('span', 'attachment-chip');
+    chip.append(node('span', 'attachment-name', file.name));
+    const remove = node('button', '', '×');
+    remove.type = 'button';
+    remove.setAttribute('aria-label', `Remove ${file.name}`);
+    remove.dataset.action = 'remove-attachment';
+    remove.dataset.attachment = file.name;
+    chip.append(remove);
+    attachmentRow.append(chip);
+  }
+  const inputRow = node('div', 'thread-input-row');
+  const attach = node('button', 'thread-attach', 'Attach');
+  attach.type = 'button';
+  attach.dataset.action = 'attach';
+  attach.disabled = sending || uploading || !ready;
+  attach.textContent = uploading ? 'Uploading…' : 'Attach';
+  attach.title = `Attach a file for ${label}`;
+  const field = node('textarea', 'thread-input');
+  field.name = 'text';
+  field.rows = 1;
+  field.placeholder = `Message ${label}…`;
+  field.setAttribute('aria-label', `Message ${label}`);
+  field.disabled = sending || !ready;
+  field.autocomplete = 'off';
+  const sendButton = node('button', 'thread-send', 'Send');
+  sendButton.type = 'submit';
+  sendButton.disabled = sending || uploading || !ready;
+  sendButton.title = `Send to ${label}`;
+  if (sending) sendButton.textContent = 'Sending…';
+  else if (uploading) sendButton.textContent = 'Uploading…';
+  inputRow.append(attach, field, sendButton);
+  const skills = node('div', 'skill-menu');
+  skills.hidden = true;
+  composer.append(attachmentRow, inputRow, skills);
+  return composer;
+}
+
 export function mountThread(root, options = {}) {
   const post = options.post ?? storePost;
   let currentState = options.state ?? storeState;
@@ -351,119 +482,16 @@ export function mountThread(root, options = {}) {
     root.dataset.conversation = conversationId;
     root.setAttribute('aria-busy', String(sending || uploading));
 
-    const header = node('header', 'thread-header');
-    const heading = node('div', 'thread-heading');
-    heading.append(node('h1', '', `Chat with ${label}`));
-    const subtitle = [!sovereign && (member.title || member.description), workContext(currentState, conversationId)]
-      .filter(Boolean).join(' · ');
-    heading.append(node('p', 'thread-subtitle', subtitle));
-    const controls = node('div', 'thread-controls');
-    const model = node('select', 'thread-model');
-    model.dataset.control = 'model';
-    model.title = 'Model';
-    model.setAttribute('aria-label', 'Model');
-    fillModel(model, currentState, member);
-    model.disabled = !ready;
-    const modelControl = node('label', 'thread-control');
-    modelControl.append(node('span', 'thread-control-label', 'Model'), model);
-    controls.append(modelControl);
-    const effort = node('select', 'thread-effort');
-    effort.dataset.control = 'effort';
-    effort.title = 'Reasoning effort';
-    effort.setAttribute('aria-label', 'Reasoning effort');
-    fillEffort(effort, currentState, member);
-    effort.disabled = !ready || effort.disabled;
-    const effortControl = node('label', 'thread-control');
-    effortControl.append(node('span', 'thread-control-label', 'Effort'), effort);
-    controls.append(effortControl);
-    if (!sovereign) {
-      const power = node('button', 'thread-power', member.awake ? 'Sleep' : 'Wake');
-      power.type = 'button';
-      power.dataset.action = member.awake ? 'sleep' : 'wake';
-      power.dataset.name = name;
-      power.title = member.awake ? 'Stop this agent while keeping its session' : 'Wake this agent';
-      power.disabled = !ready;
-      controls.append(power);
-    }
-    header.append(heading, controls);
-
-    const messages = node('section', 'thread-messages');
-    const entries = entriesFor(currentState, name, conversationId);
-    for (const entry of entries) {
-      const row = node('article', `thread-message ${entry.mine ? 'mine' : 'theirs'}${entry.failed ? ' failed' : ''}`);
-      row.append(node('div', 'message-meta', `${entry.mine ? 'You' : displayName(entry.sender ?? name)}${entry.ts ? ` · ${date(entry.ts)}` : ''}`));
-      const body = node('div', 'message-body markdown');
-      const markdown = !entry.mine && (entry.kind === 'text' || entry.kind === 'summary' || !entry.kind);
-      if (markdown) body.innerHTML = mdToHtml(entry.text);
-      else body.textContent = entry.text;
-      if (!body.textContent && !body.innerHTML) body.textContent = '…';
-      row.append(body);
-      appendAttachments(row, entry.attachments);
-      messages.append(row);
-    }
-    const approvals = approvalsOf(currentState).filter((approval) => pendingApproval(approval, name, sovereign));
-    const liveApprovalIds = new Set(approvals.map((approval) => String(approval.id)));
-    for (const id of submittedApprovals.keys()) if (!liveApprovalIds.has(id)) submittedApprovals.delete(id);
-    for (const key of questionOthers.keys()) if (!liveApprovalIds.has(key.split(':', 1)[0])) questionOthers.delete(key);
-    for (const approval of approvals) {
-      const card = node('article');
-      renderApprovalCard(card, approval, questionPicks, questionOthers);
-      const submitted = submittedApprovals.get(String(approval.id));
-      if (submitted) {
-        card.dataset.submitted = '1';
-        card.querySelectorAll('button, input').forEach((control) => { control.disabled = true; });
-        card.append(node('div', 'approval-detail', submitted));
-      }
-      messages.append(card);
-    }
-    if (!entries.length && !approvals.length) messages.append(node('div', 'thread-empty', currentState.ready === false
-      ? 'Loading conversation…' : sovereign ? 'Start a conversation.' : 'No transcript yet.'));
-
-    const composer = node('form', 'thread-composer');
-    composer.dataset.conversation = conversationId;
-    composer.dataset.recipient = name;
-    composer.setAttribute('aria-label', `Message ${label}`);
-    composer.setAttribute('aria-busy', String(sending || uploading));
-    const attachmentRow = node('div', 'thread-attachments');
-    attachmentRow.hidden = !pendingFiles.length;
-    for (const file of pendingFiles) {
-      const chip = node('span', 'attachment-chip');
-      chip.append(node('span', 'attachment-name', file.name));
-      const remove = node('button', '', '×');
-      remove.type = 'button';
-      remove.setAttribute('aria-label', `Remove ${file.name}`);
-      remove.dataset.action = 'remove-attachment';
-      remove.dataset.attachment = file.name;
-      chip.append(remove);
-      attachmentRow.append(chip);
-    }
-    const inputRow = node('div', 'thread-input-row');
-    const attach = node('button', 'thread-attach', 'Attach');
-    attach.type = 'button';
-    attach.dataset.action = 'attach';
-    attach.disabled = sending || uploading || !ready;
-    attach.textContent = uploading ? 'Uploading…' : 'Attach';
-    attach.title = `Attach a file for ${label}`;
-    const input = node('textarea', 'thread-input');
-    input.name = 'text';
-    input.rows = 1;
-    input.placeholder = `Message ${label}…`;
-    input.setAttribute('aria-label', `Message ${label}`);
-    input.disabled = sending || !ready;
-    input.autocomplete = 'off';
-    const sendButton = node('button', 'thread-send', 'Send');
-    sendButton.type = 'submit';
-    sendButton.disabled = sending || uploading || !ready;
-    sendButton.title = `Send to ${label}`;
-    if (sending) sendButton.textContent = 'Sending…';
-    else if (uploading) sendButton.textContent = 'Uploading…';
-    inputRow.append(attach, input, sendButton);
-    const skills = node('div', 'skill-menu');
-    skills.hidden = true;
-    composer.append(attachmentRow, inputRow, skills);
+    const header = threadHeader(currentState, { name, member, sovereign, ready, label, conversationId });
+    const messages = threadMessages(currentState, {
+      name, sovereign, conversationId, questionPicks, questionOthers, submittedApprovals,
+    });
+    const composer = threadComposer({
+      name, label, conversationId, pendingFiles, sending, uploading, ready,
+    });
     root.append(header, messages);
     composerHost.append(composer);
-    restoreDraft(input, key);
+    restoreDraft(composer.querySelector('.thread-input'), key);
     renderedDraftKey = key;
     messages.scrollTop = stickToBottom ? messages.scrollHeight : previousScrollTop;
   }
@@ -800,6 +828,5 @@ export function mountThread(root, options = {}) {
   };
 }
 
-export const mount = mountThread;
 export const renderThread = (root, state = storeState, options = {}) => mountThread(root, { ...options, state });
 export { entriesFor };
