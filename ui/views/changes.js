@@ -2,6 +2,7 @@ import {
   h, page, section, empty, note, button, membersOf, displayName, modeAllows,
   get, post, subscribe, setView, editing,
 } from './util.js';
+import { renderRunReview } from '../run.js';
 
 const rows = (value, key = 'rows') => Array.isArray(value) ? value : value?.[key] ?? [];
 const apiError = (result, fallback) => result?.ok === false ? result.error ?? fallback : null;
@@ -148,7 +149,7 @@ function diffDetail(state, root, peasant, file = '') {
     root.replaceChildren(page('Changes', `${displayName(peasant)} · ${state.base ?? 'base'}`), h('div', { class: 'button-row' }, note(error?.message ?? 'Could not read the diff.', 'danger'), button('Retry', () => diffDetail(state, root, peasant, file), 'primary')));
   });
 }
-export function renderChanges(state, root) {
+export function renderChanges(state, root, options = {}) {
   root.replaceChildren();
   const allChanged = rows(state.changes, 'changed');
   const changed = allChanged.filter((change) => changeStage(state, change.peasant, change.stat).status !== 'merged');
@@ -159,16 +160,18 @@ export function renderChanges(state, root) {
     const retry = button('Retry', async () => {
       state.changesLoading = true;
       state.changesError = null;
-      renderChanges(state, root);
+      renderChanges(state, root, options);
       await refresh(state, 'changes', '/api/changes');
       if (!root.isConnected) return;
       state.changesLoading = false;
-      renderChanges(state, root);
+      renderChanges(state, root, options);
     }, 'primary');
     shell.append(h('div', { class: 'button-row' }, note(loadFailure, 'danger'), retry));
     if (!state.changes || state.changes?.ok === false) { root.append(shell); return; }
   }
   shell.append(flowNote());
+  const finalReview = renderRunReview(state, { post: options.post ?? post, toast: options.toast });
+  if (finalReview) shell.append(finalReview);
   const release = section('Release');
   const releaseState = pushState(state, Boolean(allChanged.length));
   if (releaseState === 'unavailable') {
@@ -217,12 +220,13 @@ export function renderChanges(state, root) {
     state, root, peasant, allChanged.find((change) => change.peasant === peasant), life))));
   root.append(shell);
 }
-export function mountChanges(state, root) {
+export function mountChanges(state, root, options = {}) {
   const token = requestToken(state, 'changesRequest');
   state.changesLoading = true;
   state.changesError = null;
-  renderChanges(state, root);
-  const off = bind(state, root, renderChanges);
+  const render = (next, host) => renderChanges(next, host, options);
+  render(state, root);
+  const off = bind(state, root, render);
   void get('/api/changes').then((data) => {
     if (root.isConnected === false || state.changesRequest !== token) {
       if (state.changesRequest === token) state.changesLoading = false;
@@ -231,12 +235,12 @@ export function mountChanges(state, root) {
     state.changesLoading = false;
     if (data?.ok === false) state.changesError = apiError(data, 'Could not load changes.');
     else { state.changes = data; state.changesError = null; }
-    renderChanges(state, root);
+    render(state, root);
   }).catch((error) => {
     if (root.isConnected === false || state.changesRequest !== token) return;
     state.changesLoading = false;
     state.changesError = error?.message ?? 'Could not load changes.';
-    renderChanges(state, root);
+    render(state, root);
   });
   return () => { requestToken(state, 'changesRequest'); off?.(); };
 }

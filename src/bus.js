@@ -4,6 +4,17 @@ import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 
+export const RUN_STATES = new Set([
+  'planning', 'running', 'paused', 'blocked', 'verifying',
+  'ready_for_review', 'completed', 'cancelled',
+]);
+
+const RUN_ACTIVE_STATES = new Set(['planning', 'running', 'paused', 'blocked', 'verifying', 'ready_for_review']);
+const json = (value, fallback) => JSON.stringify(value ?? fallback);
+const parsed = (value, fallback) => {
+  try { return value == null ? fallback : JSON.parse(value); } catch { return fallback; }
+};
+
 const SCHEMA = `
 create table if not exists messages (
   id        integer primary key autoincrement,
@@ -13,7 +24,8 @@ create table if not exists messages (
   kind      text    not null,           -- message | escalation | done | brief | system
   body      text    not null,
   attachments text not null default '[]', -- json array of uploaded asset references
-  conversation_id text not null default 'default'
+  conversation_id text not null default 'default',
+  run_id    text
 );
 create table if not exists events (
   id      integer primary key autoincrement,
@@ -47,7 +59,30 @@ create table if not exists tasks (
   needs_plan integer not null default 0,    -- 1 = the plan must be approved before work
   plan       text,
   by         text    not null,
-  done_ts    integer
+  done_ts    integer,
+  run_id     text
+);
+create table if not exists runs (
+  id                    text primary key,
+  created_ts            integer not null,
+  updated_ts            integer not null,
+  state                 text not null,
+  objective             text not null default '',
+  source_snapshot      text not null default '{}',
+  approved_plan        text not null default '{}',
+  acceptance_criteria  text not null default '[]',
+  allowed_models       text not null default '[]',
+  task_ids             text not null default '[]',
+  recovery_history     text not null default '[]',
+  verification_evidence text not null default '[]',
+  baseline_revision     text,
+  branch                text,
+  approved_ts           integer,
+  final_approved        integer not null default 0,
+  final_approved_ts     integer,
+  applied_ts            integer,
+  completed_ts          integer,
+  cancelled_ts          integer
 );
 create table if not exists campaigns (
   id            integer primary key autoincrement,
@@ -94,6 +129,12 @@ create index if not exists idx_msg_conv on messages(conversation_id, id);
 create index if not exists idx_evt_conv on events(conversation_id, id);
 `;
 
+const RUN_INDEXES = `
+create index if not exists idx_msg_run on messages(run_id, id);
+create index if not exists idx_task_run on tasks(run_id, id);
+create index if not exists idx_run_state on runs(state, updated_ts);
+`;
+
 // Attachments are references to files already accepted by the asset endpoint,
 // never file contents. Keep only the small public shape needed by the thread;
 // rejecting separators also keeps a malformed row from becoming a traversal
@@ -135,8 +176,10 @@ export class Bus {
     this.#rebuildTranscriptSearch();
     this.#migrateConversations();
     this.#migrateMessageAttachments();
+    this.#migrateRunAssociations();
     this.#migrateApprovals();
     this.db.exec(CONVERSATION_INDEXES);
+    this.db.exec(RUN_INDEXES);
   }
 
   /** Existing courts get one atomic FTS rebuild; new rows stay current by trigger. */
@@ -201,32 +244,64 @@ export class Bus {
     }
   }
 
+  /** Add run storage and nullable foreign-key-like columns without rewriting old rows. */
+  #migrateRunAssociations() {
+    this.db.exec('begin immediate');
+    try {
+      if (this.get('schema:runs:v1') !== '1') {
+        const columns = (table) => this.db.prepare(`pragma table_info(${table})`).all().map((c) => c.name);
+        if (!columns('messages').includes('run_id')) this.db.exec('alter table messages add column run_id text');
+        if (!columns('tasks').includes('run_id')) this.db.exec('alter table tasks add column run_id text');
+        const runColumns = columns('runs');
+        if (!runColumns.includes('final_approved')) this.db.exec('alter table runs add column final_approved integer not null default 0');
+        if (!runColumns.includes('final_approved_ts')) this.db.exec('alter table runs add column final_approved_ts integer');
+        this.set('schema:runs:v1', '1');
+      }
+      this.db.exec('commit');
+    } catch (e) {
+      this.db.exec('rollback');
+      throw e;
+    }
+  }
+
   #messageRows(rows) {
     return rows.map((row) => ({ ...row, attachments: readAttachments(row.attachments) }));
   }
 
   #migrateApprovals() {
-    for (const row of this.db.prepare("select id, ts, sender, recipient, body, conversation_id from messages where kind = 'approval'").all()) {
-      if (!this.get(`approval:${row.id}`)) this.set(`approval:${row.id}`, JSON.stringify(row));
+    for (const row of this.db.prepare("select id, ts, sender, recipient, body, conversation_id, run_id from messages where kind = 'approval'").all()) {
+      if (!this.get(`approval:${row.id}`)) this.set(`approval:${row.id}`, JSON.stringify({ ...row, runId: row.run_id ?? null }));
     }
   }
 
   // --- messages -------------------------------------------------------
 
   /** recipient=null broadcasts. Returns the new message id. */
-  post(sender, recipient, body, kind = 'message', conversationId = 'default', attachments = []) {
+  post(sender, recipient, body, kind = 'message', conversationId = 'default', attachments = [], runId = null) {
     const ts = Date.now();
+    // Approval records created during an active run inherit it; ordinary court
+    // traffic remains unassociated so the old transcript keeps its meaning.
+    if (kind === 'approval' && runId == null) runId = this.currentRun()?.id ?? null;
     const { lastInsertRowid } = this.db
-      .prepare('insert into messages (ts, sender, recipient, kind, body, attachments, conversation_id) values (?,?,?,?,?,?,?)')
-      .run(ts, sender, recipient, kind, body, JSON.stringify(cleanAttachments(attachments)), conversationId);
+      .prepare('insert into messages (ts, sender, recipient, kind, body, attachments, conversation_id, run_id) values (?,?,?,?,?,?,?,?)')
+      .run(ts, sender, recipient, kind, body, JSON.stringify(cleanAttachments(attachments)), conversationId, runId);
     const id = Number(lastInsertRowid);
-    if (kind === 'approval') this.set(`approval:${id}`, JSON.stringify({ id, ts, sender, recipient, body, conversation_id: conversationId }));
+    if (kind === 'approval') {
+      this.set(`approval:${id}`, JSON.stringify({
+        id, ts, sender, recipient, body, conversation_id: conversationId, runId,
+      }));
+    }
     return id;
   }
 
   approvals({ since = 0 } = {}) {
     return this.db.prepare("select v from state where k like 'approval:%' and cast(substr(k, 10) as integer) > ? order by cast(substr(k, 10) as integer)")
-      .all(since).flatMap(({ v }) => { try { return [JSON.parse(v)]; } catch { return []; } });
+      .all(since).flatMap(({ v }) => {
+        try {
+          const row = JSON.parse(v);
+          return [{ ...row, runId: row.runId ?? row.run_id ?? null }];
+        } catch { return []; }
+      });
   }
 
   /**
@@ -501,6 +576,156 @@ export class Bus {
     return this.createConversation(member, { title, parentId, forkAt });
   }
 
+  // --- durable improvement runs -----------------------------------------
+
+  #runRow(row) {
+    if (!row) return null;
+    return {
+      id: row.id,
+      createdTs: row.created_ts,
+      updatedTs: row.updated_ts,
+      state: row.state,
+      objective: row.objective,
+      sourceSnapshot: parsed(row.source_snapshot, {}),
+      approvedPlan: parsed(row.approved_plan, {}),
+      acceptanceCriteria: parsed(row.acceptance_criteria, []),
+      allowedModels: parsed(row.allowed_models, []),
+      taskIds: parsed(row.task_ids, []),
+      recoveryHistory: parsed(row.recovery_history, []),
+      verificationEvidence: parsed(row.verification_evidence, []),
+      baselineRevision: row.baseline_revision,
+      branch: row.branch,
+      approvedTs: row.approved_ts,
+      finalApproval: !!row.final_approved,
+      finalApprovedTs: row.final_approved_ts,
+      appliedTs: row.applied_ts,
+      completedTs: row.completed_ts,
+      cancelledTs: row.cancelled_ts,
+    };
+  }
+
+  /** Create one durable run; a workspace has at most one non-terminal run. */
+  createRun({
+    id = null, objective = '', state = 'planning', sourceSnapshot = {}, approvedPlan = {},
+    acceptanceCriteria = [], allowedModels = [], taskIds = [], recoveryHistory = [],
+    verificationEvidence = [], baselineRevision = null, branch = null,
+  } = {}) {
+    if (!RUN_STATES.has(state)) throw new Error(`Unknown run state: ${state}`);
+    if (this.currentRun()) throw new Error('An improvement run is already active.');
+    const runId = id || `run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const now = Date.now();
+    this.db.prepare(
+      `insert into runs
+       (id,created_ts,updated_ts,state,objective,source_snapshot,approved_plan,acceptance_criteria,
+        allowed_models,task_ids,recovery_history,verification_evidence,baseline_revision,branch)
+       values (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    ).run(
+      runId, now, now, state, String(objective ?? ''), json(sourceSnapshot, {}), json(approvedPlan, {}),
+      json(acceptanceCriteria, []), json(allowedModels, []), json(taskIds, []), json(recoveryHistory, []),
+      json(verificationEvidence, []), baselineRevision, branch,
+    );
+    return this.run(runId);
+  }
+
+  run(id) {
+    if (id == null) return this.currentRun();
+    return this.#runRow(this.db.prepare('select * from runs where id = ?').get(String(id)));
+  }
+
+  runs({ state = null } = {}) {
+    const rows = state
+      ? this.db.prepare('select * from runs where state = ? order by created_ts').all(state)
+      : this.db.prepare('select * from runs order by created_ts').all();
+    return rows.map((row) => this.#runRow(row));
+  }
+
+  currentRun() {
+    return this.#runRow(this.db.prepare(
+      `select * from runs where state in (${[...RUN_ACTIVE_STATES].map(() => '?').join(',')}) order by updated_ts desc limit 1`,
+    ).get(...RUN_ACTIVE_STATES));
+  }
+
+  updateRun(id, fields = {}) {
+    const run = this.run(id);
+    if (!run) return null;
+    const columns = {
+      state: 'state', objective: 'objective', sourceSnapshot: 'source_snapshot', approvedPlan: 'approved_plan',
+      acceptanceCriteria: 'acceptance_criteria', allowedModels: 'allowed_models', taskIds: 'task_ids',
+      recoveryHistory: 'recovery_history', verificationEvidence: 'verification_evidence',
+      baselineRevision: 'baseline_revision', branch: 'branch', approvedTs: 'approved_ts', appliedTs: 'applied_ts',
+      finalApproval: 'final_approved', finalApprovedTs: 'final_approved_ts',
+      completedTs: 'completed_ts', cancelledTs: 'cancelled_ts',
+    };
+    const arrays = new Set(['acceptanceCriteria', 'allowedModels', 'taskIds', 'recoveryHistory', 'verificationEvidence']);
+    const objects = new Set(['sourceSnapshot', 'approvedPlan']);
+    const set = [], args = [];
+    for (const [key, column] of Object.entries(columns)) {
+      if (fields[key] === undefined) continue;
+      if (key === 'state' && !RUN_STATES.has(fields[key])) throw new Error(`Unknown run state: ${fields[key]}`);
+      set.push(`${column} = ?`);
+      args.push(key === 'finalApproval' ? (fields[key] ? 1 : 0)
+        : arrays.has(key) || objects.has(key) ? json(fields[key], arrays.has(key) ? [] : {}) : fields[key]);
+    }
+    if (!set.length) return run;
+    set.push('updated_ts = ?');
+    args.push(Date.now(), String(id));
+    this.db.prepare(`update runs set ${set.join(', ')} where id = ?`).run(...args);
+    return this.run(id);
+  }
+
+  transitionRun(id, state, fields = {}) {
+    const run = this.run(id);
+    if (!run) throw new Error(`No run ${id}`);
+    const allowed = {
+      planning: ['running', 'cancelled'],
+      running: ['paused', 'blocked', 'verifying', 'cancelled'],
+      paused: ['running', 'cancelled'],
+      blocked: ['running', 'cancelled'],
+      verifying: ['blocked', 'ready_for_review', 'cancelled'],
+      ready_for_review: ['completed', 'blocked', 'cancelled'],
+      completed: [], cancelled: [],
+    };
+    if (!RUN_STATES.has(state)) throw new Error(`Unknown run state: ${state}`);
+    if (state !== run.state && !allowed[run.state].includes(state)) {
+      throw new Error(`Run ${id} cannot move from ${run.state} to ${state}.`);
+    }
+    const now = Date.now();
+    const timestamps = {
+      ...(state === 'running' && run.state === 'planning' ? { approvedTs: now } : {}),
+      ...(state === 'completed' ? { completedTs: now } : {}),
+      ...(state === 'cancelled' ? { cancelledTs: now } : {}),
+    };
+    const out = this.updateRun(id, { ...fields, state, ...timestamps });
+    this.logEvent('run', 'run_state', { runId: id, from: run.state, state });
+    return out;
+  }
+
+  approveRun(id, fields = {}) {
+    const run = this.run(id ?? this.currentRun()?.id);
+    if (run?.state === 'ready_for_review') {
+      const now = Date.now();
+      const out = this.updateRun(run.id, { finalApproval: true, finalApprovedTs: now });
+      this.logEvent('run', 'run_final_approval', { runId: run.id });
+      return out;
+    }
+    return this.transitionRun(run?.id, 'running', fields);
+  }
+  pauseRun(id) { return this.transitionRun(id ?? this.currentRun()?.id, 'paused'); }
+  stopRun(id) { return this.transitionRun(id ?? this.currentRun()?.id, 'cancelled'); }
+  resumeRun(id) { return this.transitionRun(id ?? this.currentRun()?.id, 'running'); }
+  applyRun(id) {
+    const run = this.run(id ?? this.currentRun()?.id);
+    if (!run) throw new Error(`No run ${id}`);
+    if (run.state !== 'ready_for_review' && run.state !== 'completed') {
+      throw new Error(`Run ${run.id} is ${run.state}; only a ready-for-review run can be applied.`);
+    }
+    if (run.state === 'ready_for_review' && !run.finalApproval) {
+      throw new Error(`Run ${run.id} needs final approval before it can be applied.`);
+    }
+    return run.state === 'completed' ? this.updateRun(run.id, { appliedTs: Date.now() })
+      : this.transitionRun(run.id, 'completed', { appliedTs: Date.now() });
+  }
+
   // --- the shared task list -------------------------------------------
   //
   // Before this, the orchestrator assigned by message and nothing tracked the result.
@@ -516,10 +741,10 @@ export class Bus {
   // constructor) makes the loser wait instead of failing.
 
   /** Deps are stored as json because a task has none or two, never a join. */
-  addTask({ title, detail = '', needs = [], needsPlan = false, by }) {
+  addTask({ title, detail = '', needs = [], needsPlan = false, by, runId = null }) {
     const { lastInsertRowid } = this.db.prepare(
-      'insert into tasks (ts, title, detail, needs, needs_plan, by) values (?,?,?,?,?,?)'
-    ).run(Date.now(), title, detail, JSON.stringify(needs.map(Number)), needsPlan ? 1 : 0, by);
+      'insert into tasks (ts, title, detail, needs, needs_plan, by, run_id) values (?,?,?,?,?,?,?)'
+    ).run(Date.now(), title, detail, JSON.stringify(needs.map(Number)), needsPlan ? 1 : 0, by, runId);
     return Number(lastInsertRowid);
   }
 
@@ -532,7 +757,7 @@ export class Bus {
    * opposite failure — "teammates sometimes fail to mark tasks as completed,
    * which blocks dependent tasks" — as a live limitation.
    */
-  tasks({ state = null, owner = null, id = null } = {}) {
+  tasks({ state = null, owner = null, id = null, runId = null } = {}) {
     // Filter in SQL, not in JS. This ran `select *` and discarded the rest —
     // so idx_task_state was never used, and every caller (availableTasks, both
     // halves of updateTask, claimTask inside its own transaction, /api/tasks)
@@ -545,6 +770,7 @@ export class Bus {
     if (state) { where.push('state = ?'); args.push(state); }
     if (owner) { where.push('owner = ?'); args.push(owner); }
     if (id != null) { where.push('id = ?'); args.push(Number(id)); }
+    if (runId != null) { where.push('run_id = ?'); args.push(String(runId)); }
     const rows = this.db.prepare(
       `select * from tasks${where.length ? ` where ${where.join(' and ')}` : ''} order by id`
     ).all(...args);
@@ -555,6 +781,7 @@ export class Bus {
         ...t,
         needs,
         needsPlan: !!t.needs_plan,
+        runId: t.run_id ?? null,
         blockedBy: needs.filter((n) => !done.has(n)),
       };
     });
@@ -608,7 +835,7 @@ export class Bus {
 
   /** Returns the updated row, or null if there is no such task. */
   updateTask(id, fields) {
-    const cols = { state: 'state', plan: 'plan', owner: 'owner', doneTs: 'done_ts' };
+    const cols = { state: 'state', plan: 'plan', owner: 'owner', doneTs: 'done_ts', runId: 'run_id' };
     const set = [], args = [];
     for (const [k, col] of Object.entries(cols)) {
       if (fields[k] !== undefined) { set.push(`${col} = ?`); args.push(fields[k]); }
@@ -791,6 +1018,29 @@ if (process.argv[1]?.endsWith('bus.js')) {
   b.logEvent('workflow:deploy', 'workflow_run', { name: 'nightly deploy', ok: true, steps: 4 });
   a.equal(b.recall('nightly deploy')[0].text, 'workflow "nightly deploy" succeeded');
 
+  // --- durable improvement runs ---------------------------------------
+  {
+    const runs = new Bus(':memory:');
+    const run = runs.createRun({
+      id: 'run-test', objective: 'prove the run contract', sourceSnapshot: { revision: 'abc' },
+      acceptanceCriteria: ['tests'], allowedModels: ['codex/gpt-5'],
+    });
+    a.equal(run.state, 'planning');
+    const task = runs.addTask({ title: 'run task', by: 'orchestrator', runId: run.id });
+    a.equal(runs.task(task).runId, run.id, 'tasks carry an optional run association');
+    runs.post('orchestrator', null, JSON.stringify({ kind: 'merge', peasant: 'coder' }), 'approval');
+    a.equal(runs.approvals()[0].runId, run.id, 'new approvals inherit the active run');
+    a.equal(runs.approveRun(run.id).state, 'running');
+    a.equal(runs.pauseRun(run.id).state, 'paused');
+    a.equal(runs.resumeRun(run.id).state, 'running');
+    a.equal(runs.transitionRun(run.id, 'verifying').state, 'verifying');
+    a.equal(runs.transitionRun(run.id, 'ready_for_review').state, 'ready_for_review');
+    a.equal(runs.approveRun(run.id).finalApproval, true);
+    a.equal(runs.applyRun(run.id).state, 'completed');
+    a.equal(runs.currentRun(), null, 'completed runs are no longer current');
+    runs.close();
+  }
+
   // Pruning deletes old source rows. The mirrors must delete with them or a
   // later FTS hit points at a transcript row that no longer exists.
   const prunedSearch = new Bus(':memory:');
@@ -916,14 +1166,18 @@ if (process.argv[1]?.endsWith('bus.js')) {
     const legacy = new DatabaseSync(legacyPath);
     legacy.exec(`create table messages (id integer primary key autoincrement, ts integer not null, sender text not null, recipient text, kind text not null, body text not null);
       create table events (id integer primary key autoincrement, ts integer not null, agent text not null, type text not null, payload text not null);
-      create table state (k text primary key, v text not null);`);
+      create table state (k text primary key, v text not null);
+      create table tasks (id integer primary key autoincrement, ts integer not null, title text not null, detail text not null default '', owner text, state text not null default 'pending', needs text not null default '[]', needs_plan integer not null default 0, plan text, by text not null, done_ts integer);`);
     legacy.prepare('insert into messages (ts,sender,recipient,kind,body) values (?,?,?,?,?)')
       .run(Date.now(), 'coder', 'reviewer', 'message', 'a pre-conversations message');
+    legacy.prepare('insert into tasks (ts,title,by) values (?,?,?)').run(Date.now(), 'legacy task', 'orchestrator');
     legacy.close();
     const migrated = new Bus(legacyPath);
     const rows = migrated.history({ conversation: 'default' });
     a.equal(rows.length, 1, 'a pre-existing row must be readable as the default conversation');
     a.equal(rows[0].body, 'a pre-conversations message');
+    a.equal(migrated.task(1).runId, null, 'pre-run tasks remain readable without an association');
+    a.equal(migrated.currentRun(), null, 'legacy courts open with no synthetic run');
     migrated.close();
     rmSync(legacyDir, { recursive: true, force: true });
   }

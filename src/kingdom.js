@@ -26,6 +26,7 @@ import { buildPrompt } from './prompt.js';
 import {
   assertRepo, ensureRepo, behindBase, commitAll, createWorktree, dbPath, diffOf, statOf, kingdomDir,
   globalTokenStore, mergeWorktree, removeWorktree, pushBase, runTests, testCommand, worktreePath,
+  revisionOf, createRunWorktree, mergeIntoRun, mergeRunBranch, runWorktreePath,
 } from './worktree.js';
 import { mirrorToProject, noteWritten } from './vault.js';
 
@@ -645,6 +646,7 @@ export class Kingdom extends EventEmitter {
     } else {
       this.base = null;
     }
+    await this.#reconcileRun();
     this.bus.prune();
     // Restore the crew BEFORE the delivery loop starts. #tick only iterates
     // `summoned`, so a peasant woken before a restart would otherwise never be
@@ -1146,6 +1148,7 @@ export class Kingdom extends EventEmitter {
     if (this.bus.get(`retried:${b.to}`)) return;
     this.bus.set(`retried:${b.to}`, '1');
     this.bus.set(`cursor:${name}`, String(b.from));
+    this.#recordRecovery(name, 'transport-retry', message, { batch: b, attempt: 1 });
     this.emit('redelivered', { name, through: b.to });
   }
 
@@ -1191,6 +1194,12 @@ export class Kingdom extends EventEmitter {
     const now = Date.now();
     if (now - Number(this.bus.get(`failnotify:${name}`) ?? 0) < 60_000) return;
     this.bus.set(`failnotify:${name}`, String(now));
+    const recovery = this.#recordRecovery(name, 'unresolved-process-failure', message);
+    if (recovery && recovery.attempts >= 2) {
+      this.#runBlock(recovery.run, `worker ${name} failed after recovery attempts`,
+        `preserve ${name}'s worktree, reassign the task or choose another approved model, then resume`,
+        { name, message: String(message).slice(0, 600) });
+    }
     if (name !== this.config.orchestrator.name) {
       // A notice, not a message. This is awareness, and the orchestrator cannot act on
       // it faster than a notice arrives anyway: notices ride along with the
@@ -1591,6 +1600,195 @@ export class Kingdom extends EventEmitter {
       name, role, spec, seedPrompt, orientation,
       config: this.config, mode: this.mode(), goal: this.goal(), repo: this.repo,
     });
+  }
+
+  /** Read the optional run record without coupling the controller to one bus schema. */
+  #activeRun() {
+    for (const method of ['activeRun', 'runState', 'currentRun']) {
+      if (typeof this.bus[method] !== 'function') continue;
+      try {
+        const run = this.bus[method]();
+        if (run && typeof run === 'object') return run;
+      } catch (e) { this.emit('error', e); }
+    }
+    for (const key of ['run:active', 'activeRun', 'run']) {
+      const raw = this.bus.get(key);
+      if (!raw) continue;
+      try {
+        const run = JSON.parse(raw);
+        if (run && typeof run === 'object' && !Array.isArray(run)) return run;
+      } catch { /* an unrelated legacy value is not an active run */ }
+    }
+    return null;
+  }
+
+  #saveRun(run) {
+    if (!run || typeof run !== 'object') return;
+    if (typeof this.bus.updateRun === 'function' && run.id != null) {
+      try { this.bus.updateRun(run.id, run); } catch (e) { this.emit('error', e); }
+    }
+    // This additive mirror keeps the execution loop restart-safe on older buses
+    // and is harmless when the run table is present.
+    this.bus.set('run', JSON.stringify(run));
+    if (run.id != null) this.bus.set(`run:${run.id}`, JSON.stringify(run));
+  }
+
+  #runBlock(run, operation, next, extra = {}) {
+    if (!run || !['planning', 'running', 'verifying'].includes(run.state)) return;
+    const blocker = { operation, next, at: Date.now(), ...extra };
+    const nextRun = { ...run, state: 'blocked', blocker,
+      blockers: [...(Array.isArray(run.blockers) ? run.blockers : []), blocker] };
+    this.#saveRun(nextRun);
+    this.bus.post(CROWN, this.config.orchestrator.name,
+      `RUN BLOCKED: ${operation}. Preserved work is available. Next action: ${next}`, 'notice');
+    this.emit('run', nextRun);
+  }
+
+  #recordRecovery(name, operation, message, extra = {}) {
+    const run = this.#activeRun();
+    if (!run) return null;
+    const history = Array.isArray(run.recoveryHistory) ? run.recoveryHistory : [];
+    const entry = { name, operation, message: String(message).slice(0, 600), at: Date.now(), ...extra };
+    const next = { ...run, recoveryHistory: [...history, entry] };
+    this.#saveRun(next);
+    this.emit('recovery', entry);
+    return { run: next, entry, attempts: next.recoveryHistory.length };
+  }
+
+  /** Evidence for a done submission, including the exact revision tested. */
+  verification(peasant, submissionId = null) {
+    const key = submissionId == null
+      ? `verification:${peasant}` : `verification:${peasant}:${submissionId}`;
+    const raw = this.bus.get(key);
+    if (!raw) return null;
+    try { return JSON.parse(raw); } catch { return null; }
+  }
+
+  /**
+   * Integrate a verified worker branch into the run checkout. This is the only
+   * automatic integration path; the original repository checkout is untouched.
+   */
+  async integrateVerified(peasant, { runId = null, revision = null } = {}) {
+    const run = this.#activeRun();
+    const id = runId ?? run?.id ?? run?.runId;
+    if (!id || !this.repo) throw new Error('No active run or repository is attached.');
+    const evidence = this.verification(peasant) ?? {};
+    const expected = revision ?? evidence.revision;
+    if (!evidence.valid || !expected) {
+      throw new Error(`"${peasant}" has no current passing verification to integrate.`);
+    }
+    const key = `integration:${id}:${peasant}:${expected}`;
+    const prior = this.bus.get(key);
+    if (prior) {
+      try { return JSON.parse(prior); } catch { return { runId: id, peasant, revision: expected }; }
+    }
+    const path = run?.worktree ?? runWorktreePath(this.repo, id);
+    if (!existsSync(path)) await createRunWorktree(this.repo, id, run?.base ?? this.base);
+    const result = await mergeIntoRun(this.repo, peasant, id, { expectedRevision: expected });
+    const integrated = { runId: id, peasant, sourceRevision: expected,
+      revision: result.revision, branch: result.branch, at: Date.now() };
+    this.bus.set(key, JSON.stringify(integrated));
+    this.bus.logEvent(peasant, 'integrated', integrated);
+    this.emit('integrated', integrated);
+    return integrated;
+  }
+
+  /** Stop only the workers owned by an active run and leave unrelated court members alone. */
+  stopRun(runId = null, why = 'stopped by the sovereign') {
+    const run = this.#activeRun();
+    const id = runId ?? run?.id ?? run?.runId;
+    if (!run || (runId != null && String(run.id ?? run.runId) !== String(runId))) {
+      throw new Error('No matching active run.');
+    }
+    const names = new Set([...(run.workers ?? run.workerNames ?? [])]);
+    for (const t of this.bus.tasks()) {
+      if ((run.taskIds ?? []).map(Number).includes(Number(t.id)) && t.owner) names.add(t.owner);
+    }
+    for (const name of names) {
+      if (this.agents.has(name)) {
+        this.agents.get(name).stop(why);
+        this.agents.delete(name);
+      }
+    }
+    const stopped = { ...run, state: 'cancelled', cancelledAt: Date.now(), cancelReason: why };
+    this.#saveRun(stopped);
+    this.#publishRoster();
+    this.emit('run', stopped);
+    return stopped;
+  }
+
+  async createRun(fields = {}) {
+    const baselineRevision = fields.baselineRevision ?? (this.repo ? await revisionOf(this.repo) : null);
+    const run = this.bus.createRun({ ...fields, baselineRevision });
+    await this.#reconcileRun();
+    const current = this.bus.run(run.id);
+    this.emit('run', current);
+    return current;
+  }
+
+  async approveRun(runId = null, fields = {}) {
+    const run = this.bus.approveRun(runId, fields);
+    await this.#reconcileRun();
+    const current = this.bus.run(run.id);
+    this.emit('run', current);
+    return current;
+  }
+
+  pauseRun(runId = null, why = '') {
+    const run = this.bus.run(runId ?? this.bus.currentRun()?.id);
+    if (!run) throw new Error('No active run.');
+    this.pause(why);
+    const current = this.bus.run(run.id);
+    this.emit('run', current);
+    return current;
+  }
+
+  async resumeRun(runId = null) {
+    const run = this.bus.run(runId ?? this.bus.currentRun()?.id);
+    if (!run) throw new Error('No active run.');
+    if (this.paused) this.resume();
+    else this.bus.resumeRun(run.id);
+    await this.#reconcileRun();
+    const current = this.bus.run(run.id);
+    this.emit('run', current);
+    return current;
+  }
+
+  async applyRun(runId = null) {
+    const run = this.bus.run(runId ?? this.bus.currentRun()?.id);
+    if (!run) throw new Error('No active run.');
+    if (!this.repo) throw new Error('No repository is attached.');
+    if (run.state !== 'ready_for_review' || !run.finalApproval) {
+      throw new Error(`Run ${run.id} needs a final approved review before it can be applied.`);
+    }
+    const currentRevision = await revisionOf(this.repo);
+    if (run.baselineRevision && currentRevision !== run.baselineRevision) {
+      this.#runBlock(run, 'source-state comparison', 'refresh the review against the changed source before applying', {
+        baselineRevision: run.baselineRevision, currentRevision,
+      });
+      throw new Error('Source changed since the run baseline; refresh the review before applying.');
+    }
+    const applied = await mergeRunBranch(this.repo, run.id, this.base);
+    const completed = this.bus.applyRun(run.id);
+    this.emit('run', completed);
+    return { ...completed, applied };
+  }
+
+  async #reconcileRun() {
+    const run = this.#activeRun();
+    if (!run || !this.repo || !['planning', 'running', 'paused', 'verifying'].includes(run.state)) return;
+    const id = run.id ?? run.runId;
+    if (!id) return;
+    try {
+      const path = await createRunWorktree(this.repo, id, run.base ?? this.base);
+      const current = await revisionOf(path);
+      const next = { ...run, worktree: path, base: run.base ?? this.base, head: current };
+      this.#saveRun(next);
+      this.emit('runReconciled', next);
+    } catch (e) {
+      this.#runBlock(run, 'startup reconciliation',
+        `repair the run branch/worktree, then resume after refreshing review: ${e.message}`);
+    }
   }
 
   // --- the loop -------------------------------------------------------
@@ -2104,25 +2302,64 @@ export class Kingdom extends EventEmitter {
     // is whatever vault_write already landed; report the summary straight
     // through instead of running a verification pipeline that has no target.
     if (!this.repo) {
+      const evidence = {
+        ran: false, ok: false, valid: false, stale: false, revision: null,
+        submittedAt: msg.ts ?? Date.now(), submissionId: msg.id, summary: msg.body,
+      };
+      this.bus.set(`verification:${peasant}`, JSON.stringify(evidence));
+      this.bus.set(`verification:${peasant}:${msg.id}`, JSON.stringify(evidence));
       this.bus.post(CROWN, this.config.orchestrator.name,
         `"${peasant}" declared done.\n${msg.body}\n\n` +
         `No repository is attached, so nothing was committed, tested or diffed — ` +
         `check the vault for what it wrote.`, 'done-report');
-      this.emit('verified', { peasant, tests: { ran: false, ok: false, output: '' }, stat: '' });
+      this.emit('verified', { peasant, tests: evidence, revision: null, stat: '' });
       return;
     }
 
     const wt = worktreePath(this.repo, peasant);
     await commitAll(this.repo, peasant, `kingdom(${peasant}): ${msg.body.split('\n')[0].slice(0, 90)}`);
-    const tests = await runTests(wt);
+    const submittedRevision = await revisionOf(wt).catch(() => null);
+    const tests = await runTests(wt, { revision: submittedRevision });
+    const currentRevision = await revisionOf(wt).catch(() => submittedRevision);
+    const valid = Boolean(tests.ran && tests.ok && !tests.stale && submittedRevision
+      && currentRevision === submittedRevision);
+    const evidence = {
+      ...tests,
+      revision: currentRevision,
+      submittedRevision,
+      currentRevision,
+      valid,
+      submittedAt: msg.ts ?? Date.now(),
+      submissionId: msg.id,
+      summary: msg.body,
+    };
+    // Keep the old per-member key for the existing review UI, and add an
+    // immutable submission key so a later task cannot overwrite its evidence.
+    this.bus.set(`verification:${peasant}`, JSON.stringify(evidence));
+    this.bus.set(`verification:${peasant}:${msg.id}`, JSON.stringify(evidence));
+    const activeRun = this.#activeRun();
+    if (activeRun && typeof this.bus.updateRun === 'function') {
+      const evidenceRows = Array.isArray(activeRun.verificationEvidence)
+        ? activeRun.verificationEvidence : [];
+      this.bus.updateRun(activeRun.id, {
+        state: valid ? 'verifying' : 'blocked',
+        verificationEvidence: [...evidenceRows, { peasant, ...evidence }],
+      });
+    }
     const [diff, stat] = await Promise.all([
       diffOf(this.repo, peasant, this.base),
       statOf(this.repo, peasant, this.base),
     ]);
-    this.bus.set(`tests:${peasant}`, JSON.stringify(tests));
-    this.emit('verified', { peasant, tests, stat });
+    this.bus.set(`tests:${peasant}`, JSON.stringify(evidence));
+    this.emit('verified', { peasant, tests: evidence, revision: currentRevision, stat });
 
-    const verdict = `TESTS: ${tests.ran ? (tests.ok ? 'PASSED' : 'FAILED') : 'NONE FOUND (treat as unverified)'}`;
+    if (activeRun && !valid) {
+      this.#runBlock(activeRun, `verification of ${peasant}`,
+        `preserve the branch, inspect the failed or stale evidence, and rerun verification`,
+        { peasant, revision: currentRevision, submissionId: msg.id });
+    }
+
+    const verdict = `TESTS: ${tests.ran ? (valid ? 'PASSED' : 'FAILED OR STALE') : 'NONE FOUND (treat as unverified)'}`;
 
     // The digest costs two turns — one for the briefer to read, one to brief.
     // Worth it when several peasants are in flight and the orchestrator needs a
@@ -2144,7 +2381,8 @@ export class Kingdom extends EventEmitter {
         + `good enough and what is still open.`;
     if (workers <= useBriefer) {
       this.bus.post(CROWN, this.config.orchestrator.name,
-        `"${peasant}" declared done.\n${msg.body}\n\n${verdict}\n${tests.output.slice(-1200)}\n\n` +
+        `"${peasant}" submitted work for verification.\n${msg.body}\n\n${verdict}` +
+        `\nREVISION: ${currentRevision ?? '(unknown)'}\n${tests.output.slice(-1200)}\n\n` +
         `CHANGED:\n${stat}\n\nUse read_diff("${peasant}") if you need the actual changes, ` +
         next, 'done-report');
       return;
@@ -2153,10 +2391,11 @@ export class Kingdom extends EventEmitter {
     const truncated = diff.length > DIGEST_DIFF_LIMIT;
     const briefer = this.agents.get(this.config.briefer.name);
     briefer?.send(
-      `[ORCHESTRATOR] "${peasant}" declared done. Digest this for the orchestrator, then ` +
+      `[ORCHESTRATOR] "${peasant}" submitted work for verification. Digest this for the orchestrator, then ` +
       `call brief_orchestrator with your digest.\n\n` +
       `THEIR SUMMARY:\n${msg.body}\n\n` +
-      `TESTS: ${tests.ran ? (tests.ok ? 'PASSED' : 'FAILED') : 'NONE FOUND (treat as unverified)'}\n` +
+      `TESTS: ${tests.ran ? (valid ? 'PASSED' : 'FAILED OR STALE') : 'NONE FOUND (treat as unverified)'}\n` +
+      `REVISION: ${currentRevision ?? '(unknown)'}\n` +
       `${tests.output}\n\n` +
       `DIFFSTAT:\n${stat}\n\n` +
       `DIFF${truncated ? ' (truncated)' : ''}:\n${diff.slice(0, DIGEST_DIFF_LIMIT)}`
@@ -2673,6 +2912,10 @@ export class Kingdom extends EventEmitter {
     if (this.paused) return { changed: false };
     this.paused = true;
     this.bus.set('paused', '1');
+    const run = this.#activeRun();
+    if (run && ['planning', 'running', 'verifying'].includes(run.state)) {
+      this.#saveRun({ ...run, state: 'paused', pausedAt: Date.now(), pauseReason: why });
+    }
     this.emit('paused', { paused: true, why });
     this.bus.post(CROWN, this.config.orchestrator.name,
       `The court is paused${why ? `: ${why}` : ''}. Nobody will be given a new turn until resume_court.`,
@@ -2684,6 +2927,8 @@ export class Kingdom extends EventEmitter {
     if (!this.paused) return { changed: false };
     this.paused = false;
     this.bus.set('paused', '0');
+    const run = this.#activeRun();
+    if (run?.state === 'paused') this.#saveRun({ ...run, state: 'running', resumedAt: Date.now() });
     this.emit('paused', { paused: false });
     this.bus.post(CROWN, this.config.orchestrator.name, 'The court has resumed.', 'notice');
     return { changed: true };

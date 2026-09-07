@@ -185,6 +185,12 @@ export function buildPrompt({
       `that. A done-report whose tests did not run is UNVERIFIED — send_back ` +
       `and ask for the test, do not request_merge on it. Prefer merging a ` +
       `small verified slice now over waiting for a large unverified one.\n\n` +
+      `For an approved improvement run, completion is a submission for ` +
+      `verification, not proof of completion. Wait for the controller's ` +
+      `revision-bound tests and independent review before marking the task or ` +
+      `run complete. If a worker fails, preserve its branch and use the saved ` +
+      `recovery history before reassigning; never silently switch to a paid ` +
+      `provider outside the approved model pool.\n\n` +
       `When a campaign closes, use campaign_history before calling remember. The bus is pruned and a peasant's worktree is ` +
       `deleted once merged — propose only something durable you learned or decided (a scope ` +
       `change and why, a convention this project uses, a gotcha a peasant hit, ` +
@@ -216,6 +222,13 @@ export function buildPrompt({
       `write into another peasant's worktree.\n` +
       `If you are blocked or need something from another peasant, send_message ` +
       `them directly.\n` +
+      `When an approved run is active, finish_task or declare_done submits your ` +
+      `branch for controller verification. Do not call it verified because the ` +
+      `files exist: the controller records the exact revision tested, rejects ` +
+      `stale evidence, and may integrate accepted work into the run branch. ` +
+      `If a turn fails, leave edits in the worktree, report the failed operation ` +
+      `and a concrete next action, and wait for reassignment or an approved model ` +
+      `change. Never invoke a metered fallback.\n` +
       `There is a SHARED TASK LIST. When you finish something, call finish_task and ` +
       `then claim_task for the next one rather than stopping — unclaimed work is yours ` +
       `to take, and claiming is atomic, so you cannot collide with another peasant. If a ` +

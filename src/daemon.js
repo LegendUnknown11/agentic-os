@@ -88,10 +88,25 @@ function push(type, data) {
   for (const [res, conv] of clients) if (shouldDeliver(conv, type, data)) res.write(line);
 }
 
-for (const ev of ['agent', 'event', 'delivered', 'approval', 'verified', 'merged', 'recycled', 'resolved', 'started', 'failure', 'roster', 'failover', 'mergeFailed', 'pushed', 'pushBlocked', 'spend', 'budget', 'limited', 'advising', 'advisor', 'summarizer', 'goal', 'milestone', 'mode', 'compact', 'argued', 'repo', 'paused', 'conversationSwitched']) {
+for (const ev of ['agent', 'event', 'delivered', 'approval', 'verified', 'merged', 'recycled', 'resolved', 'started', 'failure', 'roster', 'failover', 'mergeFailed', 'pushed', 'pushBlocked', 'spend', 'budget', 'limited', 'advising', 'advisor', 'summarizer', 'goal', 'milestone', 'mode', 'compact', 'argued', 'repo', 'paused', 'run', 'conversationSwitched']) {
   kingdom.on(ev, (d) => push(ev, d ?? {}));
 }
 kingdom.on('error', (e) => push('error', { message: e.message }));
+
+const runIdOf = (body) => body.runId ?? body.run_id ?? body.id ?? null;
+const publishRun = (run) => { push('run', { run }); return { run }; };
+const runFields = (body) => ({
+  objective: body.objective,
+  sourceSnapshot: body.sourceSnapshot ?? body.source_snapshot,
+  approvedPlan: body.approvedPlan ?? body.approved_plan,
+  acceptanceCriteria: body.acceptanceCriteria ?? body.acceptance_criteria,
+  allowedModels: body.allowedModels ?? body.allowed_models,
+  taskIds: body.taskIds ?? body.task_ids,
+  recoveryHistory: body.recoveryHistory ?? body.recovery_history,
+  verificationEvidence: body.verificationEvidence ?? body.verification_evidence,
+  baselineRevision: body.baselineRevision ?? body.baseline_revision,
+  branch: body.branch,
+});
 
 const MIME = {
   '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css',
@@ -195,6 +210,22 @@ const ACTIONS = {
     cli: b.cli, model: b.model, effort: b.effort, auto: b.auto,
   }),
   clearSpend: (b) => kingdom.clearSpend(b.name ?? null),
+  'run/create': async (b) => publishRun(await kingdom.createRun({
+    ...runFields(b), id: b.runId ?? b.id ?? null, state: b.state ?? 'planning',
+  })),
+  'run/approve': async (b) => publishRun(await kingdom.approveRun(runIdOf(b), runFields(b))),
+  'run/pause': (b) => publishRun(kingdom.pauseRun(runIdOf(b), b.why ?? '')),
+  'run/stop': (b) => publishRun(kingdom.stopRun(runIdOf(b), b.why ?? 'stopped by the sovereign')),
+  'run/resume': async (b) => publishRun(await kingdom.resumeRun(runIdOf(b))),
+  'run/apply': async (b) => publishRun(await kingdom.applyRun(runIdOf(b))),
+  runCreate: async (b) => publishRun(await kingdom.createRun({
+    ...runFields(b), id: b.runId ?? b.id ?? null, state: b.state ?? 'planning',
+  })),
+  runApprove: async (b) => publishRun(await kingdom.approveRun(runIdOf(b), runFields(b))),
+  runPause: (b) => publishRun(kingdom.pauseRun(runIdOf(b), b.why ?? '')),
+  runStop: (b) => publishRun(kingdom.stopRun(runIdOf(b), b.why ?? 'stopped by the sovereign')),
+  runResume: async (b) => publishRun(await kingdom.resumeRun(runIdOf(b))),
+  runApply: async (b) => publishRun(await kingdom.applyRun(runIdOf(b))),
   // Answer first, then go: the caller must not get a dead socket for a
   // shutdown that actually worked.
   shutdown: () => { setTimeout(() => shutdown(0), 150); },
@@ -371,7 +402,7 @@ const READS = {
         continue;
       }
       const resolved = kingdom.bus.get(`resolved:${m.id}`) ?? null;
-      const row = { id: m.id, ts: m.ts, from: m.sender, ...p, resolved };
+      const row = { id: m.id, ts: m.ts, from: m.sender, runId: m.runId ?? p.runId ?? null, ...p, resolved };
       if (p.kind === 'push') {
         try { row.push = JSON.parse(kingdom.bus.get(`push:${m.id}`) ?? 'null'); } catch { /* card still renders */ }
       }
@@ -402,13 +433,21 @@ const READS = {
   // Approvals show what the sovereign must decide and the chronicle shows what
   // was said, but an assignment nobody acted on appeared in neither.
   '/api/tasks': async (url, req) => {
-    const tasks = kingdom.bus.tasks();
+    const runId = url.searchParams.get('runId') ?? url.searchParams.get('run_id');
+    const tasks = kingdom.bus.tasks(runId ? { runId } : {});
     return [200, {
       ok: true,
       tasks,
       open: tasks.filter((t) => t.state !== 'done').length,
       available: kingdom.bus.availableTasks().length,
     }];
+  },
+
+  '/api/run': async (url, req) => [200, { ok: true, run: kingdom.bus.currentRun() }],
+  '/api/runs/current': async (url, req) => [200, { ok: true, run: kingdom.bus.currentRun() }],
+  '/api/runs': async (url, req) => {
+    const state = url.searchParams.get('state');
+    return [200, { ok: true, runs: kingdom.bus.runs(state ? { state } : {}) }];
   },
 
   '/api/campaigns': async (url, req) => {
@@ -612,6 +651,12 @@ const handle = async (req, res) => {
 
 
 
+  const runMatch = req.method === 'GET' && url.pathname.match(/^\/api\/runs\/([^/]+)$/);
+  if (runMatch) {
+    const run = kingdom.bus.run(decodeURIComponent(runMatch[1]));
+    return res.writeHead(run ? 200 : 404, { 'content-type': 'application/json' })
+      .end(JSON.stringify(run ? { ok: true, run } : { ok: false, error: 'No such run.' }));
+  }
   const read = READS[url.pathname];
   if (read) {
     const [status, body] = await read(url, req);
@@ -658,6 +703,7 @@ const handle = async (req, res) => {
       summarizer: kingdom.summarizer(),
       goal: kingdom.goal(),
       mode: kingdom.mode(),
+      run: kingdom.bus.currentRun(),
       events: since
         ? kingdom.bus.events({ since, limit: 2000, conversation })
         : kingdom.bus.events({ limit: 400, tail: true, conversation }),

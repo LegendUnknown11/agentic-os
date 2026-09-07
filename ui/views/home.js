@@ -1,5 +1,6 @@
 import { h, page, section, empty, button, membersOf, displayName, modeDef, setView, subscribe } from './util.js';
 import { statusLabel } from '../status.js';
+import { renderRunOverview } from '../run.js';
 
 const open = (view) => () => setView(view);
 const MODE_COPY = {
@@ -74,6 +75,9 @@ export function render(state, root, actions = {}, queueExpanded = false) {
   else objective.append(h('p', { class: 'muted', text: 'Set the outcome first. Every agent receives it before it starts work.' }), h('div', { class: 'button-row' }, button('Set objective', open('objective'), 'primary'), button('Start a conversation', open({ page: 'thread', member: 'orchestrator' }))));
   if (goal?.milestones?.length) objective.append(h('p', { class: 'muted', text: `${goal.milestones.filter((x) => x.done).length}/${goal.milestones.length} milestones complete` }));
   grid.append(h('div', { class: 'home-lead' }, modeCard, objective));
+
+  const runSummary = renderRunOverview(state, { post: actions.post, toast: actions.toast });
+  if (runSummary) grid.append(runSummary);
 
   if (taskLoading) {
     grid.append(h('section', { class: 'home-card' },

@@ -7,8 +7,9 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
-  assertRepo, behindBase, commitAll, conflictsWith, createWorktree, diffOf, mergeWorktree,
-  removeWorktree, runTests, statOf, testCommand, worktreePath,
+  assertRepo, behindBase, commitAll, conflictsWith, createWorktree, createRunWorktree, diffOf,
+  mergeIntoRun, mergeRunBranch, mergeWorktree, removeWorktree, revisionOf, runTests, statOf, testCommand,
+  worktreePath,
 } from '../src/worktree.js';
 
 const repo = mkdtempSync(join(tmpdir(), 'kingdom-merge-'));
@@ -31,6 +32,24 @@ const wt = await createWorktree(repo, 'coder', base);
 a.ok(wt.includes('coder'));
 a.equal(await createWorktree(repo, 'coder', base), wt, 'createWorktree must be idempotent');
 
+/* ---------- run integration stays in its own checkout ------------------ */
+const runWorker = await createWorktree(repo, 'run-worker', base);
+writeFileSync(join(runWorker, 'run-only.txt'), 'accepted by the run\n');
+a.equal(await commitAll(repo, 'run-worker', 'run worker change'), true);
+const sourceRevision = await revisionOf(runWorker);
+const runWt = await createRunWorktree(repo, 'run-1', base);
+a.equal(await revisionOf(runWt), await revisionOf(repo), 'a new run starts at the base revision');
+const integrated = await mergeIntoRun(repo, 'run-worker', 'run-1', { expectedRevision: sourceRevision });
+a.ok(integrated.revision, 'integration must report the resulting run revision');
+a.ok(readFileSync(join(runWt, 'run-only.txt'), 'utf8').includes('accepted'));
+a.equal(readFileSync(join(repo, 'math.js'), 'utf8').includes('subtract'), false,
+  'run integration must not touch the original checkout');
+await a.rejects(() => mergeIntoRun(repo, 'run-worker', 'run-1', { expectedRevision: 'stale' }), /stale integration/i);
+const appliedRun = await mergeRunBranch(repo, 'run-1', base);
+a.ok(appliedRun.revision, 'applying a reviewed run records the new source revision');
+a.ok(readFileSync(join(repo, 'run-only.txt'), 'utf8').includes('accepted'),
+  'the reviewed run delta reaches the source only through its run branch');
+
 // The peasant edits but does NOT commit — the common case.
 writeFileSync(join(wt, 'math.js'), 'export const add = (a,b) => a+b;\nexport const subtract = (a,b) => a-b;\n');
 
@@ -47,6 +66,10 @@ a.ok((await statOf(repo, 'coder', base)).includes('math.js'));
 const tests = await runTests(worktreePath(repo, 'coder'));
 a.equal(tests.ran, true, 'npm test must be discovered from package.json');
 a.equal(tests.ok, true, `tests should pass in the worktree: ${tests.output}`);
+a.ok(tests.revision, 'verification evidence must identify the checked revision');
+const stale = await runTests(worktreePath(repo, 'coder'), { revision: 'stale-revision' });
+a.equal(stale.ok, false, 'evidence for a different revision must not pass');
+a.equal(stale.stale, true, 'revision mismatch must be visible as stale evidence');
 
 // A conflicting peasant must be refused WITHOUT touching the repo -----
 const wt2 = await createWorktree(repo, 'rival', base);

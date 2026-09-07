@@ -83,6 +83,28 @@ export const dbPath = (repo) => join(kingdomDir(repo), 'kingdom.db');
 export const worktreePath = (repo, peasant) => join(kingdomDir(repo), 'wt', peasant);
 const branchOf = (peasant) => `kingdom/${peasant}`;
 
+const safeRunId = (runId) => {
+  const value = String(runId ?? '').trim();
+  if (!value || !/^[A-Za-z0-9._-]+$/.test(value)) {
+    throw new Error('Run ids may contain only letters, numbers, dots, underscores, and hyphens.');
+  }
+  return value;
+};
+
+/** A run branch lives beside peasant worktrees, so integration never touches the sovereign's checkout. */
+export const runBranch = (runId) => `kingdom/run/${safeRunId(runId)}`;
+export const runWorktreePath = (repo, runId) => join(kingdomDir(repo), 'runs', safeRunId(runId));
+
+/** The commit actually checked by a test run. Keeping this separate from a branch name makes evidence portable. */
+export async function revisionOf(dir, ref = 'HEAD') {
+  return (await git(dir, 'rev-parse', ref)).stdout.trim();
+}
+
+export async function revisionMatches(dir, expected) {
+  if (!expected) return false;
+  try { return (await revisionOf(dir)) === expected; } catch { return false; }
+}
+
 export async function assertRepo(repo) {
   if (!existsSync(join(repo, '.git'))) throw new Error(`${repo} is not a git repository.`);
   try {
@@ -234,6 +256,38 @@ export async function createWorktree(repo, peasant, base) {
 }
 
 /**
+ * Create the single integration checkout owned by an improvement run.
+ * Reusing it is safe: catchUp only fast-forwards a clean branch with no run
+ * commits of its own, so a restart cannot rewrite preserved integration work.
+ */
+export async function createRunWorktree(repo, runId, base) {
+  const path = runWorktreePath(repo, runId);
+  const branch = runBranch(runId);
+  mkdirSync(dirname(path), { recursive: true });
+  if (existsSync(path)) {
+    try {
+      await git(path, 'rev-parse', '--git-dir');
+      await catchUp(repo, path, branch, base);
+      return path;
+    } catch {
+      let aside = `${path}.orphan`;
+      for (let n = 2; existsSync(aside); n++) aside = `${path}.orphan-${n}`;
+      renameSync(path, aside);
+      await git(repo, 'worktree', 'prune').catch(() => {});
+    }
+  }
+  const { stdout } = await git(repo, 'branch', '--list', branch);
+  try {
+    if (stdout.trim()) await git(repo, 'worktree', 'add', path, branch);
+    else await git(repo, 'worktree', 'add', '-b', branch, path, base);
+  } catch (e) {
+    if (existsSync(path)) return path;
+    throw e;
+  }
+  return path;
+}
+
+/**
  * How many commits of `base` a reused worktree is missing.
  *
  * A worktree is reused wherever it was left, which can be days and several
@@ -322,6 +376,54 @@ export async function conflictsWith(repo, peasant, base) {
   }
 }
 
+/** Same in-memory conflict check for two arbitrary refs, used by run integration. */
+export async function conflictsBetween(repo, left, right) {
+  try {
+    await git(repo, 'merge-tree', '--write-tree', '--name-only', left, right);
+    return [];
+  } catch (e) {
+    const lines = String(e.stdout ?? '').split('\n').slice(1);
+    const end = lines.indexOf('');
+    const paths = (end === -1 ? lines : lines.slice(0, end)).map((s) => s.trim()).filter(Boolean);
+    if (paths.length) return paths;
+    if (e.code === 1) return ['(conflict, paths unavailable)'];
+    throw e;
+  }
+}
+
+/**
+ * Integrate one accepted peasant branch into a run branch. The target is a
+ * dedicated worktree, so a run can recover and review without changing the
+ * original checkout. Duplicate integrations are harmless at the Git level
+ * because the source is already an ancestor of the target.
+ */
+export async function mergeIntoRun(repo, peasant, runId, { expectedRevision = null } = {}) {
+  const path = runWorktreePath(repo, runId);
+  const source = branchOf(peasant);
+  const actual = await revisionOf(repo, source);
+  if (expectedRevision && actual !== expectedRevision) {
+    throw new Error(
+      `Refusing stale integration for "${peasant}": expected ${expectedRevision}, found ${actual}.`);
+  }
+  const { stdout: dirty } = await git(path, 'status', '--porcelain');
+  if (dirty.trim()) throw new Error(`Refusing integration: run ${runId} has uncommitted changes.`);
+  const target = (await git(path, 'branch', '--show-current')).stdout.trim();
+  const conflicts = await conflictsBetween(repo, target, source);
+  if (conflicts.length) {
+    throw new Error(
+      `"${peasant}" conflicts with run ${runId} in:\n  ${conflicts.join('\n  ')}\n`
+      + 'Nothing was changed. Resolve the conflict on the run branch before retrying.');
+  }
+  try {
+    const { stdout } = await git(path, 'merge', '--no-ff', source, '-m',
+      `kingdom: integrate ${peasant} into run ${runId}`);
+    return { output: stdout, branch: target, revision: await revisionOf(path) };
+  } catch (e) {
+    await git(path, 'merge', '--abort').catch(() => {});
+    throw new Error(`Run integration failed and was rolled back cleanly: ${e.message}`);
+  }
+}
+
 /**
  * Merge a peasant onto the base branch, or change nothing at all.
  *
@@ -359,6 +461,22 @@ export async function mergeWorktree(repo, peasant, base) {
     await git(repo, 'merge', '--abort').catch(() => {});
     if (original && original !== base) await git(repo, 'checkout', original).catch(() => {});
     throw new Error(`Merge failed and was rolled back cleanly: ${e.message}`);
+  }
+}
+
+/** Apply a reviewed run branch through the same clean-tree and conflict checks as a member merge. */
+export async function mergeRunBranch(repo, runId, base) {
+  const branch = runBranch(runId);
+  const { stdout: dirty } = await git(repo, 'status', '--porcelain');
+  if (dirty.trim()) throw new Error(`Refusing to apply run ${runId}: ${base} has uncommitted changes.`);
+  const conflicts = await conflictsBetween(repo, base, branch);
+  if (conflicts.length) throw new Error(`Run ${runId} conflicts with ${base} in:\n  ${conflicts.join('\n  ')}\nNothing was changed.`);
+  try {
+    const { stdout } = await git(repo, 'merge', '--no-ff', branch, '-m', `kingdom: apply reviewed run ${runId}`);
+    return { output: stdout, revision: await revisionOf(repo) };
+  } catch (e) {
+    await git(repo, 'merge', '--abort').catch(() => {});
+    throw new Error(`Applying run ${runId} failed and was rolled back cleanly: ${e.message}`);
   }
 }
 
@@ -426,9 +544,14 @@ export function testCommand(dir) {
   return null;
 }
 
-export async function runTests(dir) {
+export async function runTests(dir, { revision = null } = {}) {
   const cmd = testCommand(dir);
-  if (!cmd) return { ran: false, ok: false, output: 'No test/build command found in this project.' };
+  let checkedRevision = null;
+  try { checkedRevision = await revisionOf(dir); } catch {}
+  if (!cmd) return {
+    ran: false, ok: false, stale: false, revision: checkedRevision,
+    output: 'No test/build command found in this project.',
+  };
   try {
     const { stdout, stderr } = await exec(cmd[0], cmd[1], {
       cwd: dir,
@@ -436,8 +559,22 @@ export async function runTests(dir) {
       maxBuffer: 32 * 1024 * 1024,
       timeout: 15 * 60 * 1000,
     });
-    return { ran: true, ok: true, output: (stdout + stderr).slice(-8000) };
+    const after = await revisionOf(dir).catch(() => checkedRevision);
+    const stale = Boolean(revision && after !== revision);
+    return {
+      ran: true, ok: !stale, stale, revision: after,
+      output: (stdout + stderr).slice(-8000) + (stale
+        ? `\nVerification invalidated: HEAD changed from ${revision} to ${after}.`
+        : ''),
+    };
   } catch (e) {
-    return { ran: true, ok: false, output: ((e.stdout ?? '') + (e.stderr ?? e.message)).slice(-8000) };
+    const after = await revisionOf(dir).catch(() => checkedRevision);
+    const stale = Boolean(revision && after !== revision);
+    return {
+      ran: true, ok: false, stale, revision: after,
+      output: ((e.stdout ?? '') + (e.stderr ?? e.message)).slice(-8000) + (stale
+        ? `\nVerification invalidated: HEAD changed from ${revision} to ${after}.`
+        : ''),
+    };
   }
 }

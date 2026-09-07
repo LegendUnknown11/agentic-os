@@ -3,6 +3,7 @@ import { mdToHtml } from './markdown.js';
 import { pick as pickFiles, upload as uploadAsset } from './assets.js';
 import { displayName } from './names.js';
 import { date } from './views/util.js';
+import { renderRunThreadContext } from './run.js';
 
 const AUTO = '__auto__';
 const LOCAL_COMMANDS = [
@@ -297,6 +298,8 @@ function threadHeader(state, { name, member, sovereign, ready, label, conversati
   const subtitle = [!sovereign && (member.title || member.description), workContext(state, conversationId)]
     .filter(Boolean).join(' · ');
   heading.append(node('p', 'thread-subtitle', subtitle));
+  const runContext = renderRunThreadContext(state);
+  if (runContext) heading.append(runContext);
   const controls = node('div', 'thread-controls');
   const model = node('select', 'thread-model');
   model.dataset.control = 'model';

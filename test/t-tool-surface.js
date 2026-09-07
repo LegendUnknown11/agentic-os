@@ -68,12 +68,12 @@ const digest = (tools) => createHash('sha256')
 // `mode/role` -> [tool count, sha256-16 of the sorted shapes].
 // Regenerate with --print.
 const EXPECT = {
-  'code/orchestrator': [36, 'd2dfc74ed271fedf'],
-  'code/briefer': [19, '103c02a78c81bf80'],
-  'code/peasant': [19, 'f1022a859ec59fde'],
-  'cowork/orchestrator': [39, '51856b00a8b9dc65'],
-  'cowork/briefer': [19, '103c02a78c81bf80'],
-  'cowork/peasant': [19, 'f1022a859ec59fde'],
+  'code/orchestrator': [36, 'bcac72f6a0042981'],
+  'code/briefer': [19, '6461781771e0144d'],
+  'code/peasant': [19, '9c96bfdea97f9299'],
+  'cowork/orchestrator': [39, 'aef901909a028e7e'],
+  'cowork/briefer': [19, '6461781771e0144d'],
+  'cowork/peasant': [19, '9c96bfdea97f9299'],
 };
 
 const dir = mkdtempSync(join(tmpdir(), 'kingdom-surface-'));

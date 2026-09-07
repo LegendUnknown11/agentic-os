@@ -1,5 +1,6 @@
 // comms tools. See src/mcp.js for how these reach a member.
 import { badQuestions } from '../approval.js';
+import { approvalBody } from './approvals.js';
 import { join } from 'node:path';
 import {
   ME, bus, tooBig, str, rosterNow, officer, badRecipient, cursorFor, advance, nothingNew,
@@ -138,13 +139,16 @@ export const comms = {
             required: ['question', 'header', 'options'],
           },
         },
+        run_id: str('Optional improvement run id; defaults to the current run'),
       },
       required: ['questions'],
     },
-    run: ({ questions }) => {
+    run: ({ questions, run_id = null }) => {
       const err = badQuestions({ questions });
       if (err) return `${err} Nothing was asked.`;
-      bus.post(ME, null, JSON.stringify({ kind: 'question', questions }), 'approval');
+      const approval = approvalBody({ kind: 'question', questions }, run_id);
+      if (approval.error) return approval.error;
+      bus.post(ME, null, approval.body, 'approval', 'default', [], approval.id);
       return 'Question(s) posted to the sovereign. Their answer will arrive as a bus message — '
         + 'continue other work or end your turn.';
     },

@@ -4,6 +4,12 @@ import {
   ME, bus, str, stateArray, rosterNow, officer,
 } from './ctx.js';
 
+export const approvalBody = (payload, requested = null) => {
+  const id = requested ?? bus.currentRun()?.id ?? null;
+  if (id != null && !bus.run(id)) return { error: `No run ${id}.` };
+  return { body: JSON.stringify(id == null ? payload : { ...payload, runId: id }), id };
+};
+
 export const approvals = {
   submit_plan: {
     roles: ['peasant'],
@@ -65,15 +71,18 @@ export const approvals = {
           uniqueItems: true, description: 'Roster names to wake (up to 32 unique names)',
         },
         reason: str('Why these ones'),
+        run_id: str('Optional improvement run id; defaults to the current run'),
       },
       required: ['names', 'reason'],
     },
-    run: ({ names, reason }) => {
+    run: ({ names, reason, run_id = null }) => {
       const roster = stateArray('roster');
       if (!roster) return 'Cannot propose a summon: roster is unavailable.';
       const error = badSummon({ names, reason }, { roster });
       if (error) return error;
-      bus.post(ME, null, JSON.stringify({ kind: 'summon', names, reason }), 'approval');
+      const approval = approvalBody({ kind: 'summon', names, reason }, run_id);
+      if (approval.error) return approval.error;
+      bus.post(ME, null, approval.body, 'approval', 'default', [], approval.id);
       return 'Proposal sent to the sovereign. Wait for approval before assigning work.';
     },
   },
@@ -91,6 +100,7 @@ export const approvals = {
         cli: str('"claude" or "codex"'),
         model: str('Model name (optional)'),
         reason: str('Why the kingdom needs it'),
+        run_id: str('Optional improvement run id; defaults to the current run'),
       },
       required: ['name', 'prompt', 'cli', 'reason'],
     },
@@ -100,7 +110,10 @@ export const approvals = {
       // has to read and dismiss, hours later, with no way to tell the orchestrator why.
       const err = badRole(spec, { taken: rosterNow().map((m) => m.name) });
       if (err) return `${err} Nothing was proposed.`;
-      bus.post(ME, null, JSON.stringify({ kind: 'role', ...spec }), 'approval');
+      const { run_id = null, ...role } = spec;
+      const approval = approvalBody({ kind: 'role', ...role }, run_id);
+      if (approval.error) return approval.error;
+      bus.post(ME, null, approval.body, 'approval', 'default', [], approval.id);
       return 'Role proposed. Await the sovereign\'s decision.';
     },
   },
@@ -112,11 +125,16 @@ export const approvals = {
       'Merge button to the sovereign, who has the final word.',
     schema: {
       type: 'object',
-      properties: { peasant: str('Whose worktree'), verdict: str('Your review, for the sovereign') },
+      properties: {
+        peasant: str('Whose worktree'), verdict: str('Your review, for the sovereign'),
+        run_id: str('Optional improvement run id; defaults to the current run'),
+      },
       required: ['peasant', 'verdict'],
     },
-    run: ({ peasant, verdict }) => {
-      bus.post(ME, null, JSON.stringify({ kind: 'merge', peasant, verdict }), 'approval');
+    run: ({ peasant, verdict, run_id = null }) => {
+      const approval = approvalBody({ kind: 'merge', peasant, verdict }, run_id);
+      if (approval.error) return approval.error;
+      bus.post(ME, null, approval.body, 'approval', 'default', [], approval.id);
       return 'Merge proposed to the sovereign.';
     },
   },
@@ -128,11 +146,16 @@ export const approvals = {
       + 'pushes now, never force-pushes, and every later push needs a new approval.',
     schema: {
       type: 'object',
-      properties: { reason: str('Why this reviewed local state should leave the machine') },
+      properties: {
+        reason: str('Why this reviewed local state should leave the machine'),
+        run_id: str('Optional improvement run id; defaults to the current run'),
+      },
       required: ['reason'],
     },
-    run: ({ reason }) => {
-      bus.post(ME, null, JSON.stringify({ op: 'push', reason }), 'control');
+    run: ({ reason, run_id = null }) => {
+      const approval = approvalBody({ op: 'push', reason }, run_id);
+      if (approval.error) return approval.error;
+      bus.post(ME, null, approval.body, 'control', 'default', [], approval.id);
       return 'Push proposed to the sovereign. No remote was contacted.';
     },
   },

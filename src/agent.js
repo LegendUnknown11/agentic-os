@@ -319,8 +319,9 @@ export class Agent extends EventEmitter {
     return this.#runCodexTurn();
   }
 
-  stop() {
+  stop(reason = 'stopped') {
     this.stopped = true;
+    this.stopReason = reason;
     this.alive = false;
     this.queue.length = 0;
     if (this.proc) {

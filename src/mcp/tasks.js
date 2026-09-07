@@ -4,6 +4,12 @@ import {
   ME, bus, str, stateArray, officer,
 } from './ctx.js';
 
+const runFor = (requested) => {
+  const id = requested ?? bus.currentRun()?.id ?? null;
+  if (id != null && !bus.run(id)) return { error: `No run ${id}.` };
+  return { id };
+};
+
 export const tasks = {
   assign: {
     roles: ['orchestrator'],
@@ -47,10 +53,11 @@ export const tasks = {
           type: 'boolean',
           description: 'For risky work: the peasant must submit a plan and have it approved before it may finish',
         },
+        run_id: str('Optional improvement run id; defaults to the current run'),
       },
       required: ['title', 'detail'],
     },
-    run: ({ title, detail, needs = [], require_plan = false }) => {
+    run: ({ title, detail, needs = [], require_plan = false, run_id = null }) => {
       const known = new Set(bus.tasks().map((t) => t.id));
       const missing = needs.filter((n) => !known.has(Number(n)));
       if (missing.length) return `No such task: ${missing.map((n) => `#${n}`).join(', ')}. Nothing was added.`;
@@ -60,8 +67,10 @@ export const tasks = {
       // context — the same thing memory.js:74 and skills.js:175 cap.
       title = String(title).slice(0, 200);
       detail = String(detail).slice(0, 2000);
-      const id = bus.addTask({ title, detail, needs, needsPlan: require_plan, by: ME });
-      return `Task #${id} added${needs.length ? `, waiting on ${needs.map((n) => `#${n}`).join(', ')}` : ''}.`;
+      const run = runFor(run_id);
+      if (run.error) return run.error;
+      const id = bus.addTask({ title, detail, needs, needsPlan: require_plan, by: ME, runId: run.id });
+      return `Task #${id} added${run.id ? ` to run ${run.id}` : ''}${needs.length ? `, waiting on ${needs.map((n) => `#${n}`).join(', ')}` : ''}.`;
     },
   },
 
@@ -120,11 +129,18 @@ export const tasks = {
       if (!t) return `No task #${id}.`;
       if (t.owner !== ME) return `Task #${id} is ${t.owner ?? 'unclaimed'}, not yours.`;
       if (t.state === 'done') return `Task #${id} is already done.`;
+      if (t.state === 'verifying') return `Task #${id} is already submitted for verification.`;
       // The plan gate is enforced HERE rather than by asking nicely in the
       // prompt: a member cannot close a risky task by deciding its plan was
       // fine. This is the one boundary the orchestrator actually controls.
       if (t.state === 'planning') {
         return `Task #${id} still needs an approved plan. Call submit_plan and wait for the orchestrator.`;
+      }
+      if (t.runId) {
+        bus.updateTask(id, { state: 'verifying' });
+        const orchestrator = officer('orchestrator', 'orchestrator');
+        bus.post(ME, orchestrator, `Task #${id} (${t.title}) submitted for verification. ${summary}`, 'done');
+        return `Task #${id} submitted for verification. The controller must pass tests and independent review before it is closed.`;
       }
       bus.updateTask(id, { state: 'done', doneTs: Date.now() });
       const orchestrator = officer('orchestrator', 'orchestrator');

@@ -231,6 +231,21 @@ try {
     console.log('  unowned stale tasks close audibly; active work is never guessed away');
   }
 
+  /* ---------- 9. run-owned work waits for controller verification -------- */
+  {
+    const runBus = new Bus(db);
+    const run = runBus.createRun({ id: 'run-task-verification', objective: 'verify task closure' });
+    const id = runBus.addTask({ title: 'run-owned implementation', by: 'orchestrator', runId: run.id });
+    runBus.close();
+    a.match(await coder.call('claim_task', { id }), /Claimed #\d+: run-owned implementation/);
+    a.match(await coder.call('finish_task', { id, summary: 'candidate is ready' }), /submitted for verification/,
+      'run-owned finish_task must submit work instead of closing it');
+    const verifying = new Bus(db);
+    a.equal(verifying.task(id).state, 'verifying', 'controller verification owns the final done transition');
+    verifying.close();
+    console.log('  run-owned finish_task submits verification and leaves closure to the controller');
+  }
+
   console.log('t-tasks.js OK — a shared list two processes cannot both claim, with a plan gate that holds');
 } finally {
   // Wait for the processes to actually go before deleting the db they have

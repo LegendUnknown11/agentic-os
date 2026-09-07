@@ -75,6 +75,26 @@ try {
     body: JSON.stringify({ text: 'daemon-boot regression check' }),
   });
 
+  const createdRun = await fetch(`${base}/api/run/create`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ id: 'run-daemon', objective: 'daemon run controls', acceptanceCriteria: ['tests'] }),
+  }).then((r) => r.json());
+  a.equal(createdRun.run.state, 'planning', 'run creation must persist a planning record');
+  a.equal((await fetch(`${base}/api/run`).then((r) => r.json())).run.id, 'run-daemon',
+    'the current run endpoint must expose the durable record');
+  a.equal((await fetch(`${base}/api/run/approve`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: 'run-daemon' }),
+  }).then((r) => r.json())).run.state, 'running');
+  a.equal((await fetch(`${base}/api/run/pause`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: 'run-daemon' }),
+  }).then((r) => r.json())).run.state, 'paused');
+  a.equal((await fetch(`${base}/api/run/resume`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: 'run-daemon' }),
+  }).then((r) => r.json())).run.state, 'running');
+  a.equal((await fetch(`${base}/api/run/stop`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: 'run-daemon' }),
+  }).then((r) => r.json())).run.state, 'cancelled');
+
   ping = await fetch(`${base}/api/ping`).then((r) => r.json());
   a.equal(ping.repo, resolve(repo), 'the live attach must show up immediately');
 
