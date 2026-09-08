@@ -143,7 +143,7 @@ a.match(css, /\.sidebar\.collapsed \.sidebar-collapse::before\s*\{[^}]*content:\
 a.match(css, /\.conversation-row:hover \.conversation-actions, \.conversation-row\.selected \.conversation-actions, \.conversation-row:focus-within \.conversation-actions/, 'conversation actions must be visible to keyboard users');
 a.match(css, /\.conversation-actions\s*\{[^}]*flex:\s*none;/, 'conversation actions must keep their own width beside the title');
 a.match(css, /\.conversation-action\s*\{[^}]*min-height:\s*28px;[^}]*padding:[^;]+;[^}]*white-space:\s*nowrap;/, 'conversation actions need stable touch-sized labels');
-a.match(css, /@media \(max-width: 720px\)[\s\S]*?\.conversation-actions\s*\{\s*opacity:\s*1;/, 'conversation actions must remain reachable on touch-sized navigation drawers');
+a.match(css, /@media \(max-width: 720px\)[\s\S]*?\.conversation-actions\s*\{\s*display:\s*flex;/, 'conversation actions must remain reachable on touch-sized navigation drawers');
 a.match(css, /\.wfn-x\s*\{[^}]*min-width:\s*28px;[^}]*min-height:\s*28px;[^}]*padding:\s*var\(--s-1\);/, 'workflow deletion needs a compact touch-sized target');
 a.match(css, /@media \(max-width: 720px\)[\s\S]*?\.wfn-x\s*\{\s*opacity:\s*1;/, 'workflow deletion must remain reachable on touch-sized editors');
 a.match(css, /@media \(prefers-reduced-motion: reduce\)[\s\S]*?animation:\s*none\s*!important;/, 'reduced-motion users must not receive a running animation');

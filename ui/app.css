@@ -235,7 +235,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .sidebar-empty { margin: 0; padding: var(--s-2); color: var(--faint); font-size: var(--t-xs); }
 
-.sidebar-footer { display: grid; gap: var(--s-2); margin-top: auto; padding-top: var(--s-3); border-top: 1px solid var(--line); }
+.sidebar-footer { display: grid; flex-shrink: 0; gap: var(--s-2); margin-top: auto; padding-top: var(--s-3); border-top: 1px solid var(--line); }
 
 .sidebar-repo { width: 100%; overflow: hidden; padding: var(--s-1) var(--s-2); border: 0; background: transparent; color: var(--muted); font-size: var(--t-sm); text-align: left; text-overflow: ellipsis; white-space: nowrap; }
 
@@ -345,7 +345,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 /* Components shipped with the shell use these small structural classes. They
  * share the same flat tokens instead of recreating a second visual system. */
-.sidebar-header { display: flex; align-items: center; gap: var(--s-2); padding-bottom: var(--s-2); border-bottom: 1px solid var(--line); }
+.sidebar-header { display: flex; flex-shrink: 0; align-items: center; gap: var(--s-2); padding-bottom: var(--s-2); border-bottom: 1px solid var(--line); }
 
 .mobile-menu, .sidebar-mobile-close { min-height: 30px; padding: var(--s-1) var(--s-2); border: 1px solid var(--line); border-radius: var(--r-sm); background: transparent; color: var(--muted); }
 
@@ -376,7 +376,9 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .sidebar-mode-option.selected { color: var(--accent); }
 
-.sidebar-more { display: grid; gap: var(--s-2); }
+.sidebar-nav { flex-shrink: 0; }
+
+.sidebar-more { display: grid; flex-shrink: 0; gap: var(--s-2); }
 
 .sidebar-more > summary { cursor: pointer; list-style: none; }
 
@@ -394,6 +396,8 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .sidebar-nav-button:hover, .sidebar-nav-button.selected { border-color: var(--line); background: var(--raised); color: var(--text); }
 
+.hover-tip { position: fixed; z-index: 50; max-width: 260px; padding: var(--s-2) var(--s-3); border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--raised); color: var(--text); font-size: var(--t-xs); line-height: 1.4; white-space: pre-line; pointer-events: none; box-shadow: 0 8px 24px rgb(0 0 0 / .35); }
+
 .sidebar-conversations { max-height: 34%; }
 
 .sidebar-team { flex: 1; min-height: 0; }
@@ -406,9 +410,9 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .conversation-open { min-width: 0; flex: 1; overflow: hidden; border: 0; background: transparent; color: inherit; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
 
-.conversation-actions { display: flex; flex: none; gap: var(--s-1); opacity: 0; }
+.conversation-actions { display: none; flex: none; gap: var(--s-1); }
 
-.conversation-row:hover .conversation-actions, .conversation-row.selected .conversation-actions, .conversation-row:focus-within .conversation-actions { opacity: 1; }
+.conversation-row:hover .conversation-actions, .conversation-row.selected .conversation-actions, .conversation-row:focus-within .conversation-actions { display: flex; }
 
 .conversation-action { min-height: 28px; padding: var(--s-1); border: 0; background: transparent; color: var(--faint); font-size: var(--t-xs); white-space: nowrap; }
 
@@ -774,7 +778,11 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .workflow-graph { min-height: 180px; }
 
-.graph-shell { display: grid; gap: var(--s-3); min-height: 180px; }
+.graph-shell { display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, 280px); align-items: start; gap: var(--s-3); min-height: 180px; }
+
+@media (max-width: 900px) {
+  .graph-shell { grid-template-columns: 1fr; }
+}
 
 .wfgraph { position: relative; height: 340px; min-height: 180px; overflow: auto; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--bg); background-image: radial-gradient(rgb(var(--accent-rgb) / .12) 1px, transparent 1px); background-size: 22px 22px; touch-action: none; }
 
@@ -894,7 +902,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
   body.sidebar-open #sidebar .sidebar-mode { display: grid; }
   .mobile-menu, .sidebar-mobile-close { display: inline-flex; align-items: center; justify-content: center; }
   .sidebar-mobile-close { flex: none; }
-  .conversation-actions { opacity: 1; }
+  .conversation-actions { display: flex; }
   .wfn-x { opacity: 1; }
   .app-identity { display: grid; }
   .mode-switcher { display: none; }

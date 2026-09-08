@@ -38,15 +38,20 @@ function workflowList(state, root) {
     if (!state.workflows || state.workflows?.ok === false) { shell.append(body); root.append(shell); return; }
   }
   else if (!workflows.length) body.append(empty('No automations yet.'));
+  // Every store update anywhere in the app (SSE ticks, cost updates, ...)
+  // re-renders this whole list via the subscribe() below, which would tear
+  // out a plain local message element before the user ever saw it. Keyed
+  // state instead of a DOM reference survives that churn.
+  state.workflowRunMessages ??= {};
   workflows.forEach((workflow) => {
     const row = h('article', { class: 'workflow-row' }, h('div', {}, h('h3', { text: workflow.name }), h('p', { class: 'muted', text: triggerText(workflow.trigger) })), workflow.enabled === false && note('disabled'));
     const actions = h('div', { class: 'button-row' });
-    const actionMessage = note('', 'workflow-run-message workflow-action-message');
-    actionMessage.hidden = true;
+    const pending = state.workflowRunMessages[workflow.id];
+    const actionMessage = note(pending?.text ?? '', `workflow-run-message workflow-action-message${pending ? (pending.failed ? ' danger' : ' success') : ''}`);
+    actionMessage.hidden = !pending;
     const showAction = (message, failed = false) => {
-      actionMessage.className = `note workflow-run-message workflow-action-message ${failed ? 'danger' : 'success'}`;
-      actionMessage.textContent = message;
-      actionMessage.hidden = false;
+      state.workflowRunMessages[workflow.id] = { text: message, failed };
+      workflowList(state, root);
     };
     actions.append(button('Edit', () => editor(state, root, workflow)));
     const run = button('Run now', async () => {
@@ -85,6 +90,7 @@ function workflowList(state, root) {
         showAction(data.error ?? 'Deleted, but the automation list could not refresh.', true);
         return;
       }
+      delete state.workflowRunMessages[workflow.id];
       state.workflows = data;
       state.workflowsError = null;
       workflowList(state, root);

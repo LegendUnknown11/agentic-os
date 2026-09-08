@@ -120,6 +120,40 @@ export function mountSidebar(root, options = {}) {
   root.className = 'sidebar';
   root.textContent = '';
 
+  // Native `title` tooltips render garbled (vertical, one character per line)
+  // for these long member descriptions on some Windows/Chromium builds, so
+  // hover text for [data-tip] elements is drawn by hand instead.
+  const tip = node('div', 'hover-tip');
+  tip.setAttribute('role', 'tooltip');
+  tip.hidden = true;
+  document.body.append(tip);
+
+  function showTip(target) {
+    const text = target.dataset.tip;
+    if (!text) return;
+    tip.textContent = text;
+    tip.hidden = false;
+    const r = target.getBoundingClientRect();
+    tip.style.left = `${Math.max(8, Math.min(r.right + 8, window.innerWidth - tip.offsetWidth - 8))}px`;
+    tip.style.top = `${Math.max(8, Math.min(r.top, window.innerHeight - tip.offsetHeight - 8))}px`;
+  }
+  function hideTip() { tip.hidden = true; }
+  function onTipOver(event) {
+    const target = event.target.closest('[data-tip]');
+    if (target && !target.contains(event.relatedTarget)) showTip(target);
+  }
+  function onTipOut(event) {
+    const target = event.target.closest('[data-tip]');
+    if (target && !target.contains(event.relatedTarget)) hideTip();
+  }
+  function onTipFocusIn(event) {
+    const target = event.target.closest('[data-tip]');
+    if (target) showTip(target);
+  }
+  function onTipFocusOut(event) {
+    if (event.target.closest('[data-tip]')) hideTip();
+  }
+
   const header = node('div', 'sidebar-header');
   const brand = node('div', 'sidebar-brand', 'AgentOS');
   const add = node('button', 'sidebar-new', '+ New');
@@ -305,7 +339,8 @@ export function mountSidebar(root, options = {}) {
         const row = node('button', `team-row role-${member.role ?? 'peasant'} state-${stateName}${member.name === viewed ? ' selected' : ''}`);
         row.type = 'button';
         row.dataset.member = member.name;
-        row.title = [member.title, member.description].filter(Boolean).join('\n');
+        const tipText = [member.title, member.description].filter(Boolean).join('\n');
+        if (tipText) row.dataset.tip = tipText;
         const dot = statusDot(member.name, member.role);
         dot.classList.add(stateName);
         dot.setAttribute('aria-label', memberLabel(member));
@@ -425,6 +460,10 @@ export function mountSidebar(root, options = {}) {
 
   root.addEventListener('click', onClick);
   root.addEventListener('submit', onSubmit);
+  root.addEventListener('mouseover', onTipOver);
+  root.addEventListener('mouseout', onTipOut);
+  root.addEventListener('focusin', onTipFocusIn);
+  root.addEventListener('focusout', onTipFocusOut);
   if (typeof subscribe === 'function') unsubscribe = subscribe((next) => render(next));
   render(currentState);
 
@@ -432,6 +471,11 @@ export function mountSidebar(root, options = {}) {
     unsubscribe?.();
     root.removeEventListener('click', onClick);
     root.removeEventListener('submit', onSubmit);
+    root.removeEventListener('mouseover', onTipOver);
+    root.removeEventListener('mouseout', onTipOut);
+    root.removeEventListener('focusin', onTipFocusIn);
+    root.removeEventListener('focusout', onTipFocusOut);
+    tip.remove();
     root.textContent = '';
     document.body.classList.remove('sidebar-collapsed');
   };
