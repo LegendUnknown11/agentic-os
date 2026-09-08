@@ -106,6 +106,47 @@ function send(post, action, body) {
 }
 
 /**
+ * Native `title` tooltips render garbled (vertical, one character per line)
+ * for these long member descriptions on some Windows/Chromium builds, so
+ * hover text for [data-tip] elements is drawn by hand instead.
+ */
+function attachHoverTips(root) {
+  const tip = node('div', 'hover-tip');
+  tip.setAttribute('role', 'tooltip');
+  tip.hidden = true;
+  document.body.append(tip);
+
+  const targetOf = (event) => event.target.closest('[data-tip]');
+  function showTip(target) {
+    const text = target.dataset.tip;
+    if (!text) return;
+    tip.textContent = text;
+    tip.hidden = false;
+    const r = target.getBoundingClientRect();
+    tip.style.left = `${Math.max(8, Math.min(r.right + 8, window.innerWidth - tip.offsetWidth - 8))}px`;
+    tip.style.top = `${Math.max(8, Math.min(r.top, window.innerHeight - tip.offsetHeight - 8))}px`;
+  }
+  function hideTip() { tip.hidden = true; }
+  function onOver(event) { const target = targetOf(event); if (target && !target.contains(event.relatedTarget)) showTip(target); }
+  function onOut(event) { const target = targetOf(event); if (target && !target.contains(event.relatedTarget)) hideTip(); }
+  function onFocusIn(event) { const target = targetOf(event); if (target) showTip(target); }
+  function onFocusOut(event) { if (targetOf(event)) hideTip(); }
+
+  root.addEventListener('mouseover', onOver);
+  root.addEventListener('mouseout', onOut);
+  root.addEventListener('focusin', onFocusIn);
+  root.addEventListener('focusout', onFocusOut);
+
+  return () => {
+    root.removeEventListener('mouseover', onOver);
+    root.removeEventListener('mouseout', onOut);
+    root.removeEventListener('focusin', onFocusIn);
+    root.removeEventListener('focusout', onFocusOut);
+    tip.remove();
+  };
+}
+
+/**
  * Mount the fixed left rail. The only listeners are on the rail itself, so a
  * route change can remove them with the returned teardown function.
  */
@@ -120,39 +161,7 @@ export function mountSidebar(root, options = {}) {
   root.className = 'sidebar';
   root.textContent = '';
 
-  // Native `title` tooltips render garbled (vertical, one character per line)
-  // for these long member descriptions on some Windows/Chromium builds, so
-  // hover text for [data-tip] elements is drawn by hand instead.
-  const tip = node('div', 'hover-tip');
-  tip.setAttribute('role', 'tooltip');
-  tip.hidden = true;
-  document.body.append(tip);
-
-  function showTip(target) {
-    const text = target.dataset.tip;
-    if (!text) return;
-    tip.textContent = text;
-    tip.hidden = false;
-    const r = target.getBoundingClientRect();
-    tip.style.left = `${Math.max(8, Math.min(r.right + 8, window.innerWidth - tip.offsetWidth - 8))}px`;
-    tip.style.top = `${Math.max(8, Math.min(r.top, window.innerHeight - tip.offsetHeight - 8))}px`;
-  }
-  function hideTip() { tip.hidden = true; }
-  function onTipOver(event) {
-    const target = event.target.closest('[data-tip]');
-    if (target && !target.contains(event.relatedTarget)) showTip(target);
-  }
-  function onTipOut(event) {
-    const target = event.target.closest('[data-tip]');
-    if (target && !target.contains(event.relatedTarget)) hideTip();
-  }
-  function onTipFocusIn(event) {
-    const target = event.target.closest('[data-tip]');
-    if (target) showTip(target);
-  }
-  function onTipFocusOut(event) {
-    if (event.target.closest('[data-tip]')) hideTip();
-  }
+  const detachTips = attachHoverTips(root);
 
   const header = node('div', 'sidebar-header');
   const brand = node('div', 'sidebar-brand', 'AgentOS');
@@ -460,10 +469,6 @@ export function mountSidebar(root, options = {}) {
 
   root.addEventListener('click', onClick);
   root.addEventListener('submit', onSubmit);
-  root.addEventListener('mouseover', onTipOver);
-  root.addEventListener('mouseout', onTipOut);
-  root.addEventListener('focusin', onTipFocusIn);
-  root.addEventListener('focusout', onTipFocusOut);
   if (typeof subscribe === 'function') unsubscribe = subscribe((next) => render(next));
   render(currentState);
 
@@ -471,11 +476,7 @@ export function mountSidebar(root, options = {}) {
     unsubscribe?.();
     root.removeEventListener('click', onClick);
     root.removeEventListener('submit', onSubmit);
-    root.removeEventListener('mouseover', onTipOver);
-    root.removeEventListener('mouseout', onTipOut);
-    root.removeEventListener('focusin', onTipFocusIn);
-    root.removeEventListener('focusout', onTipFocusOut);
-    tip.remove();
+    detachTips();
     root.textContent = '';
     document.body.classList.remove('sidebar-collapsed');
   };

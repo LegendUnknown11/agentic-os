@@ -46,13 +46,14 @@ function workflowList(state, root) {
   workflows.forEach((workflow) => {
     const row = h('article', { class: 'workflow-row' }, h('div', {}, h('h3', { text: workflow.name }), h('p', { class: 'muted', text: triggerText(workflow.trigger) })), workflow.enabled === false && note('disabled'));
     const actions = h('div', { class: 'button-row' });
-    const pending = state.workflowRunMessages[workflow.id];
-    const actionMessage = note(pending?.text ?? '', `workflow-run-message workflow-action-message${pending ? (pending.failed ? ' danger' : ' success') : ''}`);
-    actionMessage.hidden = !pending;
-    const showAction = (message, failed = false) => {
-      state.workflowRunMessages[workflow.id] = { text: message, failed };
+    const rowState = state.workflowRunMessages[workflow.id] ?? {};
+    const actionMessage = note(rowState.text ?? '', `workflow-run-message workflow-action-message${rowState.text ? (rowState.failed ? ' danger' : ' success') : ''}`);
+    actionMessage.hidden = !rowState.text;
+    const updateRow = (patch) => {
+      state.workflowRunMessages[workflow.id] = { ...state.workflowRunMessages[workflow.id], ...patch };
       workflowList(state, root);
     };
+    const showAction = (message, failed = false) => updateRow({ text: message, failed });
     actions.append(button('Edit', () => editor(state, root, workflow)));
     const run = button('Run now', async () => {
       run.disabled = true;
@@ -67,8 +68,8 @@ function workflowList(state, root) {
       } catch (error) { showAction(`Run failed: ${error?.message ?? 'the workflow stopped.'}`, true); }
       finally { run.disabled = false; run.textContent = 'Run now'; }
     });
-    const del = button('Delete', async () => {
-      if (del.dataset.armed !== '1') { del.dataset.armed = '1'; del.textContent = 'Confirm delete'; return; }
+    const del = button(rowState.armed ? 'Confirm delete' : 'Delete', async () => {
+      if (!rowState.armed) { updateRow({ armed: true }); return; }
       del.disabled = true;
       let response;
       try { response = await post('workflows/delete', { id: workflow.id }); }
@@ -76,9 +77,7 @@ function workflowList(state, root) {
       if (root.isConnected === false || root.dataset.automationEditor === '1') return;
       if (response?.ok === false) {
         del.disabled = false;
-        delete del.dataset.armed;
-        del.textContent = 'Delete';
-        showAction(`Delete failed: ${response.error ?? 'the automation was not removed.'}`, true);
+        updateRow({ armed: false, text: `Delete failed: ${response.error ?? 'the automation was not removed.'}`, failed: true });
         return;
       }
       let data;
@@ -87,7 +86,7 @@ function workflowList(state, root) {
       if (root.isConnected === false || root.dataset.automationEditor === '1') return;
       if (data?.ok === false) {
         del.disabled = false;
-        showAction(data.error ?? 'Deleted, but the automation list could not refresh.', true);
+        updateRow({ armed: false, text: data.error ?? 'Deleted, but the automation list could not refresh.', failed: true });
         return;
       }
       delete state.workflowRunMessages[workflow.id];
