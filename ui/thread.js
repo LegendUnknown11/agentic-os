@@ -293,7 +293,7 @@ function renderApprovalCard(card, approval, questionPicks, questionOthers) {
  */
 function threadHeader(state, { name, member, sovereign, ready, label, conversationId }) {
   const header = node('header', 'thread-header');
-  const heading = node('div', 'thread-heading');
+  const heading = node('div', `thread-heading${sovereign ? ' sovereign' : ''}`);
   heading.append(node('h1', '', `Chat with ${label}`));
   const subtitle = [!sovereign && (member.title || member.description), workContext(state, conversationId)]
     .filter(Boolean).join(' · ');

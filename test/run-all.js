@@ -37,6 +37,9 @@ const suites = [
   // Same again: the home screen's shaping decides what the first screen SAYS is
   // happening, and it is the one screen nobody has to open to be misled by.
   ['home shaping', join(HERE, '..', 'ui', 'views', 'home.js')],
+  // And again: the run lifecycle labels and objective fallback are pure, and
+  // this self-check ran only when someone invoked the file by hand.
+  ['run lifecycle', join(HERE, '..', 'ui', 'run.js')],
   // And again: the automation graph's pure half decides what the saved node
   // graph actually IS — a delete that leaves a pointer behind, or a palette
   // that has drifted from the engine's node types, both ship a workflow that

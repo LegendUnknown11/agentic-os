@@ -1,4 +1,4 @@
-import { h, section, button, note, date } from './views/util.js';
+import { h, section, button, note, date, tone } from './views/util.js';
 
 const array = (value, keys = []) => {
   if (Array.isArray(value)) return value;
@@ -49,7 +49,7 @@ function itemRows(items, emptyText = 'Nothing recorded yet.') {
   if (!items.length) return [h('p', { class: 'empty', text: emptyText })];
   return items.map((item) => {
     const status = itemStatus(item) || 'pending';
-    return h('div', { class: `run-item ${statusClass(status)}` },
+    return h('div', { class: `run-item ${statusClass(status)} ${tone(status)}`.trim() },
       h('span', { text: itemLabel(item) }),
       h('b', { text: runStatusLabel(status) }));
   });
@@ -128,10 +128,10 @@ export function renderRunOverview(state, options = {}) {
     ...(Array.isArray(state.approvals) ? state.approvals.filter((item) => item.runId === runId(run) || item.run_id === runId(run)) : []),
   ].filter((item) => item?.resolved !== true && item?.status !== 'resolved');
   const recovery = recoveryFor(run);
-  const shell = h('section', { class: `home-card run-summary ${statusClass(status)}` },
+  const shell = h('section', { class: `home-card run-summary ${statusClass(status)} ${tone(status)}`.trim() },
     h('div', { class: 'run-summary-head' },
       h('div', {}, h('p', { class: 'mode-kicker', text: 'Improvement run' }), h('h2', { text: run.title ?? objectiveFor(state, run) })),
-      h('b', { class: 'run-badge', text: runStatusLabel(status) })),
+      h('b', { class: `run-badge ${tone(status)}`.trim(), text: runStatusLabel(status) })),
     h('p', { class: 'run-objective', text: objectiveFor(state, run) }),
     progressBlock(run));
   const grid = h('div', { class: 'run-grid' });
@@ -189,7 +189,8 @@ export function renderRunReview(state, options = {}) {
   if (commands.length) shell.append(reviewSection('Commands and results', ...commands.map((item) => {
     const command = text(item.command ?? item.cmd ?? item);
     const result = text(item.result ?? item.output ?? item.detail, 'No result recorded.');
-    return h('article', { class: `review-command ${statusClass(itemStatus(item))}` }, h('code', { text: command }), h('pre', { text: result }));
+    const itemState = itemStatus(item);
+    return h('article', { class: `review-command ${statusClass(itemState)} ${tone(itemState)}`.trim() }, h('code', { text: command }), h('pre', { text: result }));
   })));
   if (limitations.length) shell.append(reviewSection('Remaining limitations', ...limitations.map((item) => note(text(item), 'danger'))));
   if (walkthrough.length) shell.append(reviewSection('Walkthrough', ...walkthrough.map((item, index) => h('div', { class: 'review-step' }, h('b', { text: `${index + 1}. ${text(item.title ?? item.label ?? item)}` }), item.detail && h('span', { text: item.detail })))));

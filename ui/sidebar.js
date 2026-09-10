@@ -1,6 +1,5 @@
-import { state as storeState, subscribe, post as storePost, sameId, money as formatMoney } from './store.js';
-import { statusDot } from './avatar.js';
-import { displayName, roleGroup } from './names.js';
+import { state as storeState, subscribe, post as storePost, sameId } from './store.js';
+import { spendText } from './views/util.js';
 import { icon } from './icons.js';
 import { statusLabel } from './status.js';
 
@@ -25,10 +24,6 @@ function navButton(view, label, page) {
   button.prepend(icon(NAV_ICONS[view] ?? 'more'));
   return button;
 }
-
-const asArray = (value) => value instanceof Map ? [...value.entries()].map(([name, member]) => ({ name, ...member }))
-  : Array.isArray(value) ? value : value && typeof value === 'object'
-    ? Object.entries(value).map(([name, member]) => ({ name, ...member })) : [];
 
 function conversationsOf(state) {
   const value = state?.conversations;
@@ -56,31 +51,9 @@ export function displayStatus(member = {}) {
   return 'off';
 }
 
-function memberLabel(member) {
-  const status = displayStatus(member);
-  const word = status === 'failed' ? 'failed' : status === 'resting' ? 'resting' : status === 'off' ? 'off' : status;
-  return word;
-}
-
-function memberEntries(state) {
-  return asArray(state?.members).filter((m) => m.name);
-}
-
-function memberOfView(state) {
-  return state?.view?.member ?? state?.view?.memberName ?? state?.view?.name ?? null;
-}
-
 function repoName(path) {
   if (!path) return 'No repository';
   return String(path).split(/[\\/]/).filter(Boolean).pop() || path;
-}
-
-function spendText(spend) {
-  if (spend == null) return '';
-  if (typeof spend === 'number') return formatMoney(spend);
-  const amount = Number(spend.total ?? spend.spent ?? spend.costUsd);
-  if (!Number.isFinite(amount)) return String(spend.text ?? '');
-  return formatMoney(amount);
 }
 
 function conversationTitle(c) {
@@ -96,54 +69,8 @@ export function lastMessageIdFor(state, conversationId) {
   }, 0);
 }
 
-function memberSummary(member, state) {
-  return member.summary ?? member.statusText ?? member.liveSummary
-    ?? state?.summaries?.get?.(member.name) ?? '';
-}
-
 function send(post, action, body) {
   return Promise.resolve().then(() => post(action, body)).catch(() => ({ ok: false, error: 'request failed' }));
-}
-
-/**
- * Native `title` tooltips render garbled (vertical, one character per line)
- * for these long member descriptions on some Windows/Chromium builds, so
- * hover text for [data-tip] elements is drawn by hand instead.
- */
-function attachHoverTips(root) {
-  const tip = node('div', 'hover-tip');
-  tip.setAttribute('role', 'tooltip');
-  tip.hidden = true;
-  document.body.append(tip);
-
-  const targetOf = (event) => event.target.closest('[data-tip]');
-  function showTip(target) {
-    const text = target.dataset.tip;
-    if (!text) return;
-    tip.textContent = text;
-    tip.hidden = false;
-    const r = target.getBoundingClientRect();
-    tip.style.left = `${Math.max(8, Math.min(r.right + 8, window.innerWidth - tip.offsetWidth - 8))}px`;
-    tip.style.top = `${Math.max(8, Math.min(r.top, window.innerHeight - tip.offsetHeight - 8))}px`;
-  }
-  function hideTip() { tip.hidden = true; }
-  function onOver(event) { const target = targetOf(event); if (target && !target.contains(event.relatedTarget)) showTip(target); }
-  function onOut(event) { const target = targetOf(event); if (target && !target.contains(event.relatedTarget)) hideTip(); }
-  function onFocusIn(event) { const target = targetOf(event); if (target) showTip(target); }
-  function onFocusOut(event) { if (targetOf(event)) hideTip(); }
-
-  root.addEventListener('mouseover', onOver);
-  root.addEventListener('mouseout', onOut);
-  root.addEventListener('focusin', onFocusIn);
-  root.addEventListener('focusout', onFocusOut);
-
-  return () => {
-    root.removeEventListener('mouseover', onOver);
-    root.removeEventListener('mouseout', onOut);
-    root.removeEventListener('focusin', onFocusIn);
-    root.removeEventListener('focusout', onFocusOut);
-    tip.remove();
-  };
 }
 
 /**
@@ -160,8 +87,6 @@ export function mountSidebar(root, options = {}) {
 
   root.className = 'sidebar';
   root.textContent = '';
-
-  const detachTips = attachHoverTips(root);
 
   const header = node('div', 'sidebar-header');
   const brand = node('div', 'sidebar-brand', 'AgentOS');
@@ -197,11 +122,6 @@ export function mountSidebar(root, options = {}) {
   const conversationList = node('div', 'conversation-list');
   conversations.append(conversationsTitle, conversationList);
 
-  const team = node('section', 'sidebar-section sidebar-team');
-  const teamHeading = node('h2', 'sidebar-heading', 'Team');
-  const teamList = node('div', 'team-list');
-  team.append(teamHeading, teamList);
-
   const footer = node('footer', 'sidebar-footer');
   const repo = node('button', 'sidebar-repo');
   repo.type = 'button';
@@ -216,7 +136,7 @@ export function mountSidebar(root, options = {}) {
   collapse.type = 'button';
   collapse.dataset.action = 'collapse';
   footer.append(collapse);
-  root.append(header, mode, workspace, more, conversations, team, footer);
+  root.append(header, mode, workspace, more, conversations, footer);
 
   const updatePreference = (value) => {
     if (typeof options.setPref === 'function') return options.setPref('sidebarCollapsed', value);
@@ -303,13 +223,14 @@ export function mountSidebar(root, options = {}) {
     const current = options.modeOf?.(currentState.mode) ?? currentState.userMode ?? currentState.mode;
     for (const choice of options.modes ?? []) {
       const selected = choice.id === current || choice.backend === current;
-      const button = node('button', `sidebar-mode-option${selected ? ' selected' : ''}`, choice.label);
+      const button = node('button', `sidebar-mode-option${selected ? ' selected' : ''}`);
       button.type = 'button';
       button.dataset.action = 'mode';
       button.dataset.mode = choice.id ?? choice.backend;
-      button.title = [choice.blurb, choice.action].filter(Boolean).join(' ');
+      button.title = choice.blurb ?? '';
       button.setAttribute('aria-pressed', String(selected));
       button.disabled = currentState.ready === false;
+      button.append(node('strong', '', choice.label), node('span', '', choice.permissions ?? ''));
       modeList.append(button);
     }
   }
@@ -324,46 +245,6 @@ export function mountSidebar(root, options = {}) {
     for (const [view, label] of items) {
       moreList.append(navButton(view, label, page));
     }
-  }
-
-  function renderTeam() {
-    teamList.textContent = '';
-    const members = memberEntries(currentState).filter((member) => member.role !== 'peasant'
-      || member.summoned || member.serving || member.awake || displayStatus(member) !== 'off');
-    const viewed = memberOfView(currentState);
-    const grouped = new Map();
-    for (const member of members) {
-      const role = member.role ?? 'peasant';
-      if (!grouped.has(role)) grouped.set(role, []);
-      grouped.get(role).push(member);
-    }
-    const order = ['orchestrator', 'briefer', 'peasant'];
-    for (const role of new Set([...order, ...grouped.keys()])) {
-      const rows = grouped.get(role);
-      if (!rows?.length) continue;
-      const heading = node('h3', `team-group-heading role-${role}`, roleGroup(role));
-      teamList.append(heading);
-      for (const member of rows) {
-        const stateName = displayStatus(member);
-        const row = node('button', `team-row role-${member.role ?? 'peasant'} state-${stateName}${member.name === viewed ? ' selected' : ''}`);
-        row.type = 'button';
-        row.dataset.member = member.name;
-        const tipText = [member.title, member.description].filter(Boolean).join('\n');
-        if (tipText) row.dataset.tip = tipText;
-        const dot = statusDot(member.name, member.role);
-        dot.classList.add(stateName);
-        dot.setAttribute('aria-label', memberLabel(member));
-        const details = node('span', 'team-details');
-        details.append(node('strong', 'team-name', displayName(member.name, member.role)));
-        const summary = memberSummary(member, currentState);
-        if (summary) details.append(node('span', 'team-summary', summary));
-        details.append(node('span', 'team-status', memberLabel(member)));
-        row.append(dot, details);
-        teamList.append(row);
-      }
-    }
-    if (!members.length) teamList.append(node('p', 'sidebar-empty', currentState.ready === false ? 'Loading team…' : 'No agents working yet.'));
-    teamHeading.textContent = `Team · ${members.length} member${members.length === 1 ? '' : 's'}`;
   }
 
   function renderFooter() {
@@ -387,12 +268,11 @@ export function mountSidebar(root, options = {}) {
     renderWorkspace();
     renderMore(currentState.view?.page ?? 'home');
     renderConversations();
-    renderTeam();
     renderFooter();
   }
 
   function onClick(event) {
-    const target = event.target.closest('[data-action], [data-view], [data-conversation], [data-member]');
+    const target = event.target.closest('[data-action], [data-view], [data-conversation]');
     if (!target || !root.contains(target)) return;
     const action = target.dataset.action;
     if (target.dataset.view) {
@@ -401,10 +281,6 @@ export function mountSidebar(root, options = {}) {
     }
     if (target.dataset.conversation && !action) {
       options.onConversation?.(target.dataset.conversation);
-      return;
-    }
-    if (target.dataset.member) {
-      options.onMember?.(target.dataset.member);
       return;
     }
     if (action === 'new') {
@@ -476,7 +352,6 @@ export function mountSidebar(root, options = {}) {
     unsubscribe?.();
     root.removeEventListener('click', onClick);
     root.removeEventListener('submit', onSubmit);
-    detachTips();
     root.textContent = '';
     document.body.classList.remove('sidebar-collapsed');
   };

@@ -54,11 +54,3 @@ export function statusLabel(status) {
   const value = String(status ?? '').trim().toLowerCase();
   return STATUS_LABELS[value] ?? (KNOWN_ACTIVITY.has(value) ? value : 'working');
 }
-
-/** Colour class for the one word. */
-export function toneOf(status) {
-  if (status === 'limited' || status === 'failed' || status === 'blocked') return 'bad';
-  if (status === 'asleep' || status === 'idle') return 'quiet';
-  if (status === 'messaging' || status === 'briefing') return 'talk';
-  return 'busy';
-}

@@ -1,65 +1,131 @@
-# Make Agentic OS dependable for autonomous app improvement
+# Rebuild the Agentic OS interface around the run
 
 ## Goal and boundaries
 
-Approve a concrete improvement plan once, let Agentic OS execute and recover independently, then return to one combined change set and an interactive walkthrough.
+The daemon's spine is the run: a durable record moving through `planning`,
+`running`, `verifying`, `ready_for_review`, and `completed`, carrying recovery
+history and revision-bound evidence. The interface has not followed. Make the run
+the primary surface, give every state one visual vocabulary, and put the visual
+system on the design language shared with the sovereign's other builds.
 
-- Optimize for your daily use. Prove the coding workflow on Habitable before expanding project coordination and general workspace work.
-- Include fixes, polish, and explicitly approved features. New ideas discovered during execution go into the next plan.
-- Stop when the approved backlog is complete. Preserve partial results and report a concrete blocker when a required gate cannot be completed.
-- Use existing subscriptions only. For the pilot, let the system assign Haiku and Luna to planning, implementation, briefing, and independent review.
-- Defer hosted services, broad renaming, roster replacement, and another visual redesign.
+- Rebuild all fourteen views, the shell, and the design system. This supersedes
+  the previous contract's deferral of a visual redesign.
+- Keep the framework-free renderer, one shared stream and poll lifecycle, direct
+  MCP member-to-member messaging, and role and mode filtering.
+- Keep every behavioural guard the suite already holds: stale-response tokens,
+  loading against error against empty, retry paths, accessible names, and cleanup
+  on unmount. This work changes presentation, not behaviour.
+- Mode stays global state with the three existing backend ids. Making mode a
+  property of a conversation or run is a daemon change and is out of scope.
+- Defer hosted services, roster changes, and new product capability.
 
-## 1. Establish an explicit execution contract
+## The defects this answers
 
-Extend the existing SQLite bus, task list, approvals, and HTTP/SSE interfaces.
+Each was read directly in the source, not inferred.
 
-- Add a durable run record containing the source snapshot, approved plan, acceptance criteria, allowed models, task IDs, recovery history, and verification evidence.
-- Use explicit states: `planning`, `running`, `paused`, `blocked`, `verifying`, `ready_for_review`, `completed`, and `cancelled`. Keep chronological campaign accounting separate; another chat message must not imply completed work.
-- Add optional run association to tasks and approvals. Existing records remain readable through additive, idempotent migration.
-- Expose current run state through HTTP/SSE and actions to approve, pause, stop, resume, and apply reviewed work. Reuse structured questions for decisions requiring you.
-- Plan approval authorizes team selection, reassignment, model changes within the approved pool, local snapshot commits, and integration inside the isolated run. It does not authorize changing your original checkout, pushing, publishing, or adding metered providers.
-- Treat follow-up messages as steering the active run unless you explicitly start a separate objective.
+1. The run renders as one `.run-summary` card inside Overview's auto-fit grid
+   plus fragments in thread and Changes. No test covers any `.run-*` class.
+2. `ui/views/home.js` appends up to eight conditional cards in fixed source
+   order, so a blocked run can land below "Current mode". `.home-next-step`
+   exists in `ui/app.css` and nothing renders it.
+3. The 260px rail stacks three unrelated lists — navigation, conversations, and
+   team — split by `max-height: 34%` and `flex: 1`, each with its own scrollbar.
+4. Mode occupies a header control, a drawer section, and Overview's largest card,
+   and choosing Chat is secretly a navigation action.
+5. Five encodings of "how is this going" coexist: `.status-dot`, `statusLabel()`,
+   `.run-badge`, `.task-row b`, `.doctor-row`, `.merge-result`, `.activity-row`.
 
-## 2. Close the execution, recovery, and verification loop
+## 1. Establish one design system
 
-- Make `finish_task` submit run-owned work for verification. The controller marks it done only after required checks and independent review succeed; dependent implementation tasks then receive the integrated result.
-- Keep workers isolated. Integrate accepted work into one run branch automatically, resolving conflicts there. Assign overlapping edits sequentially and serialize Flutter/Gradle verification.
-- Bind test results and reviews to the actual revision checked. Changes after verification invalidate the affected evidence; the combined final revision must pass the complete acceptance gate.
-- Reuse existing process failure detection, retry, reassignment, and work preservation. Allow the existing transport retry followed by one reassignment or model-change recovery attempt per unresolved failure; persist this history across restarts.
-- An exhausted recovery attempt produces a visible blocker with the failed operation, preserved work, and next action. Continue independent approved tasks.
-- On startup, reconcile saved state with actual processes, branches, and artifacts before resuming. Prevent duplicate submissions, integrations, and approvals.
-- Pause prevents new work; Stop also terminates active run-owned processes. Both survive restart. Automatically resume only previously running, approved work.
-- Restrict automated model selection to the approved subscription pool. Exhausted quota must never silently fall back to paid API usage.
+Invert the Cold-Call Workflow design system onto a dark ink ground. Its structure
+carries over; its palette is rebuilt for a console.
 
-## 3. Make progress and final review understandable
+- Adopt its real scales: spacing `4, 8, 16, 24, 32, 48, 64, 88`; the product
+  radius pair, 16px card and 12px control, with no pills; layered shadow as
+  hairline plus tight plus ambient; `cubic-bezier(.2,0,0,1)` as the single easing;
+  a 44px minimum tap target, enforced rather than suggested.
+- Adopt its conventions: mono, uppercase, tracked labels carry every piece of
+  metadata; status reads through colour, label, dot, and geometry with no icon
+  set; a status row takes a full hairline border **and** a 3px coloured left rule.
+- Derive the ground ladder from its `--ink`, and take `--paper` as body text.
+  Record the measured contrast beside each value, as `ui/app.css` already does.
+- Two deviations, both stated in the stylesheet rather than left implicit. No
+  webfonts: this application runs offline in Electron and a failed font fetch
+  degrades silently, so `--mono` stays a local stack and Playfair Display is
+  unused. A third status hue: a console must separate running from settled, so
+  the accent and the settled tone stay in one hue family and separate by chroma.
+- Gold identifies the orchestrator and never encodes a status.
+- Every colour needs an `-rgb` channel twin, because the sheet composes alpha as
+  `rgb(var(--x-rgb) / a)` and the suite forbids literal colours outside `:root`.
 
-Improve the existing Overview, thread, and Changes views.
+## 2. Give status one vocabulary
 
-- Lead with the objective, verified deliverables, current work, blockers, and decisions awaiting you. Keep agent conversations and detailed logs available on demand.
-- Distinguish “implemented,” “verified,” and “ready for your review.” Show the last meaningful progress event and any recovery underway.
-- At final review, present one combined diff, acceptance checklist, commands and results, remaining limitations, and walkthrough steps with supporting captures.
-- The walkthrough uses the actual running app. Screenshots alone do not count as interactive validation.
-- Applying the result requires your final approval and a source-state comparison against the captured baseline. Apply only the run’s delta; if your checkout has changed, reconcile and refresh the review first.
-- Preserve the current renderer architecture and lifecycle rules. Reconcile stale documentation against source and fresh checks, including the already-implemented question feature.
+- Add one tone primitive beside the existing `page`, `section`, `field`, and
+  `button` helpers in `ui/views/util.js`, mapping every domain state — run
+  status, task state, member state, doctor check, merge result, activity kind —
+  onto four tones: live, attention, settled, idle.
+- Feed it from the existing `statusLabel()` and `displayStatus()`. Do not fork
+  them; the suite already requires Agents and the rail to share one classifier.
+- Every view then inherits one vocabulary instead of five.
 
-## 4. Prove it on Habitable
+## 3. Rebuild the shell
 
-- Create an isolated snapshot containing Habitable’s current tracked changes and relevant untracked source files. Record a manifest; exclude credentials, operational identity, caches, and build output. Preserve the original checkout and Git state.
-- Read its behavioral specification and establish fresh analysis, test, coverage, build, and emulator readiness. Historical passing results are not the baseline.
-- Audit the current app and demonstrate its existing flows. Produce a finite improvement backlog supported by observed defects or explicit product proposals; obtain your initial plan approval before implementation.
-- Preserve offline-first storage, local-time behavior, historical scores, privacy boundaries, and generated-code rules.
-- Required pilot gates: Flutter analysis, `flutter test`, the existing handwritten-code coverage requirement, debug APK build, independent review, and emulator demonstration of every changed flow.
-- Include Today actions, recovery/history behavior, and export/import in the emulator acceptance checklist; add notification checks when that behavior changes.
-- Missing SDK or emulator capability leaves the pilot explicitly blocked with its partial result preserved. Toolchain installation, physical-device acceptance, signing, store release, and iOS verification are separate work.
+- The header becomes one line that earns its height: repository and branch, then
+  the objective given real width rather than a 12px line truncated at 52ch, then
+  mode, then connection.
+- Mode gets exactly one home, showing the label and what it permits — crew,
+  worktrees, merge, tasks — read from the flags already in `src/modes.js`. The
+  drawer shows that same control. Overview stops carrying a mode card.
+- The rail drops from three lists to two. Team moves out: member status is entity
+  state, not navigation, and belongs where work is being watched.
+- Keep the collapsed 64px rail and the measurement recorded in its comment, the
+  720/721px breakpoint split, the drawer focus trap, and `inert` on the covered
+  workspace.
+
+## 4. Make Overview a mission control
+
+Order the surface by urgency, computed at render time rather than fixed in source
+order: the run first, then one ranked list merging pending approvals with blocked
+tasks and failed members, then the queue, then team activity, then changes ready,
+then ambient objective and spend. With no active run, render the next-step surface
+as the lead.
+
+The run panel presents its state on the lifecycle spine with objective, progress,
+blockers, recovery history, evidence, and the final-review gate.
+
+## 5. Rebuild the views
+
+The views compose roughly twelve shared primitives rather than carrying their own
+styling, so most inherit the system with no edit. Doctor, Memory, Notes, Messages,
+Usage, and Objective inherit and are verified. Activity, Approvals, Changes, and
+Agents re-compose against the tone primitive. Thread, Settings, and Automations
+take a structural pass.
+
+Thread keeps its exact test hooks — the composer, input, skill menu, and the
+question, action, and approval data attributes — because the suite mounts it
+against a hand-rolled fake DOM that resolves those selectors literally.
 
 ## Tests and success criteria
 
-- Extend existing owning suites for approval scope, task dependencies, stale verification, combined integration, recovery exhaustion, subscription restrictions, restart reconciliation, and immediate Stop.
-- Exercise duplicate events, worker failure after partial edits, daemon restart during verification, merge conflicts, missing tools, quota exhaustion, and source changes before final application.
-- Run the complete Agentic OS suite to its terminal result, plus browser/Electron acceptance for the new run controls. Confirm regressions fail without their fixes.
-- The pilot succeeds when the approved backlog passes all required gates with no reminders, manual worker restarts, or repeated context from you between initial approval and final review.
-- Record elapsed time, model usage, interventions, and review findings. Compare equivalent single-Luna and team runs from identical snapshots before claiming a speed or quality advantage.
-- If the audit finds no justified changes, report that result without manufacturing work; it does not prove autonomous implementation performance.
+- Rewrite `test/t-theme.js`. Keep its mechanism: the token block regex, the ban on
+  literal colours outside `:root`, the reduced-motion rule, the focus-ring
+  selector list, and the guard against a second styling vocabulary. Re-point its
+  pinned values and selectors, and add the `.run-*` classes it has never covered.
+- Re-point only the layout-anchored assertions in `test/t-pages.js`. Its
+  behavioural assertions are regression guards and survive untouched.
+- Add `ui/run.js` to the runner. It carries a self-check that `npm test` does not
+  execute, and its surface becomes the product's lead.
+- Every behaviour change extends its owning suite, and a test must fail without
+  its fix. Run the complete no-quota suite to its terminal summary before
+  committing.
+- Source evidence is not acceptance. The redesign is accepted only after a visible
+  Electron session demonstrates a run through its lifecycle, a blocked run's
+  recovery, the collapsed rail's controls, the drawer at 720px with its keyboard
+  path, and reduced-motion behaviour.
 
-Defaults: one active improvement run per workspace, at most two implementation/review workers initially, and no changes to existing batching or timeout thresholds without fresh measurements.
+## Carried forward from the previous contract
+
+The run system described in the previous `PLAN.md` is implemented and merged; its
+text remains in Git history. Two of its obligations are still open and are
+restated in `HANDOFF.md`: the Habitable pilot has not begun, and live
+subscription-pool behaviour without paid API fallback is unproven.

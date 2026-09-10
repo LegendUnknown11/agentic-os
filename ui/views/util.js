@@ -49,6 +49,31 @@ export const editing = (root) => {
 export const page = (title, description = '') => h('div', { class: 'view-page' },
   h('div', { class: 'view-heading' }, h('h1', { text: title }), description && h('p', { class: 'view-description', text: description })));
 export const section = (title, ...children) => h('section', { class: 'view-section' }, h('h2', { text: title }), ...children);
+
+// One status vocabulary for every domain that reads as "how is this going":
+// run status, task state, member state (fed from displayStatus() and
+// statusLabel()), doctor check, merge result, activity kind. Four tones only —
+// live (accent), attention (danger), settled (ok), idle (faint) — because a
+// status word means the same thing everywhere it appears; before this, the
+// same word (e.g. "ready_for_review") could read as accent in one card and ok
+// in another. A status this doesn't recognise gets no tone class, not a
+// guessed one — activity kinds like "summary" or "message" are meant to stay
+// neutral, not read as "live".
+const TONE_LIVE = new Set(['running', 'active', 'working', 'busy', 'verifying', 'requested', 'implemented',
+  'reading', 'editing', 'searching', 'delegating', 'thinking', 'speaking', 'messaging', 'briefing',
+  'consulting', 'recording', 'catching up', 'reviewing', 'proposing', 'rejecting', 'finishing',
+  'assigning', 'summoning', 'coordinating']);
+const TONE_SETTLED = new Set(['done', 'completed', 'verified', 'merged', 'dropped', 'ready_for_review', 'ok']);
+const TONE_IDLE = new Set(['idle', 'pending', 'planning', 'paused', 'awake', 'resting', 'off']);
+const TONE_ATTENTION = new Set(['blocked', 'failed', 'rate limited', 'error', 'cancelled', 'warn']);
+export function tone(status) {
+  const value = String(status ?? '').trim().toLowerCase();
+  if (TONE_ATTENTION.has(value)) return 'attention';
+  if (TONE_SETTLED.has(value)) return 'settled';
+  if (TONE_IDLE.has(value)) return 'idle';
+  if (TONE_LIVE.has(value)) return 'live';
+  return '';
+}
 export const empty = (text) => h('p', { class: 'empty', text });
 export const note = (text, cls = '') => h('p', { class: `note ${cls}`, text });
 export const button = (label, action, cls = '') => h('button', { class: `button ${cls}`.trim(), type: 'button', text: label, on: { click: action } });
@@ -87,6 +112,18 @@ export const modeAllows = (state, capability) => {
   if (capability === 'workflows') return mode.workflows === true;
   return true;
 };
+export function spendText(spend) {
+  if (spend == null) return '';
+  if (typeof spend === 'number') return money(spend);
+  const amount = Number(spend.total ?? spend.spent ?? spend.costUsd);
+  if (!Number.isFinite(amount)) return String(spend.text ?? '');
+  return money(amount);
+}
+/** What a mode permits, in its own flags — the header/drawer mode control's subtitle. */
+export const modePermissionText = (mode) => !mode ? '' : [
+  mode.crew === 'all' ? 'full crew' : mode.crew?.length ? `${mode.crew.length}-person crew` : 'no crew',
+  mode.worktrees && 'worktrees', mode.merge && 'merge', mode.tasks && 'tasks',
+].filter(Boolean).join(' · ');
 
 export function renderMarkdown(host, value) {
   host.innerHTML = mdToHtml(String(value ?? ''));

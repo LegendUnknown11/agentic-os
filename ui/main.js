@@ -1,5 +1,6 @@
 import { apply, get, post, setPrefs, setView, state, subscribe } from './store.js';
 import { modeOf } from '/modes.js';
+import { modePermissionText } from './views/util.js';
 import * as Assets from './assets.js';
 import * as Notify from './notify.js';
 
@@ -209,18 +210,20 @@ function renderShell() {
   const header = $('header');
   if (header && !header.dataset.foundation) {
     header.dataset.foundation = '1';
-    header.innerHTML = '<div class="app-identity"><span class="brand">AgentOS</span><span class="brand-tag">your team, in one place</span></div><nav class="mode-switcher" aria-label="Work mode"></nav><div class="mode-explainer"><strong class="mode-name"></strong><span class="mode-blurb"></span></div><div class="header-context"><span class="repo"></span><span class="goal-context"></span></div><span class="grow"></span><button class="mobile-menu" type="button" aria-controls="sidebar" aria-expanded="false">Menu</button><span class="connection" aria-label="Connection"></span>';
+    header.innerHTML = '<div class="app-identity"><span class="brand">AgentOS</span><span class="brand-tag">your team, in one place</span></div><span class="repo"></span><span class="header-sep" aria-hidden="true">·</span><span class="goal-context"></span><nav class="mode-switcher" aria-label="Work mode"></nav><button class="mobile-menu" type="button" aria-controls="sidebar" aria-expanded="false">Menu</button><span class="connection" aria-label="Connection"></span>';
     const switcher = header.querySelector('.mode-switcher');
     for (const choice of USER_MODES) {
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'mode-option';
       button.dataset.mode = choice.id;
-      button.title = `${choice.blurb} ${choice.action}`;
+      button.title = choice.blurb;
       button.setAttribute('aria-label', `${choice.label}: ${choice.blurb}`);
       const label = document.createElement('strong');
       label.textContent = choice.label;
-      button.append(label);
+      const permits = document.createElement('span');
+      permits.textContent = modePermissionText(modeOf(choice.backend));
+      button.append(label, permits);
       button.addEventListener('click', () => chooseMode(choice.id));
       switcher.append(button);
     }
@@ -240,14 +243,10 @@ function renderShell() {
     button.setAttribute('aria-pressed', String(selected));
     button.disabled = modeRequest > 0 || !ready;
   }
-  const modeName = header?.querySelector('.mode-name');
-  if (modeName) modeName.textContent = ready ? choice.label : 'Loading';
-  const blurb = header?.querySelector('.mode-blurb');
-  if (blurb) blurb.textContent = ready ? (modeNotice || choice.blurb) : 'Connecting to your workspace…';
   const repo = header?.querySelector('.repo');
   if (repo) repo.textContent = ready ? (state.repo ? `${String(state.repo).split(/[\\/]/).pop()}${state.base ? ` · ${state.base}` : ''}` : 'no repository') : 'Connecting…';
   const goal = header?.querySelector('.goal-context');
-  if (goal) goal.textContent = ready ? (state.goal?.text ? String(state.goal.text).replace(/\s+/g, ' ').trim() : 'No objective set') : 'Waiting for workspace state…';
+  if (goal) goal.textContent = ready ? (modeNotice || (state.goal?.text ? String(state.goal.text).replace(/\s+/g, ' ').trim() : 'No objective set')) : 'Waiting for workspace state…';
   const conn = header?.querySelector('.connection');
   if (conn) {
     conn.className = `connection ${state.conn === 'up' ? 'up' : state.conn === 'down' ? 'down' : ''}`;
@@ -480,16 +479,10 @@ export function boot() {
       state, post, get, navigate,
       setPref: (key, value) => setPrefs({ [key]: value }),
       toast,
-      modes: USER_MODES,
+      modes: USER_MODES.map((m) => ({ ...m, permissions: modePermissionText(modeOf(m.backend)) })),
       modeOf: userModeOf,
       onMode: chooseMode,
       onConversation: openConversation,
-      onMember: (name) => {
-        const conversation = state.members.get(name)?.conversationId ?? 'default';
-        const view = { page: 'thread', member: name, conversation };
-        setView(view);
-        navigate(view);
-      },
       onNew: openConversation,
       onRepository: () => { state.settingsSection = 'repo'; navigate('settings'); },
       onSettings: () => navigate('settings'),

@@ -1,4 +1,4 @@
-import { h, page, section, empty, button, membersOf, displayName, modeDef, setView, subscribe } from './util.js';
+import { h, page, section, empty, button, membersOf, displayName, modeDef, setView, subscribe, tone, spendText } from './util.js';
 import { statusLabel } from '../status.js';
 import { renderRunOverview } from '../run.js';
 
@@ -25,6 +25,31 @@ export const taskMeta = (task) => [
     : task.state === 'planning' ? 'Awaiting plan approval' : null,
 ].filter(Boolean).join(' · ');
 
+// With no active run, the single most urgent thing takes the lead position a
+// run would otherwise hold — the first item off the merged urgency ranking,
+// or changes waiting on review, or setting an objective at all.
+function nextStepFor({ urgent, changesVisible, changes, goal }) {
+  if (urgent.length) {
+    const top = urgent[0];
+    return h('section', { class: 'home-card home-next-step' },
+      h('h2', { text: 'Next step' }), h('p', { text: top.text }),
+      top.open && h('div', { class: 'button-row' }, button('Take a look', top.open, 'primary')));
+  }
+  if (changesVisible) {
+    return h('section', { class: 'home-card home-next-step' },
+      h('h2', { text: 'Next step' }),
+      h('p', { text: `${changes.length} change${changes.length === 1 ? '' : 's'} ready for review.` }),
+      h('div', { class: 'button-row' }, button('Review changes', open('changes'), 'primary')));
+  }
+  if (!goal?.text) {
+    return h('section', { class: 'home-card home-next-step' },
+      h('h2', { text: 'Next step' }),
+      h('p', { text: 'Set the outcome first. Every agent receives it before it starts work.' }),
+      h('div', { class: 'button-row' }, button('Set objective', open('objective'), 'primary'), button('Start a conversation', open({ page: 'thread', member: 'orchestrator' }))));
+  }
+  return null;
+}
+
 export function render(state, root, actions = {}, queueExpanded = false) {
   root.replaceChildren();
   if (state.ready === false) {
@@ -49,35 +74,48 @@ export function render(state, root, actions = {}, queueExpanded = false) {
   const working = team.filter(([name, member]) => member.awake && !needsAttention(currentStatus(name, member))
     && !['idle', 'turn_end', 'ready', 'awake'].includes(currentStatus(name, member)));
   const rows = queued(tasks);
+  const blocked = rows.filter((task) => task.shown === 'blocked');
+  const queueRows = rows.filter((task) => task.shown !== 'blocked');
   const crewVisible = m.crew === 'all' || m.crew?.length;
   const taskLoading = m.tasks !== false && state.tasksLoading;
   const taskFailure = m.tasks !== false && !taskLoading && state.tasksError;
-  const queueVisible = m.tasks !== false && rows.length;
+  const queueVisible = m.tasks !== false && queueRows.length;
   const workingVisible = crewVisible && working.length;
-  const attentionVisible = crewVisible && attention.length;
-  const approvalsVisible = crewVisible && approvals.length;
   const changesVisible = m.merge !== false && changes.length;
   const shell = page('Overview', mode.blurb);
   const grid = h('div', { class: 'home-grid' });
-  const needsRepository = userMode(state) === 'code' && !state.repo && !state.repository;
-  const modeAction = needsRepository ? 'Attach a repository before planning a code change.' : mode.action;
-  const modeCta = needsRepository ? 'Attach a repository' : mode.cta;
-  const modeTarget = needsRepository ? 'settings' : { page: 'thread', member: 'orchestrator' };
 
-  const modeCard = h('section', { class: `home-card home-mode-card mode-${userMode(state)}` },
-    h('p', { class: 'mode-kicker', text: 'Current mode' }),
-    h('h2', { text: mode.label }),
-    h('p', { text: modeAction }),
-    h('div', { class: 'button-row' }, button(modeCta, open(modeTarget), 'primary')));
-
-  const objective = h('div', { class: 'home-card home-objective' }, h('h2', { text: goal?.text ? 'Current objective' : 'Start here' }));
-  if (goal?.text) objective.append(h('p', { text: goal.text }), h('div', { class: 'button-row' }, button('Talk to the orchestrator', open({ page: 'thread', member: 'orchestrator' }), 'primary'), button('Edit objective', open('objective'))));
-  else objective.append(h('p', { class: 'muted', text: 'Set the outcome first. Every agent receives it before it starts work.' }), h('div', { class: 'button-row' }, button('Set objective', open('objective'), 'primary'), button('Start a conversation', open({ page: 'thread', member: 'orchestrator' }))));
-  if (goal?.milestones?.length) objective.append(h('p', { class: 'muted', text: `${goal.milestones.filter((x) => x.done).length}/${goal.milestones.length} milestones complete` }));
-  grid.append(h('div', { class: 'home-lead' }, modeCard, objective));
+  // Urgency, computed at render time rather than fixed in source order:
+  // pending approvals block the whole crew, a failed member needs direct
+  // intervention, a blocked task is usually waiting on one of the above.
+  const urgent = [
+    ...(crewVisible ? approvals.map((a) => ({
+      text: `${String(a.kind ?? 'request').toUpperCase()} · ${a.from ?? 'team'}`, open: open('approvals'),
+    })) : []),
+    ...(crewVisible ? attention.map(([name, member]) => ({
+      text: `${displayName(name, member.role)} · ${statusLabel(currentStatus(name, member))}`,
+      open: open({ page: 'thread', member: name }),
+    })) : []),
+    ...(m.tasks !== false ? blocked.map((task) => ({
+      text: `${task.title ?? task.detail ?? `Task #${task.id}`} · ${taskMeta(task)}`,
+    })) : []),
+  ];
 
   const runSummary = renderRunOverview(state, { post: actions.post, toast: actions.toast });
   if (runSummary) grid.append(runSummary);
+  else {
+    const next = nextStepFor({ urgent, changesVisible, changes, goal });
+    if (next) grid.append(next);
+  }
+
+  if (urgent.length) {
+    const needs = h('div', { class: 'home-card' }, h('h2', { text: `Needs you · ${urgent.length}` }));
+    for (const item of urgent) {
+      needs.append(item.open ? button(item.text, item.open, 'list-row')
+        : h('div', { class: `task-row ${tone('blocked')}`.trim() }, h('span', { text: item.text })));
+    }
+    grid.append(needs);
+  }
 
   if (taskLoading) {
     grid.append(h('section', { class: 'home-card' },
@@ -93,15 +131,15 @@ export function render(state, root, actions = {}, queueExpanded = false) {
   }
 
   if (queueVisible) {
-    const queue = h('div', { class: 'home-card' }, h('h2', { text: `Queue · ${rows.length}` }));
-    for (const task of visibleQueueRows(rows, queueExpanded)) {
-      queue.append(h('div', { class: `task-row task-${task.shown}` },
+    const queue = h('div', { class: 'home-card' }, h('h2', { text: `Queue · ${queueRows.length}` }));
+    for (const task of visibleQueueRows(queueRows, queueExpanded)) {
+      queue.append(h('div', { class: `task-row task-${task.shown} ${tone(task.shown)}`.trim() },
         h('b', { text: `#${task.id} · ${task.shown}` }), h('span', {},
           h('span', { text: task.title ?? task.detail ?? `Task #${task.id}` }),
           h('small', { class: 'muted', text: taskMeta(task) }))));
     }
-    if (rows.length > QUEUE_PREVIEW) {
-      const toggle = button(queueExpanded ? 'Show fewer tasks' : `Show all ${rows.length} tasks`, () => actions.setQueueExpanded?.(!queueExpanded));
+    if (queueRows.length > QUEUE_PREVIEW) {
+      const toggle = button(queueExpanded ? 'Show fewer tasks' : `Show all ${queueRows.length} tasks`, () => actions.setQueueExpanded?.(!queueExpanded));
       toggle.setAttribute('aria-expanded', String(queueExpanded));
       queue.append(h('div', { class: 'button-row' }, toggle));
     }
@@ -109,21 +147,9 @@ export function render(state, root, actions = {}, queueExpanded = false) {
   }
 
   if (workingVisible) {
-    const card = h('div', { class: 'home-card' }, h('h2', { text: `Working now · ${working.length}` }));
+    const card = h('div', { class: 'home-card' }, h('h2', { text: `Team activity · ${working.length}` }));
     working.slice(0, 8).forEach(([name, member]) => card.append(button(`${displayName(name, member.role)} · ${statusLabel(currentStatus(name, member))}`, open({ page: 'thread', member: name }), 'list-row')));
     grid.append(card);
-  }
-
-  if (attentionVisible) {
-    const card = h('div', { class: 'home-card home-attention' }, h('h2', { text: `Needs attention · ${attention.length}` }));
-    attention.slice(0, 8).forEach(([name, member]) => card.append(button(`${displayName(name, member.role)} · ${statusLabel(currentStatus(name, member))}`, open({ page: 'thread', member: name }), 'list-row')));
-    grid.append(card);
-  }
-
-  if (approvalsVisible) {
-    const needs = h('div', { class: 'home-card' }, h('h2', { text: `Needs you · ${approvals.length}` }));
-    approvals.slice(0, 5).forEach((approval) => needs.append(button(`${String(approval.kind ?? 'request').toUpperCase()} · ${approval.from ?? 'team'}`, open('approvals'), 'list-row')));
-    grid.append(needs);
   }
 
   if (changesVisible) {
@@ -132,7 +158,17 @@ export function render(state, root, actions = {}, queueExpanded = false) {
     grid.append(card);
   }
 
-  if (!taskLoading && !taskFailure && !queueVisible && !workingVisible && !attentionVisible && !approvalsVisible && !changesVisible) {
+  // Ambient: ever-present, always last — ground truth for what the court is
+  // doing and what it has spent, not a call to action.
+  const ambient = h('div', { class: 'home-card home-objective' }, h('h2', { text: goal?.text ? 'Current objective' : 'Start here' }));
+  if (goal?.text) ambient.append(h('p', { text: goal.text }), h('div', { class: 'button-row' }, button('Talk to the orchestrator', open({ page: 'thread', member: 'orchestrator' }), 'primary'), button('Edit objective', open('objective'))));
+  else ambient.append(h('p', { class: 'muted', text: 'Set the outcome first. Every agent receives it before it starts work.' }), h('div', { class: 'button-row' }, button('Set objective', open('objective'), 'primary'), button('Start a conversation', open({ page: 'thread', member: 'orchestrator' }))));
+  if (goal?.milestones?.length) ambient.append(h('p', { class: 'muted', text: `${goal.milestones.filter((x) => x.done).length}/${goal.milestones.length} milestones complete` }));
+  const spend = spendText(state.spend);
+  if (spend) ambient.append(h('p', { class: 'muted', text: `Spend so far: ${spend}` }));
+  grid.append(ambient);
+
+  if (!runSummary && !urgent.length && !taskLoading && !taskFailure && !queueVisible && !workingVisible && !changesVisible) {
     grid.append(h('p', { class: 'home-empty', text: 'Your workspace is ready. Set an objective or start a conversation to begin.' }));
   }
 

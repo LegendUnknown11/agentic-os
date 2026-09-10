@@ -1,5 +1,5 @@
 # Agentic OS instructions
 
-Read the root [HANDOFF.md](HANDOFF.md) before taking any action. It is the
-single current operating contract, architecture map, test gate, and continuation
-state for this repository.
+Read [CLAUDE.md](CLAUDE.md). It holds this repository's standing discipline and
+points to the operating contract in [HANDOFF.md](HANDOFF.md). Keeping one file
+authoritative stops the two from drifting apart.

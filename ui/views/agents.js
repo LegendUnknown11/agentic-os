@@ -1,6 +1,6 @@
 import {
   h, page, section, empty, note, button, field, select,
-  membersOf, modeAllows, modeDef, displayName, post, setView, subscribe, editing,
+  membersOf, modeAllows, modeDef, displayName, post, setView, subscribe, editing, tone,
 } from './util.js';
 import { statusDot } from '../avatar.js';
 import { displayStatus } from '../sidebar.js';
@@ -54,7 +54,9 @@ export function renderAgents(state, root) {
     const inBench = bench === 'all' || bench?.includes(name);
     const stateLabel = on ? displayStatus(member) : pending ? 'requested' : 'available';
     const dot = statusDot(name, member.role);
-    dot.classList.add(['awake', 'resting', 'busy', 'failed'].includes(stateLabel) ? stateLabel : 'off');
+    const dotTone = tone(stateLabel);
+    if (dotTone) dot.classList.add(dotTone);
+    if (stateLabel === 'busy') dot.classList.add('busy');
     dot.title = stateLabel;
     const row = h('article', { class: `agent-card ${on ? 'on-team' : ''}${pending ? ' requested' : ''}` }, h('div', { class: 'agent-heading' }, dot, h('div', {}, h('h3', { text: displayName(name, member.role) }), h('p', { class: 'muted', text: member.title ?? member.description ?? stateLabel }))), h('p', { class: 'muted', text: on ? `On team · ${stateLabel}` : pending ? 'Awaiting approval' : inBench ? 'Available to add' : `Not available in ${state.mode ?? 'this'} mode` }));
     const actions = h('div', { class: 'button-row' });

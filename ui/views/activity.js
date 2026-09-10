@@ -1,6 +1,6 @@
 import {
   h, page, section, empty, note, button, input, select, date, mdToHtml,
-  displayName, get, subscribe, editing,
+  displayName, get, subscribe, editing, tone,
 } from './util.js';
 
 const apiError = (result, fallback) => result?.ok === false ? result.error ?? fallback : null;
@@ -57,7 +57,7 @@ export function renderActivity(state, root) {
   }
   const body = section(data.total ? `${data.total} results` : 'Timeline');
   if (!activityRows.length) body.append(empty(data.query ? `Nothing matches “${data.query}”.` : 'Nothing has happened yet.'));
-  for (const row of activityRows) body.append(h('article', { class: `activity-row ${row.kind ?? ''}` }, h('div', { class: 'card-meta', text: `${displayName(row.who)}${row.to ? ` → ${displayName(row.to)}` : ''} · ${date(row.ts)}` }), h('div', { class: 'markdown', html: mdToHtml(row.text) })));
+  for (const row of activityRows) body.append(h('article', { class: `activity-row ${row.kind ?? ''} ${tone(row.kind)}`.trim() }, h('div', { class: 'card-meta', text: `${displayName(row.who)}${row.to ? ` → ${displayName(row.to)}` : ''} · ${date(row.ts)}` }), h('div', { class: 'markdown', html: mdToHtml(row.text) })));
   shell.append(body); root.append(shell);
 }
 

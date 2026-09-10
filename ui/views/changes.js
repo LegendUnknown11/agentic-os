@@ -1,6 +1,6 @@
 import {
   h, page, section, empty, note, button, membersOf, displayName, modeAllows,
-  get, post, subscribe, setView, editing,
+  get, post, subscribe, setView, editing, tone,
 } from './util.js';
 import { renderRunReview } from '../run.js';
 
@@ -80,7 +80,7 @@ function mergeResult(state, root, peasant, result, life) {
   if (!['requested', 'merged', 'failed'].includes(life.status)) return null;
   const merged = life.status === 'merged';
   const failed = life.status === 'failed';
-  const card = h('article', { class: `activity-row merge-result ${merged ? 'merged' : failed ? 'failed' : 'requested'}` },
+  const card = h('article', { class: `activity-row merge-result ${merged ? 'merged' : failed ? 'failed' : 'requested'} ${tone(life.status)}`.trim() },
     h('div', { class: 'card-meta', text: `Result · ${displayName(peasant)}` }),
     h('h3', { text: merged ? 'Merged into the base branch' : failed ? 'Merge did not happen' : 'Merge requested' }),
     h('p', { text: merged
