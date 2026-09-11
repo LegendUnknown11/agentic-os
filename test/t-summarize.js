@@ -83,6 +83,9 @@ const { transcriptOf, clean, fastSummary, summarize, settingsOf, DEFAULTS, EFFOR
   a.equal(fastSummary(events, DEFAULTS.maxWords), 'Fixed the refresh race in session.dart.');
   a.equal(await summarize({ ...DEFAULTS }, { name: 'coder', role: 'peasant', events }),
     'Fixed the refresh race in session.dart.');
+  a.equal(await summarize({ ...DEFAULTS }, { name: 'coder', role: 'peasant', events: [
+    { kind: 'text', payload: { text: 'Fixed it.' } },
+  ] }), 'Fixed it.', 'short clean action sentences must take the free path too');
   a.equal(existsSync(marker), false, 'an already-good action sentence must not spawn a model');
   console.log('  final action sentence takes the free summary path');
 }

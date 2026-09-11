@@ -98,10 +98,10 @@ export function fastSummary(events, maxWords) {
  */
 export async function summarize(settings, { name, role, events }, opts = {}) {
   if (!settings.enabled) return null;
-  const body = transcriptOf(events);
-  if (body.replace(/\[[^\]]*\]/g, '').trim().length < 24) return null;   // tools only: nothing to say
   const fast = fastSummary(events, settings.maxWords);
   if (fast) return fast;
+  const body = transcriptOf(events);
+  if (body.replace(/\[[^\]]*\]/g, '').trim().length < 24) return null;   // tools only: nothing to say
 
   // Two kinds of turn, and the difference matters. A turn that ACTS is summed
   // up by what it changed. A turn that only ANSWERS is summed up by what it
