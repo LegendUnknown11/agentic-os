@@ -66,7 +66,7 @@ let once = null;   // a non-looping clip to finish before returning to mood
 export function initPet(host) {
   el = document.createElement('button');
   el.id = 'pet';
-  el.title = 'HappyDog — asleep when the team is, running when it is working';
+  el.dataset.tip = 'HappyDog — asleep when the team is, running when it is working';
   el.setAttribute('aria-label', 'Team pet');
   el.style.backgroundImage = `url("${SHEET}")`;
   // One place decides the on-screen size; the sheet scales to match.

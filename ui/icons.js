@@ -86,6 +86,6 @@ export function setIcon(el, name, label) {
   el.append(icon(name));
   if (label) {
     el.setAttribute('aria-label', label);
-    if (!el.title) el.title = label;
+    if (!el.dataset.tip) el.dataset.tip = label;
   }
 }

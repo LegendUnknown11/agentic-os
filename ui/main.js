@@ -1,6 +1,6 @@
 import { apply, get, post, setPrefs, setView, state, subscribe } from './store.js';
 import { modeOf } from '/modes.js';
-import { modePermissionText } from './views/util.js';
+import { attachHoverTips, modePermissionText } from './views/util.js';
 import * as Assets from './assets.js';
 import * as Notify from './notify.js';
 
@@ -217,7 +217,7 @@ function renderShell() {
       button.type = 'button';
       button.className = 'mode-option';
       button.dataset.mode = choice.id;
-      button.title = choice.blurb;
+      button.dataset.tip = choice.blurb;
       button.setAttribute('aria-label', `${choice.label}: ${choice.blurb}`);
       const label = document.createElement('strong');
       label.textContent = choice.label;
@@ -253,7 +253,7 @@ function renderShell() {
     conn.textContent = state.conn === 'up' ? 'Connected' : state.conn === 'down' ? 'Reconnecting' : 'Connecting...';
     conn.setAttribute('aria-label', `Connection: ${conn.textContent}`);
     conn.setAttribute('aria-live', 'polite');
-    conn.title = state.conn;
+    conn.dataset.tip = state.conn;
   }
 }
 
@@ -468,6 +468,7 @@ function onKeydown(event) {
 export function boot() {
   if (booted || typeof window === 'undefined') return;
   booted = true;
+  attachHoverTips(document.body);
   window.addEventListener('hashchange', onHashChange);
   window.addEventListener('keydown', onKeydown);
   document.addEventListener('click', onDocumentClick);

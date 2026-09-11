@@ -71,7 +71,7 @@ function runActionButton(label, action, run, { post, toast, onDone } = {}, optio
   }, options.primary ? 'primary' : options.danger ? 'danger' : '');
   control.dataset.runAction = action;
   control.disabled = Boolean(options.disabled);
-  if (options.title) control.title = options.title;
+  if (options.tip) control.dataset.tip = options.tip;
   return control;
 }
 
@@ -96,7 +96,7 @@ export function runControls(state, run, options = {}) {
   if (['ready_for_review', 'completed'].includes(status)) {
     row.append(runActionButton('Apply reviewed result', 'runApply', run, options, {
       primary: true, disabled: !approved,
-      title: approved ? 'Apply only this run\'s reviewed delta.' : 'Final approval is required before applying the run.',
+      tip: approved ? 'Apply only this run\'s reviewed delta.' : 'Final approval is required before applying the run.',
     }));
   }
   if (!row.children.length) return null;

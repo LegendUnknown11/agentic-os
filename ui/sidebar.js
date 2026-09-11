@@ -19,7 +19,7 @@ function navButton(view, label, page) {
   const button = node('button', `sidebar-nav-button${page === view ? ' selected' : ''}`, label);
   button.type = 'button';
   button.dataset.view = view;
-  button.title = label;
+  button.dataset.tip = label;
   if (page === view) button.setAttribute('aria-current', 'page');
   button.prepend(icon(NAV_ICONS[view] ?? 'more'));
   return button;
@@ -93,7 +93,7 @@ export function mountSidebar(root, options = {}) {
   const add = node('button', 'sidebar-new', '+ New');
   add.type = 'button';
   add.dataset.action = 'new';
-  add.title = 'Start a new conversation';
+  add.dataset.tip = 'Start a new conversation';
   const mobileClose = node('button', 'sidebar-mobile-close', 'Close');
   mobileClose.type = 'button';
   mobileClose.dataset.action = 'mobile-close';
@@ -112,7 +112,7 @@ export function mountSidebar(root, options = {}) {
 
   const more = node('details', 'sidebar-more');
   const moreTitle = node('summary', 'sidebar-heading', 'More tools');
-  moreTitle.title = 'More tools';
+  moreTitle.dataset.tip = 'More tools';
   const moreList = node('div', 'sidebar-nav-list');
   more.append(moreTitle, moreList);
   more.addEventListener('toggle', () => { moreOpen = more.open; });
@@ -227,7 +227,7 @@ export function mountSidebar(root, options = {}) {
       button.type = 'button';
       button.dataset.action = 'mode';
       button.dataset.mode = choice.id ?? choice.backend;
-      button.title = choice.blurb ?? '';
+      button.dataset.tip = choice.blurb ?? '';
       button.setAttribute('aria-pressed', String(selected));
       button.disabled = currentState.ready === false;
       button.append(node('strong', '', choice.label), node('span', '', choice.permissions ?? ''));
@@ -250,13 +250,13 @@ export function mountSidebar(root, options = {}) {
   function renderFooter() {
     const path = currentState.repo ?? currentState.repository;
     repo.textContent = repoName(path);
-    repo.title = path || 'Attach a repository';
+    repo.dataset.tip = path || 'Attach a repository';
     spend.textContent = spendText(currentState.spend);
     const collapsed = Boolean(currentState.prefs?.sidebarCollapsed);
     root.classList.toggle('collapsed', collapsed);
     document.body.classList.toggle('sidebar-collapsed', collapsed);
     collapse.textContent = collapsed ? 'Expand' : 'Collapse';
-    collapse.title = collapsed ? 'Expand sidebar' : 'Collapse sidebar';
+    collapse.dataset.tip = collapsed ? 'Expand sidebar' : 'Collapse sidebar';
     collapse.setAttribute('aria-expanded', String(!collapsed));
   }
 

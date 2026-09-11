@@ -291,7 +291,7 @@ export function mount(host, nodes, { onChange, onSelect } = {}) {
       const t = trace?.get(n.id);
       if (t) {
         node.classList.add(t.ok ? 'ok' : 'fail');
-        if (t.error) node.title = t.error;
+        if (t.error) node.dataset.tip = t.error;
       }
 
       const head = el('div', 'wfn-head');
@@ -303,7 +303,7 @@ export function mount(host, nodes, { onChange, onSelect } = {}) {
       inPort.dataset.id = n.id;
       inPort.dataset.branch = 'in';
       inPort.setAttribute('aria-label', `Connect to ${n.id}`);
-      inPort.title = 'Drop a wire here';
+      inPort.dataset.tip = 'Drop a wire here';
       node.append(inPort);
       for (const which of spec?.branches ? ['then', 'else'] : ['out']) {
         const p = el('button', `wfport ${which}`);
@@ -312,13 +312,13 @@ export function mount(host, nodes, { onChange, onSelect } = {}) {
         p.dataset.branch = which;
         p.setAttribute('aria-label', `Connect ${which} from ${n.id}`);
         p.setAttribute('aria-pressed', String(keyboardWire?.from === n.id && keyboardWire.branch === which));
-        p.title = which === 'out' ? 'Drag to the next node' : `Drag to the node for “${which}”`;
+        p.dataset.tip = which === 'out' ? 'Drag to the next node' : `Drag to the node for “${which}”`;
         node.append(p);
       }
       const x = el('button', 'wfn-x', '×');
       x.type = 'button';
       x.setAttribute('aria-label', `Delete node ${n.id}`);
-      x.title = 'Delete this node';
+      x.dataset.tip = 'Delete this node';
       x.onclick = (e) => { e.stopPropagation(); del(n.id); };
       node.append(x);
       layer.append(node);

@@ -217,9 +217,9 @@ a.match(sidebarSource, /more\.addEventListener\('toggle'/, 'More tools must reco
 a.match(sidebarSource, /moreOpen \|\| items\.some/, 'More tools must stay open for its active page without collapsing on live updates');
 a.match(sidebarSource, /from '\.\/icons\.js'/, 'navigation should reuse the shipped icon set');
 a.match(sidebarSource, /NAV_ICONS/, 'navigation icons must have one explicit view mapping');
-a.match(sidebarSource, /button\.title = label/, 'collapsed navigation icons must retain a visible hover label');
-a.match(sidebarSource, /moreTitle\.title = 'More tools'/, 'collapsed More tools must retain a visible hover label');
-a.match(sidebarSource, /collapse\.title = collapsed \? 'Expand sidebar' : 'Collapse sidebar'/, 'the collapsed rail control must describe its current action');
+a.match(sidebarSource, /button\.dataset\.tip = label/, 'collapsed navigation icons must retain a visible custom hover label');
+a.match(sidebarSource, /moreTitle\.dataset\.tip = 'More tools'/, 'collapsed More tools must retain a visible custom hover label');
+a.match(sidebarSource, /collapse\.dataset\.tip = collapsed \? 'Expand sidebar' : 'Collapse sidebar'/, 'the collapsed rail control must describe its current action');
 a.match(sidebarSource, /import \{ spendText \} from '\.\/views\/util\.js'/, 'Sidebar spend must use the shared money formatter');
 a.doesNotMatch(sidebarSource, /data-member|memberOfView|attachHoverTips/, 'Team moved out of the rail — the sidebar must not keep member-click wiring for a list it no longer renders');
 a.match(pagesSource, /actionMessage\.textContent = error\?\.message/, 'failed Team actions must leave visible retryable feedback');

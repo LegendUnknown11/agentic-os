@@ -41,6 +41,65 @@ export function h(tag, props = {}, ...children) {
   return node;
 }
 
+/** Draw one tooltip for every current and future [data-tip] control. */
+export function attachHoverTips(root) {
+  const tip = h('div', { class: 'hover-tip' });
+  tip.id = 'ui-hover-tip';
+  tip.hidden = true;
+  tip.setAttribute('role', 'tooltip');
+  root.append(tip);
+  let active = null;
+
+  const targetOf = (value) => value?.closest?.('[data-tip]');
+  const hide = () => {
+    active?.removeAttribute('aria-describedby');
+    active = null;
+    tip.hidden = true;
+  };
+  const show = (target) => {
+    const text = target?.dataset?.tip;
+    if (!text) return hide();
+    active?.removeAttribute('aria-describedby');
+    active = target;
+    tip.textContent = text;
+    tip.hidden = false;
+    target.setAttribute('aria-describedby', tip.id);
+    const rect = target.getBoundingClientRect();
+    const viewportWidth = globalThis.innerWidth ?? globalThis.window?.innerWidth ?? 0;
+    const viewportHeight = globalThis.innerHeight ?? globalThis.window?.innerHeight ?? 0;
+    tip.style.left = `${Math.max(8, Math.min(rect.right + 8, viewportWidth - tip.offsetWidth - 8))}px`;
+    tip.style.top = `${Math.max(8, Math.min(rect.top, viewportHeight - tip.offsetHeight - 8))}px`;
+  };
+  const onOver = (event) => {
+    const target = targetOf(event.target);
+    if (target && !target.contains(event.relatedTarget)) show(target);
+  };
+  const onOut = (event) => {
+    const target = targetOf(event.target);
+    if (target && !target.contains(event.relatedTarget)) hide();
+  };
+  const onFocusIn = (event) => show(targetOf(event.target));
+  const onFocusOut = (event) => {
+    const target = targetOf(event.target);
+    if (target && !target.contains(event.relatedTarget)) hide();
+  };
+  root.addEventListener('pointerover', onOver);
+  root.addEventListener('pointerout', onOut);
+  root.addEventListener('focusin', onFocusIn);
+  root.addEventListener('focusout', onFocusOut);
+  globalThis.addEventListener?.('resize', hide);
+  root.addEventListener('scroll', hide, true);
+  return () => {
+    root.removeEventListener('pointerover', onOver);
+    root.removeEventListener('pointerout', onOut);
+    root.removeEventListener('focusin', onFocusIn);
+    root.removeEventListener('focusout', onFocusOut);
+    globalThis.removeEventListener?.('resize', hide);
+    root.removeEventListener('scroll', hide, true);
+    tip.remove();
+  };
+}
+
 export const clear = (root) => { root.replaceChildren(); return root; };
 export const editing = (root) => {
   const active = globalThis.document?.activeElement;

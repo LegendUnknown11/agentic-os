@@ -303,7 +303,7 @@ function threadHeader(state, { name, member, sovereign, ready, label, conversati
   const controls = node('div', 'thread-controls');
   const model = node('select', 'thread-model');
   model.dataset.control = 'model';
-  model.title = 'Model';
+  model.dataset.tip = 'Model';
   model.setAttribute('aria-label', 'Model');
   fillModel(model, state, member);
   model.disabled = !ready;
@@ -312,7 +312,7 @@ function threadHeader(state, { name, member, sovereign, ready, label, conversati
   controls.append(modelControl);
   const effort = node('select', 'thread-effort');
   effort.dataset.control = 'effort';
-  effort.title = 'Reasoning effort';
+  effort.dataset.tip = 'Reasoning effort';
   effort.setAttribute('aria-label', 'Reasoning effort');
   fillEffort(effort, state, member);
   effort.disabled = !ready || effort.disabled;
@@ -324,7 +324,7 @@ function threadHeader(state, { name, member, sovereign, ready, label, conversati
     power.type = 'button';
     power.dataset.action = member.awake ? 'sleep' : 'wake';
     power.dataset.name = name;
-    power.title = member.awake ? 'Stop this agent while keeping its session' : 'Wake this agent';
+    power.dataset.tip = member.awake ? 'Stop this agent while keeping its session' : 'Wake this agent';
     power.disabled = !ready;
     controls.append(power);
   }
@@ -395,7 +395,7 @@ function threadComposer({ name, label, conversationId, pendingFiles, sending, up
   attach.dataset.action = 'attach';
   attach.disabled = sending || uploading || !ready;
   attach.textContent = uploading ? 'Uploading…' : 'Attach';
-  attach.title = `Attach a file for ${label}`;
+  attach.dataset.tip = `Attach a file for ${label}`;
   const field = node('textarea', 'thread-input');
   field.name = 'text';
   field.rows = 1;
@@ -406,7 +406,7 @@ function threadComposer({ name, label, conversationId, pendingFiles, sending, up
   const sendButton = node('button', 'thread-send', 'Send');
   sendButton.type = 'submit';
   sendButton.disabled = sending || uploading || !ready;
-  sendButton.title = `Send to ${label}`;
+  sendButton.dataset.tip = `Send to ${label}`;
   if (sending) sendButton.textContent = 'Sending…';
   else if (uploading) sendButton.textContent = 'Uploading…';
   inputRow.append(attach, field, sendButton);

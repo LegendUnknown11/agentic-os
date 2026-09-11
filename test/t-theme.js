@@ -14,41 +14,54 @@ const root = /:root\s*\{([\s\S]*?)\n\}/.exec(css)?.[1] ?? '';
 const rules = css.replace(/\/\*[\s\S]*?\*\//g, '').slice(css.indexOf('* { box-sizing'));
 
 const token = (name) => new RegExp(`${name}\\s*:\\s*([^;]+);`).exec(root)?.[1].trim();
-// The Cold-Call Workflow design system (E:\Prototype.zip), inverted onto a
-// dark ink ground: --ink and --paper at their real archive hex values become
-// the ground and body text; every other colour is the ink hue (171°) or the
-// archive's --due hue (6°) lightened to read on dark. See the comment block
-// above :root in ui/app.css for the measured contrast behind each value.
-a.equal(token('--bg'), '#17332f');
-a.equal(token('--bg-rgb'), '23 51 47');
-a.equal(token('--surface'), '#29423e');
-a.equal(token('--surface-rgb'), '41 66 62');
-a.equal(token('--raised'), '#3b514c');
-a.equal(token('--raised-rgb'), '59 81 76');
-a.equal(token('--text'), '#f7f1e7');
-a.equal(token('--text-rgb'), '247 241 231');
-a.equal(token('--muted'), '#c1c3bb');
-a.equal(token('--muted-rgb'), '193 195 187');
-a.equal(token('--faint'), '#9da59d');
-a.equal(token('--faint-rgb'), '157 165 157');
-a.equal(token('--line'), '#5f706a');
-a.equal(token('--line-rgb'), '95 112 106');
-a.equal(token('--border-strong'), '#87928b');
-a.equal(token('--border-strong-rgb'), '135 146 139');
-a.equal(token('--accent'), '#66ccbd');
-a.equal(token('--accent-rgb'), '102 204 189');
-a.equal(token('--accent-ink'), 'var(--bg)');
-a.equal(token('--crown'), '#d8ac54');
-a.equal(token('--crown-rgb'), '216 172 84');
-a.equal(token('--danger'), '#e17f70');
-a.equal(token('--danger-rgb'), '225 127 112');
-a.equal(token('--ok'), '#85a39e');
-a.equal(token('--ok-rgb'), '133 163 158');
+// Prototype.zip is the visual source of truth: paper surfaces, ink type,
+// teal actions, and terracotta attention. The app stays offline, so it keeps
+// local type stacks instead of importing the prototype's webfonts.
+a.equal(token('--paper'), '#f7f1e7');
+a.equal(token('--paper-deep'), '#ebe1d2');
+a.equal(token('--white'), '#fffdf9');
+a.equal(token('--ink'), '#17332f');
+a.equal(token('--teal'), '#0d6663');
+a.equal(token('--teal-dark'), '#084a4a');
+a.equal(token('--teal-soft'), '#d8ebe5');
+a.equal(token('--red'), '#b84e42');
+a.equal(token('--red-dark'), '#8d3935');
+a.equal(token('--red-soft'), '#f4ded5');
+a.equal(token('--due'), '#af4a3f');
+a.equal(token('--bg'), 'var(--paper)');
+a.equal(token('--bg-rgb'), '247 241 231');
+a.equal(token('--surface'), 'var(--paper-deep)');
+a.equal(token('--surface-rgb'), '235 225 210');
+a.equal(token('--raised'), 'var(--white)');
+a.equal(token('--raised-rgb'), '255 253 249');
+a.equal(token('--text'), 'var(--ink)');
+a.equal(token('--text-rgb'), '23 51 47');
+a.equal(token('--muted'), '#5c6c66');
+a.equal(token('--muted-rgb'), '92 108 102');
+a.equal(token('--faint'), '#718078');
+a.equal(token('--faint-rgb'), '113 128 120');
+a.equal(token('--line'), '#cec7ba');
+a.equal(token('--line-rgb'), '206 199 186');
+a.equal(token('--border-strong'), '#9b9e94');
+a.equal(token('--border-strong-rgb'), '155 158 148');
+a.equal(token('--accent'), 'var(--teal)');
+a.equal(token('--accent-rgb'), '13 102 99');
+a.equal(token('--accent-ink'), 'var(--white)');
+a.equal(token('--danger'), 'var(--red-dark)');
+a.equal(token('--danger-rgb'), '141 57 53');
+a.equal(token('--ok'), 'var(--teal-dark)');
+a.equal(token('--ok-rgb'), '8 74 74');
 a.equal(token('--radius-ctl'), '12px');
 a.equal(token('--radius-card'), '16px');
 a.deepEqual([1, 2, 3, 4, 5, 6, 7, 8].map((n) => token(`--space-${n}`)), ['4px', '8px', '16px', '24px', '32px', '48px', '64px', '88px']);
 a.equal(token('--tap-target-min'), '44px');
 a.equal(token('--ease'), 'cubic-bezier(.2, 0, 0, 1)');
+a.match(css, /--display:\s*Georgia/, 'headings must use an offline editorial serif stack');
+a.doesNotMatch(css, /linear-gradient|radial-gradient/, 'the app foundation must not depend on gradients');
+a.match(css, /\.mode-switcher\s*\{[^}]*border-radius:\s*999px/, 'work modes must read as one segmented control');
+a.match(css, /\.mode-option\.selected\s*\{[^}]*background:\s*var\(--accent\)/, 'the active work mode needs one clear teal state');
+a.match(css, /\.view-heading::before\s*\{[^}]*content:\s*"AGENTOS \/ WORKSPACE"/, 'pages need one editorial eyebrow from the shared heading primitive');
+a.match(css, /\.thread-header\s*\{[^}]*background:\s*var\(--surface\)/, 'threads need the same paper panel primitive as dashboard pages');
 a.doesNotMatch(css, /--mono:\s*['"]?(IBM Plex Mono|Playfair Display)/, 'this app runs offline in Electron — no webfont stack for --mono');
 a.match(css, /grid-template:\s*"sidebar main" 1fr \/ 260px/);
 a.match(css, /#bg\s*\{[\s\S]*?z-index:\s*0;/, 'wallpaper must sit between the body and shell');
@@ -72,10 +85,8 @@ a.match(css, /\.sidebar-mode/, 'the sidebar needs the same mode choices');
 a.match(sidebar, /options\.modes/, 'the sidebar renders the shared mode choices');
 a.match(sidebar, /dataset\.action = 'mode'/, 'sidebar mode choices use the shared action path');
 a.match(thread, /`thread-heading\$\{sovereign \? ' sovereign' : ''\}`/, 'the open thread must mark whether it is the orchestrator, once, at render time');
-a.match(css, /\.thread-heading\.sovereign h1\s*\{[^}]*var\(--crown\)/, 'gold must identify the orchestrator in the one place the sovereign actually sees it');
-a.doesNotMatch(css, /\.brand\s*\{[^}]*var\(--crown\)/, 'the brand must not compete with the orchestrator identity');
-a.doesNotMatch(css, /\.mode-option\.selected strong\s*\{[^}]*var\(--crown\)/, 'mode selection must use the shared accent, not role gold');
-a.doesNotMatch(css, /\.sidebar-mode-option\.selected\s*\{[^}]*var\(--crown\)/, 'sidebar mode selection must use the shared accent, not role gold');
+a.match(css, /\.thread-heading\.sovereign h1\s*\{[^}]*var\(--accent\)/, 'the orchestrator must use the shared teal accent');
+a.doesNotMatch(css, /#d8ac54|--crown/, 'the old gold role color must not survive the prototype reskin');
 a.match(util, /class: `button \$\{cls\}`/, 'page controls inherit the shared button treatment');
 a.match(util, /role: 'progressbar'[\s\S]*?'aria-valuenow'/, 'visual meters must expose their value without relying on geometry or colour');
 a.match(css, /\.button, \.icon-button \{[^}]*transition:/, 'primary controls need a restrained interaction transition');
@@ -226,4 +237,4 @@ a.deepEqual(rgb.filter((v) => {
   return !(n[0] === n[1] && n[1] === n[2]);
 }), [], 'coloured rgb literals must come from channel tokens');
 
-console.log('t-theme.js OK — the dark flat palette is tokenised and has one fixed layout');
+console.log('t-theme.js OK — the paper/ink palette is tokenised and has one fixed layout');
