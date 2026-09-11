@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const css = readFileSync(join(import.meta.dirname, '..', 'ui', 'app.css'), 'utf8');
+const index = readFileSync(join(import.meta.dirname, '..', 'ui', 'index.html'), 'utf8');
 const main = readFileSync(join(import.meta.dirname, '..', 'ui', 'main.js'), 'utf8');
 const sidebar = readFileSync(join(import.meta.dirname, '..', 'ui', 'sidebar.js'), 'utf8');
 const util = readFileSync(join(import.meta.dirname, '..', 'ui', 'views', 'util.js'), 'utf8');
@@ -57,6 +58,7 @@ a.deepEqual([1, 2, 3, 4, 5, 6, 7, 8].map((n) => token(`--space-${n}`)), ['4px', 
 a.equal(token('--tap-target-min'), '44px');
 a.equal(token('--ease'), 'cubic-bezier(.2, 0, 0, 1)');
 a.match(css, /--display:\s*Georgia/, 'headings must use an offline editorial serif stack');
+a.match(index, /<meta name="color-scheme" content="light">/, 'the document chrome must advertise the light prototype surface');
 a.doesNotMatch(css, /linear-gradient|radial-gradient/, 'the app foundation must not depend on gradients');
 a.match(css, /\.mode-switcher\s*\{[^}]*border-radius:\s*999px/, 'work modes must read as one segmented control');
 a.match(css, /\.mode-option\.selected\s*\{[^}]*background:\s*var\(--accent\)/, 'the active work mode needs one clear teal state');
