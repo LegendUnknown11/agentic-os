@@ -120,14 +120,19 @@ function judgePrompt(question, transcript) {
  * it looks like corroboration and is not.
  */
 export async function argue(question, {
-  panel, rounds = DEFAULT_ROUNDS, cwd = process.cwd(), onProgress,
+  panel, rounds = DEFAULT_ROUNDS, cwd = process.cwd(), onProgress, onTelemetry,
 } = {}) {
   if (!panel?.arguers?.length) throw new Error('No panel: the argument court needs at least two models.');
   const q = String(question ?? '').trim();
   if (!q) throw new Error('Nothing to argue.');
 
   const say = (stage, who) => onProgress?.({ stage, who });
-  const opts = (label) => ({ cwd, onFail: (m) => say('failed', `${label}: ${m}`) });
+  const opts = (label) => ({
+    cwd,
+    purpose: 'argument',
+    onFail: (m) => say('failed', `${label}: ${m}`),
+    onTelemetry,
+  });
 
   // Both openings at once: they are independent by construction, and running
   // them in sequence doubles the wall-clock of the slowest stage for nothing.

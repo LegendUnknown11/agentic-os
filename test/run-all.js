@@ -80,6 +80,7 @@ const suites = [
   ['ask_question interview flow', join(HERE, 't-questions.js')],
   ['summon payload validation', join(HERE, 't-summon-validation.js')],
   ['advisor: prompt engineer + model selector', join(HERE, 't-advisor.js')],
+  ['efficiency contracts', join(HERE, 't-efficiency.js')],
   ['wallpaper and music assets', join(HERE, 't-assets.js')],
   ['uploaded documents surfaced to the court', join(HERE, 't-uploads.js')],
   ['metrics, diff and vault panels', join(HERE, 't-panels.js')],

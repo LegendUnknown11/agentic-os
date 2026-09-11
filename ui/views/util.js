@@ -96,7 +96,12 @@ export const select = (items, value) => {
 };
 
 export const check = (value = false) => h('input', { type: 'checkbox', checked: value });
-export const meter = (value, label = '') => h('div', { class: 'meter-wrap' }, label && h('span', { text: label }), h('div', { class: 'meter' }, h('i', { style: { width: `${Math.max(0, Math.min(100, Number(value) || 0))}%` } })));
+export const meter = (value, label = '') => {
+  const current = Math.max(0, Math.min(100, Number(value) || 0));
+  return h('div', { class: 'meter-wrap' }, label && h('span', { text: label }),
+    h('div', { class: 'meter', role: 'progressbar', 'aria-label': label || 'Progress', 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-valuenow': String(Math.round(current)) },
+      h('i', { style: { width: `${current}%` } })));
+};
 export const kb = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(n ?? 0));
 export const date = (ts) => ts ? new Date(ts).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
 

@@ -69,9 +69,9 @@ async function pick(reply, allowed) {
 {
   // The sovereign excluded terra. The model reaches for it anyway.
   const out = await pick(JSON.stringify({
-    coder: { model: 'codex/gpt-5.6-terra', effort: 'ultra' },
+    coder: { model: 'codex/gpt-5.5', effort: 'ultra' },
     scribe: { model: 'codex/gpt-5.6-luna', effort: 'low' },
-  }), ['codex/gpt-5.6-luna']);
+  }), ['codex/gpt-5.6-luna', 'codex/gpt-5.6-terra']);
   a.deepEqual(out, { scribe: { cli: 'codex', model: 'gpt-5.6-luna', effort: 'low' } },
     'a model outside the allowlist must be dropped, not applied');
   console.log('  excluded model refused even though the advisor chose it');
@@ -80,16 +80,16 @@ async function pick(reply, allowed) {
 {
   // 'ultra' is real, but not on luna — codex would reject it per-model.
   const out = await pick(JSON.stringify({ coder: { model: 'codex/gpt-5.6-luna', effort: 'ultra' } }),
-    ['codex/gpt-5.6-luna']);
+    ['codex/gpt-5.6-luna', 'codex/gpt-5.6-terra']);
   a.deepEqual(out, {}, 'an effort the chosen model does not publish must be dropped');
   console.log('  per-model effort ladder enforced (luna has no "ultra")');
 }
 
 {
   const out = await pick(JSON.stringify({ ghost: { model: 'codex/gpt-5.6-luna', effort: 'low' } }),
-    ['codex/gpt-5.6-luna']);
+    ['codex/gpt-5.6-luna', 'codex/gpt-5.6-terra']);
   a.deepEqual(out, {}, 'a member that does not exist must be ignored');
-  const junk = await pick('I would suggest thinking about this more.', ['codex/gpt-5.6-luna']);
+  const junk = await pick('I would suggest thinking about this more.', ['codex/gpt-5.6-luna', 'codex/gpt-5.6-terra']);
   a.deepEqual(junk, {}, 'prose with no JSON must change nothing');
   console.log('  unknown members and non-answers change nothing');
 }
@@ -126,7 +126,8 @@ process.stdout.write(JSON.stringify({ type: 'item.completed',
   }))} } }) + '\\n');
 `);
   const picked = await pickModels({ cli: 'codex' }, {
-    goal: 'ship a small regression fix', members, allowed: ['codex/gpt-5.6-luna'], efforts,
+    goal: 'ship a small regression fix', members,
+    allowed: ['codex/gpt-5.6-luna', 'codex/gpt-5.6-terra'], efforts,
     measurements: evidence,
   }, { cwd: dir });
   a.ok(picked.coder, 'adding evidence must not change the allowlist gate');
@@ -209,8 +210,10 @@ process.stdout.write(JSON.stringify({ type: 'item.completed',
 
   const cfg = join(repo, 'kingdom.config.json');
   const write = (advisor, auto = false) => writeFileSync(cfg, JSON.stringify({
-    models: { codex: ['gpt-5.6-luna'] },
-    efforts: { codex: ['low', 'medium'], byModel: { 'gpt-5.6-luna': ['low', 'medium'] } },
+    models: { codex: ['gpt-5.6-luna', 'gpt-5.6-terra'] },
+    efforts: { codex: ['low', 'medium'], byModel: {
+      'gpt-5.6-luna': ['low', 'medium'], 'gpt-5.6-terra': ['low', 'medium'],
+    } },
     orchestrator: { name: 'orchestrator', cli: 'codex' },
     briefer: { name: 'briefer', cli: 'codex' },
     peasants: [{ name: 'coder', cli: 'codex', model: 'gpt-5.6-luna', effort: 'medium',

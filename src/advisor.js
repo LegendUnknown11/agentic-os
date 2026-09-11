@@ -12,10 +12,42 @@
 import { spawn } from 'node:child_process';
 import { resolveCli, AGY_EFFORTS } from './agent.js';
 import { MODE_NAMES } from './modes.js';
-import { deltaOf, totalsOf } from './usage.js';
-import { costOf, PRICES } from './price.js';
+import { deltaOf, hasUsage, totalsOf } from './usage.js';
+import { costClassOf, costOf, PRICES } from './price.js';
 
 const TIMEOUT_MS = 90_000;
+
+const usageFrom = (o) => o?.usage ?? o?.message?.usage ?? o?.result?.usage
+  ?? o?.step_update?.usage ?? null;
+
+const costFrom = (o) => {
+  for (const value of [o?.total_cost_usd, o?.cost_usd, o?.cost,
+    o?.result?.total_cost_usd, o?.result?.cost_usd, o?.result?.cost]) {
+    if (value !== undefined && value !== null && Number.isFinite(Number(value))) return Number(value);
+  }
+  return null;
+};
+
+const telemetryOf = ({ spec, purpose, started, usage, reported, success, failure, table }) => {
+  const normalized = usage && hasUsage(usage) ? totalsOf(usage) : null;
+  const cli = spec?.cli ?? 'codex';
+  const model = spec?.model ?? null;
+  const cost = reported ?? (normalized ? costOf(normalized, cli, model, table) : null);
+  return {
+    purpose,
+    cli,
+    model,
+    effort: spec?.effort ?? null,
+    elapsedMs: Math.max(0, Date.now() - started),
+    success: Boolean(success),
+    failure: failure ? String(failure).slice(0, 240) : null,
+    usage: normalized,
+    costUsd: cost,
+    costClassification: costClassOf({
+      usage: normalized, reported, cli, model, table,
+    }),
+  };
+};
 
 /**
  * One question, one answer, no tools. Returns the model's text, or null.
@@ -25,7 +57,10 @@ const TIMEOUT_MS = 90_000;
  * usual caveat about confining sandboxes killing MCP does not apply — the
  * advisor is given no MCP server to lose.)
  */
-export function ask(spec, prompt, { cwd = process.cwd(), timeoutMs = TIMEOUT_MS, onFail } = {}) {
+export function ask(spec, prompt, {
+  cwd = process.cwd(), timeoutMs = TIMEOUT_MS, onFail, onTelemetry,
+  purpose = 'advisor', priceTable = PRICES,
+} = {}) {
   const cli = spec?.cli ?? 'codex';
   // agy is a natural fit for these two jobs: they are one-shot text calls that
   // need no tools at all, which is exactly the part of agy that works headless.
@@ -67,7 +102,22 @@ export function ask(spec, prompt, { cwd = process.cwd(), timeoutMs = TIMEOUT_MS,
 
   return new Promise((resolve) => {
     let done = false;
+    let timer;
+    let latestUsage = null;
+    let reportedCost = null;
+    let sentTelemetry = false;
+    const report = (success, failure = null) => {
+      if (sentTelemetry) return;
+      sentTelemetry = true;
+      try {
+        onTelemetry?.(telemetryOf({
+          spec, purpose, started, usage: latestUsage, reported: reportedCost,
+          success, failure, table: priceTable,
+        }));
+      } catch { /* telemetry is observational; it must not change the answer */ }
+    };
     const finish = (v) => { if (!done) { done = true; clearTimeout(timer); resolve(v); } };
+    const started = Date.now();
 
     let proc;
     try {
@@ -77,14 +127,16 @@ export function ask(spec, prompt, { cwd = process.cwd(), timeoutMs = TIMEOUT_MS,
       });
     } catch (e) {
       onFail?.(e.message);
+      report(false, e.message);
       return finish(null);
     }
 
     // Kill the whole turn if it overruns: an advisor that hangs would hold up
     // every message the sovereign sends.
-    const timer = setTimeout(() => {
+    timer = setTimeout(() => {
       try { proc.kill(); } catch {}
       onFail?.(`no answer within ${Math.round(timeoutMs / 1000)}s`);
+      report(false, `no answer within ${Math.round(timeoutMs / 1000)}s`);
       finish(null);
     }, timeoutMs);
 
@@ -100,6 +152,8 @@ export function ask(spec, prompt, { cwd = process.cwd(), timeoutMs = TIMEOUT_MS,
         if (!line.trim()) continue;
         let o;
         try { o = JSON.parse(line); } catch { continue; }
+        latestUsage = usageFrom(o) ?? latestUsage;
+        reportedCost = costFrom(o) ?? reportedCost;
         // codex: item.completed / agent_message. claude: assistant / content[].text
         if (o.type === 'item.completed' && o.item?.type === 'agent_message') out += o.item.text ?? '';
         // agy: fragments on agent_response steps, plus a whole answer on result.
@@ -119,13 +173,14 @@ export function ask(spec, prompt, { cwd = process.cwd(), timeoutMs = TIMEOUT_MS,
     });
     proc.stderr.setEncoding('utf8');
     proc.stderr.on('data', (d) => { err = (err + d).slice(-400); });
-    proc.on('error', (e) => { err = e.message; finish(null); });
+    proc.on('error', (e) => { err = e.message; report(false, e.message); finish(null); });
     proc.on('exit', () => {
       const text = out.trim();
       // Degrading to "no advice" is correct, but degrading SILENTLY is how a
       // permanently misconfigured advisor stays invisible forever — it just
       // looks like the feature does nothing. Say why, once, per failure.
       if (!text) onFail?.(err.trim() || 'the advisor produced no output');
+      report(Boolean(text), text ? null : (err.trim() || 'the advisor produced no output'));
       finish(text || null);
     });
   });
@@ -193,7 +248,8 @@ Reply with ONLY this JSON object and nothing else:
  * thing that happens when the advisor is off.
  */
 export async function engineerPrompt(spec, text, opts = {}) {
-  const out = await ask(spec, `${ENGINEER}\n\n--- SOVEREIGN'S MESSAGE ---\n${text}`, opts);
+  const out = await ask(spec, `${ENGINEER}\n\n--- SOVEREIGN'S MESSAGE ---\n${text}`,
+    { ...opts, purpose: 'prompt-engineering' });
   if (!out) return null;
   // A model that ignored the schema still produced a usable rewrite, and taking
   // its raw text is precisely what this function did before modes existed. Only
@@ -218,20 +274,20 @@ export async function engineerPrompt(spec, text, opts = {}) {
  * on Luna effort is nearly free, so the lever that matters is which MODEL runs,
  * not how hard it thinks.
  */
-export const DEFAULT_GUIDANCE = `Choosing the MODEL matters far more than choosing the effort.
+export const DEFAULT_GUIDANCE = `Choose the least expensive allowed model that can do the task.
+Use the supplied rate card as the source of pricing, not remembered prices.
+Use the highest useful effort on cheap models; reserve expensive models for work
+that needs their extra context or reasoning. A member the task barely touches
+can simply be left alone — omit it.`;
 
-- gpt-5.6-luna costs $0.2/$1.2 per million tokens. Effort is close to free on it,
-  and it performs best at "max", so default every member on Luna to "max".
-  Do NOT lower a member's effort to save money — on Luna there is almost nothing
-  to save, and you only make it worse at its job.
-- gpt-5.6-terra costs 10x Luna. Justify it or do not pick it. Its one real
-  advantage is memory across a long task, so it is for work that must stay
-  coherent over many turns. If you do pick it, use effort "high" — at low or
-  medium use Luna instead, and Terra is not worth xhigh or above.
-- The expensive mistake is putting a member on a pricier model for a task that
-  did not need it. It is not spending effort on the cheap one.
-
-A member the task barely touches can simply be left alone — omit it.`;
+function priceContext(allowed, table) {
+  return allowed.map((ref) => {
+    const rate = table[ref];
+    return rate
+      ? `  ${ref} — $${rate[0]}/M fresh, $${rate[1]}/M cached, $${rate[2]}/M output`
+      : `  ${ref} — price unavailable`;
+  }).join('\n');
+}
 
 /**
  * What this court has actually spent on output at each recorded effort.
@@ -281,11 +337,26 @@ export function outputEvidence(events = [], { names = null, table = PRICES } = {
  * a model is only ever applied if it was on the list, so a creative answer
  * cannot spend money on a tier they excluded.
  */
-export async function pickModels(spec, { goal, members, allowed, efforts, guidance, measurements }, opts = {}) {
-  if (!allowed.length || !members.length) return {};
+export async function pickModels(spec, {
+  goal, members, allowed, efforts, guidance, measurements, table = PRICES,
+}, opts = {}) {
+  const choices = [...new Set(allowed)];
+  if (!choices.length || !members.length) return {};
   guidance ??= DEFAULT_GUIDANCE;
 
-  const menu = allowed.map((a) => {
+  // No model can add information when the menu has one item. Keep this path
+  // deterministic and free; the effort ladder is already repository config.
+  if (choices.length === 1) {
+    const ref = choices[0];
+    const [cli, ...rest] = ref.split('/');
+    const model = rest.join('/');
+    const effort = efforts[model]?.at(-1);
+    return Object.fromEntries(members.map((m) => [m.name, {
+      cli, model, ...(effort ? { effort } : {}),
+    }]));
+  }
+
+  const menu = choices.map((a) => {
     const model = a.split('/').slice(1).join('/');
     return `  ${a}   efforts: ${(efforts[model] ?? ['low', 'medium', 'high']).join(', ')}`;
   }).join('\n');
@@ -305,6 +376,9 @@ ${roster}
 ALLOWED (you may use nothing else):
 ${menu}
 
+RATE CARD (dollars per million tokens; fresh/cache/output):
+${priceContext(choices, table)}
+
 ${guidance}
 
 ${measurements ?? 'No measured output history is available for this court yet.'}
@@ -315,11 +389,11 @@ Reply with ONLY JSON, no prose:
 {"member-name": {"model": "codex/gpt-5.6-luna", "effort": "medium"}, ...}
 Omit any member you would leave alone.`;
 
-  const picks = parseJson(await ask(spec, q, opts));
+  const picks = parseJson(await ask(spec, q, { ...opts, purpose: 'model-selection' }));
   if (!picks || typeof picks !== 'object') return {};
 
   const names = new Set(members.map((m) => m.name));
-  const ok = new Set(allowed);
+  const ok = new Set(choices);
   const out = {};
   for (const [name, v] of Object.entries(picks)) {
     if (!names.has(name) || !v || typeof v !== 'object') continue;

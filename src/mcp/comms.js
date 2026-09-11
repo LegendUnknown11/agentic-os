@@ -41,9 +41,30 @@ export const comms = {
 
   roster: {
     roles: ['peasant', 'briefer', 'orchestrator'],
-    description: 'Who is in the court, their role, and whether they are awake.',
-    schema: { type: 'object', properties: {} },
-    run: () => rosterNow(),
+    description: 'List court members. Defaults to compact identity rows; query or detail narrows or expands them.',
+    schema: {
+      type: 'object',
+      properties: {
+        query: str('Optional name, role, title or description search'),
+        activeOnly: { type: 'boolean', description: 'Only currently summoned or awake members' },
+        detail: { type: 'boolean', description: 'Include description, CLI, model, effort and auto state' },
+        limit: { type: 'integer', minimum: 1, maximum: 200, description: 'Maximum rows; query defaults to 20' },
+      },
+    },
+    run: ({ query = '', activeOnly = false, detail = false, limit } = {}) => {
+      const needle = String(query ?? '').trim().toLowerCase();
+      let rows = rosterNow().filter((m) => (!activeOnly || m.summoned || m.awake)
+        && (!needle || [m.name, m.role, m.title, m.description]
+          .some((v) => String(v ?? '').toLowerCase().includes(needle))));
+      const cap = limit == null ? (needle ? 20 : rows.length) : Math.max(1, Math.min(200, Number(limit) || 1));
+      rows = rows.slice(0, cap);
+      return rows.map((m) => detail ? {
+        name: m.name, role: m.role, title: m.title, awake: Boolean(m.awake), summoned: Boolean(m.summoned),
+        description: m.description, cli: m.cli, model: m.model, effort: m.effort, auto: Boolean(m.auto),
+      } : {
+        name: m.name, role: m.role, title: m.title, awake: Boolean(m.awake), summoned: Boolean(m.summoned),
+      });
+    },
   },
 
   declare_done: {

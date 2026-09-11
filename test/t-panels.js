@@ -71,6 +71,16 @@ writeFileSync(cfg, JSON.stringify({
   bus.logEvent('coder', 'summoned', { by: 'orchestrator', approvalId: 1 });
   bus.set('spentUsd', '3.50');
   bus.set('spent:orchestrator', '2.00');
+  bus.logEvent('aux', 'aux_call', {
+    purpose: 'summary', success: true, elapsedMs: 10,
+    input: 100, cached: 60, written: 5, fresh: 35, output: 4,
+  });
+  bus.logEvent('aux', 'aux_call', {
+    purpose: 'summary', success: false, elapsedMs: 30,
+    input: 20, cached: 10, written: 0, fresh: 10, output: 3,
+  });
+  bus.set('mask:calls', '2');
+  bus.set('mask:chars', '800');
   // One good approval and two the throne room cannot render. The UI does
   // `TITLES[a.kind] ?? a.kind.toUpperCase()`, so an entry with no `kind` threw
   // and took the whole approvals pass down with it — including the pending one
@@ -135,6 +145,12 @@ try {
     a.equal(m.total.turns, 6, 'orchestrator 5 + coder 1');
     a.equal(m.total.summons, 1, 'the usage report exposes the court-wide summon count');
     a.equal(m.total.in, 180_000, '140k + 40k');
+    a.equal(orchestrator.fresh, 140_000, 'fresh input is exposed beside cache reads');
+    a.equal(m.total.fresh, 180_000, 'court-wide fresh input is additive');
+    a.equal(m.total.cacheRate, 0, 'cache rate is a ratio, not a token total');
+    a.equal(m.total.cost.classification, 'unpriced', 'unknown model prices are named, not reported as free');
+    a.equal(m.total.cost.total, 0, 'unpriced turns do not invent dollars');
+    a.equal(orchestrator.costClassification, 'unpriced');
     a.equal(m.spent, 3.5);
     a.equal(m.cap, 75);
     a.equal(m.perMemberCap, 5);
@@ -150,6 +166,15 @@ try {
     a.equal(q.used, 181_800, 'every codex member\'s deltaed tokens, summed across the whole cli');
     a.equal(q.limit, 200_000);
     a.equal(q.pct, 91);
+    a.deepEqual(m.auxiliary, {
+      calls: 2, failures: 1, input: 120, cached: 70, written: 5, fresh: 45, output: 7,
+      latencyMs: { p50: 10, p95: 30 },
+      byPurpose: { summary: {
+        calls: 2, failures: 1, input: 120, cached: 70, written: 5, fresh: 45, output: 7,
+        latencyMs: { p50: 10, p95: 30 },
+      } },
+    }, 'auxiliary advisor/summarizer telemetry has an additive stable shape');
+    a.deepEqual(m.mcp, { maskedCalls: 2, maskedChars: 800 }, 'masking counters are in the metrics contract');
     console.log(`  metrics: orchestrator 5 turns -> ${orchestrator.in} in (a sum would have said 255000)`);
     console.log(`  quota: codex at ${q.pct}% of its plan, no dollar price required`);
   }

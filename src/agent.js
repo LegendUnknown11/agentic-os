@@ -484,9 +484,17 @@ export class Agent extends EventEmitter {
     if (o.type === 'result') {
       this.busy = false;
       this.lastUsage = o.usage ?? null;
-      this.costUsd += o.total_cost_usd ?? 0;
+      const rawCost = o.total_cost_usd;
+      const cost = Number(rawCost);
+      const reported = rawCost !== undefined && rawCost !== null && Number.isFinite(cost);
+      this.costUsd += reported ? cost : 0;
       if (o.is_error) this.emit('error', o.result ?? 'turn failed');
-      this.emit('turn_end', { usage: o.usage, costUsd: o.total_cost_usd ?? 0, ctx: this.ctxTokens() });
+      this.emit('turn_end', {
+        usage: o.usage,
+        costUsd: reported ? cost : 0,
+        costReported: reported,
+        ctx: this.ctxTokens(),
+      });
     }
   }
 
@@ -756,7 +764,7 @@ export class Agent extends EventEmitter {
       if (u) this.ctxExact = u.total_tokens ?? u.input_tokens ?? this.ctxExact;
       this.lastUsage = u;
       // agy reports no price; like codex it bills against a plan, not per call.
-      this.emit('turn_end', { usage: u, costUsd: 0, ctx: this.ctxTokens() });
+      this.emit('turn_end', { usage: u, costUsd: 0, costReported: false, ctx: this.ctxTokens() });
     }
   }
 
@@ -784,7 +792,7 @@ export class Agent extends EventEmitter {
         // as badly as the raw aggregate. codex exposes nothing per call, so
         // there is nothing better to derive it from.
         // codex reports no cost, and its usage is a turn aggregate — see ctxTokens().
-        this.emit('turn_end', { usage: o.usage, costUsd: 0, ctx: this.ctxTokens() });
+        this.emit('turn_end', { usage: o.usage, costUsd: 0, costReported: false, ctx: this.ctxTokens() });
         break;
       case 'turn.failed':
       case 'error':
@@ -920,8 +928,15 @@ export class Agent extends EventEmitter {
       if (u.total_tokens || u.input_tokens) {
         this.ctxExact = u.total_tokens ?? u.input_tokens;
       }
-      this.costUsd += o.total_cost_usd ?? o.cost ?? 0;
-      this.emit('turn_end', { usage: u, costUsd: o.total_cost_usd ?? o.cost ?? 0, ctx: this.ctxTokens() });
+      const rawCost = o.total_cost_usd ?? o.cost;
+      const cost = Number.isFinite(Number(rawCost)) ? Number(rawCost) : 0;
+      this.costUsd += cost;
+      this.emit('turn_end', {
+        usage: u,
+        costUsd: cost,
+        costReported: rawCost !== undefined && rawCost !== null && Number.isFinite(Number(rawCost)),
+        ctx: this.ctxTokens(),
+      });
     }
 
     if (o.type === 'error' && !o.is_error) {

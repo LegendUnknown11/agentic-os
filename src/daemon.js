@@ -20,7 +20,8 @@ import { Kingdom, defaultConfigPath } from './kingdom.js';
 import { kingdomDir, worktreePath, diffOf, statOf } from './worktree.js';
 import { searchVault, recentNotes, readNote } from './vault.js';
 import { Speech } from './stt.js';
-import { deltaOf, totalsOf } from './usage.js';
+import { deltaOf, hasUsage, totalsOf } from './usage.js';
+import { costClassOf, costOf, tableFrom } from './price.js';
 import { readApproval } from './approval.js';
 import { listWorkflows, saveWorkflow, deleteWorkflow, runWorkflow, tickScheduler, logRun, runHistory, validWorkflowId } from './workflows.js';
 import { runDoctor } from './doctor.js';
@@ -240,6 +241,47 @@ const ACTIONS = {
  * earlier turn again — measured on a real run, that turned 65M input tokens
  * into an apparent 420M. So take DELTAS, and treat a drop as a new thread.
  */
+const finiteNumber = (value) => Number.isFinite(Number(value)) ? Number(value) : 0;
+
+function percentile(values, p) {
+  if (!values.length) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.min(sorted.length - 1, Math.ceil(sorted.length * p) - 1)];
+}
+
+function classOf(classes) {
+  return classes.size === 0 ? 'unavailable' : classes.size === 1 ? [...classes][0] : 'mixed';
+}
+
+function metricCost(p, d, cli, model, table) {
+  const reported = p?.costReported === true
+    ? finiteNumber(p.costUsd)
+    : p?.costReported == null && finiteNumber(p.costUsd) > 0
+      ? finiteNumber(p.costUsd)
+      : null;
+  const classification = costClassOf({
+    usage: p?.usage == null || !hasUsage(p.usage) ? null : p.usage,
+    reported,
+    cli,
+    model,
+    table,
+  });
+  const parts = {
+    fresh: costOf({ fresh: d.fresh, in: d.fresh }, cli, model, table),
+    cached: costOf({ fresh: 0, in: d.cached, cached: d.cached }, cli, model, table),
+    written: costOf({ fresh: 0, in: d.written, written: d.written }, cli, model, table),
+    output: costOf({ fresh: 0, in: 0, out: d.out }, cli, model, table),
+  };
+  const estimated = Object.values(parts).some((v) => v !== null)
+    ? Object.values(parts).reduce((sum, v) => sum + (v ?? 0), 0)
+    : null;
+  return {
+    classification,
+    parts,
+    total: reported ?? estimated ?? 0,
+  };
+}
+
 function metrics() {
   // Filtered in SQL, not after the fact. `events()` JSON.parses every row it
   // returns, so pulling all 20,000 retained events to keep the turn_ends meant
@@ -251,6 +293,7 @@ function metrics() {
   const by = new Map();
   const byCli = new Map();   // cli -> tokens burned, for quota-billed backends (see below)
   const def = kingdom.config.peasantDefaults ?? {};
+  const table = tableFrom(kingdom.config);
 
   for (const ev of rows) {
     let p;
@@ -267,42 +310,107 @@ function metrics() {
     const d = deltaOf(prev.get(ev.agent), u);
     prev.set(ev.agent, totalsOf(u));
 
+    const spec = kingdom.specOf(ev.agent) ?? {};
+    const cli = p?.cli ?? spec.cli ?? def.cli ?? 'claude';
+    const model = p?.model ?? spec.model ?? def.model ?? null;
+    const effort = p?.effort ?? spec.effort ?? def.effort ?? null;
+    const priced = metricCost(p, d, cli, model, table);
     const m = by.get(ev.agent) ?? {
-      name: ev.agent, turns: 0, summons: 0, in: 0, out: 0, cached: 0, ctx: 0, first: ev.ts,
+      name: ev.agent, turns: 0, summons: 0, in: 0, out: 0, cached: 0, written: 0,
+      fresh: 0, ctx: 0, first: ev.ts, cli, model, effort,
+      _cost: { fresh: 0, cached: 0, written: 0, output: 0, total: 0 },
+      _classes: new Set(),
     };
     m.turns++;
     m.in += d.in;
     m.out += d.out;
     m.cached += d.cached;
+    m.written += d.written;
+    m.fresh += d.fresh;
+    m.cli = cli;
+    m.model = model;
+    m.effort = effort;
+    for (const key of ['fresh', 'cached', 'written', 'output']) {
+      m._cost[key] += priced.parts[key] ?? 0;
+    }
+    m._cost.total += priced.total;
+    m._classes.add(priced.classification);
     m.ctx = p?.ctx ?? m.ctx;                     // latest, not a sum
     m.last = ev.ts;
     by.set(ev.agent, m);
 
-    const cli = kingdom.specOf(ev.agent)?.cli ?? def.cli ?? 'claude';
     byCli.set(cli, (byCli.get(cli) ?? 0) + d.in + d.out);
   }
 
   for (const ev of summonRows) {
     const m = by.get(ev.agent) ?? {
-      name: ev.agent, turns: 0, summons: 0, in: 0, out: 0, cached: 0, ctx: 0, first: ev.ts,
+      name: ev.agent, turns: 0, summons: 0, in: 0, out: 0, cached: 0, written: 0,
+      fresh: 0, ctx: 0, first: ev.ts, cli: null, model: null, effort: null,
+      _cost: { fresh: 0, cached: 0, written: 0, output: 0, total: 0 },
+      _classes: new Set(),
     };
     m.summons++;
     m.last = Math.max(m.last ?? 0, ev.ts);
     by.set(ev.agent, m);
   }
 
-  const members = [...by.values()].map((m) => ({
+  const members = [...by.values()].map(({ _cost, _classes, ...m }) => ({
     ...m,
     role: kingdom.roleOf(m.name),
     perTurn: m.turns ? Math.round(m.in / m.turns) : 0,
     spent: Number(kingdom.bus.get(`spent:${m.name}`) ?? 0),
     awake: kingdom.agents.has(m.name),
+    cacheRate: m.in > 0 ? m.cached / m.in : null,
+    cost: { ..._cost, classification: classOf(_classes) },
+    costClassification: classOf(_classes),
   })).sort((a, b) => b.in - a.in);
 
   const total = members.reduce((t, m) => ({
     turns: t.turns + m.turns, summons: t.summons + m.summons,
     in: t.in + m.in, out: t.out + m.out, cached: t.cached + m.cached,
-  }), { turns: 0, summons: 0, in: 0, out: 0, cached: 0 });
+    written: t.written + m.written, fresh: t.fresh + m.fresh,
+    cost: {
+      fresh: t.cost.fresh + m.cost.fresh,
+      cached: t.cost.cached + m.cost.cached,
+      written: t.cost.written + m.cost.written,
+      output: t.cost.output + m.cost.output,
+      total: t.cost.total + m.cost.total,
+      _classes: new Set([...t.cost._classes, m.cost.classification]),
+    },
+  }), {
+    turns: 0, summons: 0, in: 0, out: 0, cached: 0, written: 0, fresh: 0,
+    cost: { fresh: 0, cached: 0, written: 0, output: 0, total: 0, _classes: new Set() },
+  });
+  total.cacheRate = total.in > 0 ? total.cached / total.in : null;
+  total.cost.classification = classOf(total.cost._classes);
+  delete total.cost._classes;
+
+  const aux = { calls: 0, failures: 0, input: 0, cached: 0, written: 0, fresh: 0, output: 0, latencyMs: { p50: 0, p95: 0 }, byPurpose: {} };
+  const auxLatency = [];
+  for (const ev of kingdom.bus.events({ limit: 100_000, type: 'aux_call' })) {
+    const p = ev.payload ?? {};
+    const purpose = p.purpose ?? 'unknown';
+    const bucket = aux.byPurpose[purpose] ?? {
+      calls: 0, failures: 0, input: 0, cached: 0, written: 0, fresh: 0, output: 0, _latency: [],
+    };
+    const latency = Math.max(0, finiteNumber(p.elapsedMs));
+    aux.calls++;
+    aux.failures += p.success ? 0 : 1;
+    for (const key of ['input', 'cached', 'written', 'fresh', 'output']) {
+      aux[key] += finiteNumber(p[key]);
+      bucket[key] += finiteNumber(p[key]);
+    }
+    auxLatency.push(latency);
+    bucket.calls++;
+    bucket.failures += p.success ? 0 : 1;
+    bucket._latency.push(latency);
+    aux.byPurpose[purpose] = bucket;
+  }
+  aux.latencyMs = { p50: percentile(auxLatency, 0.5), p95: percentile(auxLatency, 0.95) };
+  for (const bucket of Object.values(aux.byPurpose)) {
+    bucket.latencyMs = { p50: percentile(bucket._latency, 0.5), p95: percentile(bucket._latency, 0.95) };
+    delete bucket._latency;
+  }
 
   // A subscription CLI (codex on a ChatGPT plan, say) has no $/token at all —
   // `spent` above is at best a reference-rate guess for it, built from a price
@@ -325,6 +433,11 @@ function metrics() {
     perMemberCap: kingdom.config.maxBudgetUsd ?? 0,
     messages: kingdom.bus.countMessages(),   // count(*), not "load every body and take .length"
     quotas,
+    auxiliary: aux,
+    mcp: {
+      maskedCalls: finiteNumber(kingdom.bus.get('mask:calls')),
+      maskedChars: finiteNumber(kingdom.bus.get('mask:chars')),
+    },
   };
 }
 

@@ -18,31 +18,89 @@
 // read to a codex-shaped denominator and you double-count; leave it out of an
 // Anthropic denominator and the cached share exceeds 100%.
 
+const number = (value) => {
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 ? n : 0;
+};
+
+const first = (usage, fields) => {
+  for (const field of fields) if (usage[field] !== undefined && usage[field] !== null) {
+    return number(usage[field]);
+  }
+  return 0;
+};
+
+const nested = (usage, object, fields) => first(usage[object] ?? {}, fields);
+
+const USAGE_FIELDS = new Set([
+  'input_tokens', 'prompt_tokens', 'inputTokens', 'promptTokens', 'promptTokenCount',
+  'output_tokens', 'completion_tokens', 'outputTokens', 'candidatesTokenCount',
+  'cache_read_input_tokens', 'cache_creation_input_tokens', 'cached_input_tokens',
+  'cache_read_tokens', 'cache_write_input_tokens', 'cachedContentTokenCount',
+  'prompt_tokens_details', 'input_tokens_details',
+]);
+
+/** Whether a provider gave us a shape this module can actually account for. */
+export function hasUsage(usage = {}) {
+  if (!usage || typeof usage !== 'object') return false;
+  if ([...USAGE_FIELDS].some((field) => usage[field] !== undefined && usage[field] !== null)) return true;
+  const metadata = usage.usageMetadata;
+  return Boolean(metadata && typeof metadata === 'object'
+    && ['promptTokenCount', 'cachedContentTokenCount', 'candidatesTokenCount', 'cacheCreationInputTokenCount']
+      .some((field) => metadata[field] !== undefined && metadata[field] !== null));
+}
+
 /** Everything the model read this turn, cached or not. */
 export function inputTokens(usage = {}) {
-  const input = usage.input_tokens ?? 0;
-  // Nested shapes: the cache read is already inside input_tokens.
-  if (usage.cached_input_tokens !== undefined) return input;
-  if (usage.cache_read_tokens !== undefined) return input;
-  // Alongside shape: add the parts back together.
-  return input + (usage.cache_read_input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0);
+  const input = first(usage, ['input_tokens', 'prompt_tokens', 'inputTokens', 'promptTokens'])
+    || first(usage, ['promptTokenCount']);
+  const metadata = usage.usageMetadata ?? {};
+  const geminiInput = number(metadata.promptTokenCount ?? usage.promptTokenCount);
+  const base = input || geminiInput;
+  // Nested shapes: the cache read is already inside the provider's input total.
+  if (usage.cached_input_tokens !== undefined
+    || usage.cache_read_tokens !== undefined
+    || usage.prompt_tokens_details !== undefined
+    || usage.input_tokens_details !== undefined
+    || usage.cachedContentTokenCount !== undefined
+    || metadata.cachedContentTokenCount !== undefined) return base;
+  // Alongside shape: add the Anthropic cache parts back together.
+  return base + first(usage, ['cache_read_input_tokens'])
+    + first(usage, ['cache_creation_input_tokens']);
 }
 
 /** The part of that which was replayed from cache rather than read afresh. */
 export function cachedTokens(usage = {}) {
-  return usage.cached_input_tokens
-    ?? usage.cache_read_input_tokens
-    ?? usage.cache_read_tokens
-    ?? 0;
+  return first(usage, ['cached_input_tokens', 'cache_read_input_tokens', 'cache_read_tokens'])
+    || nested(usage, 'prompt_tokens_details', ['cached_tokens'])
+    || nested(usage, 'input_tokens_details', ['cached_tokens'])
+    || number(usage.cachedContentTokenCount)
+    || number(usage.usageMetadata?.cachedContentTokenCount);
 }
 
-/** The three numbers a turn reports, normalised. `written` is claude-only. */
+/** Cache-prefix tokens written this turn, when the provider reports them. */
+export function writtenTokens(usage = {}) {
+  return first(usage, ['cache_creation_input_tokens', 'cache_write_input_tokens'])
+    || number(usage.usageMetadata?.cacheCreationInputTokenCount);
+}
+
+/** Output tokens across the provider naming variants. */
+export function outputTokens(usage = {}) {
+  return first(usage, ['output_tokens', 'completion_tokens', 'outputTokens', 'candidatesTokenCount'])
+    || number(usage.usageMetadata?.candidatesTokenCount);
+}
+
+/** The normalised usage shape shared by accounting, telemetry and metrics. */
 export function totalsOf(usage = {}) {
+  const input = inputTokens(usage);
+  const cached = cachedTokens(usage);
+  const written = writtenTokens(usage);
   return {
-    in: inputTokens(usage),
-    out: usage.output_tokens ?? 0,
-    cached: cachedTokens(usage),
-    written: usage.cache_creation_input_tokens ?? 0,
+    in: input,
+    out: outputTokens(usage),
+    cached,
+    written,
+    fresh: Math.max(0, input - cached - written),
   };
 }
 
@@ -69,7 +127,7 @@ export function isCumulative(usage = {}) {
     || usage.cache_write_input_tokens !== undefined;
 }
 
-export const ZERO = { in: 0, out: 0, cached: 0, written: 0 };
+export const ZERO = { in: 0, out: 0, cached: 0, written: 0, fresh: 0 };
 
 /**
  * What one turn actually added, given the previous reading from the same
@@ -86,6 +144,8 @@ export function deltaOf(prev, usage = {}) {
     out: d(now.out, was.out ?? 0),
     cached: d(now.cached, was.cached ?? 0),
     written: d(now.written, was.written ?? 0),
+    fresh: Math.max(0, d(now.in, was.in ?? 0) - d(now.cached, was.cached ?? 0)
+      - d(now.written, was.written ?? 0)),
   };
 }
 
@@ -107,6 +167,15 @@ if (process.argv[1]?.endsWith('usage.js')) {
   const claude = { input_tokens: 50, cache_read_input_tokens: 40, cache_creation_input_tokens: 10 };
   a.equal(inputTokens(claude), 100, 'an alongside cache must be added to input');
   a.equal(cachedTokens(claude), 40);
+
+  // OpenAI and Gemini spell the same fields differently; cache remains nested
+  // in their input total, while Anthropic's cache fields sit beside it.
+  const openai = { prompt_tokens: 100, prompt_tokens_details: { cached_tokens: 70 }, completion_tokens: 5 };
+  a.deepEqual(totalsOf(openai), { in: 100, out: 5, cached: 70, written: 0, fresh: 30 });
+  const gemini = { usageMetadata: {
+    promptTokenCount: 100, cachedContentTokenCount: 60, candidatesTokenCount: 7,
+  } };
+  a.deepEqual(totalsOf(gemini), { in: 100, out: 7, cached: 60, written: 0, fresh: 40 });
 
   // The invariant that the drift broke: the replayed share is a SHARE.
   for (const u of [codex, agy, claude, {}]) {

@@ -46,6 +46,7 @@ export const settingsOf = (cfg) => {
 export const EFFORTS = ['none', 'low', 'medium', 'high', 'xhigh'];
 
 const CAP = 14_000;   // per turn; the tail is what a summary is actually about
+const ACTION = /^(added|answered|checked|changed|compared|created|described|explained|fixed|found|implemented|merged|removed|renamed|ran|read|refactored|reviewed|tested|updated|verified|wrote)\b/i;
 
 /**
  * Fold one turn's raw events into the text the summariser sees.
@@ -81,6 +82,15 @@ export function transcriptOf(events) {
   return joined.length > CAP ? `…\n${joined.slice(-CAP)}` : joined;
 }
 
+/** Use an already-good final action sentence without paying for a second model. */
+export function fastSummary(events, maxWords) {
+  const text = [...events].reverse()
+    .find((e) => e.kind === 'text' && typeof e.payload?.text === 'string')?.payload.text?.trim();
+  if (!text || text.includes('\n') || !/[.!?]$/.test(text) || !ACTION.test(text)) return null;
+  if (text.split(/\s+/).length > maxWords || clean(text, maxWords) !== text) return null;
+  return text;
+}
+
 /**
  * One line describing what `name` just did. Returns null when there is nothing
  * worth saying, or when the call fails — a missing summary is a cosmetic loss,
@@ -90,6 +100,8 @@ export async function summarize(settings, { name, role, events }, opts = {}) {
   if (!settings.enabled) return null;
   const body = transcriptOf(events);
   if (body.replace(/\[[^\]]*\]/g, '').trim().length < 24) return null;   // tools only: nothing to say
+  const fast = fastSummary(events, settings.maxWords);
+  if (fast) return fast;
 
   // Two kinds of turn, and the difference matters. A turn that ACTS is summed
   // up by what it changed. A turn that only ANSWERS is summed up by what it
@@ -114,7 +126,7 @@ Reply with the sentence and nothing else.
 ${body}`;
 
   const out = await ask({ cli: settings.cli, model: settings.model, effort: settings.effort },
-    q, opts);
+    q, { ...opts, purpose: 'summary' });
   return out ? clean(out, settings.maxWords) : null;
 }
 

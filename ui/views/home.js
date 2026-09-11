@@ -1,6 +1,7 @@
 import { h, page, section, empty, button, membersOf, displayName, modeDef, setView, subscribe, tone, spendText } from './util.js';
 import { statusLabel } from '../status.js';
 import { renderRunOverview } from '../run.js';
+import { cancelMetrics, loadMetrics, warningFor } from './usage.js';
 
 const open = (view) => () => setView(view);
 const MODE_COPY = {
@@ -24,6 +25,13 @@ export const taskMeta = (task) => [
   task.blockedBy?.length ? `Waiting on ${task.blockedBy.map((id) => `#${id}`).join(', ')}`
     : task.state === 'planning' ? 'Awaiting plan approval' : null,
 ].filter(Boolean).join(' · ');
+
+const homeStateKey = (state) => JSON.stringify([
+  state.ready, state.mode, state.goal, state.run, state.tasksLoading, state.tasksError, state.tasks,
+  state.approvals, state.changes, state.spend,
+  membersOf(state).map(([name, member]) => [name, member.role, member.summoned, member.awake, member.status,
+    state.status?.get?.(name) ?? state.status?.[name], state.log?.get?.(name)?.at?.(-1)?.type]),
+]);
 
 // With no active run, the single most urgent thing takes the lead position a
 // run would otherwise hold — the first item off the merged urgency ranking,
@@ -108,6 +116,11 @@ export function render(state, root, actions = {}, queueExpanded = false) {
     if (next) grid.append(next);
   }
 
+  const efficiencyWarning = state.metrics?.ok === false ? null : warningFor(state.metrics);
+  if (efficiencyWarning) grid.append(h('aside', { class: 'home-card home-efficiency-warning attention' },
+    h('p', { text: efficiencyWarning.text }),
+    h('a', { class: 'button link', href: efficiencyWarning.href, text: efficiencyWarning.action })));
+
   if (urgent.length) {
     const needs = h('div', { class: 'home-card' }, h('h2', { text: `Needs you · ${urgent.length}` }));
     for (const item of urgent) {
@@ -178,12 +191,29 @@ export function render(state, root, actions = {}, queueExpanded = false) {
 
 export function mount(state, root, actions = {}) {
   let queueExpanded = false;
+  let active = true;
+  let snapshot = '';
   const renderCurrent = () => render(state, root, { ...actions, setQueueExpanded: (value) => {
     queueExpanded = Boolean(value);
     renderCurrent();
   } }, queueExpanded);
   renderCurrent();
-  return subscribe(renderCurrent);
+  snapshot = homeStateKey(state);
+  const off = subscribe(() => {
+    const next = homeStateKey(state);
+    if (next === snapshot) return;
+    snapshot = next;
+    renderCurrent();
+  });
+  const ownsMetrics = !state.metrics && !state.metricsLoading && !state.metricsError;
+  if (ownsMetrics) void loadMetrics(state, () => {
+    if (!state.metricsLoading && active && root.isConnected !== false) renderCurrent();
+  });
+  return () => {
+    active = false;
+    off?.();
+    if (ownsMetrics && state.metricsLoading) cancelMetrics(state);
+  };
 }
 
 export { queued };

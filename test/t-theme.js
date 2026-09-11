@@ -77,6 +77,7 @@ a.doesNotMatch(css, /\.brand\s*\{[^}]*var\(--crown\)/, 'the brand must not compe
 a.doesNotMatch(css, /\.mode-option\.selected strong\s*\{[^}]*var\(--crown\)/, 'mode selection must use the shared accent, not role gold');
 a.doesNotMatch(css, /\.sidebar-mode-option\.selected\s*\{[^}]*var\(--crown\)/, 'sidebar mode selection must use the shared accent, not role gold');
 a.match(util, /class: `button \$\{cls\}`/, 'page controls inherit the shared button treatment');
+a.match(util, /role: 'progressbar'[\s\S]*?'aria-valuenow'/, 'visual meters must expose their value without relying on geometry or colour');
 a.match(css, /\.button, \.icon-button \{[^}]*transition:/, 'primary controls need a restrained interaction transition');
 a.match(css, /a:focus-visible, summary:focus-visible, button:focus-visible, input:focus-visible/, 'links and native disclosures must retain a visible keyboard focus ring');
 a.match(css, /\.button\.link\s*\{[^}]*min-height:\s*var\(--tap-target-min\);[^}]*padding:\s*var\(--space-1\) 0;/, 'quiet link buttons must retain the enforced tap target');
@@ -133,7 +134,14 @@ a.match(css, /\.thread-attach:hover[^}]*border-color:\s*var\(--accent\)/, 'threa
 a.match(css, /\.thread-attach:disabled, \.thread-send:disabled[^}]*opacity:\s*\.5/, 'thread actions must look unavailable while sending or uploading');
 a.match(css, /\.wfgraph/, 'the surviving workflow editor needs a visible editing surface');
 a.match(css, /\.wfport\[aria-pressed="true"\]\s*\{[^}]*box-shadow:/, 'keyboard-selected graph ports need a visible pending cue');
-a.match(css, /\.table-wrap\s*\{[^}]*overflow-x:\s*auto;/, 'dense usage tables must scroll inside their section instead of widening the page');
+a.match(css, /\.usage-lead\s*\{[^}]*grid-template-columns:\s*repeat\(4, minmax\(0, 1fr\)\);/, 'Usage must lead with four cost-decision metrics');
+a.match(css, /\.agent-usage-grid\s*\{[^}]*repeat\(auto-fit, minmax\(min\(100%, 280px\), 1fr\)\)/, 'per-agent records must wrap without a wide table');
+a.match(css, /\.agent-usage-details\s*\{[^}]*grid-template-columns:/, 'per-agent definition lists need a readable desktop relationship');
+a.match(css, /\.agent-usage-card h3, \.agent-usage-card p\s*\{[^}]*overflow-wrap:\s*anywhere;/, 'long agent and model names must wrap instead of clipping');
+a.match(css, /\.usage-recommendation\s*\{[^}]*border:\s*1px solid var\(--line\);[^}]*border-left:\s*3px solid var\(--danger\)/, 'Usage advice must use the shared attention-row geometry');
+a.match(css, /\.settings-group\s*\{[^}]*border:\s*1px solid var\(--line\)/, 'consolidated Settings jobs must retain one semantic boundary');
+a.match(css, /@media \(max-width: 720px\)[\s\S]*?\.agent-usage-details\s*\{[^}]*grid-template-columns:\s*1fr;/, 'agent definition lists must stack on narrow screens');
+a.match(css, /@media \(forced-colors: active\)/, 'forced-colors users must retain metric and status boundaries');
 a.match(css, /\.form-grid > label input/, 'nested workflow form controls must inherit the shell field treatment');
 a.match(css, /\.form-grid > label:last-child\s*\{[^}]*grid-column:\s*1 \/ -1;/, 'conditional form details must span the full form measure');
 a.match(css, /\.field input:not\(\[type="checkbox"\]\):not\(\[type="range"\]\), \.field select, \.field textarea/, 'text fields must not style native checkbox and range controls as text boxes');

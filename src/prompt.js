@@ -15,7 +15,7 @@
 // varies between two identical courts.
 import { brainBlock } from './memory.js';
 import { skillsBlock } from './skills.js';
-import { crewFor, modeBlock } from './modes.js';
+import { modeBlock } from './modes.js';
 import { testCommand } from './worktree.js';
 
 const DOCTRINE =
@@ -87,18 +87,15 @@ export function goalBlock(goal) {
 export function buildPrompt({
   name, role, spec, config, mode, goal, repo, seedPrompt = null, orientation = null,
 }) {
-  // crewFor, not the raw roster: a mode with crew:[] (Chat, Automate) or a
-  // shortlist (Research, Build) summons nobody outside it, so the rest of the
-  // bench is dead weight baked into every member's cached system prompt —
-  // measured at ~4.5K tokens for the full 107-peasant roster, repriced at the
-  // cache-WRITE rate on every respawn, for a crew that was never reachable.
-  const crew = crewFor(mode, config.peasants.map((p) => p.name));
-  const roster = config.peasants.filter((p) => crew.includes(p.name));
+  // Keep the whole bench discoverable, but carry only names and titles here.
+  // Full descriptions remain available through roster(detail:true), so the
+  // cached prefix does not pay for 107 repeated paragraphs.
+  const roster = config.peasants;
   const names = roster.length ? roster.map((p) => p.name).join(', ') : 'none in this mode';
-  // The orchestrator chooses the crew, so it needs to know what each specialist is
-  // FOR. Names alone and it summons the coder for everything.
+  // The orchestrator chooses the crew, so it needs names and titles to pick the
+  // right specialist without embedding every full description.
   const bench = roster
-    .map((p) => `  ${p.name}${p.title ? ` (${p.title})` : ''} — ${p.description ?? ''}`)
+    .map((p) => `  ${p.name}${p.title ? ` (${p.title})` : ''}`)
     .join('\n');
   const common =
     `You are "${name}" in an agentic kingdom. The orchestrator is "${config.orchestrator.name}", ` +
@@ -133,7 +130,7 @@ export function buildPrompt({
     `bill, test or merge them, and everything they produce dies with your turn. ` +
     `NEVER call one. When you need another pair of hands, or a list that must ` +
     `outlive this turn, use the kingdom tools you were given: they are the only ` +
-    `ones that are real.\n` +
+    `ones that are real. Use roster(detail:true) for a specialist's full description.\n` +
     `Keep messages short: they are replayed into the recipient's context and ` +
     `are capped at 4000 characters. To share anything large, write it to a ` +
     `file and send the path — others can read your worktree.\n` +

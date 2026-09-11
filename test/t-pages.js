@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { changeStage, pushState } from '../ui/views/pages.js';
 import { lastMessageIdFor } from '../ui/sidebar.js';
 import { taskMeta, visibleQueueRows } from '../ui/views/home.js';
+import { cancelMetrics, loadMetrics, metricsView, recommendationFor, warningFor } from '../ui/views/usage.js';
 
 const settingsSource = readFileSync(new URL('../ui/views/settings.js', import.meta.url), 'utf8');
 const automationsSource = readFileSync(new URL('../ui/views/automations.js', import.meta.url), 'utf8');
@@ -68,6 +69,8 @@ a.match(pagesSource, /post\('summon'/, 'the Team page must request a summon appr
 a.doesNotMatch(pagesSource, /on && member\.awake \? 'sleep' : 'wake'/, 'adding an agent must not bypass approval with wake');
 a.match(settingsSource, /picked\.path/, 'the native repository picker result must use its returned path');
 a.match(settingsSource, /aria-label': 'Settings sections'/, 'Settings navigation must have a spoken region name');
+a.match(settingsSource, /\['efficiency', 'Models & efficiency'\]/, 'Settings must consolidate model cost controls into one section');
+a.doesNotMatch(settingsSource, /\['summary', 'Summaries'\]|\['advisor', 'Advisor'\]/, 'Settings must not keep separate Summary and Advisor tabs');
 a.match(settingsSource, /type: 'button', style: \{ backgroundImage/, 'Settings asset tiles must never submit a surrounding form');
 a.match(settingsSource, /tab\.setAttribute\('aria-current', 'page'\)/, 'Settings must expose its active section to assistive technology');
 a.match(settingsSource, /picked\.error/, 'a rejected native repository pick must be visible in Settings');
@@ -119,7 +122,8 @@ a.match(automationsSource, /if \(!state\.workflows \|\| state\.workflows\?\.ok =
 a.doesNotMatch(automationsSource, /state\.workflowsLoading = false; state\.workflows = data; workflowList\(state, root\); \}/, 'a failed automation refresh must not overwrite the last-known list');
 a.match(automationsSource, /add\.disabled = Boolean\(state\.workflowsLoading\)/, 'Automations must not start a new workflow before its list loads');
 a.match(automationsSource, /Array\.isArray\(source\)/, 'an initial workflow load failure must render an error instead of crashing');
-a.match(homeSource, /return subscribe\(renderCurrent\)/, 'Home must repaint when the store receives live state');
+a.match(homeSource, /const homeStateKey =/, 'Home must identify the state that can change its visible decisions');
+a.match(homeSource, /if \(next === snapshot\) return;/, 'unrelated stream events must not repaint Overview');
 a.match(homeSource, /let queueExpanded = false/, 'Home queue disclosure must survive live store repaints');
 a.match(homeSource, /visibleQueueRows\(queueRows, queueExpanded\)/, 'Home must render the full queue when its disclosure is expanded');
 a.match(homeSource, /setQueueExpanded/, 'Home queue disclosure must have a local toggle action');
@@ -252,14 +256,80 @@ a.match(homeSource, /state\.tasksError/, 'Home must not turn a failed task refre
 a.match(homeSource, /state\.tasksLoading/, 'Home must distinguish task loading from an empty workspace');
 a.match(homeSource, /Loading current work/, 'Home task loading must be explicit');
 a.match(homeSource, /button\('Retry',[\s\S]*?refreshLists/, 'Home task failures must offer a direct retry');
-a.match(pagesSource, /apiError\(m, 'Could not load usage\.'/, 'usage load failures must not look like zero spend');
+a.match(pagesSource, /apiError\(metrics, 'Could not load usage\.'/, 'usage load failures must not look like zero spend');
 a.match(usageSource, /state\.metricsError/, 'usage refresh failures must keep a separate visible error state');
-a.match(usageSource, /if \(data\?\.ok !== false\) state\.metrics = data;/, 'a successful usage response must become the displayed metrics');
-a.match(usageSource, /if \(!state\.metrics \|\| state\.metrics\?\.ok === false\)/, 'usage refresh failures may stop only when no last-known metrics exist');
-a.match(usageSource, /button\('Retry'/, 'usage refresh failures must offer a direct retry');
+a.match(usageSource, /state\.metrics = data;/, 'a successful usage response must become the displayed metrics');
+a.match(usageSource, /if \(loadFailure && !hasMetrics\)/, 'usage refresh failures may stop only when no last-known metrics exist');
+a.match(usageSource, /refresh\.textContent = 'Retry'/, 'usage refresh failures must offer a direct retry');
 a.doesNotMatch(usageSource, /state\.metrics = data;\s*renderUsage\(state, root\);/, 'a failed usage refresh must not overwrite the last-known totals');
 a.match(pagesSource, /state\.metricsLoading/, 'Usage must not present zero totals while metrics are loading');
-a.match(usageSource, /class: 'table-wrap'/, 'Usage must keep its dense table inside a bounded scroll surface');
+a.match(usageSource, /class: 'agent-usage-grid'/, 'Usage must present per-agent metrics as wrapping semantic records');
+a.match(usageSource, /class: 'agent-usage-details'/, 'per-agent records must preserve term and value relationships');
+a.match(usageSource, /refresh\.dataset\.action = 'refresh-metrics'/, 'Usage refresh must keep a stable focus target');
+a.match(usageSource, /aria-busy': String\(Boolean\(state\.metricsLoading\)\)/, 'Usage must scope busy state to its dashboard');
+a.match(usageSource, /activeRefresh[\s\S]*?focus\(\{ preventScroll: true \}\)/, 'Usage refreshes must restore focus without moving the reader');
+a.match(usageSource, /scrollHost\.scrollTop = scrollTop/, 'Usage refreshes must preserve scroll');
+a.doesNotMatch(usageSource, /subscribe\(/, 'unrelated store events must not repaint Usage');
+a.match(usageSource, /class: 'button link', href: recommendation\.href/, 'recommendations must use links for navigation');
+a.match(usageSource, /agentAttention\(members\)/, 'the first Usage viewport must identify the agent needing cost attention');
+
+const populatedMetrics = {
+  total: { turns: 4, in: 1_000, fresh: 600, cached: 400, written: 120, out: 80, cacheRate: 40 },
+  cost: { fresh: 6, cached: 2, written: 1, output: 1, total: 10, classification: 'reported' },
+  auxiliary: { calls: 2, failures: 0, latencyMs: { p50: 50, p95: 90 }, byPurpose: { summary: 2 } },
+  mcp: { maskedCalls: 3, maskedChars: 700 },
+};
+a.deepEqual(metricsView(populatedMetrics).mcp, { maskedCalls: 3, maskedChars: 700 }, 'Usage must retain populated MCP savings');
+a.equal(metricsView({ total: { in: 0, cached: 0, cacheRate: 0 }, spent: 0 }).cacheRate, 0, 'zero usage must remain a real zero');
+a.equal(metricsView({ total: { cacheRate: .4, cost: { total: 2, classification: 'cli-reported' } } }).cacheRate, 40, 'ratio-shaped cache rates must render as percentages');
+a.equal(metricsView({ total: { cost: { total: 2, classification: 'cli-reported' } } }).cost.classification, 'reported', 'the live backend reported-cost name must retain provider provenance');
+a.equal(metricsView({ total: {} }).cacheRate, null, 'missing cache data must remain unavailable');
+a.equal(metricsView({ total: {}, auxiliary: null }).auxiliary, null, 'missing auxiliary data must remain unavailable');
+a.equal(metricsView({ total: { in: 100, cached: 20 }, spent: 1 }).cost.classification, 'estimated', 'legacy spend must not masquerade as provider-reported');
+a.equal(recommendationFor(populatedMetrics)?.condition, 'Fresh-input cost is the largest classified cost.', 'fresh-cost dominance must produce one cold-prompt recommendation');
+a.equal(recommendationFor({ ...populatedMetrics, cost: { ...populatedMetrics.cost, classification: 'unpriced' }, auxiliary: { calls: 99, failures: 99 } })?.condition,
+  'Some usage is unpriced.', 'unpriced usage must take precedence over secondary efficiency advice');
+a.equal(recommendationFor({ ...populatedMetrics, cost: { ...populatedMetrics.cost, classification: 'mixed' }, members: [{ costClassification: 'unpriced' }] })?.condition,
+  'Some usage is unpriced.', 'a mixed total must still expose an unpriced member');
+a.match(recommendationFor({ total: { turns: 1 }, cost: { total: 1, fresh: .1, cached: .1, written: .1, output: .1, classification: 'reported' }, auxiliary: { calls: 4, failures: 2 } })?.condition ?? '',
+  /auxiliary failures/, 'repeated auxiliary failures must take precedence over cost-shape advice');
+a.equal(recommendationFor({ total: { turns: 1 }, cost: { total: 1, fresh: .25, cached: .25, written: .25, output: .25, classification: 'reported' } }), null,
+  'weak evidence must not manufacture a recommendation');
+a.match(warningFor({ total: { fresh: 2_000, cached: 10, cacheRate: .005 }, cost: { classification: 'reported' } })?.text ?? '', /Cache reuse is 1%/, 'Overview must surface a measured cache collapse');
+
+const fetchBeforeMetricsCheck = globalThis.fetch;
+try {
+  const responses = [];
+  globalThis.fetch = () => new Promise((resolve) => responses.push(resolve));
+  const metricState = {};
+  const first = loadMetrics(metricState);
+  const second = loadMetrics(metricState, null, true);
+  responses[1](new Response(JSON.stringify({ ok: true, total: { turns: 2 } }), { status: 200 }));
+  await second;
+  responses[0](new Response(JSON.stringify({ ok: true, total: { turns: 1 } }), { status: 200 }));
+  await first;
+  a.equal(metricState.metrics.total.turns, 2, 'an older refresh must not overwrite the newer response');
+  const leavingState = {};
+  const leaving = loadMetrics(leavingState);
+  cancelMetrics(leavingState);
+  responses[2](new Response(JSON.stringify({ ok: true, total: { turns: 9 } }), { status: 200 }));
+  await leaving;
+  a.equal(leavingState.metrics, undefined, 'a response settling after navigation must not mutate visible metrics');
+  const lastGood = { ok: true, total: { turns: 6 } };
+  const failureState = { metrics: lastGood };
+  const failed = loadMetrics(failureState);
+  a.equal(failureState.metrics, lastGood, 'refresh loading must preserve the last valid metrics');
+  responses[3](new Response(JSON.stringify({ ok: false, error: 'temporary failure' }), { status: 503 }));
+  await failed;
+  a.equal(failureState.metrics, lastGood, 'a failed refresh must preserve the last valid metrics');
+  a.equal(failureState.metricsError, 'temporary failure', 'a failed refresh must retain a retryable error');
+  const retried = loadMetrics(failureState, null, true);
+  responses[4](new Response(JSON.stringify({ ok: true, total: { turns: 7 } }), { status: 200 }));
+  await retried;
+  a.equal(failureState.metrics.total.turns, 7, 'a successful retry must replace stale metrics');
+} finally {
+  globalThis.fetch = fetchBeforeMetricsCheck;
+}
 a.match(pagesSource, /apiError\(data, 'Could not load activity\.'/, 'activity load failures must be visible');
 a.match(viewSources.activity, /search\.setAttribute\('aria-label', 'Search activity'\)/, 'Activity search must have an explicit accessible name');
 a.match(viewSources.activity, /filters\.setAttribute\('aria-label', 'Filter activity'\)/, 'Activity filter must have an explicit accessible name');
@@ -306,7 +376,7 @@ a.match(pagesSource, /state\.approvalsLoading/, 'Approvals must distinguish load
 a.match(approvalsSource, /button\('Retry'/, 'Approval load failures must offer a direct retry');
 a.ok(pagesSource.indexOf('if (state.approvalsLoading)') < pagesSource.indexOf('if (state.approvalsError)'), 'a retry must show its loading state before an old approval error');
 a.ok(pagesSource.indexOf('if (state.changesLoading)') < pagesSource.indexOf('const loadFailure = state.changesError ?? apiError'), 'a retry must show its loading state before an old changes error');
-a.ok(pagesSource.indexOf('if (state.metricsLoading)') < pagesSource.indexOf('const loadFailure = state.metricsError ?? apiError(m'), 'a retry must show its loading state before an old usage error');
+a.ok(pagesSource.indexOf('if (state.metricsLoading && !hasMetrics)') < pagesSource.indexOf('const loadFailure = state.metricsError ?? apiError(metrics'), 'a retry must show its loading state before an old usage error');
 a.ok(pagesSource.indexOf('if (state.activityLoading)') < pagesSource.indexOf('const loadFailure = state.activityError ?? apiError(data'), 'a retry must show its loading state before an old activity error');
 a.ok(pagesSource.indexOf('if (state.notesLoading)') < pagesSource.indexOf("const loadFailure = state.notesError ?? apiError(data, 'Could not load notes.'"), 'a retry must show its loading state before an old notes error');
 a.ok(automationsSource.indexOf('if (state.workflowsLoading)') < automationsSource.indexOf('state.workflows?.ok === false'), 'a retry must show its loading state before an old automation error');
@@ -337,7 +407,17 @@ a.match(settingsSource, /async function removeAsset/, 'asset deletion failures m
 a.match(settingsSource, /await Notify\.request\(\)/, 'notification permission changes must refresh Settings');
 a.match(settingsSource, /unsupported.*Not supported here/, 'unsupported notification environments must say why toggles are unavailable');
 a.match(settingsSource, /function settingWrite/, 'settings writes share retryable feedback');
-a.match(settingsSource, /feedback\.textContent = 'Saved\.'/, 'successful Settings writes must confirm the change');
+a.match(settingsSource, /showSettingFeedback\(state, feedback, 'Saved\.'\)/, 'successful Settings writes must confirm the change');
+a.match(settingsSource, /showSettingFeedback\(state, feedback, 'Saving/, 'Settings writes must expose a stable in-flow pending state');
+a.match(settingsSource, /feedback\.setAttribute\('aria-live', 'polite'\)/, 'Settings save feedback must use a scoped live region');
+a.match(settingsSource, /keepFocus[\s\S]*?focus\(\{ preventScroll: true \}\)/, 'Settings writes must restore the initiating control without moving the reader');
+a.match(settingsSource, /if \(next\.every\(\(value, index\) => value === relevant\[index\]\)\) return;/, 'unrelated store events must not repaint Settings');
+a.match(settingsSource, /group\('Automatic routing'/, 'Settings must group automatic routing by job');
+a.match(settingsSource, /group\('Prompt rewriting'/, 'Settings must group prompt rewriting by job');
+a.match(settingsSource, /group\('Per-turn summaries'/, 'Settings must group per-turn summaries by job');
+a.match(settingsSource, /group\('Model and effort'/, 'Settings must group model and effort by job');
+a.match(settingsSource, /field\('Advisor model'[^]*?field\('Summary effort'/, 'consolidated model controls must keep distinct visible and accessible names');
+a.match(settingsSource, /does not restart a court member session/, 'Settings must explain session restart consequences');
 a.match(settingsSource, /function rangeField/, 'range settings must expose their current value');
 a.match(settingsSource, /rangeField\('Dim'/, 'wallpaper dim must show its current value');
 a.match(settingsSource, /rangeField\('Blur'/, 'wallpaper blur must show its current value');
@@ -353,7 +433,7 @@ a.match(settingsSource, /Could not save that setting\./, 'settings write failure
 a.match(settingsSource, /loadDependencies\(\)\.then\([\s\S]*?\.catch\(/, 'failed Settings module loads must leave the loading state');
 a.match(settingsSource, /Settings could not load/, 'failed Settings module loads must explain the recovery state');
 a.match(settingsSource, /location\.reload\(\)/, 'failed Settings module loads must offer a direct retry');
-a.match(settingsSource, /function advisor[\s\S]*settingWrite\(feedback/, 'Advisor writes use the retryable settings path');
+a.match(settingsSource, /function efficiency[\s\S]*settingWrite\(state, feedback/, 'efficiency writes use the retryable settings path');
 a.doesNotMatch(settingsSource, /\['__auto__', 'Advisor chooses'\]/, 'summaries must not expose a no-op auto model option');
 a.match(assetsSource, /if \(!response\.ok \|\| result\?\.ok === false\) return assets/, 'failed asset refreshes must preserve the known list');
 a.match(assetsSource, /response\.ok \? body : \{ \.\.\.body, ok: false/, 'HTTP upload failures must not masquerade as successful asset responses');

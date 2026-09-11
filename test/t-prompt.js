@@ -65,12 +65,12 @@ const sha = (s) => createHash('sha256').update(s, 'utf8').digest('hex').slice(0,
 // Two numbers, not one: a length alone would miss a same-length reordering, and
 // a hash alone tells you nothing about HOW far the prompt moved when it breaks.
 const EXPECT = {
-  'code/orchestrator': ['2b5284f48cb752dd', 6896],
-  'code/briefer': ['f01e5e3f711a21a1', 3740],
-  'code/coder': ['bd7c3038d8bed9b0', 7137],
-  'chat/orchestrator': ['2794a3b24c6ebe88', 7182],
-  'chat/briefer': ['b64eb68595296958', 4097],
-  'chat/coder': ['8d43da79ac526ed6', 7494],
+  'code/orchestrator': ['cf064c5eae6a57d3', 6924],
+  'code/briefer': ['5465f9a0b6bbaa2a', 3801],
+  'code/coder': ['22826de8b73ccc83', 7198],
+  'chat/orchestrator': ['ed3cfcc79b251b0c', 7281],
+  'chat/briefer': ['0901018e361b26b2', 4158],
+  'chat/coder': ['39b26a127e6eed83', 7555],
 };
 
 const PRINT = process.argv.includes('--print');

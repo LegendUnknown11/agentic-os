@@ -77,12 +77,19 @@ export function costOf(usage = {}, cli, model, table = PRICES) {
   const total = usage.in ?? 0;
   const cached = usage.cached ?? 0;
   const written = usage.written ?? 0;          // claude's cache_creation; 0 elsewhere
-  const fresh = Math.max(0, total - cached - written);
+  const fresh = usage.fresh ?? Math.max(0, total - cached - written);
 
   return (fresh * inRate
     + cached * cachedRate
     + written * inRate * CACHE_WRITE_MULTIPLIER
     + (usage.out ?? 0) * outRate) / 1e6;
+}
+
+/** How a cost was obtained, without turning an unknown price into zero. */
+export function costClassOf({ usage = null, reported = null, cli, model, table = PRICES } = {}) {
+  if (reported !== null && reported !== undefined) return 'cli-reported';
+  if (!usage) return 'unavailable';
+  return rateOf(cli, model, table) ? 'estimated' : 'unpriced';
 }
 
 /** The sovereign's `prices` config layered over the defaults. */

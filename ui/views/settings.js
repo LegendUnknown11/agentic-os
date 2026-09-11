@@ -15,7 +15,7 @@ const loadDependencies = () => dependencies ??= Promise.all([
 });
 
 const TABS = [
-  ['repo', 'Repository'], ['summary', 'Summaries'], ['advisor', 'Advisor'], ['wallpaper', 'Wallpaper'],
+  ['repo', 'Repository'], ['efficiency', 'Models & efficiency'], ['wallpaper', 'Wallpaper'],
   ['music', 'Music'], ['documents', 'Documents'], ['notifications', 'Notifications'], ['sounds', 'Sounds'], ['pet', 'Desk pet'],
 ];
 const models = (state) => Object.entries(state.models ?? {}).flatMap(([cli, list]) => (list ?? []).map((model) => [`${cli}:${model}`, `${cli} · ${model}`]));
@@ -88,22 +88,34 @@ async function removeAsset(state, root, kind, name, control, feedback) {
   showAssetMessage(state, kind, feedback, `${name} deleted.`);
   if (root.isConnected) renderSettings(state, root);
 }
-function settingWrite(feedback, control, action, payload, restore) {
+const settingFeedback = (state) => {
+  const current = state.settingsNotice;
+  const feedback = note(current?.text ?? '', current?.failed === true ? 'danger' : current?.failed === false ? 'success' : '');
+  feedback.hidden = !current?.text;
+  feedback.setAttribute('role', 'status');
+  feedback.setAttribute('aria-live', 'polite');
+  return feedback;
+};
+const showSettingFeedback = (state, feedback, text, failed = false) => {
+  state.settingsNotice = { text, failed };
+  feedback.className = `note ${failed === true ? 'danger' : failed === false ? 'success' : ''}`;
+  feedback.textContent = text;
+  feedback.hidden = false;
+};
+function settingWrite(state, feedback, control, action, payload, restore) {
   return async () => {
-    feedback.hidden = true;
+    const keepFocus = globalThis.document?.activeElement === control;
+    showSettingFeedback(state, feedback, 'Saving...', null);
     control.disabled = true;
     const result = await post(action, payload());
     control.disabled = false;
     if (result?.ok === false) {
       restore?.();
-      feedback.className = 'note danger';
-      feedback.textContent = result.error ?? 'Could not save that setting.';
-      feedback.hidden = false;
+      showSettingFeedback(state, feedback, result.error ?? 'Could not save that setting.', true);
     } else {
-      feedback.className = 'note success';
-      feedback.textContent = 'Saved.';
-      feedback.hidden = false;
+      showSettingFeedback(state, feedback, 'Saved.');
     }
+    if (keepFocus) control.focus({ preventScroll: true });
   };
 }
 
@@ -154,40 +166,47 @@ function repository(state) {
   return section('Repository', note(state.repo ? `Attached: ${state.repo}` : 'No repository attached. Chat and Cowork can run without one.'), field('Path', path, 'Code mode requires an existing git repository with at least one commit.'), h('div', { class: 'button-row' }, choose, attach), pickerMessage);
 }
 
-function summarizer(state) {
-  const current = state.summarizer ?? {};
-  const feedback = note('', 'danger');
-  feedback.hidden = true;
-  const write = (control, payload, restore) => settingWrite(feedback, control, 'summarizer', payload, restore);
-  const enabled = check(current.enabled !== false);
-  enabled.addEventListener('change', write(enabled, () => ({ enabled: enabled.checked }), () => { enabled.checked = current.enabled !== false; }));
-  const currentModel = current.model ? `${current.cli}:${current.model}` : '';
-  const model = select(models(state), currentModel);
-  model.addEventListener('change', write(model, () => { const [cli, ...rest] = model.value.split(':'); return { cli, model: rest.join(':') }; }, () => { model.value = currentModel; }));
-  const effort = select(['', ...(state.efforts?.byModel?.[current.model] ?? state.efforts?.[current.cli] ?? [])], current.effort ?? '');
-  effort.addEventListener('change', write(effort, () => ({ effort: effort.value }), () => { effort.value = current.effort ?? ''; }));
-  const words = input(current.maxWords ?? 16); words.type = 'number'; words.min = 6; words.max = 40;
-  words.addEventListener('change', write(words, () => ({ maxWords: Number(words.value) }), () => { words.value = current.maxWords ?? 16; }));
-  const style = textarea(current.style ?? '', 'Plain past tense. Lead with the verb.');
-  style.addEventListener('blur', write(style, () => ({ style: style.value.trim() }), () => { style.value = current.style ?? ''; }));
-  return section('Summaries', field('Summarise every turn', enabled, 'One short line instead of a wall of text.'), field('Runs on', model), field('Effort', effort), field('Maximum words', words), field('Style', style), feedback);
-}
+function efficiency(state) {
+  const summary = state.summarizer ?? {};
+  const advisor = state.advisor ?? {};
+  const feedback = settingFeedback(state);
+  const write = (control, action, payload, restore) => settingWrite(state, feedback, control, action, payload, restore);
 
-function advisor(state) {
-  const current = state.advisor ?? {};
-  const feedback = note('', 'danger');
-  feedback.hidden = true;
-  const write = (control, payload, restore) => settingWrite(feedback, control, 'advisor', payload, restore);
-  const prompt = check(current.promptEngineer !== false);
-  prompt.addEventListener('change', write(prompt, () => ({ promptEngineer: prompt.checked }), () => { prompt.checked = current.promptEngineer !== false; }));
-  const auto = check(current.autoModel !== false);
-  auto.addEventListener('change', write(auto, () => ({ autoModel: auto.checked }), () => { auto.checked = current.autoModel !== false; }));
-  const currentModel = `${current.cli ?? ''}:${current.model ?? ''}`;
-  const model = select(models(state), currentModel);
-  model.addEventListener('change', write(model, () => { const [cli, ...rest] = model.value.split(':'); return { cli, model: rest.join(':') }; }, () => { model.value = currentModel; }));
-  const effort = select(['', ...(state.efforts?.byModel?.[current.model] ?? state.efforts?.[current.cli] ?? [])], current.effort ?? '');
-  effort.addEventListener('change', write(effort, () => ({ effort: effort.value }), () => { effort.value = current.effort ?? ''; }));
-  return section('Advisor', field('Prompt engineer', prompt, 'Rewrites your instruction before the orchestrator reads it.'), field('Automatic model selector', auto), field('Runs on', model), field('Effort', effort), note('The advisor may choose different models per task when automatic selection is on.'), feedback);
+  const automatic = check(advisor.autoModel !== false);
+  automatic.addEventListener('change', write(automatic, 'advisor', () => ({ autoModel: automatic.checked }), () => { automatic.checked = advisor.autoModel !== false; }));
+  const prompt = check(advisor.promptEngineer !== false);
+  prompt.addEventListener('change', write(prompt, 'advisor', () => ({ promptEngineer: prompt.checked }), () => { prompt.checked = advisor.promptEngineer !== false; }));
+  const enabled = check(summary.enabled !== false);
+  enabled.addEventListener('change', write(enabled, 'summarizer', () => ({ enabled: enabled.checked }), () => { enabled.checked = summary.enabled !== false; }));
+  const words = input(summary.maxWords ?? 16); words.type = 'number'; words.min = 6; words.max = 40;
+  words.addEventListener('change', write(words, 'summarizer', () => ({ maxWords: Number(words.value) }), () => { words.value = summary.maxWords ?? 16; }));
+  const style = textarea(summary.style ?? '', 'Plain past tense. Lead with the verb.');
+  style.addEventListener('blur', write(style, 'summarizer', () => ({ style: style.value.trim() }), () => { style.value = summary.style ?? ''; }));
+
+  const advisorModelValue = `${advisor.cli ?? ''}:${advisor.model ?? ''}`;
+  const advisorModel = select(models(state), advisorModelValue);
+  advisorModel.addEventListener('change', write(advisorModel, 'advisor', () => { const [cli, ...rest] = advisorModel.value.split(':'); return { cli, model: rest.join(':') }; }, () => { advisorModel.value = advisorModelValue; }));
+  const advisorEffort = select(['', ...(state.efforts?.byModel?.[advisor.model] ?? state.efforts?.[advisor.cli] ?? [])], advisor.effort ?? '');
+  advisorEffort.addEventListener('change', write(advisorEffort, 'advisor', () => ({ effort: advisorEffort.value }), () => { advisorEffort.value = advisor.effort ?? ''; }));
+
+  const summaryModelValue = summary.model ? `${summary.cli}:${summary.model}` : '';
+  const summaryModel = select(models(state), summaryModelValue);
+  summaryModel.addEventListener('change', write(summaryModel, 'summarizer', () => { const [cli, ...rest] = summaryModel.value.split(':'); return { cli, model: rest.join(':') }; }, () => { summaryModel.value = summaryModelValue; }));
+  const summaryEffort = select(['', ...(state.efforts?.byModel?.[summary.model] ?? state.efforts?.[summary.cli] ?? [])], summary.effort ?? '');
+  summaryEffort.addEventListener('change', write(summaryEffort, 'summarizer', () => ({ effort: summaryEffort.value }), () => { summaryEffort.value = summary.effort ?? ''; }));
+
+  const group = (title, ...children) => h('fieldset', { class: 'settings-group' }, h('legend', { text: title }), ...children);
+  return section('Models & efficiency',
+    note('These helpers are single-shot model calls. Changing their model or effort does not restart a court member session.'),
+    group('Automatic routing', field('Automatic model selector', automatic, "Creates an auxiliary advisor call only when a member is set to Auto, and may change that member's model and effort before it next wakes.")),
+    group('Prompt rewriting', field('Prompt engineer', prompt, 'Creates one auxiliary call before delivery. If it fails, the original instruction is sent unchanged.')),
+    group('Per-turn summaries',
+      field('Summarise every turn', enabled, 'Creates one auxiliary call after a completed turn.'),
+      field('Maximum words', words), field('Style', style)),
+    group('Model and effort', h('div', { class: 'settings-model-grid' },
+      h('div', { class: 'settings-model-block' }, h('h3', { text: 'Advisor' }), field('Advisor model', advisorModel), field('Advisor effort', advisorEffort)),
+      h('div', { class: 'settings-model-block' }, h('h3', { text: 'Summaries' }), field('Summary model', summaryModel), field('Summary effort', summaryEffort)))),
+    feedback);
 }
 
 function wallpaper(state, root) {
@@ -260,7 +279,7 @@ function pet(state) {
   return section('Desk pet', field('Show the desk pet', enabled), button('Open desk pet', () => window.kingdomShell?.openPet ? window.kingdomShell.openPet() : window.open('/pet.html', 'kingdom-pet')), note('Close the pet window with its own shoo button.'));
 }
 
-const BUILDERS = { repo: repository, summary: summarizer, advisor, wallpaper, music, documents, notifications, sounds, pet };
+const BUILDERS = { repo: repository, efficiency, wallpaper, music, documents, notifications, sounds, pet };
 
 export function renderSettings(state, root) {
   if (dependencyError) {
@@ -276,7 +295,8 @@ export function renderSettings(state, root) {
     return;
   }
   root.replaceChildren();
-  const active = state.settingsSection ?? 'repo';
+  const requested = state.settingsSection ?? 'repo';
+  const active = requested === 'summary' || requested === 'advisor' ? 'efficiency' : requested;
   const shell = page('Settings', 'Repository, model behaviour, assets, notifications, and the desk pet.');
   const nav = h('nav', { class: 'settings-tabs', 'aria-label': 'Settings sections' });
   for (const [key, label] of TABS) {
@@ -294,6 +314,7 @@ export function mountSettings(state, root) {
   let offStore = () => {};
   let offAssets = () => {};
   let offMusic = () => {};
+  let relevant = [];
   const redraw = () => {
     if (!active || frame || editing(root)) return;
     const paint = () => {
@@ -311,7 +332,19 @@ export function mountSettings(state, root) {
     }
     await Assets.refresh();
     if (!active || root.isConnected === false) return;
-    offStore = subscribe(() => redraw());
+    const currentRelevant = () => {
+      const section = ['summary', 'advisor'].includes(state.settingsSection) ? 'efficiency' : state.settingsSection ?? 'repo';
+      if (section === 'repo') return [section, state.repo];
+      if (section === 'efficiency') return [section, state.models, state.efforts, state.summarizer, state.advisor];
+      return [section, state.prefs];
+    };
+    relevant = currentRelevant();
+    offStore = subscribe(() => {
+      const next = currentRelevant();
+      if (next.every((value, index) => value === relevant[index])) return;
+      relevant = next;
+      redraw();
+    });
     offAssets = Assets.onAssets(redraw);
     offMusic = Assets.onMusic(redraw);
     renderSettings(state, root);

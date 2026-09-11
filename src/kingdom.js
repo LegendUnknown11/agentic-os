@@ -1048,7 +1048,11 @@ export class Kingdom extends EventEmitter {
       // opts itself out of the cap. Resolve the same way #seedRoles does.
       const def = this.config.peasantDefaults ?? {};
       const spec = { ...def, ...(this.specOf(name) ?? {}) };
-      const priced = u.costUsd || costOf(d, spec.cli, spec.model, tableFrom(this.config));
+      const reported = u.costReported === true
+        || (u.costReported == null && Number(u.costUsd) > 0);
+      const priced = reported
+        ? Number(u.costUsd) || 0
+        : costOf(d, spec.cli, spec.model, tableFrom(this.config));
       // price.js returns null to mean "we refuse to invent a number", and this
       // line used to turn that refusal into 0 — so an unpriced model accrued
       // nothing forever and maxBudgetUsd/maxKingdomUsd COULD NOT FIRE on it.
@@ -1316,6 +1320,26 @@ export class Kingdom extends EventEmitter {
     }
   }
 
+  #recordAuxCall(data) {
+    const usage = data.usage ?? {};
+    this.#record('aux', 'aux_call', {
+      purpose: data.purpose ?? 'advisor',
+      cli: data.cli ?? null,
+      model: data.model ?? null,
+      effort: data.effort ?? null,
+      elapsedMs: Number(data.elapsedMs) || 0,
+      success: Boolean(data.success),
+      failure: data.failure ?? null,
+      input: Number(usage.in) || 0,
+      cached: Number(usage.cached) || 0,
+      written: Number(usage.written) || 0,
+      fresh: Number(usage.fresh) || 0,
+      output: Number(usage.out) || 0,
+      costUsd: data.costUsd ?? null,
+      costClassification: data.costClassification ?? 'unavailable',
+    });
+  }
+
   /**
    * Condense the turn that just ended into one line.
    *
@@ -1341,7 +1365,11 @@ export class Kingdom extends EventEmitter {
     this.summarising = (this.summarising ?? 0) + 1;
 
     try {
-      const line = await summarize(s, { name, role: this.roleOf(name), events }, { cwd: this.repo });
+      const line = await summarize(s, { name, role: this.roleOf(name), events }, {
+        cwd: this.repo,
+        priceTable: tableFrom(this.config),
+        onTelemetry: (data) => this.#recordAuxCall(data),
+      });
       if (!line) return;
       // Recorded as an event, not just emitted: a summary that vanished on
       // reload would be worth less than the raw text it replaces.
@@ -2695,6 +2723,7 @@ export class Kingdom extends EventEmitter {
       panel,
       cwd: this.#cwd(),
       onProgress: (p) => this.emit('argued', { question, ...p }),
+      onTelemetry: (data) => this.#recordAuxCall(data),
     });
 
     // The vault, not the bus: a verdict is a decision worth having in six
@@ -2989,7 +3018,12 @@ export class Kingdom extends EventEmitter {
     // so posting first would race the court against its own brief.
     this.emit('advising', { stage: 'start', text });
     const why = [];
-    const opts = (job) => ({ cwd: this.#cwd(), onFail: (m) => why.push(`${job}: ${m}`) });
+    const opts = (job) => ({
+      cwd: this.#cwd(),
+      priceTable: tableFrom(this.config),
+      onFail: (m) => why.push(`${job}: ${m}`),
+      onTelemetry: (data) => this.#recordAuxCall(data),
+    });
     const advice = await engineerPrompt(a, text, opts('prompt engineer')).catch(() => null);
     const rewritten = advice?.text ?? null;
     if (why.length) {
@@ -3042,7 +3076,12 @@ export class Kingdom extends EventEmitter {
     // Kept on the instance so a caller that genuinely needs to know when the
     // picks have landed can await it — chiefly tests, which would otherwise
     // have to poll and race. Nothing in the delivery path waits on this.
-    this.autoModelPending = this.#autoModel(a, text, { cwd: this.#cwd(), onFail: (m) => why.push(m) })
+    this.autoModelPending = this.#autoModel(a, text, {
+      cwd: this.#cwd(),
+      priceTable: tableFrom(this.config),
+      onFail: (m) => why.push(m),
+      onTelemetry: (data) => this.#recordAuxCall(data),
+    })
       .then(async (picks) => {
         const applied = [];
         for (const [name, m] of Object.entries(picks ?? {})) {
@@ -3095,6 +3134,7 @@ export class Kingdom extends EventEmitter {
       efforts: this.efforts().byModel ?? {},
       guidance: a.guidance,   // undefined falls back to the vault's policy
       measurements,
+      table: tableFrom(this.config),
     }, opts);
   }
 

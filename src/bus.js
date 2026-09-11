@@ -858,6 +858,15 @@ export class Bus {
     this.db.prepare('insert into state (k,v) values (?,?) on conflict(k) do update set v = ?').run(k, v, v);
   }
 
+  increment(k, amount = 1) {
+    const delta = Number(amount) || 0;
+    this.db.prepare(`
+      insert into state (k, v) values (?, ?)
+      on conflict(k) do update set v = cast(state.v as integer) + cast(excluded.v as integer)
+    `).run(k, String(delta));
+    return Number(this.get(k) ?? 0);
+  }
+
   /**
    * Keep the newest `keep` rows of each log. A day-long session accumulates
    * tens of thousands of tool events; nothing reads that far back, and the

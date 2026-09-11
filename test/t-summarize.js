@@ -8,7 +8,7 @@
 //
 //   node test/t-summarize.js
 import { strict as a } from 'node:assert';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -21,7 +21,7 @@ process.stdout.write(JSON.stringify({ type: 'item.completed',
   item: { type: 'agent_message', text: ${JSON.stringify(reply)} } }) + '\\n');
 `);
 
-const { transcriptOf, clean, summarize, settingsOf, DEFAULTS, EFFORTS } = await import('../src/summarize.js');
+const { transcriptOf, clean, fastSummary, summarize, settingsOf, DEFAULTS, EFFORTS } = await import('../src/summarize.js');
 
 /* ---------- 1. the turn is collapsed before it is sent ---------- */
 {
@@ -73,6 +73,18 @@ const { transcriptOf, clean, summarize, settingsOf, DEFAULTS, EFFORTS } = await 
   }, { cwd: dir });
   a.equal(line, 'Fixed the token-refresh race in session.dart with a mutex.');
   console.log(`  summarised: "${line}"`);
+}
+
+/* ---------- 3a. a good final action is free ------------------------------ */
+{
+  const marker = join(dir, 'fast-path-called');
+  stub(`require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'called');`);
+  const events = [{ kind: 'text', payload: { text: 'Fixed the refresh race in session.dart.' } }];
+  a.equal(fastSummary(events, DEFAULTS.maxWords), 'Fixed the refresh race in session.dart.');
+  a.equal(await summarize({ ...DEFAULTS }, { name: 'coder', role: 'peasant', events }),
+    'Fixed the refresh race in session.dart.');
+  a.equal(existsSync(marker), false, 'an already-good action sentence must not spawn a model');
+  console.log('  final action sentence takes the free summary path');
 }
 
 /* ---------- 3b. a turn that only ANSWERS is not an empty turn ---------- */

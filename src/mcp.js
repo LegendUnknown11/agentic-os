@@ -42,6 +42,28 @@ const visible = () =>
   Object.entries(TOOLS).filter(([name, t]) =>
     t.roles.includes(ROLE) && toolAllowed(modeNow(), name));
 
+const compactText = (text, limit) => {
+  const clean = String(text ?? '').replace(/\s+/g, ' ').trim();
+  if (clean.length <= limit) return clean;
+  const head = Math.ceil(limit * 0.65);
+  return `${clean.slice(0, head).trimEnd()}…${clean.slice(-(limit - head - 1)).trimStart()}`;
+};
+
+const compactSchema = (value) => {
+  if (!value || typeof value !== 'object') return value;
+  if (Array.isArray(value)) return value.map(compactSchema);
+  return Object.fromEntries(Object.entries(value).map(([key, item]) => [
+    key,
+    key === 'description' ? compactText(item, 72) : compactSchema(item),
+  ]));
+};
+
+const listed = (name, t) => ({
+  name,
+  description: compactText(t.description, 128),
+  inputSchema: compactSchema(t.schema),
+});
+
 const server = new Server(
   { name: 'kingdom', version: '0.1.0' },
   { capabilities: { tools: {} } }
@@ -49,11 +71,7 @@ const server = new Server(
 
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
   // No court here means no court tools — an empty list, not a broken server.
-  tools: bus ? visible().map(([name, t]) => ({
-    name,
-    description: t.description,
-    inputSchema: t.schema,
-  })) : [],
+  tools: bus ? visible().map(([name, t]) => listed(name, t)) : [],
 }));
 
 /**
@@ -106,6 +124,10 @@ function alreadyServed(name, text) {
   if (at >= 0) seen.splice(at, 1);        // used up: ask again and you get it
   else seen.push(key);
   bus.set(`served:${ME}`, JSON.stringify(seen.slice(-MASK_KEEP)));
+  if (at >= 0) {
+    bus.increment('mask:calls');
+    bus.increment('mask:chars', text.length);
+  }
   return at >= 0;
 }
 
