@@ -438,7 +438,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .conversation-row:hover .conversation-actions, .conversation-row.selected .conversation-actions, .conversation-row:focus-within .conversation-actions { display: flex; }
 
-.conversation-action { min-height: 28px; padding: var(--space-1); border: 0; background: transparent; color: var(--faint); font-size: var(--t-xs); white-space: nowrap; }
+.conversation-action { min-height: var(--tap-target-min); padding: var(--space-1); border: 0; background: transparent; color: var(--faint); font-size: var(--t-xs); white-space: nowrap; }
 
 .conversation-action:hover { color: var(--text); }
 
@@ -536,7 +536,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .attachment-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-.attachment-chip button { width: 20px; min-height: 20px; flex: none; padding: 0; border: 0; background: transparent; color: var(--faint); }
+.attachment-chip button { width: var(--tap-target-min); min-height: var(--tap-target-min); flex: none; padding: 0; border: 0; background: transparent; color: var(--faint); }
 
 .attachment-chip button:hover { border-color: transparent; background: var(--surface); color: var(--text); }
 
@@ -917,7 +917,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .wfn-sub { font-family: var(--ui); }
 
-.wfn-x { position: absolute; top: 2px; right: 4px; min-width: 28px; min-height: 28px; padding: var(--space-1); border: 0; background: transparent; color: var(--faint); cursor: pointer; font-size: 13px; line-height: 1; opacity: 0; }
+.wfn-x { position: absolute; top: 2px; right: 4px; min-width: var(--tap-target-min); min-height: var(--tap-target-min); padding: var(--space-1); border: 0; background: transparent; color: var(--faint); cursor: pointer; font-size: 13px; line-height: 1; opacity: 0; }
 
 .wfnode:hover .wfn-x, .wfn-x:focus-visible { opacity: 1; }
 
@@ -927,7 +927,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .wfport[aria-pressed="true"] { box-shadow: 0 0 0 3px rgb(var(--accent-rgb) / .35); }
 
-.wfport::after { position: absolute; inset: -7px; content: ''; }
+.wfport::after { position: absolute; inset: -18px; content: ''; }
 
 .wfport.in { top: calc(50% - 5px); left: -5px; cursor: crosshair; }
 
@@ -975,11 +975,11 @@ body.sidebar-collapsed .app-identity { display: grid; }
      getBoundingClientRect().width was 1.6, so the collapsed "+ New" could not
      be clicked. .sidebar-collapse below is the working sibling: no flex
      shorthand at all, just the width. */
-  .sidebar.collapsed .sidebar-new { width: 34px; overflow: hidden; padding: 0; font-size: 0; text-indent: 0; }
+  .sidebar.collapsed .sidebar-new { width: var(--tap-target-min); overflow: hidden; padding: 0; font-size: 0; text-indent: 0; }
 
   .sidebar.collapsed .sidebar-new::before { color: var(--text); content: "+"; font-size: 18px; line-height: 1; }
 
-  .sidebar.collapsed .sidebar-collapse { width: 34px; overflow: hidden; padding: 0; font-size: 0; }
+  .sidebar.collapsed .sidebar-collapse { width: var(--tap-target-min); overflow: hidden; padding: 0; font-size: 0; }
 
   .sidebar.collapsed .sidebar-collapse::before { content: "›"; font-size: 18px; line-height: 1; }
 }
