@@ -135,6 +135,7 @@ export const ZERO = { in: 0, out: 0, cached: 0, written: 0, fresh: 0 };
  * delta. Per-turn CLIs pass straight through.
  */
 export function deltaOf(prev, usage = {}) {
+  if (!hasUsage(usage)) return ZERO;
   const now = totalsOf(usage);
   if (!isCumulative(usage)) return now;
   const d = (a, b) => (a >= b ? a - b : a);
@@ -207,6 +208,17 @@ if (process.argv[1]?.endsWith('usage.js')) {
   a.equal(sum, 1_886_235, 'a cumulative climb must total the last reading, not the sum of all');
   a.equal(climb.reduce((t, u) => t + inputTokens(u), 0), 2_373_461,
     'and summing raw is exactly the 2.37M overcount this prevents');
+
+  let preserved;
+  let acrossGap = 0;
+  for (const u of [
+    { input_tokens: 100, cached_input_tokens: 0 }, null,
+    { input_tokens: 200, cached_input_tokens: 0 },
+  ]) {
+    acrossGap += deltaOf(preserved, u).in;
+    if (hasUsage(u)) preserved = totalsOf(u);
+  }
+  a.equal(acrossGap, 200, 'a usage-null turn must not reset the cumulative baseline');
 
   // A drop means a new thread: that reading is the whole delta.
   a.equal(deltaOf({ in: 900, out: 9, cached: 800, written: 0 },

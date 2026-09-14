@@ -18,6 +18,9 @@ const refresh = async (state, key, url) => {
 };
 const requestToken = (state, key) => { state[key] = (state[key] ?? 0) + 1; return state[key]; };
 const rerender = (state, root, render) => { if (root.isConnected) render(state, root); };
+const refreshChanges = (state, options = {}) => options.refreshLists
+  ? options.refreshLists()
+  : refresh(state, 'changes', '/api/changes');
 function bind(state, root, render) {
   const off = subscribe(() => { if (!editing(root)) render(state, root); });
   return () => off?.();
@@ -89,7 +92,7 @@ function mergeResult(state, root, peasant, result, life) {
         ? `${life.message ?? 'Nothing was changed.'} Review the diff, fix the branch, then request the merge again.`
         : 'The request was sent. Keep this page open for the merged or refused result.' }));
   if (life.status === 'requested') card.append(button('Refresh status', async () => {
-    await refresh(state, 'changes', '/api/changes');
+    await refreshChanges(state, root._changesOptions);
     rerender(state, root, renderChanges);
   }));
   if (failed && result) card.append(button('Review diff', () => diffDetail(state, root, peasant), 'primary'));
@@ -135,7 +138,7 @@ function diffDetail(state, root, peasant, file = '') {
         catch (error) { response = { ok: false, error: error?.message ?? 'The merge did not happen.' }; }
         if (response?.ok === false) setChangeStage(state, peasant, { status: 'failed', stat: result.stat, message: response.error ?? 'The merge did not happen.' });
         else setChangeStage(state, peasant, { status: 'merged', stat: result.stat, message: `Merged into ${result.base ?? state.base ?? 'the base branch'}.` });
-        await refresh(state, 'changes', '/api/changes');
+        await refreshChanges(state, root._changesOptions);
         rerender(state, root, renderChanges);
       }, 'primary');
       merge.disabled = !modeAllows(state, 'merge') || current.status === 'requested' || current.status === 'merged';
@@ -150,6 +153,7 @@ function diffDetail(state, root, peasant, file = '') {
   });
 }
 export function renderChanges(state, root, options = {}) {
+  root._changesOptions = options;
   root.replaceChildren();
   const allChanged = rows(state.changes, 'changed');
   const changed = allChanged.filter((change) => changeStage(state, change.peasant, change.stat).status !== 'merged');
@@ -161,7 +165,7 @@ export function renderChanges(state, root, options = {}) {
       state.changesLoading = true;
       state.changesError = null;
       renderChanges(state, root, options);
-      await refresh(state, 'changes', '/api/changes');
+      await refreshChanges(state, options);
       if (!root.isConnected) return;
       state.changesLoading = false;
       renderChanges(state, root, options);
@@ -227,14 +231,16 @@ export function mountChanges(state, root, options = {}) {
   const render = (next, host) => renderChanges(next, host, options);
   render(state, root);
   const off = bind(state, root, render);
-  void get('/api/changes').then((data) => {
+  void refreshChanges(state, options).then((data) => {
     if (root.isConnected === false || state.changesRequest !== token) {
       if (state.changesRequest === token) state.changesLoading = false;
       return;
     }
     state.changesLoading = false;
-    if (data?.ok === false) state.changesError = apiError(data, 'Could not load changes.');
-    else { state.changes = data; state.changesError = null; }
+    if (!options.refreshLists) {
+      if (data?.ok === false) state.changesError = apiError(data, 'Could not load changes.');
+      else { state.changes = data; state.changesError = null; }
+    }
     render(state, root);
   }).catch((error) => {
     if (root.isConnected === false || state.changesRequest !== token) return;

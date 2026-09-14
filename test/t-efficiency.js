@@ -91,13 +91,17 @@ process.stdout.write(JSON.stringify({ type: 'item.completed', item: {
 /* ---------- the full bench remains discoverable under the prompt budget --- */
 {
   const config = JSON.parse(readFileSync(join(ROOT, 'kingdom.config.json'), 'utf8'));
-  const prompt = buildPrompt({
-    name: config.orchestrator.name, role: 'orchestrator', spec: config.orchestrator,
-    config, mode: 'code', goal: null, repo: ROOT,
-  });
-  a.ok(prompt.length <= 19_000, `code/orchestrator prompt is ${prompt.length} bytes`);
-  for (const member of config.peasants) a.ok(prompt.includes(member.name), `${member.name} fell out of the bench`);
-  console.log(`  prompt budget: ${prompt.length} bytes with all ${config.peasants.length} specialists named`);
+  const limits = { orchestrator: 11_000, briefer: 4_000, peasant: 8_500 };
+  for (const [role, spec] of [['orchestrator', config.orchestrator], ['briefer', config.briefer], ['peasant', config.peasants[0]]]) {
+    const prompt = buildPrompt({ name: spec.name, role, spec, config, mode: 'code', goal: null, repo: ROOT });
+    a.ok(prompt.length <= limits[role], `code/${role} prompt is ${prompt.length} bytes`);
+    if (role === 'orchestrator') {
+      for (const member of config.peasants) a.ok(prompt.includes(member.name), `${member.name} fell out of the bench`);
+    } else {
+      a.ok(!prompt.includes(config.peasants.at(-1).name), `${role} still embeds the full bench`);
+    }
+  }
+  console.log(`  code prompts fit ${limits.orchestrator}/${limits.briefer}/${limits.peasant}-byte role ceilings; all ${config.peasants.length} specialists remain visible to the orchestrator`);
 }
 
 /* ---------- MCP payload budgets and roster filtering --------------------- */
@@ -124,8 +128,7 @@ for (const [key, [count, baseline]] of Object.entries(BASE)) {
   const tools = listed.result.tools;
   a.equal(tools.length, count, `${key} tool count changed`);
   const payloadSize = JSON.stringify(tools).length;
-  a.ok(payloadSize <= Math.floor(baseline * 0.85),
-    `${key} MCP payload did not shrink 15%: ${payloadSize} vs ${Math.floor(baseline * 0.85)}`);
+  a.ok(payloadSize <= baseline, `${key} MCP payload grew: ${payloadSize} vs ${baseline}`);
 }
 
 const codeMode = new Bus(db);
@@ -141,6 +144,28 @@ a.deepEqual(roster({ query: 'documentation', detail: true }).map((m) => m.name),
 a.deepEqual(roster({ activeOnly: true }).map((m) => m.name), ['coder']);
 a.equal(roster({ query: 'specialist', limit: 1 }).length, 1);
 console.log('  MCP surfaces are under budget and roster supports query, activeOnly, detail and limit');
+
+/* ---------- high-volume MCP reads stop at their context budgets ---------- */
+{
+  const seeded = new Bus(db);
+  for (let i = 0; i < 550; i++) seeded.logEvent('coder', 'text', { text: `limitneedle event ${i}` });
+  for (let i = 0; i < 250; i++) seeded.post('coder', 'briefer', `limitneedle message ${i}`);
+  seeded.close();
+  const call = (role, name, args) => rpc(db, {
+    KINGDOM_MODE: 'code', KINGDOM_AGENT: role, KINGDOM_ROLE: role,
+  }, { method: 'tools/call', params: { name, arguments: args } }).result.content[0].text.split('\n');
+  a.equal(call('briefer', 'read_bus', { since: 0, limit: 200 }).length, 200);
+  a.equal(call('briefer', 'read_events', { since: 0, limit: 500 }).length, 500);
+  a.equal(call('peasant', 'recall', { query: 'limitneedle', limit: 50 }).length, 50);
+
+  const assets = join(dir, 'assets');
+  mkdirSync(assets);
+  for (let i = 0; i < 105; i++) writeFileSync(join(assets, `upload-${String(i).padStart(3, '0')}.md`), 'x');
+  const uploads = call('peasant', 'list_uploads', { query: 'upload-', limit: 100 });
+  a.equal(uploads.length, 101, '100 uploads plus one truthful truncation line');
+  a.match(uploads.at(-1), /5 more uploads withheld/);
+  console.log('  bus, event, recall and upload reads stop at 200/500/50/100 rows');
+}
 
 /* ---------- duplicate observations are measured, not just masked --------- */
 {

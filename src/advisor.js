@@ -305,7 +305,7 @@ export function outputEvidence(events = [], { names = null, table = PRICES } = {
     const p = e.payload ?? {};
     const usage = p.usage ?? {};
     const d = deltaOf(previous.get(e.agent), usage);
-    previous.set(e.agent, totalsOf(usage));
+    if (hasUsage(usage)) previous.set(e.agent, totalsOf(usage));
     if (wanted && !wanted.has(e.agent)) continue;
     if (!p.cli || !p.model || !p.effort || !p.usage) continue;
     const key = `${e.agent}\u0000${p.cli}\u0000${p.model}\u0000${p.effort}`;

@@ -1,11 +1,24 @@
 import { strict as a } from 'node:assert';
 import { readFileSync } from 'node:fs';
-import { apply, get, money, post, resetForTest, sameId, state } from '../ui/store.js';
+import { apply, applyTheme, get, money, post, resetForTest, sameId, setPrefs, state, themeOf } from '../ui/store.js';
 import { displayStatus } from '../ui/sidebar.js';
 import { statusLabel } from '../ui/status.js';
 import { setView as route } from '../ui/views/util.js';
 
 resetForTest();
+
+a.equal(themeOf(undefined), 'system', 'missing theme preferences use the system setting');
+a.equal(themeOf('neon'), 'system', 'invalid theme preferences use the system setting');
+const priorDocument = globalThis.document;
+const themeRoot = { dataset: {}, removeAttribute() { delete this.dataset.theme; } };
+globalThis.document = { documentElement: themeRoot };
+applyTheme('dark');
+a.equal(themeRoot.dataset.theme, 'dark', 'dark preference applies to the document root');
+setPrefs({ theme: 'light' });
+a.equal(themeRoot.dataset.theme, 'light', 'saved preference changes apply immediately');
+applyTheme('invalid');
+a.equal(themeRoot.dataset.theme, undefined, 'system preference removes the explicit root theme');
+globalThis.document = priorDocument;
 
 // The roster is the only source allowed to admit a member. A replayed event or
 // message for a name that left the roster must not grow a ghost row again.

@@ -87,19 +87,16 @@ export function goalBlock(goal) {
 export function buildPrompt({
   name, role, spec, config, mode, goal, repo, seedPrompt = null, orientation = null,
 }) {
-  // Keep the whole bench discoverable, but carry only names and titles here.
-  // Full descriptions remain available through roster(detail:true), so the
-  // cached prefix does not pay for 107 repeated paragraphs.
+  // Keep the whole bench discoverable only for the orchestrator. Other roles
+  // can query the roster when they need a name, so their cached prefixes do
+  // not pay for the same 107 names on every spawn.
   const roster = config.peasants;
-  const names = roster.length ? roster.map((p) => p.name).join(', ') : 'none in this mode';
-  // The orchestrator chooses the crew, so it needs names and titles to pick the
-  // right specialist without embedding every full description.
-  const bench = roster
-    .map((p) => `  ${p.name}${p.title ? ` (${p.title})` : ''}`)
-    .join('\n');
+  const bench = role === 'orchestrator'
+    ? roster.map((p) => `  ${p.name}${p.title ? ` (${p.title})` : ''}`).join('\n')
+    : '';
   const common =
     `You are "${name}" in an agentic kingdom. The orchestrator is "${config.orchestrator.name}", ` +
-    `the briefer is "${config.briefer.name}", and the peasants are: ${names}.\n` +
+    `the briefer is "${config.briefer.name}". Find specialists with roster(detail:true).\n` +
     `You have kingdom tools. Talk to other members DIRECTLY with send_message ` +
     `rather than routing everything through the orchestrator — that is the point of this court.\n` +
     `Messages from others arrive in your session prefixed with [MESSAGE FROM ...], ` +

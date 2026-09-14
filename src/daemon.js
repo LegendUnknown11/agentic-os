@@ -68,6 +68,7 @@ const speech = new Speech(process.env.KINGDOM_SPEECHBIRD ?? kingdom.config.speec
 // picked a conversation yet).
 const clients = new Map();
 let ready = false;
+let metricsCache = { mark: null, value: null };
 
 /**
  * Court-wide events (roster, mode, budget, approvals, ...) always reach every
@@ -90,7 +91,10 @@ function push(type, data) {
 }
 
 for (const ev of ['agent', 'event', 'delivered', 'approval', 'verified', 'merged', 'recycled', 'resolved', 'started', 'failure', 'roster', 'failover', 'mergeFailed', 'pushed', 'pushBlocked', 'spend', 'budget', 'limited', 'advising', 'advisor', 'summarizer', 'goal', 'milestone', 'mode', 'compact', 'argued', 'repo', 'paused', 'run', 'conversationSwitched']) {
-  kingdom.on(ev, (d) => push(ev, d ?? {}));
+  kingdom.on(ev, (d) => {
+    if (ev === 'roster') metricsCache.mark = null;
+    push(ev, d ?? {});
+  });
 }
 kingdom.on('error', (e) => push('error', { message: e.message }));
 
@@ -282,7 +286,7 @@ function metricCost(p, d, cli, model, table) {
   };
 }
 
-function metrics() {
+function buildMetrics() {
   // Filtered in SQL, not after the fact. `events()` JSON.parses every row it
   // returns, so pulling all 20,000 retained events to keep the turn_ends meant
   // parsing the whole log — on every /api/metrics, which the throne room polls
@@ -308,7 +312,7 @@ function metrics() {
     // was the ONLY copy of it: ctx.js and kingdom.js summed raw and reported a
     // 25% overcount on real data. Same class of drift as the cache-field names.
     const d = deltaOf(prev.get(ev.agent), u);
-    prev.set(ev.agent, totalsOf(u));
+    if (hasUsage(u)) prev.set(ev.agent, totalsOf(u));
 
     const spec = kingdom.specOf(ev.agent) ?? {};
     const cli = p?.cli ?? spec.cli ?? def.cli ?? 'claude';
@@ -434,6 +438,29 @@ function metrics() {
     messages: kingdom.bus.countMessages(),   // count(*), not "load every body and take .length"
     quotas,
     auxiliary: aux,
+    mcp: {
+      maskedCalls: finiteNumber(kingdom.bus.get('mask:calls')),
+      maskedChars: finiteNumber(kingdom.bus.get('mask:chars')),
+    },
+  };
+}
+
+function metrics() {
+  const mark = `${kingdom.bus.lastEventId()}:${kingdom.lastPrune ?? 0}`;
+  if (metricsCache.mark !== mark) metricsCache = { mark, value: buildMetrics() };
+  const base = metricsCache.value;
+  return {
+    ...base,
+    members: base.members.map((m) => ({
+      ...m,
+      role: kingdom.roleOf(m.name),
+      spent: Number(kingdom.bus.get(`spent:${m.name}`) ?? 0),
+      awake: kingdom.agents.has(m.name),
+    })),
+    spent: Number(kingdom.bus.get('spentUsd') ?? 0),
+    cap: kingdom.config.maxKingdomUsd ?? 0,
+    perMemberCap: kingdom.config.maxBudgetUsd ?? 0,
+    messages: kingdom.bus.countMessages(),
     mcp: {
       maskedCalls: finiteNumber(kingdom.bus.get('mask:calls')),
       maskedChars: finiteNumber(kingdom.bus.get('mask:chars')),

@@ -14,7 +14,7 @@ import { skillsBlock, expandSkillCommand, listSkills } from './skills.js';
 import { engineerPrompt, outputEvidence, pickModels } from './advisor.js';
 import { summarize, settingsOf as summarizerSettings } from './summarize.js';
 import { Bus } from './bus.js';
-import { inputTokens, deltaOf, totalsOf } from './usage.js';
+import { inputTokens, deltaOf, totalsOf, hasUsage } from './usage.js';
 import { costOf, tableFrom } from './price.js';
 import { forecast as forecastOf } from './forecast.js';
 import { readApproval, badRole, badSummon } from './approval.js';
@@ -239,8 +239,18 @@ export class Kingdom extends EventEmitter {
     return this.config.peasants.find((p) => p.name === name);
   }
 
-  #forecastRows = [];
-  #forecastMark = -1;
+  #turnEndCache = { mark: -1, rows: [] };
+
+  #turnEndRows() {
+    const mark = this.bus.lastEventId();
+    if (this.#turnEndCache.mark !== mark) {
+      this.#turnEndCache = {
+        mark,
+        rows: this.bus.events({ limit: 100_000, type: 'turn_end' }),
+      };
+    }
+    return this.#turnEndCache.rows;
+  }
 
   /**
    * What a proposed crew has cost per turn, for the summon approval card.
@@ -255,12 +265,7 @@ export class Kingdom extends EventEmitter {
    * once and answers from cache for as long as the sovereign reads the card.
    */
   forecast(names) {
-    const mark = this.bus.lastEventId();
-    if (this.#forecastMark !== mark) {
-      this.#forecastRows = this.bus.events({ limit: 100_000, type: 'turn_end' });
-      this.#forecastMark = mark;
-    }
-    return forecastOf(this.#forecastRows, names, {
+    return forecastOf(this.#turnEndRows(), names, {
       specOf: (n) => this.specOf(n),
       table: tableFrom(this.config),
       quotaClis: Object.keys(this.config.quotas ?? {}),
@@ -1033,8 +1038,9 @@ export class Kingdom extends EventEmitter {
       // delta or every earlier turn is counted again — the same rule ctx.js
       // and daemon.js use, now shared from usage.js rather than re-derived
       // (re-deriving it is how these three drifted apart the last two times).
-      const d = deltaOf(this.lastUsage.get(name), u.usage ?? {});
-      this.lastUsage.set(name, totalsOf(u.usage ?? {}));
+      const usage = u.usage;
+      const d = deltaOf(this.lastUsage.get(name), usage);
+      if (hasUsage(usage)) this.lastUsage.set(name, totalsOf(usage));
 
       // Only claude reports total_cost_usd; codex and agy hardcode 0. That
       // left `spentUsd` frozen at 44.18 through three runs while the court
@@ -1864,7 +1870,10 @@ export class Kingdom extends EventEmitter {
     // retention limit was written for and the only case it never applied to.
     if (now - (this.lastPrune ?? 0) > PRUNE_EVERY_MS) {
       this.lastPrune = now;
-      try { this.bus.prune(); } catch (e) { this.emit('error', e); }
+      try {
+        this.bus.prune();
+        this.#turnEndCache.mark = -1;
+      } catch (e) { this.emit('error', e); }
     }
 
     // Approval visibility must not depend on a member delivery succeeding.
@@ -2766,7 +2775,7 @@ export class Kingdom extends EventEmitter {
     // 100,000 and keeping the turn_ends parsed the entire log to read a handful
     // of integers — the exact waste the `type` parameter was added for, by a
     // caller that did not get the memo.
-    return this.bus.events({ agent: name ?? undefined, type: 'turn_end', limit: 100_000 })
+    return this.#turnEndRows().filter((e) => !name || e.agent === name)
       .map((e) => e.payload?.ctx ?? 0);
   }
 
@@ -3120,7 +3129,7 @@ export class Kingdom extends EventEmitter {
     if (!members.length) return Promise.resolve({});
     // Only the roles the advisor may move are relevant. outputEvidence ignores
     // pre-snapshot history instead of guessing which setting produced it.
-    const measurements = outputEvidence(this.bus.events({ type: 'turn_end', limit: 100_000 }), {
+    const measurements = outputEvidence(this.#turnEndRows(), {
       names: members.map((p) => p.name), table: tableFrom(this.config),
     });
     return pickModels(a, {

@@ -4,6 +4,7 @@ import { approvalBody } from './approvals.js';
 import { join } from 'node:path';
 import {
   ME, bus, tooBig, str, rosterNow, officer, badRecipient, cursorFor, advance, nothingNew,
+  boundedLimit,
 } from './ctx.js';
 
 export const comms = {
@@ -99,12 +100,12 @@ export const comms = {
       type: 'object',
       properties: {
         since: { type: 'number', description: 'Look back from this id instead of where you left off' },
-        limit: { type: 'number', description: 'Max rows (default 60)' },
+        limit: { type: 'integer', minimum: 1, maximum: 200, description: 'Max rows (default 60)' },
       },
     },
     run: ({ since, limit = 60 }) => {
       const { from, track } = cursorFor('bus', since);
-      const rows = bus.history({ since: from, limit });
+      const rows = bus.history({ since: from, limit: boundedLimit(limit, 60, 200) });
       advance('bus', track, rows);
       if (!rows.length) return nothingNew(from);
       return rows.map((m) =>

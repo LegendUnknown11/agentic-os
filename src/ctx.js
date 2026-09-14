@@ -13,7 +13,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { resolve } from 'node:path';
 import { dbPath } from './worktree.js';
-import { totalsOf, deltaOf, ZERO } from './usage.js';
+import { totalsOf, deltaOf, ZERO, hasUsage } from './usage.js';
 import { costOf, tableFrom } from './price.js';
 
 const M = (n) => (n / 1e6).toFixed(2) + 'M';
@@ -45,7 +45,7 @@ export function audit(db, since = 0, { config = null } = {}) {
     // And DELTAS, because codex reports cumulatively per thread. Summing raw
     // read this very database as 2.37M input when the truth is 1.89M.
     const d = deltaOf(prev.get(e.agent), u);
-    prev.set(e.agent, totalsOf(u));
+    if (hasUsage(u)) prev.set(e.agent, totalsOf(u));
 
     const spec = specs.get(e.agent);
     // A member's cost is what the CLI charged, when it says so (only claude

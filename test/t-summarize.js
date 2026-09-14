@@ -68,7 +68,7 @@ const { transcriptOf, clean, fastSummary, summarize, settingsOf, DEFAULTS, EFFOR
     name: 'coder', role: 'peasant',
     events: [
       { kind: 'tool', payload: { name: 'Read' } },
-      { kind: 'text', payload: { text: 'The refresh races with logout; adding a mutex to session.dart.' } },
+      { kind: 'text', payload: { text: 'The refresh races with logout.\nAdding a mutex to session.dart.' } },
     ],
   }, { cwd: dir });
   a.equal(line, 'Fixed the token-refresh race in session.dart with a mutex.');

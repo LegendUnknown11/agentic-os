@@ -175,6 +175,20 @@ try {
       } },
     }, 'auxiliary advisor/summarizer telemetry has an additive stable shape');
     a.deepEqual(m.mcp, { maskedCalls: 2, maskedChars: 800 }, 'masking counters are in the metrics contract');
+
+    const bus = new Bus(dbPath(repo));
+    bus.set('spentUsd', '4.25');
+    bus.set('spent:orchestrator', '2.75');
+    const live = await get('/api/metrics');
+    a.equal(live.spent, 4.25, 'live counters must not be frozen with event aggregates');
+    a.equal(live.members.find((x) => x.name === 'orchestrator').spent, 2.75);
+    bus.logEvent('orchestrator', 'turn_end', {
+      usage: { input_tokens: 60_000, output_tokens: 600, cached_input_tokens: 0 }, ctx: 16_000,
+    });
+    bus.close();
+    const refreshed = await get('/api/metrics');
+    a.equal(refreshed.members.find((x) => x.name === 'orchestrator').in, 150_000,
+      'a new event must invalidate the cached history');
     console.log(`  metrics: orchestrator 5 turns -> ${orchestrator.in} in (a sum would have said 255000)`);
     console.log(`  quota: codex at ${q.pct}% of its plan, no dollar price required`);
   }

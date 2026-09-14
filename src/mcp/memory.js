@@ -7,6 +7,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   VAULT_SEARCH_BUDGET, NOTE_WHOLE_LIMIT, ID, ME, MIRROR_REPO, bus, VAULT, VAULT_WRITE_DIR, insideVault, slug, str, modeNow,
+  boundedLimit,
 } from './ctx.js';
 
 export const memory = {
@@ -19,12 +20,12 @@ export const memory = {
       type: 'object',
       properties: {
         query: str('Words to look for, e.g. "auth bug" or a file name'),
-        limit: { type: 'number', description: 'Max results (default 20)' },
+        limit: { type: 'integer', minimum: 1, maximum: 50, description: 'Max results (default 20)' },
       },
       required: ['query'],
     },
     run: ({ query, limit = 20 }) => {
-      const hits = bus.recall(query, { limit });
+      const hits = bus.recall(query, { limit: boundedLimit(limit, 20, 50) });
       if (!hits.length) return `Nothing recalled for "${query}".`;
       return hits.map((h) =>
         `[${new Date(h.ts).toISOString()}] ${h.who} (${h.kind}): ` +

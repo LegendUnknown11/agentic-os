@@ -70,6 +70,9 @@ a.doesNotMatch(pagesSource, /on && member\.awake \? 'sleep' : 'wake'/, 'adding a
 a.match(settingsSource, /picked\.path/, 'the native repository picker result must use its returned path');
 a.match(settingsSource, /aria-label': 'Settings sections'/, 'Settings navigation must have a spoken region name');
 a.match(settingsSource, /\['efficiency', 'Models & efficiency'\]/, 'Settings must consolidate model cost controls into one section');
+a.match(settingsSource, /\['appearance', 'Appearance'\]/, 'Settings must expose theme and wallpaper under Appearance');
+a.match(settingsSource, /themeOf\(state\.prefs\.theme\)/, 'Appearance must normalise missing and invalid saved themes');
+a.match(settingsSource, /setPrefs\(\{ theme: theme\.value \}\)/, 'Appearance must persist the native theme choice');
 a.doesNotMatch(settingsSource, /\['summary', 'Summaries'\]|\['advisor', 'Advisor'\]/, 'Settings must not keep separate Summary and Advisor tabs');
 a.match(settingsSource, /type: 'button', style: \{ backgroundImage/, 'Settings asset tiles must never submit a surrounding form');
 a.match(settingsSource, /tab\.setAttribute\('aria-current', 'page'\)/, 'Settings must expose its active section to assistive technology');
@@ -235,6 +238,8 @@ a.match(pagesSource, /apiError\(state\.changes/, 'change load failures must not 
 a.match(changesSource, /state\.changesError/, 'change refresh failures must keep a separate visible error state');
 a.match(changesSource, /if \(!state\.changes \|\| state\.changes\?\.ok === false\)/, 'change refresh failures may stop only when no last-known work exists');
 a.match(changesSource, /button\('Retry'/, 'change refresh failures must offer a direct retry');
+a.match(changesSource, /const refreshChanges = .*options\.refreshLists/, 'Changes must reuse the shell-owned list refresh');
+a.doesNotMatch(changesSource, /void get\('\/api\/changes'\)/, 'Changes must not issue a duplicate initial list request');
 a.match(changesSource, /button\('Retry', \(\) => diffDetail\(state, root, peasant, file\)/, 'failed file diffs must offer a local retry');
 a.doesNotMatch(changesSource, /const body = root\.querySelector\('\.view-page'\);\s*body\?\.replaceChildren\(page/, 'diff loading must not nest a second page shell');
 a.match(changesSource, /root\.replaceChildren\(page\('Changes', `\$\{displayName\(peasant\)\} .*reading worktree/, 'diff loading must replace the route root cleanly');

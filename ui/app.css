@@ -3,6 +3,7 @@
  * editorial headings and quiet card boundaries. The app remains offline, so
  * type uses local stacks and no gradients or remote assets are required. */
 :root {
+  color-scheme: light;
   --paper: #f7f1e7;
   --paper-deep: #ebe1d2;
   --white: #fffdf9;
@@ -40,6 +41,30 @@
   --danger-rgb: 141 57 53;
   --ok: var(--teal-dark);
   --ok-rgb: 8 74 74;
+  --dark-bg: #102421;
+  --dark-bg-rgb: 16 36 33;
+  --dark-surface: #17332f;
+  --dark-surface-rgb: 23 51 47;
+  --dark-raised: #1f403a;
+  --dark-raised-rgb: 31 64 58;
+  --dark-text: #f7f1e7;
+  --dark-text-rgb: 247 241 231;
+  --dark-muted: #b8c4bd;
+  --dark-muted-rgb: 184 196 189;
+  --dark-faint: #95a89f;
+  --dark-faint-rgb: 149 168 159;
+  --dark-line: #425f58;
+  --dark-line-rgb: 66 95 88;
+  --dark-border: #6f8a82;
+  --dark-border-rgb: 111 138 130;
+  --dark-accent: #4fb6aa;
+  --dark-accent-rgb: 79 182 170;
+  --dark-accent-ink: #102421;
+  --dark-danger: #f19a8b;
+  --dark-danger-rgb: 241 154 139;
+  --dark-danger-soft: #3b2b2a;
+  --dark-ok: #79c6b5;
+  --dark-ok-rgb: 121 198 181;
   --radius-ctl: 12px;
   --radius-card: 16px;
   --space-1: 4px;
@@ -65,6 +90,85 @@
   --shadow-small: 0 12px 30px -24px rgb(8 74 74 / .38);
   --shadow-panel: 0 0 0 1px var(--line), 0 2px 4px rgb(8 74 74 / .06), 0 24px 56px -32px rgb(8 74 74 / .28);
   --shadow-button: 0 14px 28px -20px rgb(8 74 74 / .42);
+}
+
+/* The system palette keeps the same surfaces and spacing, with an explicit
+ * dark console ground. All values stay in the token area so selectors below
+ * remain palette-independent. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --paper-deep: var(--dark-surface);
+  --white: var(--dark-raised);
+  --ink: var(--dark-text);
+  --teal: var(--dark-accent);
+  --teal-dark: var(--dark-ok);
+  --teal-soft: var(--dark-raised);
+  --red: var(--dark-danger);
+  --red-dark: var(--dark-danger);
+  --red-soft: var(--dark-danger-soft);
+  --due: var(--dark-danger);
+  --bg: var(--dark-bg);
+  --bg-rgb: var(--dark-bg-rgb);
+  --surface: var(--dark-surface);
+  --surface-rgb: var(--dark-surface-rgb);
+  --raised: var(--dark-raised);
+  --raised-rgb: var(--dark-raised-rgb);
+  --text: var(--dark-text);
+  --text-rgb: var(--dark-text-rgb);
+  --muted: var(--dark-muted);
+  --muted-rgb: var(--dark-muted-rgb);
+  --faint: var(--dark-faint);
+  --faint-rgb: var(--dark-faint-rgb);
+  --line: var(--dark-line);
+  --line-rgb: var(--dark-line-rgb);
+  --border-strong: var(--dark-border);
+  --border-strong-rgb: var(--dark-border-rgb);
+  --accent: var(--dark-accent);
+  --accent-rgb: var(--dark-accent-rgb);
+  --accent-ink: var(--dark-accent-ink);
+  --danger: var(--dark-danger);
+  --danger-rgb: var(--dark-danger-rgb);
+  --ok: var(--dark-ok);
+  --ok-rgb: var(--dark-ok-rgb);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    color-scheme: dark;
+    --paper-deep: var(--dark-surface);
+    --white: var(--dark-raised);
+    --ink: var(--dark-text);
+    --teal: var(--dark-accent);
+    --teal-dark: var(--dark-ok);
+    --teal-soft: var(--dark-raised);
+    --red: var(--dark-danger);
+    --red-dark: var(--dark-danger);
+    --red-soft: var(--dark-danger-soft);
+    --due: var(--dark-danger);
+    --bg: var(--dark-bg);
+    --bg-rgb: var(--dark-bg-rgb);
+    --surface: var(--dark-surface);
+    --surface-rgb: var(--dark-surface-rgb);
+    --raised: var(--dark-raised);
+    --raised-rgb: var(--dark-raised-rgb);
+    --text: var(--dark-text);
+    --text-rgb: var(--dark-text-rgb);
+    --muted: var(--dark-muted);
+    --muted-rgb: var(--dark-muted-rgb);
+    --faint: var(--dark-faint);
+    --faint-rgb: var(--dark-faint-rgb);
+    --line: var(--dark-line);
+    --line-rgb: var(--dark-line-rgb);
+    --border-strong: var(--dark-border);
+    --border-strong-rgb: var(--dark-border-rgb);
+    --accent: var(--dark-accent);
+    --accent-rgb: var(--dark-accent-rgb);
+    --accent-ink: var(--dark-accent-ink);
+    --danger: var(--dark-danger);
+    --danger-rgb: var(--dark-danger-rgb);
+    --ok: var(--dark-ok);
+    --ok-rgb: var(--dark-ok-rgb);
+  }
 }
 
 * { box-sizing: border-box; }

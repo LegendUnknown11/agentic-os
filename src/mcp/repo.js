@@ -4,6 +4,7 @@ import { readdirSync } from 'node:fs';
 import { join, extname } from 'node:path';
 import {
   ID, REPO, bus, ASSETS_DIR, DOCUMENT_EXT, IMAGE_EXT, DIFF_LIMIT, str, cursorFor, advance, nothingNew,
+  boundedLimit,
 } from './ctx.js';
 
 export const repo = {
@@ -45,16 +46,29 @@ export const repo = {
       'json, png, jpg, gif, webp, avif, svg) for the court to read. Each entry ' +
       'gives the real file path — open it with your own file-reading tool, the ' +
       'same as any other file on disk.',
-    schema: { type: 'object', properties: {}, required: [] },
-    run: () => {
+    schema: {
+      type: 'object',
+      properties: {
+        query: str('Optional filename search'),
+        limit: { type: 'integer', minimum: 1, maximum: 100, description: 'Max rows (default 50)' },
+      },
+    },
+    run: ({ query = '', limit = 50 } = {}) => {
       if (!ASSETS_DIR) return 'No court home directory — nothing to list.';
       let files;
       try { files = readdirSync(ASSETS_DIR); } catch { files = []; }
-      const uploads = files
-        .filter((f) => DOCUMENT_EXT.has(extname(f).toLowerCase()) || IMAGE_EXT.has(extname(f).toLowerCase()))
+      const needle = String(query ?? '').trim().toLowerCase();
+      const matches = files
+        .filter((f) => (DOCUMENT_EXT.has(extname(f).toLowerCase()) || IMAGE_EXT.has(extname(f).toLowerCase()))
+          && (!needle || f.toLowerCase().includes(needle)))
+        .sort((a, b) => a.localeCompare(b));
+      if (!matches.length) return 'No documents or images uploaded.';
+      const cap = boundedLimit(limit, 50, 100);
+      const uploads = matches.slice(0, cap)
         .map((f) => `${f} (${IMAGE_EXT.has(extname(f).toLowerCase()) ? 'image' : 'document'}) — ${join(ASSETS_DIR, f)}`);
-      if (!uploads.length) return 'No documents or images uploaded.';
-      return uploads.join('\n');
+      const withheld = matches.length - uploads.length;
+      return uploads.join('\n')
+        + (withheld ? `\n[${withheld} more upload${withheld === 1 ? '' : 's'} withheld — narrow the query or raise limit]` : '');
     },
   },
 
@@ -67,14 +81,14 @@ export const repo = {
       properties: {
         since: { type: 'number', description: 'Look back from this id instead of where you left off' },
         agent: str('Restrict to one agent (optional)'),
-        limit: { type: 'number', description: 'Max rows (default 120)' },
+        limit: { type: 'integer', minimum: 1, maximum: 500, description: 'Max rows (default 120)' },
       },
     },
     // Raw payloads land in the briefer's context verbatim, so flatten each event
     // to one short line — and only ever return what is new.
     run: ({ since, agent = null, limit = 120 }) => {
       const { from, track } = cursorFor('events', since);
-      const rows = bus.events({ since: from, agent, limit });
+      const rows = bus.events({ since: from, agent, limit: boundedLimit(limit, 120, 500) });
       advance('events', track, rows);
       if (!rows.length) return nothingNew(from);
       return rows.map((e) => {

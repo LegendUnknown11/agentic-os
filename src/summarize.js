@@ -46,8 +46,6 @@ export const settingsOf = (cfg) => {
 export const EFFORTS = ['none', 'low', 'medium', 'high', 'xhigh'];
 
 const CAP = 14_000;   // per turn; the tail is what a summary is actually about
-const ACTION = /^(added|answered|checked|changed|compared|created|described|explained|fixed|found|implemented|merged|removed|renamed|ran|read|refactored|reviewed|tested|updated|verified|wrote)\b/i;
-
 /**
  * Fold one turn's raw events into the text the summariser sees.
  *
@@ -86,7 +84,7 @@ export function transcriptOf(events) {
 export function fastSummary(events, maxWords) {
   const text = [...events].reverse()
     .find((e) => e.kind === 'text' && typeof e.payload?.text === 'string')?.payload.text?.trim();
-  if (!text || text.includes('\n') || !/[.!?]$/.test(text) || !ACTION.test(text)) return null;
+  if (!text || text.includes('\n') || !/[.!?]$/.test(text)) return null;
   if (text.split(/\s+/).length > maxWords || clean(text, maxWords) !== text) return null;
   return text;
 }

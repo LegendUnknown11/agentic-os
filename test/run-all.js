@@ -138,8 +138,9 @@ const WIDTH = Math.max(1, Math.min(
  * the retry below gets to try again once the pool has drained.
  */
 const run = ([label, file]) => new Promise((resolve) => {
+  const started = Date.now();
   let timer;
-  const done = (ok, out) => { clearTimeout(timer); resolve({ label, out, ok }); };
+  const done = (ok, out) => { clearTimeout(timer); resolve({ label, out, ok, elapsedMs: Date.now() - started }); };
   let out = '';
   let p;
   try {
@@ -176,10 +177,13 @@ const run = ([label, file]) => new Promise((resolve) => {
 // and is still reported; it just costs one extra run of an already-failing test.
 const started = Date.now();
 const suspect = [];
+const timings = new Map();
+const record = (r) => timings.set(r.label, (timings.get(r.label) ?? 0) + r.elapsedMs);
 const queue = suites.slice();
 await Promise.all(Array.from({ length: WIDTH }, async () => {
   for (let next = queue.shift(); next; next = queue.shift()) {
     const r = await run(next);
+    record(r);
     // A pass is final and printed now, so the run still shows progress as it
     // goes. Only failures are held back, and only until the pool is empty —
     // retrying one while three others still run would prove nothing.
@@ -191,6 +195,7 @@ await Promise.all(Array.from({ length: WIDTH }, async () => {
 let failed = 0;
 for (const s of suspect) {
   const r = await run(s);                                 // alone this time
+  record(r);
   process.stdout.write(r.out);
   if (r.ok) console.error(`\x1b[33mflaky (failed in the pool, passed alone): ${r.label}\x1b[0m`);
   else {
@@ -198,6 +203,9 @@ for (const s of suspect) {
     console.error(`\x1b[31mFAILED: ${r.label}\x1b[0m`);
   }
 }
+const slowest = [...timings].sort((a, b) => b[1] - a[1]).slice(0, 5)
+  .map(([label, ms]) => `${label} ${(ms / 1000).toFixed(1)}s`).join(', ');
+console.log(`\nslowest: ${slowest}`);
 console.log(`\n${suites.length} suites, ${WIDTH}-wide, ${((Date.now() - started) / 1000).toFixed(1)}s`
   + (suspect.length ? `, ${suspect.length} retried alone` : ''));
 

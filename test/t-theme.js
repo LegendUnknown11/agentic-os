@@ -6,19 +6,23 @@ import { join } from 'node:path';
 
 const css = readFileSync(join(import.meta.dirname, '..', 'ui', 'app.css'), 'utf8');
 const index = readFileSync(join(import.meta.dirname, '..', 'ui', 'index.html'), 'utf8');
+const bootstrap = readFileSync(join(import.meta.dirname, '..', 'ui', 'theme-bootstrap.js'), 'utf8');
 const main = readFileSync(join(import.meta.dirname, '..', 'ui', 'main.js'), 'utf8');
 const sidebar = readFileSync(join(import.meta.dirname, '..', 'ui', 'sidebar.js'), 'utf8');
 const util = readFileSync(join(import.meta.dirname, '..', 'ui', 'views', 'util.js'), 'utf8');
 const thread = readFileSync(join(import.meta.dirname, '..', 'ui', 'thread.js'), 'utf8');
 const avatar = readFileSync(join(import.meta.dirname, '..', 'ui', 'avatar.js'), 'utf8');
 const root = /:root\s*\{([\s\S]*?)\n\}/.exec(css)?.[1] ?? '';
+const dark = /:root\[data-theme="dark"\]\s*\{([\s\S]*?)\n\}/.exec(css)?.[1] ?? '';
 const rules = css.replace(/\/\*[\s\S]*?\*\//g, '').slice(css.indexOf('* { box-sizing'));
 
 const token = (name) => new RegExp(`${name}\\s*:\\s*([^;]+);`).exec(root)?.[1].trim();
+const darkToken = (name) => new RegExp(`${name}\\s*:\\s*([^;]+);`).exec(dark)?.[1].trim();
 // Prototype.zip is the visual source of truth: paper surfaces, ink type,
 // teal actions, and terracotta attention. The app stays offline, so it keeps
 // local type stacks instead of importing the prototype's webfonts.
 a.equal(token('--paper'), '#f7f1e7');
+a.equal(token('color-scheme'), 'light');
 a.equal(token('--paper-deep'), '#ebe1d2');
 a.equal(token('--white'), '#fffdf9');
 a.equal(token('--ink'), '#17332f');
@@ -58,7 +62,21 @@ a.deepEqual([1, 2, 3, 4, 5, 6, 7, 8].map((n) => token(`--space-${n}`)), ['4px', 
 a.equal(token('--tap-target-min'), '44px');
 a.equal(token('--ease'), 'cubic-bezier(.2, 0, 0, 1)');
 a.match(css, /--display:\s*Georgia/, 'headings must use an offline editorial serif stack');
-a.match(index, /<meta name="color-scheme" content="light">/, 'the document chrome must advertise the light prototype surface');
+a.match(index, /<meta name="color-scheme" content="light dark">/, 'the document chrome must advertise both theme surfaces');
+a.match(index, /<script src="\.\/theme-bootstrap\.js"><\/script>\s*<link rel="stylesheet"/, 'the saved theme must load before the stylesheet paints');
+a.match(bootstrap, /localStorage\.getItem\('kd\.prefs'\)/, 'the saved theme must come from the existing preference store');
+a.match(bootstrap, /document\.documentElement\.dataset\.theme = prefs\.theme/, 'an explicit saved theme must apply before first paint');
+a.doesNotMatch(index, /<script>(?!\s*<\/script>)/, 'the theme bootstrap must obey the daemon script CSP');
+a.match(css, /:root\[data-theme="dark"\]/, 'the stylesheet must provide an explicit dark palette');
+a.match(css, /@media \(prefers-color-scheme: dark\)[\s\S]*?:root:not\(\[data-theme\]\)/, 'system theme must follow the operating-system preference');
+for (const [name, value] of Object.entries({
+  '--dark-bg': '#102421', '--dark-surface': '#17332f', '--dark-raised': '#1f403a',
+  '--dark-text': '#f7f1e7', '--dark-muted': '#b8c4bd', '--dark-faint': '#95a89f',
+  '--dark-line': '#425f58', '--dark-border': '#6f8a82', '--dark-accent': '#4fb6aa',
+  '--dark-accent-ink': '#102421', '--dark-danger': '#f19a8b', '--dark-ok': '#79c6b5',
+})) a.equal(token(name), value);
+a.equal(darkToken('--bg'), 'var(--dark-bg)');
+a.equal(darkToken('color-scheme'), 'dark');
 a.doesNotMatch(css, /linear-gradient|radial-gradient/, 'the app foundation must not depend on gradients');
 a.match(css, /\.mode-switcher\s*\{[^}]*border-radius:\s*999px/, 'work modes must read as one segmented control');
 a.match(css, /\.mode-option\.selected\s*\{[^}]*background:\s*var\(--accent\)/, 'the active work mode needs one clear teal state');

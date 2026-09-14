@@ -125,6 +125,12 @@ export function tooBig(body) {
 
 export const str = (description) => ({ type: 'string', description });
 
+/** Clamp list sizes at the MCP boundary before they reach SQLite or the model context. */
+export const boundedLimit = (value, fallback, maximum) => {
+  const n = Number(value);
+  return Number.isInteger(n) ? Math.max(1, Math.min(maximum, n)) : fallback;
+};
+
 // --- who is actually out there ---------------------------------------
 // The roster is published to the bus by the orchestrator on every change
 // (`kingdom.js` roster()), so it is the one view of the court that every
