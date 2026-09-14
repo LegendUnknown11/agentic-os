@@ -87,6 +87,7 @@ const watchers = new Map(); // root -> { ok, dirty, w }
  * sweep. The watcher can only make the court FASTER, never wronger.
  */
 function ensureWatcher(key) {
+  try { key = realpathSync.native(resolve(key)); } catch {}
   const had = watchers.get(key);
   if (had) return had;
   const state = { ok: false, dirty: false, bulk: false, changed: new Set(), w: null };
@@ -139,7 +140,9 @@ export function closeVaultWatchers() {
  * searches for it in the same breath may beat the filesystem event.
  */
 export function noteWritten(root, abs) {
-  const c = corpus.get(resolve(root));
+  const key = resolve(root);
+  let c = corpus.get(key);
+  if (!c) { try { c = corpus.get(realpathSync.native(key)); } catch {} }
   if (!c) return;                       // nothing cached; the next load reads it anyway
   try {
     c.files.set(abs, { mtime: statSync(abs).mtimeMs, text: readFileSync(abs, 'utf8') });
@@ -181,7 +184,11 @@ export function mirrorToProject(repo, root, abs) {
 
 /** Drop the cached corpus for a root. The blunt instrument; prefer noteWritten. */
 export function invalidateVault(root) {
-  if (root) corpus.delete(resolve(root));
+  if (root) {
+    const key = resolve(root);
+    corpus.delete(key);
+    try { corpus.delete(realpathSync.native(key)); } catch {}
+  }
   else corpus.clear();
 }
 
@@ -266,10 +273,12 @@ function writeIndex(key, files) {
 }
 
 function load(root) {
-  const key = resolve(root);
+  const resolved = resolve(root);
+  let key = resolved;
+  try { key = realpathSync.native(resolved); } catch {}
   const now = Date.now();
   const watcher = ensureWatcher(key);
-  let c = corpus.get(key);
+  let c = corpus.get(key) ?? corpus.get(resolved);
   if (c) {
     const age = now - c.at;
     // A healthy watcher means "nothing changed" is known, not guessed, so the

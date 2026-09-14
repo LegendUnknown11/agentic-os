@@ -4,12 +4,12 @@
 //   node test/t-vault.js
 import { strict as a } from 'node:assert';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, rmSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const vault = mkdtempSync(join(tmpdir(), 'kingdom-vault-'));
+const vault = realpathSync.native(mkdtempSync(join(tmpdir(), 'kingdom-vault-')));
 mkdirSync(join(vault, 'References'), { recursive: true });
 mkdirSync(join(vault, '.obsidian'), { recursive: true });
 mkdirSync(join(vault, '.trash'), { recursive: true });

@@ -256,11 +256,11 @@ const unreadableWorkflowFiles = new Set();
 let schedulerRunning = false;
 
 /** Call periodically (daemon.js runs this off a setInterval). */
-export async function tickScheduler(dir, { bus, onRun } = {}) {
+export async function tickScheduler(dir, { bus, onRun, now: nowMs } = {}) {
   if (schedulerRunning) return;
   schedulerRunning = true;
   try {
-    const now = Date.now();
+    const now = nowMs ?? Date.now();
     const fire = async (wf, input) => {
       const result = await runWorkflow(wf, { bus, input }).catch((e) => ({ ok: false, error: e.message, steps: [] }));
       if (bus) logRun(bus, wf, result);
@@ -629,19 +629,19 @@ if (process.argv[1]?.endsWith('workflows.js')) {
   await deleteWorkflow(dir, 'legacy-bad-daily');
 
   // a daily trigger fires once its time-of-day has passed today, not before,
-  // and not a second time later the same day. Wall-clock, like the interval
-  // test above — assumes the test isn't run in the last hour before midnight.
-  const now2 = new Date();
+  // and not a second time later the same day. Pinned to noon so midnight
+  // rollover cannot fail the assertion near 23:xx.
+  const now2 = new Date(2026, 0, 15, 12, 0, 0);
   const pad = (n) => String(n).padStart(2, '0');
   const hhmm = (d) => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
   await saveWorkflow(dir, { id: 'daily-future', trigger: { type: 'daily', at: hhmm(new Date(now2.getTime() + 3600_000)) }, nodes: busWf.nodes });
   await saveWorkflow(dir, { id: 'daily-past', trigger: { type: 'daily', at: hhmm(new Date(now2.getTime() - 60_000)) }, nodes: busWf.nodes });
   const dailyRuns = { future: 0, past: 0 };
   const onDaily = (w) => { if (w.id === 'daily-future') dailyRuns.future++; if (w.id === 'daily-past') dailyRuns.past++; };
-  await tickScheduler(dir, { bus: realBus, onRun: onDaily });
+  await tickScheduler(dir, { bus: realBus, now: now2.getTime(), onRun: onDaily });
   a.equal(dailyRuns.future, 0, 'a daily trigger must not fire before its time today');
   a.equal(dailyRuns.past, 1, 'a daily trigger fires once its time has passed today');
-  await tickScheduler(dir, { bus: realBus, onRun: onDaily });
+  await tickScheduler(dir, { bus: realBus, now: now2.getTime(), onRun: onDaily });
   a.equal(dailyRuns.past, 1, 'and not again later the same day');
   await deleteWorkflow(dir, 'daily-future');
   await deleteWorkflow(dir, 'daily-past');

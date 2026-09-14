@@ -9,7 +9,7 @@
 //   node test/t-panels.js
 import { strict as a } from 'node:assert';
 import { execFileSync, spawn } from 'node:child_process';
-import { mkdtempSync, writeFileSync, rmSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, rmSync, mkdirSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -19,7 +19,7 @@ import { dbPath, kingdomDir, createWorktree, worktreePath } from '../src/worktre
 const HERE = dirname(fileURLToPath(import.meta.url));
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const repo = mkdtempSync(join(tmpdir(), 'kingdom-panels-'));
+const repo = realpathSync.native(mkdtempSync(join(tmpdir(), 'kingdom-panels-')));
 const git = (...x) => execFileSync('git', x, { cwd: repo, stdio: 'pipe' });
 git('init', '-q');
 git('config', 'user.email', 'k@kingdom');
@@ -32,7 +32,7 @@ git('commit', '-qm', 'init');
 const BASE = execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim();
 
 // A vault to browse, with a note that only matches by filename.
-const vault = mkdtempSync(join(tmpdir(), 'kingdom-panelvault-'));
+const vault = realpathSync.native(mkdtempSync(join(tmpdir(), 'kingdom-panelvault-')));
 mkdirSync(join(vault, 'References'), { recursive: true });
 mkdirSync(join(vault, '.obsidian'), { recursive: true });
 writeFileSync(join(vault, 'References', 'Effort Levels.md'), '# Effort\nluna goes to max\n');

@@ -30,8 +30,8 @@ values, not on a summary of them.
 ## Evidence
 
 The combined source gate passed on merged `main`: `npm.cmd test` completed
-**69 suites, 4-wide, all passed**. Two runs on 2026-09-10 took 157.6s and 97.2s
-on the same machine; an earlier handoff recorded 64.1s. The suite count is the
+**71 suites, 4-wide, all passed**. A run on 2026-09-14 took 36.8s on the
+same machine; an earlier handoff recorded 64.1s. The suite count is the
 contract. The duration varies with machine load under 4-wide contention and is
 not a threshold — do not treat a slower run as a regression on its own.
 
