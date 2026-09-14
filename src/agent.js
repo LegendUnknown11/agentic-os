@@ -298,6 +298,7 @@ export class Agent extends EventEmitter {
   send(text) {
     if (this.cli === 'claude') {
       if (!this.proc) this.#startClaude();
+      if (!this.proc) return;
       this.busy = true;
       this.proc.stdin.write(
         JSON.stringify({

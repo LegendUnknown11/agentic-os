@@ -8,7 +8,7 @@
 // containment check to get wrong.
 import {
   readdirSync, readFileSync, statSync, writeFileSync, renameSync, rmSync, watch,
-  mkdirSync, copyFileSync,
+  mkdirSync, copyFileSync, realpathSync,
 } from 'node:fs';
 import { join, resolve, relative, extname, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
