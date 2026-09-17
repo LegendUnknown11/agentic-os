@@ -152,6 +152,22 @@ function connect() {
     try {
       const event = JSON.parse(message.data);
       const firstSnapshot = event.type === 'snapshot' && !state.ready;
+      // The advisor can flip the court's mode on its own reading of one plain
+      // message (Kingdom#queueMode, by: 'advisor') — Chat becomes Cowork or
+      // Code with no sovereign click on the mode switcher at all. That is how
+      // "I thought it was only one prompt" turns into unexplained delegation:
+      // the header text updated, but nothing said why or that it wasn't the
+      // sovereign's own choice. A mode change the sovereign clicked already
+      // gets its own notice from chooseMode(); this covers every other one.
+      if (event.type === 'mode' && event.by && event.by !== 'sovereign') {
+        const target = event.pending ?? event.mode;
+        const label = USER_MODE_BY_ID.get(userModeOf(target))?.label ?? target;
+        const reason = event.why ? ` — ${event.why}` : '';
+        modeNotice = event.pending
+          ? `AgentOS will switch to ${label} mode once the court is idle${reason}.`
+          : `AgentOS switched to ${label} mode${reason}.`;
+        toast(modeNotice);
+      }
       apply(event);
       Notify.onEvent(event);
       state.modeDef = modeOf(state.mode);
