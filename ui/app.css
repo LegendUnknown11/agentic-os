@@ -50,23 +50,23 @@
   --dark-surface-rgb: 23 51 47;
   --dark-raised: #1f403a;
   --dark-raised-rgb: 31 64 58;
-  --dark-text: #f7f1e7;
+  --dark-text: #f7f1e7;         /* 14.4:1 against --dark-bg, 12.1:1 against --dark-surface */
   --dark-text-rgb: 247 241 231;
-  --dark-muted: #b8c4bd;
+  --dark-muted: #b8c4bd;        /* 9.0:1 against --dark-bg, 7.5:1 against --dark-surface */
   --dark-muted-rgb: 184 196 189;
-  --dark-faint: #95a89f;
+  --dark-faint: #95a89f;        /* 6.5:1 against --dark-bg, 5.4:1 against --dark-surface */
   --dark-faint-rgb: 149 168 159;
   --dark-line: #425f58;
   --dark-line-rgb: 66 95 88;
   --dark-border: #6f8a82;
   --dark-border-rgb: 111 138 130;
-  --dark-accent: #4fb6aa;
+  --dark-accent: #4fb6aa;       /* 6.6:1 against --dark-bg, 5.6:1 against --dark-surface */
   --dark-accent-rgb: 79 182 170;
   --dark-accent-ink: #102421;
-  --dark-danger: #f19a8b;
+  --dark-danger: #f19a8b;       /* 7.5:1 against --dark-bg, 6.3:1 against --dark-surface */
   --dark-danger-rgb: 241 154 139;
   --dark-danger-soft: #3b2b2a;
-  --dark-ok: #79c6b5;
+  --dark-ok: #79c6b5;           /* 8.1:1 against --dark-bg, 6.8:1 against --dark-surface */
   --dark-ok-rgb: 121 198 181;
   --dark-gold: #d9b25c;        /* 6.7:1 against --dark-surface */
   --dark-gold-rgb: 217 178 92;
@@ -747,6 +747,12 @@ body.sidebar-collapsed .app-identity { display: grid; }
 .usage-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
 
 .usage-breakdown, .classification-list, .agent-usage-details { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-2) var(--space-3); margin: 0; }
+
+/* Auxiliary/MCP has more rows than the other breakdown lists on the same
+ * page, so it earns the tighter rhythm its "compact" class already asked
+ * for in ui/views/usage.js — this rule was missing, so the modifier was
+ * previously a no-op. */
+.usage-breakdown.compact { gap: var(--space-1) var(--space-3); }
 
 .usage-breakdown dt, .classification-list dt, .agent-usage-details dt { min-width: 0; color: var(--muted); }
 
