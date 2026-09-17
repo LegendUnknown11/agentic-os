@@ -1668,7 +1668,7 @@ export class Kingdom extends EventEmitter {
   }
 
   #runBlock(run, operation, next, extra = {}) {
-    if (!run || !['planning', 'running', 'verifying'].includes(run.state)) return;
+    if (!run || !['planning', 'running', 'paused', 'verifying'].includes(run.state)) return;
     const blocker = { operation, next, at: Date.now(), ...extra };
     const nextRun = { ...run, state: 'blocked', blocker,
       blockers: [...(Array.isArray(run.blockers) ? run.blockers : []), blocker] };
@@ -3274,8 +3274,11 @@ export class Kingdom extends EventEmitter {
       this.bus.post(CROWN, this.config.orchestrator.name,
         `The sovereign approved the new role "${p.name}". It is in the roster permanently.`);
     } else if (p.kind === 'merge') {
-      await this.merge(p.peasant);
+      // Consumed exactly once, before the awaited merge — not after — or a
+      // concurrent reject()/approve() on the same id can still find it while
+      // the merge is in flight and race a card whose merge already landed.
       this.approvals.delete(id);
+      await this.merge(p.peasant);
       this.bus.set(`resolved:${id}`, 'approved');
     } else if (p.kind === 'push') {
       // A push approval is consumed exactly once. Whether Git succeeds is a

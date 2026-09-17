@@ -45,10 +45,20 @@ a.ok(readFileSync(join(runWt, 'run-only.txt'), 'utf8').includes('accepted'));
 a.equal(readFileSync(join(repo, 'math.js'), 'utf8').includes('subtract'), false,
   'run integration must not touch the original checkout');
 await a.rejects(() => mergeIntoRun(repo, 'run-worker', 'run-1', { expectedRevision: 'stale' }), /stale integration/i);
+
+// Something else has the checkout on a different branch at the same commit
+// when Final Apply runs — a stale UI tab, a manual `git checkout -b`. Only a
+// commit-hash comparison guards Final Apply, so this must not silently land
+// the run on whatever happens to be checked out.
+execFileSync('git', ['checkout', '-b', 'decoy'], { cwd: repo });
 const appliedRun = await mergeRunBranch(repo, 'run-1', base);
 a.ok(appliedRun.revision, 'applying a reviewed run records the new source revision');
+a.equal(execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: repo }).toString().trim(), base,
+  'applying a run must check out base explicitly, not merge onto whatever branch happens to be checked out');
 a.ok(readFileSync(join(repo, 'run-only.txt'), 'utf8').includes('accepted'),
   'the reviewed run delta reaches the source only through its run branch');
+a.ok(execFileSync('git', ['show', `${base}:run-only.txt`], { cwd: repo }).toString().includes('accepted'),
+  'the delta must land on base itself, not a branch that merely happened to be checked out');
 
 // The peasant edits but does NOT commit — the common case.
 writeFileSync(join(wt, 'math.js'), 'export const add = (a,b) => a+b;\nexport const subtract = (a,b) => a-b;\n');
