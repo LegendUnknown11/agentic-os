@@ -503,7 +503,91 @@ try {
     console.log('  a restart releases work held by members the config no longer carries');
   }
 
-  /* ---- 9. #onDone must not silently clear a run blocked by someone else - */
+  /* ---- 9. a paused run's failed reconciliation must not vanish silently -- */
+  // #reconcileRun already retries a paused run at restart (its own allow-list
+  // already includes 'paused'), but #runBlock — the only place that turns a
+  // reconciliation failure into a recorded blocker, a notice, and a 'run'
+  // event — did not, so the failure disappeared with no state change and no
+  // concrete next action, contradicting HANDOFF.md's "Degrade visibly".
+  {
+    await k.stop();
+    // Repo known at construction, the way a real daemon boots for a court
+    // already attached to a project — this is the only path that reaches
+    // #reconcileRun() while a run is still 'paused' (see start(), which calls
+    // it before this.paused is restored).
+    k = new Kingdom(repo, configPath);
+    k.on('error', () => {});
+    await k.start();
+
+    const run = await k.createRun({ objective: 'prove a paused run surfaces a broken worktree' });
+    k.pauseRun(run.id);
+    a.equal(k.bus.run(run.id).state, 'paused', 'sanity: the run is paused before the restart');
+
+    // Make the next reconciliation attempt fail for real: a plain file now
+    // occupies the run worktree's parent directory, so createRunWorktree's
+    // own mkdirSync cannot recover by recreating it — the same class of
+    // corruption the issue names ("the repo directory moved, or the worktree
+    // metadata got corrupted").
+    const runsDir = join(kingdomDir(repo), 'runs');
+    rmSync(runsDir, { recursive: true, force: true });
+    writeFileSync(runsDir, 'not a directory');
+
+    await k.stop();
+    k = new Kingdom(repo, configPath);
+    k.on('error', () => {});
+    const runEvents = [];
+    k.on('run', (r) => runEvents.push(r));
+    await k.start();
+
+    a.equal(k.bus.run(run.id).state, 'blocked',
+      'a paused run whose worktree cannot be reconciled at restart must become visibly blocked, not stay silently paused');
+    a.ok(runEvents.some((r) => r.id === run.id && r.state === 'blocked'),
+      'the blocked transition must actually be emitted, not just written');
+    a.ok(k.bus.history({ limit: 400 }).some((m) =>
+      m.recipient === k.config.orchestrator.name && /RUN BLOCKED: startup reconciliation/.test(m.body)),
+    'the orchestrator must be told, or the failure has no visible next action');
+
+    rmSync(runsDir, { force: true });
+    console.log("  a paused run's failed reconciliation at restart becomes a visible blocker, not silence");
+  }
+
+  /* ---- 10. a merge approval must not race a concurrent reject ----------- */
+  // approve()'s 'merge' branch used to await the merge before deleting the
+  // approval, unlike every other branch (including 'push', right below it in
+  // source, which is careful to delete first) — leaving a window where
+  // reject(id) could still find and "reject" an approval whose merge was
+  // already in flight or had already landed.
+  {
+    if (!k.repo) await k.attachRepo(repo);
+    // Earlier sections dropped 'coder' from the roster, or replaced `k`
+    // entirely via a restart; restore it here rather than reuse a name the
+    // court no longer recognises.
+    if (!k.specOf('coder')) k.config.peasants.push({ name: 'coder', cli: 'codex', description: 'writes code' });
+    k.setMode('code', { why: 'prove the merge approval race is closed' });
+    await k.wake('coder');
+    const wt = k.agents.get('coder').cwd;
+    writeFileSync(join(wt, 'race.txt'), 'merge race fixture\n');
+    execFileSync('git', ['add', '-A'], { cwd: wt });
+    execFileSync('git', ['commit', '-qm', 'prove the merge race is closed'], { cwd: wt });
+
+    k.bus.post('orchestrator', null, JSON.stringify({ kind: 'merge', peasant: 'coder' }), 'approval');
+    await until(() => [...k.approvals.values()].some((p) => p.kind === 'merge' && p.peasant === 'coder'));
+    const approvalId = [...k.approvals].find(([, p]) => p.kind === 'merge')[0];
+
+    const approving = k.approve(approvalId);
+    // approve()'s merge branch runs synchronously up to its first await, so a
+    // correct implementation has already consumed the approval by the time
+    // this next line runs — a concurrent reject must find nothing left.
+    a.throws(() => k.reject(approvalId), /No pending approval/,
+      'a merge approval must be consumed before the merge is awaited, or a concurrent reject can still catch it mid-flight');
+    await approving;
+    a.equal(k.bus.get(`resolved:${approvalId}`), 'approved');
+    a.equal(k.approvals.has(approvalId), false);
+
+    console.log('  a merge approval is consumed before the merge is awaited, closing the reject race');
+  }
+
+  /* ---- 11. #onDone must not silently clear a run blocked by someone else - */
   // #onDone set the run to 'verifying' or 'blocked' from whichever
   // submission happened to arrive last, with no check of the run's existing
   // state, bypassing transitionRun's allowed-transition map entirely by
