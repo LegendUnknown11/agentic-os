@@ -1686,7 +1686,12 @@ export class Kingdom extends EventEmitter {
     const next = { ...run, recoveryHistory: [...history, entry] };
     this.#saveRun(next);
     this.emit('recovery', entry);
-    return { run: next, entry, attempts: next.recoveryHistory.length };
+    // Per (name, operation), not the whole run's history: a benign, already-
+    // resolved transport-retry on one worker must not count toward another
+    // worker's unresolved-process-failure threshold — or toward its own,
+    // since a resolved retry and an unresolved failure are different kinds.
+    const attempts = next.recoveryHistory.filter((e) => e.name === name && e.operation === operation).length;
+    return { run: next, entry, attempts };
   }
 
   /** Evidence for a done submission, including the exact revision tested. */

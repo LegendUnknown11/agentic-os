@@ -692,6 +692,47 @@ try {
     console.log("  onDone cannot silently clear a run's blocker with an unrelated peasant's success");
   }
 
+  /* ---- 13. recovery-attempt counting must be per (name, operation) ------- */
+  // #recordRecovery's returned `attempts` used to be the WHOLE run's
+  // recoveryHistory.length — any entry, for any worker, of any kind.
+  // #escalateFailure blocks the entire run once that count reaches 2, so a
+  // benign, already-handled transport-retry on one worker plus one real
+  // failure on an unrelated worker could block everyone, even though
+  // neither worker had actually failed twice.
+  {
+    if (!k.repo) await k.attachRepo(repo);
+    // §12 above stops its own run when it finishes, but clear defensively in
+    // case a future section is inserted between these two.
+    if (k.bus.currentRun()) await k.stopRun(undefined, 'test cleanup: clear the previous section\'s run');
+    // Earlier sections dropped 'coder' from the roster, or replaced `k`
+    // entirely via a restart; restore it here rather than reuse a name the
+    // court no longer recognises.
+    if (!k.specOf('coder')) k.config.peasants.push({ name: 'coder', cli: 'codex', description: 'writes code' });
+    await k.wake('coder');
+    await k.wake('briefer');
+
+    const run = await k.createRun({ objective: 'prove recovery counting is per worker, per kind' });
+
+    // coder hits a session-limit blip: rewindForRetry records a
+    // transport-retry entry, and the session-limit branch always returns
+    // before reaching escalateFailure — coder is never itself escalated.
+    k.lastBatch.set('coder', { from: 1, to: 2 });
+    k.agents.get('coder').emit('error', 'session limit reached, resets tomorrow');
+    await until(() => (k.bus.run(run.id)?.recoveryHistory ?? []).length >= 1);
+    a.equal(k.bus.run(run.id).recoveryHistory.length, 1, "sanity: coder's blip is recorded");
+
+    // briefer then fails once, for real, on something unrelated to coder.
+    k.agents.get('briefer').emit('error', 'the process crashed unexpectedly');
+    await until(() => Boolean(k.bus.get('failnotify:briefer')));
+    await wait(200);   // let the async error handler's recordRecovery land
+
+    a.notEqual(k.bus.run(run.id).state, 'blocked',
+      "one worker's already-resolved retry plus a different worker's single real failure must not "
+      + 'block the whole run — neither worker actually failed twice');
+
+    console.log('  a benign retry on one worker cannot combine with an unrelated single failure to block the run');
+  }
+
   console.log('t-control.js OK — a live court follows the repo, and the court can steer itself');
 } finally {
   await k?.stop?.();   // closes the bus with it
