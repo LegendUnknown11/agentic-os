@@ -41,6 +41,9 @@
   --danger-rgb: 141 57 53;
   --ok: var(--teal-dark);
   --ok-rgb: 8 74 74;
+  /* Identity, not status: the orchestrator alone. Never reused by tone(). */
+  --gold: #6b4f10;             /* 5.9:1 against --paper-deep */
+  --gold-rgb: 107 79 16;
   --dark-bg: #102421;
   --dark-bg-rgb: 16 36 33;
   --dark-surface: #17332f;
@@ -65,6 +68,8 @@
   --dark-danger-soft: #3b2b2a;
   --dark-ok: #79c6b5;
   --dark-ok-rgb: 121 198 181;
+  --dark-gold: #d9b25c;        /* 6.7:1 against --dark-surface */
+  --dark-gold-rgb: 217 178 92;
   --radius-ctl: 12px;
   --radius-card: 16px;
   --space-1: 4px;
@@ -130,6 +135,8 @@
   --danger-rgb: var(--dark-danger-rgb);
   --ok: var(--dark-ok);
   --ok-rgb: var(--dark-ok-rgb);
+  --gold: var(--dark-gold);
+  --gold-rgb: var(--dark-gold-rgb);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -168,6 +175,8 @@
     --danger-rgb: var(--dark-danger-rgb);
     --ok: var(--dark-ok);
     --ok-rgb: var(--dark-ok-rgb);
+    --gold: var(--dark-gold);
+    --gold-rgb: var(--dark-gold-rgb);
   }
 }
 
@@ -587,7 +596,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .thread-heading h1 { margin: 0; font-family: var(--display); font-size: clamp(24px, 3vw, 34px); letter-spacing: -.025em; }
 
-.thread-heading.sovereign h1 { color: var(--accent); }
+.thread-heading.sovereign h1 { color: var(--gold); }
 
 .thread-subtitle { margin: var(--space-1) 0 0; color: var(--muted); font-size: var(--t-sm); overflow-wrap: anywhere; }
 

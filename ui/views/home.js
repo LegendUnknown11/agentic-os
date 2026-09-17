@@ -99,13 +99,17 @@ export function render(state, root, actions = {}, queueExpanded = false) {
   const urgent = [
     ...(crewVisible ? approvals.map((a) => ({
       text: `${String(a.kind ?? 'request').toUpperCase()} · ${a.from ?? 'team'}`, open: open('approvals'),
+      tone: tone('blocked'),
     })) : []),
-    ...(crewVisible ? attention.map(([name, member]) => ({
-      text: `${displayName(name, member.role)} · ${statusLabel(currentStatus(name, member))}`,
-      open: open({ page: 'thread', member: name }),
-    })) : []),
+    ...(crewVisible ? attention.map(([name, member]) => {
+      const label = statusLabel(currentStatus(name, member));
+      return {
+        text: `${displayName(name, member.role)} · ${label}`,
+        open: open({ page: 'thread', member: name }), tone: tone(label),
+      };
+    }) : []),
     ...(m.tasks !== false ? blocked.map((task) => ({
-      text: `${task.title ?? task.detail ?? `Task #${task.id}`} · ${taskMeta(task)}`,
+      text: `${task.title ?? task.detail ?? `Task #${task.id}`} · ${taskMeta(task)}`, tone: tone('blocked'),
     })) : []),
   ];
 
@@ -124,8 +128,13 @@ export function render(state, root, actions = {}, queueExpanded = false) {
   if (urgent.length) {
     const needs = h('div', { class: 'home-card' }, h('h2', { text: `Needs you · ${urgent.length}` }));
     for (const item of urgent) {
-      needs.append(item.open ? button(item.text, item.open, 'list-row')
-        : h('div', { class: `task-row ${tone('blocked')}`.trim() }, h('span', { text: item.text })));
+      const cls = `task-row ${item.tone ?? ''}`.trim();
+      // The clickable branch also carries `button`, or it is the only
+      // interactive control in the app with no hover affordance and no
+      // enforced tap target — .task-row alone declares neither.
+      needs.append(item.open
+        ? h('button', { class: `button ${cls}`, type: 'button', on: { click: item.open } }, h('span', { text: item.text }))
+        : h('div', { class: cls }, h('span', { text: item.text })));
     }
     grid.append(needs);
   }
