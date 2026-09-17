@@ -19,7 +19,7 @@
 //   node test/t-control.js
 import { strict as a } from 'node:assert';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, rmSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Kingdom } from '../src/kingdom.js';
@@ -435,6 +435,7 @@ try {
     execFileSync('git', ['init', '--bare', '-q', hungRemote]);
     execFileSync('git', ['symbolic-ref', 'HEAD', `refs/heads/${branch}`], { cwd: hungRemote });
     writeFileSync(join(hungRemote, 'hooks', 'pre-receive'), '#!/bin/sh\nsleep 2\n');
+    chmodSync(join(hungRemote, 'hooks', 'pre-receive'), 0o755); // git skips a non-executable hook silently
     execFileSync('git', ['remote', 'set-url', 'origin', hungRemote], { cwd: repo });
     process.env.KINGDOM_PUSH_TIMEOUT_MS = '150';
 
