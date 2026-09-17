@@ -23,7 +23,7 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, rmSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Kingdom } from '../src/kingdom.js';
-import { kingdomDir, dbPath, createWorktree } from '../src/worktree.js';
+import { kingdomDir, dbPath, createWorktree, removeWorktree } from '../src/worktree.js';
 import { listSkills } from '../src/skills.js';
 
 process.env.KINGDOM_CODEX_BIN = process.execPath;   // a spawn that costs nothing
@@ -539,6 +539,12 @@ try {
     a.equal(k.bus.run(run.id).state, 'blocked',
       "a run blocked on one peasant's failure must not be silently cleared back to verifying by a "
       + "different, unrelated peasant's success");
+
+    // A raw rmSync of the still-live git worktrees below (in the outer
+    // finally block) can EPERM on Windows over a lingering git file handle;
+    // removing them properly first releases that the way git itself does.
+    await removeWorktree(repo, 'alice');
+    await removeWorktree(repo, 'bob');
 
     console.log("  onDone cannot silently clear a run's blocker with an unrelated peasant's success");
   }
