@@ -1668,7 +1668,7 @@ export class Kingdom extends EventEmitter {
   }
 
   #runBlock(run, operation, next, extra = {}) {
-    if (!run || !['planning', 'running', 'verifying'].includes(run.state)) return;
+    if (!run || !['planning', 'running', 'paused', 'verifying'].includes(run.state)) return;
     const blocker = { operation, next, at: Date.now(), ...extra };
     const nextRun = { ...run, state: 'blocked', blocker,
       blockers: [...(Array.isArray(run.blockers) ? run.blockers : []), blocker] };
@@ -1744,10 +1744,12 @@ export class Kingdom extends EventEmitter {
       if ((run.taskIds ?? []).map(Number).includes(Number(t.id)) && t.owner) names.add(t.owner);
     }
     for (const name of names) {
-      if (this.agents.has(name)) {
-        this.agents.get(name).stop(why);
-        this.agents.delete(name);
-      }
+      // Route through sleep(), not a raw agents.delete: it also drops the
+      // name from `summoned` (or the delivery loop respawns it on the next
+      // message addressed to it) and releases whatever it still owns back to
+      // pending (or the task board keeps reporting stale "active" work that
+      // nobody is doing).
+      if (this.agents.has(name)) this.sleep(name, why);
     }
     const stopped = { ...run, state: 'cancelled', cancelledAt: Date.now(), cancelReason: why };
     this.#saveRun(stopped);
@@ -2383,10 +2385,20 @@ export class Kingdom extends EventEmitter {
     if (activeRun && typeof this.bus.updateRun === 'function') {
       const evidenceRows = Array.isArray(activeRun.verificationEvidence)
         ? activeRun.verificationEvidence : [];
-      this.bus.updateRun(activeRun.id, {
-        state: valid ? 'verifying' : 'blocked',
-        verificationEvidence: [...evidenceRows, { peasant, ...evidence }],
-      });
+      const verificationEvidence = [...evidenceRows, { peasant, ...evidence }];
+      // A run already blocked on something else — or in any state this
+      // submission cannot legally leave — must not be silently cleared back
+      // to verifying by an unrelated, later peasant's success. transitionRun's
+      // allowed-map is the one source of truth for that, not a raw write; a
+      // disallowed move still records the evidence, just without forcing
+      // state. An invalid submission's own 'blocked' transition is #runBlock's
+      // job below, which the caller already guards by run state.
+      if (valid && typeof this.bus.transitionRun === 'function') {
+        try { this.bus.transitionRun(activeRun.id, 'verifying', { verificationEvidence }); }
+        catch { this.bus.updateRun(activeRun.id, { verificationEvidence }); }
+      } else {
+        this.bus.updateRun(activeRun.id, { verificationEvidence });
+      }
     }
     const [diff, stat] = await Promise.all([
       diffOf(this.repo, peasant, this.base),
@@ -2908,8 +2920,8 @@ export class Kingdom extends EventEmitter {
   }
 
   /** Explicit stop: leaves service entirely, unlike an idle sleep. */
-  sleep(name) {
-    this.agents.get(name)?.stop();
+  sleep(name, why) {
+    this.agents.get(name)?.stop(why);
     this.agents.delete(name);
     this.summoned.delete(name);
     this.bus.set('summoned', JSON.stringify([...this.summoned]));
@@ -3277,8 +3289,11 @@ export class Kingdom extends EventEmitter {
       this.bus.post(CROWN, this.config.orchestrator.name,
         `The sovereign approved the new role "${p.name}". It is in the roster permanently.`);
     } else if (p.kind === 'merge') {
-      await this.merge(p.peasant);
+      // Consumed exactly once, before the awaited merge — not after — or a
+      // concurrent reject()/approve() on the same id can still find it while
+      // the merge is in flight and race a card whose merge already landed.
       this.approvals.delete(id);
+      await this.merge(p.peasant);
       this.bus.set(`resolved:${id}`, 'approved');
     } else if (p.kind === 'push') {
       // A push approval is consumed exactly once. Whether Git succeeds is a
