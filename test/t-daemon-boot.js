@@ -82,9 +82,16 @@ try {
   a.equal(createdRun.run.state, 'planning', 'run creation must persist a planning record');
   a.equal((await fetch(`${base}/api/run`).then((r) => r.json())).run.id, 'run-daemon',
     'the current run endpoint must expose the durable record');
-  a.equal((await fetch(`${base}/api/run/approve`, {
-    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: 'run-daemon' }),
-  }).then((r) => r.json())).run.state, 'running');
+  const forgedBaseline = 'forged-revision-that-must-never-land';
+  const approvedRun = await fetch(`${base}/api/run/approve`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ id: 'run-daemon', baselineRevision: forgedBaseline }),
+  }).then((r) => r.json());
+  a.equal(approvedRun.run.state, 'running');
+  a.equal(approvedRun.run.baselineRevision, createdRun.run.baselineRevision,
+    'run/approve must never let a client-supplied baselineRevision overwrite the one captured at creation');
+  a.notEqual(approvedRun.run.baselineRevision, forgedBaseline,
+    'the captured baseline is the only safeguard Final Apply has against a since-changed source tree');
   a.equal((await fetch(`${base}/api/run/pause`, {
     method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: 'run-daemon' }),
   }).then((r) => r.json())).run.state, 'paused');

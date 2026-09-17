@@ -142,6 +142,7 @@ a.match(homeSource, /approvals\.map\(\(a\) => \(\{[\s\S]*?tone: tone\('blocked'\
 a.match(homeSource, /attention\.map\(\(\[name, member\]\) => \{[\s\S]*?tone: tone\(label\),/, 'failed or rate-limited members must carry their real status tone, not render as a plain nav row');
 a.doesNotMatch(homeSource, /button\(item\.text, item\.open, 'list-row'\)/, 'urgent approvals and members must not fall back to an untoned list-row button');
 a.match(homeSource, /const cls = `task-row \$\{item\.tone \?\? ''\}`\.trim\(\);/, 'every urgent row must resolve to the shared task-row tone treatment, whether clickable or not');
+a.match(homeSource, /h\('button', \{ class: `button \$\{cls\}`,/, 'a clickable urgent row must also carry the shared button class, or it has no hover affordance and no enforced tap target');
 a.match(homeSource, /nextStepFor\(\{ urgent, changesVisible, changes, goal \}\)/, 'with no active run, Home must lead with the single most urgent next step');
 a.match(homeSource, /const shell = page\('Overview', mode\.blurb\)/, 'Home must not repeat mode and repository context in its page heading');
 a.match(homeSource, /const attention =/, 'Home must separate terminal member states from active work');

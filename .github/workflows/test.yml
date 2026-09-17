@@ -33,4 +33,9 @@ jobs:
           # package-lock.json is 169KB and npm ci is most of a three-minute job.
           cache: npm
       - run: npm ci
+      # Scoped to production deps: electron-builder's own build-time tree
+      # (xmldom, qs) carries pre-existing moderate/high advisories that never
+      # ship in the app. Measured 2026-09-17: 0 findings at --audit-level=high
+      # with --omit=dev.
+      - run: npm audit --omit=dev --audit-level=high
       - run: npm test

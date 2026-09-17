@@ -129,8 +129,11 @@ export function render(state, root, actions = {}, queueExpanded = false) {
     const needs = h('div', { class: 'home-card' }, h('h2', { text: `Needs you · ${urgent.length}` }));
     for (const item of urgent) {
       const cls = `task-row ${item.tone ?? ''}`.trim();
+      // The clickable branch also carries `button`, or it is the only
+      // interactive control in the app with no hover affordance and no
+      // enforced tap target — .task-row alone declares neither.
       needs.append(item.open
-        ? h('button', { class: cls, type: 'button', on: { click: item.open } }, h('span', { text: item.text }))
+        ? h('button', { class: `button ${cls}`, type: 'button', on: { click: item.open } }, h('span', { text: item.text }))
         : h('div', { class: cls }, h('span', { text: item.text })));
     }
     grid.append(needs);

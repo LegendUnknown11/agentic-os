@@ -320,10 +320,32 @@ async function catchUp(repo, path, branch, base) {
   return true;
 }
 
+const delay = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * On Windows, a directory that was extremely recently a child process's cwd
+ * (a test run inside the worktree, say) can stay locked for a few ticks after
+ * that process exits — the OS reports "Permission denied" even though
+ * nothing is using the path anymore. Retrying briefly clears it. Anything
+ * else — a real lock that never clears, or an unrelated failure — must still
+ * surface after the budget runs out, or this stops being a retry and starts
+ * being a silence.
+ */
+export async function retryTransient(fn, { attempts = 5, delayMs = 150 } = {}) {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await fn();
+    } catch (e) {
+      if (attempt >= attempts || !/permission denied|operation not permitted/i.test(e.stderr ?? e.message ?? '')) throw e;
+      await delay(delayMs * attempt);
+    }
+  }
+}
+
 export async function removeWorktree(repo, peasant) {
   const path = worktreePath(repo, peasant);
   if (!existsSync(path)) return;
-  await git(repo, 'worktree', 'remove', '--force', path);
+  await retryTransient(() => git(repo, 'worktree', 'remove', '--force', path));
 }
 
 /**
@@ -471,11 +493,18 @@ export async function mergeRunBranch(repo, runId, base) {
   if (dirty.trim()) throw new Error(`Refusing to apply run ${runId}: ${base} has uncommitted changes.`);
   const conflicts = await conflictsBetween(repo, base, branch);
   if (conflicts.length) throw new Error(`Run ${runId} conflicts with ${base} in:\n  ${conflicts.join('\n  ')}\nNothing was changed.`);
+  // Merge into base explicitly, the same way mergeWorktree does — the only
+  // safety check above this compares commit hashes, which stays unchanged if
+  // something merely checks out a different branch at the same commit.
+  const { stdout: was } = await git(repo, 'rev-parse', '--abbrev-ref', 'HEAD');
+  const original = was.trim();
+  await git(repo, 'checkout', base);
   try {
     const { stdout } = await git(repo, 'merge', '--no-ff', branch, '-m', `kingdom: apply reviewed run ${runId}`);
     return { output: stdout, revision: await revisionOf(repo) };
   } catch (e) {
     await git(repo, 'merge', '--abort').catch(() => {});
+    if (original && original !== base) await git(repo, 'checkout', original).catch(() => {});
     throw new Error(`Applying run ${runId} failed and was rolled back cleanly: ${e.message}`);
   }
 }
