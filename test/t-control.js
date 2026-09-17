@@ -511,6 +511,10 @@ try {
   // already in flight or had already landed.
   {
     if (!k.repo) await k.attachRepo(repo);
+    // Section 8 just dropped 'coder' from the roster to prove a restart
+    // releases its work; restore it here rather than reuse a name the
+    // court no longer recognises.
+    if (!k.specOf('coder')) k.config.peasants.push({ name: 'coder', cli: 'codex', description: 'writes code' });
     k.setMode('code', { why: 'prove the merge approval race is closed' });
     await k.wake('coder');
     const wt = k.agents.get('coder').cwd;
