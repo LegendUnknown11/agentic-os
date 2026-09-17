@@ -100,6 +100,11 @@ kingdom.on('error', (e) => push('error', { message: e.message }));
 
 const runIdOf = (body) => body.runId ?? body.run_id ?? body.id ?? null;
 const publishRun = (run) => { push('run', { run }); return { run }; };
+// baselineRevision is deliberately absent: it is the sole guard Final Apply
+// has against a source tree that changed since the run was reviewed, and is
+// set exactly once, internally, from revisionOf(this.repo) at createRun
+// time. Accepting it here would let any request body overwrite it and
+// silently defeat that check.
 const runFields = (body) => ({
   objective: body.objective,
   sourceSnapshot: body.sourceSnapshot ?? body.source_snapshot,
@@ -109,7 +114,6 @@ const runFields = (body) => ({
   taskIds: body.taskIds ?? body.task_ids,
   recoveryHistory: body.recoveryHistory ?? body.recovery_history,
   verificationEvidence: body.verificationEvidence ?? body.verification_evidence,
-  baselineRevision: body.baselineRevision ?? body.baseline_revision,
   branch: body.branch,
 });
 
