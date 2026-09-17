@@ -19,11 +19,11 @@
 //   node test/t-control.js
 import { strict as a } from 'node:assert';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, rmSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Kingdom } from '../src/kingdom.js';
-import { kingdomDir, dbPath } from '../src/worktree.js';
+import { kingdomDir, dbPath, createWorktree, removeWorktree } from '../src/worktree.js';
 import { listSkills } from '../src/skills.js';
 
 process.env.KINGDOM_CODEX_BIN = process.execPath;   // a spawn that costs nothing
@@ -435,6 +435,7 @@ try {
     execFileSync('git', ['init', '--bare', '-q', hungRemote]);
     execFileSync('git', ['symbolic-ref', 'HEAD', `refs/heads/${branch}`], { cwd: hungRemote });
     writeFileSync(join(hungRemote, 'hooks', 'pre-receive'), '#!/bin/sh\nsleep 2\n');
+    chmodSync(join(hungRemote, 'hooks', 'pre-receive'), 0o755); // git skips a non-executable hook silently
     execFileSync('git', ['remote', 'set-url', 'origin', hungRemote], { cwd: repo });
     process.env.KINGDOM_PUSH_TIMEOUT_MS = '150';
 
@@ -548,7 +549,189 @@ try {
     'the orchestrator must be told, or the failure has no visible next action');
 
     rmSync(runsDir, { force: true });
+    // This section deliberately paused the court to reach #reconcileRun()
+    // while a run was still 'paused' (see the comment above) — resume it, or
+    // every section after this one silently inherits a paused, un-delivering
+    // court, the same way a leftover 'blocked' run would.
+    k.resume();
     console.log("  a paused run's failed reconciliation at restart becomes a visible blocker, not silence");
+  }
+
+  /* ---- 10. a merge approval must not race a concurrent reject ----------- */
+  // approve()'s 'merge' branch used to await the merge before deleting the
+  // approval, unlike every other branch (including 'push', right below it in
+  // source, which is careful to delete first) — leaving a window where
+  // reject(id) could still find and "reject" an approval whose merge was
+  // already in flight or had already landed.
+  {
+    if (!k.repo) await k.attachRepo(repo);
+    // Earlier sections dropped 'coder' from the roster, or replaced `k`
+    // entirely via a restart; restore it here rather than reuse a name the
+    // court no longer recognises.
+    if (!k.specOf('coder')) k.config.peasants.push({ name: 'coder', cli: 'codex', description: 'writes code' });
+    k.setMode('code', { why: 'prove the merge approval race is closed' });
+    await k.wake('coder');
+    const wt = k.agents.get('coder').cwd;
+    writeFileSync(join(wt, 'race.txt'), 'merge race fixture\n');
+    execFileSync('git', ['add', '-A'], { cwd: wt });
+    execFileSync('git', ['commit', '-qm', 'prove the merge race is closed'], { cwd: wt });
+
+    k.bus.post('orchestrator', null, JSON.stringify({ kind: 'merge', peasant: 'coder' }), 'approval');
+    await until(() => [...k.approvals.values()].some((p) => p.kind === 'merge' && p.peasant === 'coder'));
+    const approvalId = [...k.approvals].find(([, p]) => p.kind === 'merge')[0];
+
+    const approving = k.approve(approvalId);
+    // approve()'s merge branch runs synchronously up to its first await, so a
+    // correct implementation has already consumed the approval by the time
+    // this next line runs — a concurrent reject must find nothing left.
+    a.throws(() => k.reject(approvalId), /No pending approval/,
+      'a merge approval must be consumed before the merge is awaited, or a concurrent reject can still catch it mid-flight');
+    await approving;
+    a.equal(k.bus.get(`resolved:${approvalId}`), 'approved');
+    a.equal(k.approvals.has(approvalId), false);
+
+    console.log('  a merge approval is consumed before the merge is awaited, closing the reject race');
+  }
+
+  /* ---- 11. stopping a run must clean up like any other departure -------- */
+  // stopRun killed each run-owned worker's process directly instead of
+  // routing through sleep() — skipping exactly the reconciliation sleep()
+  // exists to perform: dropping the name from `summoned` and releasing its
+  // still-open tasks. A stopped run's worker used to silently respawn on the
+  // next message reaching its inbox, and its tasks stayed falsely "owned".
+  {
+    if (!k.repo) await k.attachRepo(repo);
+    // Earlier sections dropped 'coder' from the roster, or slept it as part
+    // of a completed merge; restore it here rather than reuse a name the
+    // court no longer recognises.
+    if (!k.specOf('coder')) k.config.peasants.push({ name: 'coder', cli: 'codex', description: 'writes code' });
+    await k.wake('coder');
+
+    // §9 above deliberately leaves its run 'blocked' to prove the state
+    // sticks — createRun refuses a second run while one is still active, so
+    // that leftover has to be cleared before this section can start its own.
+    if (k.bus.currentRun()) await k.stopRun(undefined, 'test cleanup: clear the previous section\'s run');
+    const run = await k.createRun({ objective: 'prove stopRun cleans up like any other departure' });
+    const task = k.bus.addTask({ title: 'stop-run cleanup fixture', by: 'orchestrator', runId: run.id });
+    k.bus.updateRun(run.id, { taskIds: [task] });
+    a.equal(k.bus.claimTask('coder', task).ok, true, 'sanity: coder holds the run-owned task');
+    a.ok(k.summoned.has('coder'), 'sanity: coder is in service before the run is stopped');
+
+    const stopped = k.stopRun(run.id, 'prove cleanup');
+    a.equal(stopped.state, 'cancelled');
+    a.equal(k.agents.has('coder'), false, 'the stopped worker\'s process must be gone');
+    a.equal(k.summoned.has('coder'), false,
+      'a stopped run must not leave its worker in `summoned` — the delivery loop respawns anyone still there');
+    const after = k.bus.task(task);
+    a.equal(after.owner, null,
+      'a stopped run must release what its worker still held — nobody may otherwise claim it again');
+    a.equal(after.state, 'pending', 'and it must be claimable again, not stuck in active');
+    a.ok(k.bus.history({ limit: 400 }).some((m) =>
+      m.recipient === k.config.orchestrator.name && /left service still holding/.test(m.body)
+      && new RegExp(`#${task}`).test(m.body)),
+    'the orchestrator must be told, or it goes on reporting the task as in progress');
+
+    console.log('  stopping a run releases its worker\'s claims exactly like any other departure');
+  }
+
+  /* ---- 12. #onDone must not silently clear a run blocked by someone else - */
+  // #onDone set the run to 'verifying' or 'blocked' from whichever
+  // submission happened to arrive last, with no check of the run's existing
+  // state, bypassing transitionRun's allowed-transition map entirely by
+  // writing state directly. A later, unrelated peasant's PASSING submission
+  // could silently clear a run already blocked on a DIFFERENT peasant's
+  // still-unresolved failure.
+  {
+    if (!k.repo) await k.attachRepo(repo);
+    // §11 above stops its own run when it finishes, but clear defensively in
+    // case a future section is inserted between these two.
+    if (k.bus.currentRun()) await k.stopRun(undefined, 'test cleanup: clear the previous section\'s run');
+    const run = await k.createRun({ objective: 'prove onDone cannot clear a blocker it did not cause' });
+
+    const aliceWt = await createWorktree(repo, 'alice', k.base);
+    writeFileSync(join(aliceWt, 'package.json'), JSON.stringify({
+      name: 'alice-fixture', type: 'module', scripts: { test: 'node -e "process.exit(1)"' },
+    }));
+    execFileSync('git', ['add', '-A'], { cwd: aliceWt });
+    execFileSync('git', ['commit', '-qm', 'alice: a failing test'], { cwd: aliceWt });
+
+    const bobWt = await createWorktree(repo, 'bob', k.base);
+    writeFileSync(join(bobWt, 'package.json'), JSON.stringify({
+      name: 'bob-fixture', type: 'module', scripts: { test: 'node -e "process.exit(0)"' },
+    }));
+    execFileSync('git', ['add', '-A'], { cwd: bobWt });
+    execFileSync('git', ['commit', '-qm', 'bob: a passing test'], { cwd: bobWt });
+
+    const aliceId = k.bus.post('alice', k.config.orchestrator.name, 'alice: broken work', 'done');
+    await until(() => Boolean(k.bus.get(`done:${aliceId}`)));
+    await until(() => k.bus.run(run.id)?.state === 'blocked');
+    a.equal(k.bus.run(run.id).state, 'blocked', "sanity: alice's failing submission must block the run");
+
+    const bobId = k.bus.post('bob', k.config.orchestrator.name, 'bob: unrelated finished work', 'done');
+    await until(() => Boolean(k.bus.get(`done:${bobId}`)));
+    // `done:${bobId}` is set BEFORE #onDone runs (kingdom.js's dedup guard), so it
+    // fires the instant the tick claims the message, not once #onDone is done with
+    // bob's worktree. Bob's submission is valid, so #onDone never calls #runBlock —
+    // there is no run-state transition to wait on the way alice's failure gives us
+    // above — so the only real completion signal is `tests:${peasant}`, which
+    // #onDone sets last, right after its own diffOf/statOf finish touching the
+    // worktree. A fixed sleep here raced removeWorktree(repo, 'bob') below against
+    // those still-running git calls on Windows CI (commitAll + revisionOf x2 +
+    // runTests + diffOf + statOf is ~7 subprocesses at ~100ms each), producing a
+    // "not a working tree" fatal when the removal outran them.
+    await until(() => Boolean(k.bus.get('tests:bob')));
+    a.equal(k.bus.run(run.id).state, 'blocked',
+      "a run blocked on one peasant's failure must not be silently cleared back to verifying by a "
+      + "different, unrelated peasant's success");
+
+    // A raw rmSync of the still-live git worktrees below (in the outer
+    // finally block) can EPERM on Windows over a lingering git file handle;
+    // removing them properly first releases that the way git itself does.
+    await removeWorktree(repo, 'alice');
+    await removeWorktree(repo, 'bob');
+
+    console.log("  onDone cannot silently clear a run's blocker with an unrelated peasant's success");
+  }
+
+  /* ---- 13. recovery-attempt counting must be per (name, operation) ------- */
+  // #recordRecovery's returned `attempts` used to be the WHOLE run's
+  // recoveryHistory.length — any entry, for any worker, of any kind.
+  // #escalateFailure blocks the entire run once that count reaches 2, so a
+  // benign, already-handled transport-retry on one worker plus one real
+  // failure on an unrelated worker could block everyone, even though
+  // neither worker had actually failed twice.
+  {
+    if (!k.repo) await k.attachRepo(repo);
+    // §12 above stops its own run when it finishes, but clear defensively in
+    // case a future section is inserted between these two.
+    if (k.bus.currentRun()) await k.stopRun(undefined, 'test cleanup: clear the previous section\'s run');
+    // Earlier sections dropped 'coder' from the roster, or replaced `k`
+    // entirely via a restart; restore it here rather than reuse a name the
+    // court no longer recognises.
+    if (!k.specOf('coder')) k.config.peasants.push({ name: 'coder', cli: 'codex', description: 'writes code' });
+    await k.wake('coder');
+    await k.wake('briefer');
+
+    const run = await k.createRun({ objective: 'prove recovery counting is per worker, per kind' });
+
+    // coder hits a session-limit blip: rewindForRetry records a
+    // transport-retry entry, and the session-limit branch always returns
+    // before reaching escalateFailure — coder is never itself escalated.
+    k.lastBatch.set('coder', { from: 1, to: 2 });
+    k.agents.get('coder').emit('error', 'session limit reached, resets tomorrow');
+    await until(() => (k.bus.run(run.id)?.recoveryHistory ?? []).length >= 1);
+    a.equal(k.bus.run(run.id).recoveryHistory.length, 1, "sanity: coder's blip is recorded");
+
+    // briefer then fails once, for real, on something unrelated to coder.
+    k.agents.get('briefer').emit('error', 'the process crashed unexpectedly');
+    await until(() => Boolean(k.bus.get('failnotify:briefer')));
+    await wait(200);   // let the async error handler's recordRecovery land
+
+    a.notEqual(k.bus.run(run.id).state, 'blocked',
+      "one worker's already-resolved retry plus a different worker's single real failure must not "
+      + 'block the whole run — neither worker actually failed twice');
+
+    console.log('  a benign retry on one worker cannot combine with an unrelated single failure to block the run');
   }
 
   console.log('t-control.js OK — a live court follows the repo, and the court can steer itself');
