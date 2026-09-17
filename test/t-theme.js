@@ -56,6 +56,8 @@ a.equal(token('--danger'), 'var(--red-dark)');
 a.equal(token('--danger-rgb'), '141 57 53');
 a.equal(token('--ok'), 'var(--teal-dark)');
 a.equal(token('--ok-rgb'), '8 74 74');
+a.equal(token('--gold'), '#6b4f10');
+a.equal(token('--gold-rgb'), '107 79 16');
 a.equal(token('--radius-ctl'), '12px');
 a.equal(token('--radius-card'), '16px');
 a.deepEqual([1, 2, 3, 4, 5, 6, 7, 8].map((n) => token(`--space-${n}`)), ['4px', '8px', '16px', '24px', '32px', '48px', '64px', '88px']);
@@ -74,9 +76,12 @@ for (const [name, value] of Object.entries({
   '--dark-text': '#f7f1e7', '--dark-muted': '#b8c4bd', '--dark-faint': '#95a89f',
   '--dark-line': '#425f58', '--dark-border': '#6f8a82', '--dark-accent': '#4fb6aa',
   '--dark-accent-ink': '#102421', '--dark-danger': '#f19a8b', '--dark-ok': '#79c6b5',
+  '--dark-gold': '#d9b25c',
 })) a.equal(token(name), value);
 a.equal(darkToken('--bg'), 'var(--dark-bg)');
 a.equal(darkToken('color-scheme'), 'dark');
+a.equal(darkToken('--gold'), 'var(--dark-gold)');
+a.equal(darkToken('--gold-rgb'), 'var(--dark-gold-rgb)');
 a.doesNotMatch(css, /linear-gradient|radial-gradient/, 'the app foundation must not depend on gradients');
 a.match(css, /\.mode-switcher\s*\{[^}]*border-radius:\s*999px/, 'work modes must read as one segmented control');
 a.match(css, /\.mode-option\.selected\s*\{[^}]*background:\s*var\(--accent\)/, 'the active work mode needs one clear teal state');
@@ -105,7 +110,8 @@ a.match(css, /\.sidebar-mode/, 'the sidebar needs the same mode choices');
 a.match(sidebar, /options\.modes/, 'the sidebar renders the shared mode choices');
 a.match(sidebar, /dataset\.action = 'mode'/, 'sidebar mode choices use the shared action path');
 a.match(thread, /`thread-heading\$\{sovereign \? ' sovereign' : ''\}`/, 'the open thread must mark whether it is the orchestrator, once, at render time');
-a.match(css, /\.thread-heading\.sovereign h1\s*\{[^}]*var\(--accent\)/, 'the orchestrator must use the shared teal accent');
+a.match(css, /\.thread-heading\.sovereign h1\s*\{[^}]*var\(--gold\)/, 'the orchestrator must use the dedicated gold identity token, never a status colour');
+a.doesNotMatch(css, /\.thread-heading\.sovereign h1\s*\{[^}]*var\(--accent\)/, 'the orchestrator heading must not reuse the live-status accent');
 a.doesNotMatch(css, /#d8ac54|--crown/, 'the old gold role color must not survive the prototype reskin');
 a.match(util, /class: `button \$\{cls\}`/, 'page controls inherit the shared button treatment');
 a.match(util, /role: 'progressbar'[\s\S]*?'aria-valuenow'/, 'visual meters must expose their value without relying on geometry or colour');
@@ -167,6 +173,7 @@ a.match(css, /\.wfgraph/, 'the surviving workflow editor needs a visible editing
 a.match(css, /\.wfport\[aria-pressed="true"\]\s*\{[^}]*box-shadow:/, 'keyboard-selected graph ports need a visible pending cue');
 a.match(css, /\.usage-lead\s*\{[^}]*grid-template-columns:\s*repeat\(4, minmax\(0, 1fr\)\);/, 'Usage must lead with four cost-decision metrics');
 a.match(css, /\.agent-usage-grid\s*\{[^}]*repeat\(auto-fit, minmax\(min\(100%, 280px\), 1fr\)\)/, 'per-agent records must wrap without a wide table');
+a.match(css, /\.usage-breakdown\.compact\s*\{[^}]*gap:\s*var\(--space-1\)/, 'the auxiliary breakdown\'s denser row count needs a tighter rhythm than the other breakdown lists, not the unstyled modifier it had before');
 a.match(css, /\.agent-usage-details\s*\{[^}]*grid-template-columns:/, 'per-agent definition lists need a readable desktop relationship');
 a.match(css, /\.agent-usage-card h3, \.agent-usage-card p\s*\{[^}]*overflow-wrap:\s*anywhere;/, 'long agent and model names must wrap instead of clipping');
 a.match(css, /\.usage-recommendation\s*\{[^}]*border:\s*1px solid var\(--line\);[^}]*border-left:\s*3px solid var\(--danger\)/, 'Usage advice must use the shared attention-row geometry');

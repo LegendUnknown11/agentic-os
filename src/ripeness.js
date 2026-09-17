@@ -45,9 +45,14 @@ export function ripeness(deliverable, {
   // whatever wakes it next; there is always something, and if there is not,
   // then nobody needed to know.
   if (deliverable.every((m) => m.kind === 'notice')) {
-    return awake && now - oldest > noticeHoldMs
+    return awake && !busy && now - oldest > noticeHoldMs
       ? { ripe: true, why: 'notices held long enough for an awake member' }
-      : { ripe: false, why: awake ? 'notices still settling' : 'notice will not wake a sleeper' };
+      : {
+        ripe: false,
+        why: !awake ? 'notice will not wake a sleeper'
+          : busy ? 'notices do not interrupt a turn in flight'
+            : 'notices still settling',
+      };
   }
 
   // The sovereign is sitting there watching. The settle window exists to
@@ -102,6 +107,10 @@ if (process.argv[1]?.endsWith('ripeness.js')) {
     'a notice must NEVER wake a sleeping member — it costs a whole turn to read "take no action"');
   a.equal(at(notice, { awake: true }).ripe, true, 'but an awake member reads it once it is held');
   a.equal(at([msg(N - 1, { kind: 'notice' })]).ripe, false, 'a fresh notice waits for real traffic');
+  // The same bug, one step further: a notice must not interrupt a turn in
+  // flight either — an awake-but-busy member is not a free member.
+  a.equal(at(notice, { awake: true, busy: true }).ripe, false,
+    'held notices must not interrupt a busy member — that still buys a turn of its own, just a delayed one');
   // Mixed batches are NOT notices: one real message carries the notices with it.
   a.equal(at([msg(S + 1, { kind: 'notice' }), msg(S + 1)]).ripe, true,
     'a notice riding along with real traffic goes when the real traffic goes');
