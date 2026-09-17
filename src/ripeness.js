@@ -19,11 +19,16 @@
  * @param recycling    is its session being replaced right now?
  * @param settleMs     quiet window that coalesces agent-to-agent chatter
  * @param backstopMs   never hold a batch longer than this
- * @param noticeHoldMs how long pure FYI waits to ride along with real traffic
+ * @param noticeHoldMs how long pure FYI waits to ride along with real traffic,
+ *                     once it is even eligible to fire on its own (see hadRealTurn)
+ * @param hadRealTurn  has this member EVER actually been handed a non-notice
+ *                     message — this session or a previous one? A member with no
+ *                     real turn behind it has no conversation to "keep current",
+ *                     so a lone notice must never be the first thing it ever says.
  * @returns {{ripe: boolean, why: string}}
  */
 export function ripeness(deliverable, {
-  now, awake, busy, recycling = false, settleMs, backstopMs, noticeHoldMs,
+  now, awake, busy, recycling = false, settleMs, backstopMs, noticeHoldMs, hadRealTurn = false,
 }) {
   if (!deliverable.length) return { ripe: false, why: 'nothing to deliver' };
 
@@ -45,13 +50,22 @@ export function ripeness(deliverable, {
   // whatever wakes it next; there is always something, and if there is not,
   // then nobody needed to know.
   if (deliverable.every((m) => m.kind === 'notice')) {
-    return awake && !busy && now - oldest > noticeHoldMs
-      ? { ripe: true, why: 'notices held long enough for an awake member' }
+    // Even for an AWAKE, idle member, a lone notice must not fire on its own
+    // unless this member has a real conversation behind it already. Without
+    // that guard, a member spawned at daemon boot — with nothing in its inbox
+    // but housekeeping ("still in service from a previous session", "nobody
+    // is working on this task any more") — would sit for noticeHoldMs and then
+    // take a full unprompted turn: a message the sovereign never sent, answered
+    // by a member the sovereign never addressed. Reported as "the orchestrator
+    // is talking to itself. I didn't give it a command yet." (issue #40).
+    return hadRealTurn && awake && !busy && now - oldest > noticeHoldMs
+      ? { ripe: true, why: 'notices held long enough for an awake member with real history' }
       : {
         ripe: false,
-        why: !awake ? 'notice will not wake a sleeper'
-          : busy ? 'notices do not interrupt a turn in flight'
-            : 'notices still settling',
+        why: !hadRealTurn ? 'no real turn has happened yet — a notice must never be the first word'
+          : !awake ? 'notice will not wake a sleeper'
+            : busy ? 'notices do not interrupt a turn in flight'
+              : 'notices still settling',
       };
   }
 
@@ -103,17 +117,32 @@ if (process.argv[1]?.endsWith('ripeness.js')) {
 
   // The bug: a notice must not spawn a sleeper.
   const notice = [msg(N + 1, { kind: 'notice' })];
-  a.equal(at(notice, { awake: false }).ripe, false,
+  a.equal(at(notice, { awake: false, hadRealTurn: true }).ripe, false,
     'a notice must NEVER wake a sleeping member — it costs a whole turn to read "take no action"');
-  a.equal(at(notice, { awake: true }).ripe, true, 'but an awake member reads it once it is held');
-  a.equal(at([msg(N - 1, { kind: 'notice' })]).ripe, false, 'a fresh notice waits for real traffic');
+  a.equal(at(notice, { awake: true, hadRealTurn: true }).ripe, true,
+    'but an awake member WITH REAL HISTORY reads it once it is held');
+  a.equal(at([msg(N - 1, { kind: 'notice' })], { hadRealTurn: true }).ripe, false,
+    'a fresh notice waits for real traffic');
   // The same bug, one step further: a notice must not interrupt a turn in
   // flight either — an awake-but-busy member is not a free member.
-  a.equal(at(notice, { awake: true, busy: true }).ripe, false,
+  a.equal(at(notice, { awake: true, busy: true, hadRealTurn: true }).ripe, false,
     'held notices must not interrupt a busy member — that still buys a turn of its own, just a delayed one');
   // Mixed batches are NOT notices: one real message carries the notices with it.
-  a.equal(at([msg(S + 1, { kind: 'notice' }), msg(S + 1)]).ripe, true,
+  // This must work even with NO real history yet — the real message in the
+  // batch IS the first real turn.
+  a.equal(at([msg(S + 1, { kind: 'notice' }), msg(S + 1)], { hadRealTurn: false }).ripe, true,
     'a notice riding along with real traffic goes when the real traffic goes');
+
+  // issue #40 — "the orchestrator is talking to itself. I didn't give it a
+  // command yet." A member spawned at daemon boot is AWAKE and IDLE the moment
+  // it is spawned, well before the sovereign has said anything. If its only
+  // mail is housekeeping notices (inherited crew, orphaned tasks) and nothing
+  // has ever addressed it directly, holding those past noticeHoldMs must NOT
+  // manufacture a turn — there is no conversation to keep current, and nobody
+  // asked it anything.
+  a.equal(at(notice, { awake: true, busy: false, hadRealTurn: false }).ripe, false,
+    'a member with no real turn behind it must never be given one by a lone notice, '
+    + 'no matter how long it waits');
 
   // The handover window.
   a.equal(at([msg(B + 1, { sender: 'sovereign' })], { recycling: true }).ripe, false,
