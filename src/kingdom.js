@@ -1739,10 +1739,12 @@ export class Kingdom extends EventEmitter {
       if ((run.taskIds ?? []).map(Number).includes(Number(t.id)) && t.owner) names.add(t.owner);
     }
     for (const name of names) {
-      if (this.agents.has(name)) {
-        this.agents.get(name).stop(why);
-        this.agents.delete(name);
-      }
+      // Route through sleep(), not a raw agents.delete: it also drops the
+      // name from `summoned` (or the delivery loop respawns it on the next
+      // message addressed to it) and releases whatever it still owns back to
+      // pending (or the task board keeps reporting stale "active" work that
+      // nobody is doing).
+      if (this.agents.has(name)) this.sleep(name, why);
     }
     const stopped = { ...run, state: 'cancelled', cancelledAt: Date.now(), cancelReason: why };
     this.#saveRun(stopped);
@@ -2903,8 +2905,8 @@ export class Kingdom extends EventEmitter {
   }
 
   /** Explicit stop: leaves service entirely, unlike an idle sleep. */
-  sleep(name) {
-    this.agents.get(name)?.stop();
+  sleep(name, why) {
+    this.agents.get(name)?.stop(why);
     this.agents.delete(name);
     this.summoned.delete(name);
     this.bus.set('summoned', JSON.stringify([...this.summoned]));
