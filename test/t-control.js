@@ -548,6 +548,11 @@ try {
     'the orchestrator must be told, or the failure has no visible next action');
 
     rmSync(runsDir, { force: true });
+    // This section deliberately paused the court to reach #reconcileRun()
+    // while a run was still 'paused' (see the comment above) — resume it, or
+    // every section after this one silently inherits a paused, un-delivering
+    // court, the same way a leftover 'blocked' run would.
+    k.resume();
     console.log("  a paused run's failed reconciliation at restart becomes a visible blocker, not silence");
   }
 
@@ -596,6 +601,10 @@ try {
   // still-unresolved failure.
   {
     if (!k.repo) await k.attachRepo(repo);
+    // §9 above deliberately leaves its run 'blocked' to prove the state
+    // sticks — createRun refuses a second run while one is still active, so
+    // that leftover has to be cleared before this section can start its own.
+    if (k.bus.currentRun()) await k.stopRun(undefined, 'test cleanup: clear the previous section\'s run');
     const run = await k.createRun({ objective: 'prove onDone cannot clear a blocker it did not cause' });
 
     const aliceWt = await createWorktree(repo, 'alice', k.base);
