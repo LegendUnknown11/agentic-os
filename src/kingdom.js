@@ -1686,7 +1686,12 @@ export class Kingdom extends EventEmitter {
     const next = { ...run, recoveryHistory: [...history, entry] };
     this.#saveRun(next);
     this.emit('recovery', entry);
-    return { run: next, entry, attempts: next.recoveryHistory.length };
+    // Per (name, operation), not the whole run's history: a benign, already-
+    // resolved transport-retry on one worker must not count toward another
+    // worker's unresolved-process-failure threshold — or toward its own,
+    // since a resolved retry and an unresolved failure are different kinds.
+    const attempts = next.recoveryHistory.filter((e) => e.name === name && e.operation === operation).length;
+    return { run: next, entry, attempts };
   }
 
   /** Evidence for a done submission, including the exact revision tested. */
@@ -2380,10 +2385,20 @@ export class Kingdom extends EventEmitter {
     if (activeRun && typeof this.bus.updateRun === 'function') {
       const evidenceRows = Array.isArray(activeRun.verificationEvidence)
         ? activeRun.verificationEvidence : [];
-      this.bus.updateRun(activeRun.id, {
-        state: valid ? 'verifying' : 'blocked',
-        verificationEvidence: [...evidenceRows, { peasant, ...evidence }],
-      });
+      const verificationEvidence = [...evidenceRows, { peasant, ...evidence }];
+      // A run already blocked on something else — or in any state this
+      // submission cannot legally leave — must not be silently cleared back
+      // to verifying by an unrelated, later peasant's success. transitionRun's
+      // allowed-map is the one source of truth for that, not a raw write; a
+      // disallowed move still records the evidence, just without forcing
+      // state. An invalid submission's own 'blocked' transition is #runBlock's
+      // job below, which the caller already guards by run state.
+      if (valid && typeof this.bus.transitionRun === 'function') {
+        try { this.bus.transitionRun(activeRun.id, 'verifying', { verificationEvidence }); }
+        catch { this.bus.updateRun(activeRun.id, { verificationEvidence }); }
+      } else {
+        this.bus.updateRun(activeRun.id, { verificationEvidence });
+      }
     }
     const [diff, stat] = await Promise.all([
       diffOf(this.repo, peasant, this.base),

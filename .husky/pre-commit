@@ -1,0 +1,14 @@
+# git injects GIT_INDEX_FILE=.git/index (relative) into every hook's env. Any
+# git subprocess the suite spawns inside a worktree checkout inherits it, and
+# a worktree's ".git" is a plain gitdir-pointer file, not a directory — so
+# npm test's own git calls crash with "index file open failed: Not a
+# directory" purely from running under this hook. Confirmed by: 2/2 runs
+# through this hook failed on git-worktree suites, 2/2 plain `npm test`
+# runs passed. Sanitize before running.
+unset GIT_INDEX_FILE GIT_DIR GIT_WORK_TREE
+
+# Mirrors HANDOFF.md's operating rule 1: run the complete no-quota suite to
+# its terminal summary before committing. npm test already excludes
+# t-agent.js/t-comms.js (real subscription quota).
+git diff --check --cached
+npm test

@@ -13,7 +13,8 @@
     "dist": "electron-builder --win --publish never",
     "ctx": "node src/ctx.js",
     "replay": "node src/replay.js",
-    "recycle": "node src/recycle.js"
+    "recycle": "node src/recycle.js",
+    "prepare": "husky"
   },
   "build": {
     "appId": "dev.kingdom.app",
@@ -42,7 +43,8 @@
   },
   "devDependencies": {
     "electron": "^44.0.0",
-    "electron-builder": "^26.15.3"
+    "electron-builder": "^26.15.3",
+    "husky": "^9.1.7"
   },
   "engines": {
     "node": ">=24"

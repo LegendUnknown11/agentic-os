@@ -8,8 +8,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   assertRepo, behindBase, commitAll, conflictsWith, createWorktree, createRunWorktree, diffOf,
-  mergeIntoRun, mergeRunBranch, mergeWorktree, removeWorktree, revisionOf, runTests, statOf, testCommand,
-  worktreePath,
+  mergeIntoRun, mergeRunBranch, mergeWorktree, removeWorktree, retryTransient, revisionOf, runTests,
+  statOf, testCommand, worktreePath,
 } from '../src/worktree.js';
 
 const repo = mkdtempSync(join(tmpdir(), 'kingdom-merge-'));
@@ -258,6 +258,42 @@ a.equal(none.ok, false, 'no tests must never report ok');
 
   for (const d of [nodeOnly, notNode]) { try { rmSync(d, { recursive: true, force: true }); } catch {} }
   console.log('  node --test found for a stdlib-only project; package.json still wins');
+}
+
+// Windows worktree cleanup: `git worktree remove --force` can transiently
+// fail with "Permission denied" for a directory that was extremely recently
+// a child process's cwd — even after that process exited and nothing else
+// holds the path. It surfaced live as `wt/bob` refusing to delete right
+// after a court-run test finished inside it. removeWorktree must ride that
+// out, but a genuine failure (the lock never clears, or an unrelated error)
+// must still reach the caller — swallowing it would just trade a crash for
+// a court that thinks a worktree is gone when it is not.
+{
+  const denied = () => {
+    const e = new Error("Command failed: git worktree remove --force x\nerror: failed to delete 'x': Permission denied\n");
+    e.stderr = "error: failed to delete 'x': Permission denied\n";
+    throw e;
+  };
+
+  let calls = 0;
+  const clearsOnThirdTry = async () => { calls += 1; return calls < 3 ? denied() : 'removed'; };
+  a.equal(await retryTransient(clearsOnThirdTry, { delayMs: 1 }), 'removed',
+    'a transient permission error must be retried until it clears');
+  a.equal(calls, 3, 'retryTransient must stop retrying the moment the operation succeeds');
+
+  let stuckCalls = 0;
+  const neverClears = async () => { stuckCalls += 1; denied(); };
+  await a.rejects(() => retryTransient(neverClears, { attempts: 4, delayMs: 1 }), /permission denied/i,
+    'a permission error that never clears must still reach the caller, not hang forever');
+  a.equal(stuckCalls, 4, 'retryTransient must give up after its attempt budget, not retry unboundedly');
+
+  let genuineCalls = 0;
+  const genuineFailure = async () => { genuineCalls += 1; throw new Error('fatal: not a working tree'); };
+  await a.rejects(() => retryTransient(genuineFailure, { attempts: 5, delayMs: 1 }), /not a working tree/,
+    'an error unrelated to the OS lock must not be retried at all');
+  a.equal(genuineCalls, 1, 'a real failure must surface on the first attempt, never masked by retrying');
+
+  console.log('  removeWorktree rides out a transient permission error but never swallows a real one');
 }
 
 for (const d of [repo, bare]) { try { rmSync(d, { recursive: true, force: true }); } catch {} }

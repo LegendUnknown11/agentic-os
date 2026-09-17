@@ -246,6 +246,32 @@ try {
     console.log('  run-owned finish_task submits verification and leaves closure to the controller');
   }
 
+  /* ---------- 10. declare_done must not bypass run verification either --- */
+  {
+    // Reuses the still-active run from section 9 — a workspace has at most
+    // one non-terminal run, and that one's own task never moved it out of
+    // 'planning'. declare_done refuses outright when its caller holds more
+    // than one open task, which is only about isolating this section's
+    // scenario, so clear whatever coder is still sitting on from earlier
+    // sections (including section 9's own now-'verifying' task) first.
+    const runBus = new Bus(db);
+    for (const t of runBus.tasks().filter((x) => x.owner === 'coder' && x.state !== 'done')) {
+      runBus.updateTask(t.id, { state: 'done', doneTs: Date.now() });
+    }
+    const id = runBus.addTask({
+      title: 'run-owned work for declare_done', by: 'orchestrator', runId: 'run-task-verification',
+    });
+    runBus.close();
+    a.match(await coder.call('claim_task', { id }), /Claimed #\d+: run-owned work for declare_done/);
+    a.match(await coder.call('declare_done', { summary: 'done, trust me' }), /Call finish_task for it instead/,
+      'declare_done must refuse a run-owned task, not close it without controller verification');
+    const after = new Bus(db);
+    a.equal(after.task(id).state, 'active',
+      'a refused declare_done must leave the task exactly as it was, still awaiting finish_task');
+    after.close();
+    console.log('  declare_done refuses a run-owned task instead of silently bypassing its verification gate');
+  }
+
   console.log('t-tasks.js OK — a shared list two processes cannot both claim, with a plan gate that holds');
 } finally {
   // Wait for the processes to actually go before deleting the db they have

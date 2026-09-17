@@ -320,10 +320,32 @@ async function catchUp(repo, path, branch, base) {
   return true;
 }
 
+const delay = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * On Windows, a directory that was extremely recently a child process's cwd
+ * (a test run inside the worktree, say) can stay locked for a few ticks after
+ * that process exits — the OS reports "Permission denied" even though
+ * nothing is using the path anymore. Retrying briefly clears it. Anything
+ * else — a real lock that never clears, or an unrelated failure — must still
+ * surface after the budget runs out, or this stops being a retry and starts
+ * being a silence.
+ */
+export async function retryTransient(fn, { attempts = 5, delayMs = 150 } = {}) {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await fn();
+    } catch (e) {
+      if (attempt >= attempts || !/permission denied|operation not permitted/i.test(e.stderr ?? e.message ?? '')) throw e;
+      await delay(delayMs * attempt);
+    }
+  }
+}
+
 export async function removeWorktree(repo, peasant) {
   const path = worktreePath(repo, peasant);
   if (!existsSync(path)) return;
-  await git(repo, 'worktree', 'remove', '--force', path);
+  await retryTransient(() => git(repo, 'worktree', 'remove', '--force', path));
 }
 
 /**

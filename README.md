@@ -1,5 +1,7 @@
 # Kingdom — an agentic OS
 
+[![test](https://github.com/legendunknown11/agentic-os/actions/workflows/test.yml/badge.svg)](https://github.com/legendunknown11/agentic-os/actions/workflows/test.yml)
+
 A court of AI agents that work a git repository together. The difference from
 ordinary subagent setups: **the peasants talk to each other directly**, not
 through the orchestrator.
