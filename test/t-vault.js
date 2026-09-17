@@ -29,6 +29,11 @@ function callTool(name, args, extraEnv = {}) {
   const r = spawnSync(process.execPath, [join(import.meta.dirname, '..', 'src', 'mcp.js')], {
     input: rpc,
     encoding: 'utf8',
+    // mcp.js answers over stdio and then keeps running, by design, for a live
+    // member's session — it never exits on stdin EOF. This harness wants one
+    // answer per process, so it bounds the wait instead: the reply is already
+    // in stdout well before this fires (measured: an idle process, not slow).
+    timeout: 15_000,
     env: {
       ...process.env,
       KINGDOM_AGENT: 'coder', KINGDOM_ROLE: 'peasant',
