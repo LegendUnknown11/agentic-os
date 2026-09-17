@@ -172,6 +172,16 @@ a.match(mainSource, /event\.target\?\.closest\?\.\('\.vault-link'\)/, 'vault cit
 a.match(mainSource, /\/api\/vault\?path=\$\{encodeURIComponent\(notePath\)\}/, 'vault citations must load the selected note by path');
 a.match(mainSource, /detail\?\.ok === false/, 'vault citation failures must stay distinct from note content');
 a.match(mainSource, /if \(name !== 'notes'\) noteRequest\+\+/, 'leaving Notes must invalidate a slow vault detail request');
+// Issue #43: the advisor can flip the court from Chat into Cowork or Code on
+// its own reading of one plain message (Kingdom#queueMode, by: 'advisor'),
+// which is how a sovereign who typed a single line ends up with delegation,
+// a task list and a crew they never asked to start. The stream event carries
+// exactly who did it, so the shell must not apply it as silently as a mode
+// change the sovereign picked themself.
+a.match(mainSource, /event\.type === 'mode' && event\.by && event\.by !== 'sovereign'/,
+  'a mode change the sovereign did not choose must be handled differently from one they clicked');
+a.match(mainSource, /event\.type === 'mode' && event\.by && event\.by !== 'sovereign'[\s\S]{0,400}toast\(/,
+  'an advisor-driven mode switch must raise a visible toast — "just one prompt" silently becoming autonomous delegation is the bug in #43');
 a.match(viewSources.memory, /vault-link/, 'Memory note results must open the selected note');
 a.match(viewSources.memory, /return \(\) => \{[\s\S]*?requestToken\(state, 'memoryRequest'\)/, 'leaving Memory must invalidate an in-flight search');
 a.match(viewSources.activity, /return \(\) => \{[\s\S]*?requestToken\(state, 'activityRequest'\)/, 'leaving Activity must invalidate an in-flight search');
