@@ -109,6 +109,7 @@ const suites = [
   ['state reducer', join(HERE, 't-store.js')],
   ['flat palette', join(HERE, 't-theme.js')],
   ['a claude that dies mid-turn', join(HERE, 't-claude-death.js')],
+  ['send() guards a claude that never spawned', join(HERE, 't-agent-guard.js')],
 ];
 
 // A suite that hangs used to hang `npm test` forever with no output — the exact
