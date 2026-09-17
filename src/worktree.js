@@ -471,11 +471,18 @@ export async function mergeRunBranch(repo, runId, base) {
   if (dirty.trim()) throw new Error(`Refusing to apply run ${runId}: ${base} has uncommitted changes.`);
   const conflicts = await conflictsBetween(repo, base, branch);
   if (conflicts.length) throw new Error(`Run ${runId} conflicts with ${base} in:\n  ${conflicts.join('\n  ')}\nNothing was changed.`);
+  // Merge into base explicitly, the same way mergeWorktree does — the only
+  // safety check above this compares commit hashes, which stays unchanged if
+  // something merely checks out a different branch at the same commit.
+  const { stdout: was } = await git(repo, 'rev-parse', '--abbrev-ref', 'HEAD');
+  const original = was.trim();
+  await git(repo, 'checkout', base);
   try {
     const { stdout } = await git(repo, 'merge', '--no-ff', branch, '-m', `kingdom: apply reviewed run ${runId}`);
     return { output: stdout, revision: await revisionOf(repo) };
   } catch (e) {
     await git(repo, 'merge', '--abort').catch(() => {});
+    if (original && original !== base) await git(repo, 'checkout', original).catch(() => {});
     throw new Error(`Applying run ${runId} failed and was rolled back cleanly: ${e.message}`);
   }
 }
