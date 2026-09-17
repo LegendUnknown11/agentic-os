@@ -1987,7 +1987,14 @@ export class Kingdom extends EventEmitter {
       // so wait for it to finish — but never forever. The decision itself lives
       // in ripeness.js: it is pure, and the bugs that lived here were only ever
       // findable by driving states that a real court reaches once an hour.
+      //
+      // `hadReal:${name}` persists (survives a restart) whether this member has
+      // EVER been handed a real, non-notice batch — see ripeness.js's
+      // `hadRealTurn`. A member spawned at boot with nothing but housekeeping
+      // notices in its inbox (inherited crew, orphaned tasks) must not take a
+      // turn nobody asked for just because it sat there long enough (#40).
       const agent = this.agents.get(name);
+      const allNotices = deliverable.every((m) => m.kind === 'notice');
       const { ripe } = ripeness(deliverable, {
         now,
         awake: Boolean(agent),
@@ -1996,8 +2003,10 @@ export class Kingdom extends EventEmitter {
         settleMs: settleMs(),
         backstopMs: BATCH_MAX_WAIT_MS,
         noticeHoldMs: NOTICE_HOLD_MS,
+        hadRealTurn: this.bus.get(`hadReal:${name}`) === '1',
       });
       if (!ripe) continue;
+      if (!allNotices) this.bus.set(`hadReal:${name}`, '1');
 
       // An idle-slept member is revived on demand; its session resumes.
       //
