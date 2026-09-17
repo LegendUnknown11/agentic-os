@@ -1668,7 +1668,7 @@ export class Kingdom extends EventEmitter {
   }
 
   #runBlock(run, operation, next, extra = {}) {
-    if (!run || !['planning', 'running', 'verifying'].includes(run.state)) return;
+    if (!run || !['planning', 'running', 'paused', 'verifying'].includes(run.state)) return;
     const blocker = { operation, next, at: Date.now(), ...extra };
     const nextRun = { ...run, state: 'blocked', blocker,
       blockers: [...(Array.isArray(run.blockers) ? run.blockers : []), blocker] };
