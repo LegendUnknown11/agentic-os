@@ -592,7 +592,48 @@ try {
     console.log('  a merge approval is consumed before the merge is awaited, closing the reject race');
   }
 
-  /* ---- 11. #onDone must not silently clear a run blocked by someone else - */
+  /* ---- 11. stopping a run must clean up like any other departure -------- */
+  // stopRun killed each run-owned worker's process directly instead of
+  // routing through sleep() — skipping exactly the reconciliation sleep()
+  // exists to perform: dropping the name from `summoned` and releasing its
+  // still-open tasks. A stopped run's worker used to silently respawn on the
+  // next message reaching its inbox, and its tasks stayed falsely "owned".
+  {
+    if (!k.repo) await k.attachRepo(repo);
+    // Earlier sections dropped 'coder' from the roster, or slept it as part
+    // of a completed merge; restore it here rather than reuse a name the
+    // court no longer recognises.
+    if (!k.specOf('coder')) k.config.peasants.push({ name: 'coder', cli: 'codex', description: 'writes code' });
+    await k.wake('coder');
+
+    // §9 above deliberately leaves its run 'blocked' to prove the state
+    // sticks — createRun refuses a second run while one is still active, so
+    // that leftover has to be cleared before this section can start its own.
+    if (k.bus.currentRun()) await k.stopRun(undefined, 'test cleanup: clear the previous section\'s run');
+    const run = await k.createRun({ objective: 'prove stopRun cleans up like any other departure' });
+    const task = k.bus.addTask({ title: 'stop-run cleanup fixture', by: 'orchestrator', runId: run.id });
+    k.bus.updateRun(run.id, { taskIds: [task] });
+    a.equal(k.bus.claimTask('coder', task).ok, true, 'sanity: coder holds the run-owned task');
+    a.ok(k.summoned.has('coder'), 'sanity: coder is in service before the run is stopped');
+
+    const stopped = k.stopRun(run.id, 'prove cleanup');
+    a.equal(stopped.state, 'cancelled');
+    a.equal(k.agents.has('coder'), false, 'the stopped worker\'s process must be gone');
+    a.equal(k.summoned.has('coder'), false,
+      'a stopped run must not leave its worker in `summoned` — the delivery loop respawns anyone still there');
+    const after = k.bus.task(task);
+    a.equal(after.owner, null,
+      'a stopped run must release what its worker still held — nobody may otherwise claim it again');
+    a.equal(after.state, 'pending', 'and it must be claimable again, not stuck in active');
+    a.ok(k.bus.history({ limit: 400 }).some((m) =>
+      m.recipient === k.config.orchestrator.name && /left service still holding/.test(m.body)
+      && new RegExp(`#${task}`).test(m.body)),
+    'the orchestrator must be told, or it goes on reporting the task as in progress');
+
+    console.log('  stopping a run releases its worker\'s claims exactly like any other departure');
+  }
+
+  /* ---- 12. #onDone must not silently clear a run blocked by someone else - */
   // #onDone set the run to 'verifying' or 'blocked' from whichever
   // submission happened to arrive last, with no check of the run's existing
   // state, bypassing transitionRun's allowed-transition map entirely by
@@ -601,9 +642,8 @@ try {
   // still-unresolved failure.
   {
     if (!k.repo) await k.attachRepo(repo);
-    // §9 above deliberately leaves its run 'blocked' to prove the state
-    // sticks — createRun refuses a second run while one is still active, so
-    // that leftover has to be cleared before this section can start its own.
+    // §11 above stops its own run when it finishes, but clear defensively in
+    // case a future section is inserted between these two.
     if (k.bus.currentRun()) await k.stopRun(undefined, 'test cleanup: clear the previous section\'s run');
     const run = await k.createRun({ objective: 'prove onDone cannot clear a blocker it did not cause' });
 
