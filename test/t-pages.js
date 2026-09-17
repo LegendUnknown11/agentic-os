@@ -138,6 +138,10 @@ a.doesNotMatch(homeSource, /home-mode-card|modeCard/, 'Overview must not carry a
 a.match(homeSource, /home-objective/, 'Home must keep the objective as an ambient card');
 a.match(homeSource, /grid\.append\(ambient\);[\s\S]*?if \(!runSummary && !urgent\.length/, 'the objective must render last, after every urgent and secondary card');
 a.match(homeSource, /const urgent = \[/, 'Home must rank approvals, failed members, and blocked tasks into one urgency list');
+a.match(homeSource, /approvals\.map\(\(a\) => \(\{[\s\S]*?tone: tone\('blocked'\),/, 'pending approvals must carry the shared attention tone, not render as a plain nav row');
+a.match(homeSource, /attention\.map\(\(\[name, member\]\) => \{[\s\S]*?tone: tone\(label\),/, 'failed or rate-limited members must carry their real status tone, not render as a plain nav row');
+a.doesNotMatch(homeSource, /button\(item\.text, item\.open, 'list-row'\)/, 'urgent approvals and members must not fall back to an untoned list-row button');
+a.match(homeSource, /const cls = `task-row \$\{item\.tone \?\? ''\}`\.trim\(\);/, 'every urgent row must resolve to the shared task-row tone treatment, whether clickable or not');
 a.match(homeSource, /nextStepFor\(\{ urgent, changesVisible, changes, goal \}\)/, 'with no active run, Home must lead with the single most urgent next step');
 a.match(homeSource, /const shell = page\('Overview', mode\.blurb\)/, 'Home must not repeat mode and repository context in its page heading');
 a.match(homeSource, /const attention =/, 'Home must separate terminal member states from active work');
