@@ -551,6 +551,42 @@ try {
     console.log("  a paused run's failed reconciliation at restart becomes a visible blocker, not silence");
   }
 
+  /* ---- 10. a merge approval must not race a concurrent reject ----------- */
+  // approve()'s 'merge' branch used to await the merge before deleting the
+  // approval, unlike every other branch (including 'push', right below it in
+  // source, which is careful to delete first) — leaving a window where
+  // reject(id) could still find and "reject" an approval whose merge was
+  // already in flight or had already landed.
+  {
+    if (!k.repo) await k.attachRepo(repo);
+    // Earlier sections dropped 'coder' from the roster, or replaced `k`
+    // entirely via a restart; restore it here rather than reuse a name the
+    // court no longer recognises.
+    if (!k.specOf('coder')) k.config.peasants.push({ name: 'coder', cli: 'codex', description: 'writes code' });
+    k.setMode('code', { why: 'prove the merge approval race is closed' });
+    await k.wake('coder');
+    const wt = k.agents.get('coder').cwd;
+    writeFileSync(join(wt, 'race.txt'), 'merge race fixture\n');
+    execFileSync('git', ['add', '-A'], { cwd: wt });
+    execFileSync('git', ['commit', '-qm', 'prove the merge race is closed'], { cwd: wt });
+
+    k.bus.post('orchestrator', null, JSON.stringify({ kind: 'merge', peasant: 'coder' }), 'approval');
+    await until(() => [...k.approvals.values()].some((p) => p.kind === 'merge' && p.peasant === 'coder'));
+    const approvalId = [...k.approvals].find(([, p]) => p.kind === 'merge')[0];
+
+    const approving = k.approve(approvalId);
+    // approve()'s merge branch runs synchronously up to its first await, so a
+    // correct implementation has already consumed the approval by the time
+    // this next line runs — a concurrent reject must find nothing left.
+    a.throws(() => k.reject(approvalId), /No pending approval/,
+      'a merge approval must be consumed before the merge is awaited, or a concurrent reject can still catch it mid-flight');
+    await approving;
+    a.equal(k.bus.get(`resolved:${approvalId}`), 'approved');
+    a.equal(k.approvals.has(approvalId), false);
+
+    console.log('  a merge approval is consumed before the merge is awaited, closing the reject race');
+  }
+
   console.log('t-control.js OK — a live court follows the repo, and the court can steer itself');
 } finally {
   await k?.stop?.();   // closes the bus with it
