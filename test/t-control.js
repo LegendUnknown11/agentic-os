@@ -23,7 +23,7 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, rmSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Kingdom } from '../src/kingdom.js';
-import { kingdomDir, dbPath } from '../src/worktree.js';
+import { kingdomDir, dbPath, createWorktree, removeWorktree } from '../src/worktree.js';
 import { listSkills } from '../src/skills.js';
 
 process.env.KINGDOM_CODEX_BIN = process.execPath;   // a spawn that costs nothing
@@ -631,6 +631,65 @@ try {
     'the orchestrator must be told, or it goes on reporting the task as in progress');
 
     console.log('  stopping a run releases its worker\'s claims exactly like any other departure');
+  }
+
+  /* ---- 12. #onDone must not silently clear a run blocked by someone else - */
+  // #onDone set the run to 'verifying' or 'blocked' from whichever
+  // submission happened to arrive last, with no check of the run's existing
+  // state, bypassing transitionRun's allowed-transition map entirely by
+  // writing state directly. A later, unrelated peasant's PASSING submission
+  // could silently clear a run already blocked on a DIFFERENT peasant's
+  // still-unresolved failure.
+  {
+    if (!k.repo) await k.attachRepo(repo);
+    // §11 above stops its own run when it finishes, but clear defensively in
+    // case a future section is inserted between these two.
+    if (k.bus.currentRun()) await k.stopRun(undefined, 'test cleanup: clear the previous section\'s run');
+    const run = await k.createRun({ objective: 'prove onDone cannot clear a blocker it did not cause' });
+
+    const aliceWt = await createWorktree(repo, 'alice', k.base);
+    writeFileSync(join(aliceWt, 'package.json'), JSON.stringify({
+      name: 'alice-fixture', type: 'module', scripts: { test: 'node -e "process.exit(1)"' },
+    }));
+    execFileSync('git', ['add', '-A'], { cwd: aliceWt });
+    execFileSync('git', ['commit', '-qm', 'alice: a failing test'], { cwd: aliceWt });
+
+    const bobWt = await createWorktree(repo, 'bob', k.base);
+    writeFileSync(join(bobWt, 'package.json'), JSON.stringify({
+      name: 'bob-fixture', type: 'module', scripts: { test: 'node -e "process.exit(0)"' },
+    }));
+    execFileSync('git', ['add', '-A'], { cwd: bobWt });
+    execFileSync('git', ['commit', '-qm', 'bob: a passing test'], { cwd: bobWt });
+
+    const aliceId = k.bus.post('alice', k.config.orchestrator.name, 'alice: broken work', 'done');
+    await until(() => Boolean(k.bus.get(`done:${aliceId}`)));
+    await until(() => k.bus.run(run.id)?.state === 'blocked');
+    a.equal(k.bus.run(run.id).state, 'blocked', "sanity: alice's failing submission must block the run");
+
+    const bobId = k.bus.post('bob', k.config.orchestrator.name, 'bob: unrelated finished work', 'done');
+    await until(() => Boolean(k.bus.get(`done:${bobId}`)));
+    // `done:${bobId}` is set BEFORE #onDone runs (kingdom.js's dedup guard), so it
+    // fires the instant the tick claims the message, not once #onDone is done with
+    // bob's worktree. Bob's submission is valid, so #onDone never calls #runBlock —
+    // there is no run-state transition to wait on the way alice's failure gives us
+    // above — so the only real completion signal is `tests:${peasant}`, which
+    // #onDone sets last, right after its own diffOf/statOf finish touching the
+    // worktree. A fixed sleep here raced removeWorktree(repo, 'bob') below against
+    // those still-running git calls on Windows CI (commitAll + revisionOf x2 +
+    // runTests + diffOf + statOf is ~7 subprocesses at ~100ms each), producing a
+    // "not a working tree" fatal when the removal outran them.
+    await until(() => Boolean(k.bus.get('tests:bob')));
+    a.equal(k.bus.run(run.id).state, 'blocked',
+      "a run blocked on one peasant's failure must not be silently cleared back to verifying by a "
+      + "different, unrelated peasant's success");
+
+    // A raw rmSync of the still-live git worktrees below (in the outer
+    // finally block) can EPERM on Windows over a lingering git file handle;
+    // removing them properly first releases that the way git itself does.
+    await removeWorktree(repo, 'alice');
+    await removeWorktree(repo, 'bob');
+
+    console.log("  onDone cannot silently clear a run's blocker with an unrelated peasant's success");
   }
 
   console.log('t-control.js OK — a live court follows the repo, and the court can steer itself');
