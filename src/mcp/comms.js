@@ -85,6 +85,14 @@ export const comms = {
       if (held[0]?.state === 'planning') {
         return `Task #${held[0].id} still needs an approved plan. Call submit_plan and wait for the orchestrator.`;
       }
+      // Run-owned work must go through the controller's verification
+      // pipeline before it is closed — the same gate finish_task enforces.
+      // declare_done takes no task id, so refuse rather than silently
+      // closing it here without that gate.
+      if (held[0]?.runId) {
+        return `Task #${held[0].id} belongs to an active run. Call finish_task for it instead — `
+          + 'run-owned work is submitted for controller verification, not closed directly.';
+      }
       if (held[0]) bus.updateTask(held[0].id, { state: 'done', doneTs: Date.now() });
       const orchestrator = officer('orchestrator', 'orchestrator');
       bus.post(ME, orchestrator, summary, 'done');
