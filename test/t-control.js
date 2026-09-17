@@ -628,7 +628,17 @@ try {
 
     const bobId = k.bus.post('bob', k.config.orchestrator.name, 'bob: unrelated finished work', 'done');
     await until(() => Boolean(k.bus.get(`done:${bobId}`)));
-    await wait(300);   // let the tick that processes bob's submission fully settle
+    // `done:${bobId}` is set BEFORE #onDone runs (kingdom.js's dedup guard), so it
+    // fires the instant the tick claims the message, not once #onDone is done with
+    // bob's worktree. Bob's submission is valid, so #onDone never calls #runBlock —
+    // there is no run-state transition to wait on the way alice's failure gives us
+    // above — so the only real completion signal is `tests:${peasant}`, which
+    // #onDone sets last, right after its own diffOf/statOf finish touching the
+    // worktree. A fixed sleep here raced removeWorktree(repo, 'bob') below against
+    // those still-running git calls on Windows CI (commitAll + revisionOf x2 +
+    // runTests + diffOf + statOf is ~7 subprocesses at ~100ms each), producing a
+    // "not a working tree" fatal when the removal outran them.
+    await until(() => Boolean(k.bus.get('tests:bob')));
     a.equal(k.bus.run(run.id).state, 'blocked',
       "a run blocked on one peasant's failure must not be silently cleared back to verifying by a "
       + "different, unrelated peasant's success");
