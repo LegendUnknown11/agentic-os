@@ -187,6 +187,14 @@ a.match(viewSources.memory, /return \(\) => \{[\s\S]*?requestToken\(state, 'memo
 a.match(viewSources.activity, /return \(\) => \{[\s\S]*?requestToken\(state, 'activityRequest'\)/, 'leaving Activity must invalidate an in-flight search');
 a.match(viewSources.notes, /return \(\) => \{[\s\S]*?requestToken\(state, 'notesRequest'\)/, 'leaving Notes must invalidate an in-flight request');
 a.match(indexSource, /<title>Agentic OS<\/title>/, 'the document title must match the product name, Agentic OS');
+// The product name leaked as the bare word "AgentOS" into copy text across
+// several files, not just the <title> tag — the mode blurbs, the header
+// brand, the sidebar brand, the boot-failure heading, and the no-script
+// fallback. One guard across every source this file already loads catches
+// a future reintroduction anywhere, not just the one spot each fix touched.
+for (const [name, src] of Object.entries({ indexSource, mainSource, sidebarSource, homeSource })) {
+  a.doesNotMatch(src, /\bAgentOS\b/, `${name} must say "Agentic OS", not the bare "AgentOS"`);
+}
 a.match(indexSource, /<noscript>/, 'the shell must explain its connection requirement when scripts are disabled');
 a.match(indexSource, /JavaScript/, 'the no-script fallback must name the missing capability');
 a.doesNotMatch(indexSource, /<section id="view"[^>]*aria-live=/, 'the rerendered view must not announce its entire page on every stream event');

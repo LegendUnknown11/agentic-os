@@ -6,8 +6,8 @@ import * as Notify from './notify.js';
 
 // The public and backend vocabulary are the same three choices.
 export const USER_MODES = Object.freeze([
-  Object.freeze({ id: 'chat', backend: 'chat', label: 'Chat', blurb: 'Start a direct conversation with AgentOS.', action: 'Talk directly; no delegation or task list.' }),
-  Object.freeze({ id: 'cowork', backend: 'cowork', label: 'Cowork', blurb: 'Delegate multi-step workspace work to your team.', action: 'Describe the outcome; AgentOS plans and coordinates.' }),
+  Object.freeze({ id: 'chat', backend: 'chat', label: 'Chat', blurb: 'Start a direct conversation with Agentic OS.', action: 'Talk directly; no delegation or task list.' }),
+  Object.freeze({ id: 'cowork', backend: 'cowork', label: 'Cowork', blurb: 'Delegate multi-step workspace work to your team.', action: 'Describe the outcome; Agentic OS plans and coordinates.' }),
   Object.freeze({ id: 'code', backend: 'code', label: 'Code', blurb: 'Change a repository with tests and review.', action: 'Work in isolation, then review what is ready to merge.' }),
 ]);
 
@@ -164,8 +164,8 @@ function connect() {
         const label = USER_MODE_BY_ID.get(userModeOf(target))?.label ?? target;
         const reason = event.why ? ` — ${event.why}` : '';
         modeNotice = event.pending
-          ? `AgentOS will switch to ${label} mode once the court is idle${reason}.`
-          : `AgentOS switched to ${label} mode${reason}.`;
+          ? `Agentic OS will switch to ${label} mode once the court is idle${reason}.`
+          : `Agentic OS switched to ${label} mode${reason}.`;
         toast(modeNotice);
       }
       apply(event);
@@ -226,7 +226,7 @@ function renderShell() {
   const header = $('header');
   if (header && !header.dataset.foundation) {
     header.dataset.foundation = '1';
-    header.innerHTML = '<div class="app-identity"><span class="brand">AgentOS</span><span class="brand-tag">your team, in one place</span></div><span class="repo"></span><span class="header-sep" aria-hidden="true">·</span><span class="goal-context"></span><nav class="mode-switcher" aria-label="Work mode"></nav><button class="mobile-menu" type="button" aria-controls="sidebar" aria-expanded="false">Menu</button><span class="connection" aria-label="Connection"></span>';
+    header.innerHTML = '<div class="app-identity"><span class="brand">Agentic OS</span><span class="brand-tag">your team, in one place</span></div><span class="repo"></span><span class="header-sep" aria-hidden="true">·</span><span class="goal-context"></span><nav class="mode-switcher" aria-label="Work mode"></nav><button class="mobile-menu" type="button" aria-controls="sidebar" aria-expanded="false">Menu</button><span class="connection" aria-label="Connection"></span>';
     const switcher = header.querySelector('.mode-switcher');
     for (const choice of USER_MODES) {
       const button = document.createElement('button');
@@ -307,7 +307,7 @@ function showBootFailure(error) {
   const shell = document.createElement('div');
   shell.className = 'view-mount boot-failure';
   const heading = document.createElement('h1');
-  heading.textContent = 'AgentOS could not load';
+  heading.textContent = 'Agentic OS could not load';
   const message = document.createElement('p');
   message.textContent = 'The interface did not start. Reload this window to try again.';
   const retry = document.createElement('button');
