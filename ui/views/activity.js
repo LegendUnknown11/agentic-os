@@ -13,7 +13,7 @@ function bind(state, root, render) {
 
 async function loadActivity(state, root, query, kinds) {
   const token = requestToken(state, 'activityRequest');
-  const result = await get(`/api/chronicle?kinds=${encodeURIComponent(kinds)}&q=${encodeURIComponent(query)}`);
+  const result = await get(`/api/log?kinds=${encodeURIComponent(kinds)}&q=${encodeURIComponent(query)}`);
   if (!root.isConnected || state.activityRequest !== token) return;
   state.activityLoading = false;
   state.activityError = apiError(result, 'Could not load activity.');
@@ -24,7 +24,7 @@ async function loadActivity(state, root, query, kinds) {
 export function renderActivity(state, root) {
   root.replaceChildren();
   const shell = page('Activity', 'Search summaries, messages, completions, and errors.');
-  const search = input(state.activityQuery ?? '', 'Search the chronicle…');
+  const search = input(state.activityQuery ?? '', 'Search the log…');
   const filters = select([[DEFAULT_KINDS, 'Everything'], ['summary', 'Summaries'], ['message', 'Messages'], ['error', 'Errors'], ['done', 'Done']], state.activityKinds ?? DEFAULT_KINDS);
   search.setAttribute('aria-label', 'Search activity');
   filters.setAttribute('aria-label', 'Filter activity');

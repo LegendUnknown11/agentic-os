@@ -11,7 +11,7 @@ const node = (tag, className, text) => {
 };
 
 const NAV_ICONS = Object.freeze({
-  home: 'target', objective: 'goal', approvals: 'approve', changes: 'diff', agents: 'who', activity: 'chronicle',
+  home: 'target', objective: 'goal', approvals: 'approve', changes: 'diff', agents: 'who', activity: 'log',
   messages: 'bus', usage: 'metrics', memory: 'vault', notes: 'document', automations: 'workflows', doctor: 'doctor',
 });
 

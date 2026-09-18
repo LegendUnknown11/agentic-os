@@ -2285,7 +2285,7 @@ export class Kingdom extends EventEmitter {
         (this.nudged ??= new Set()).add(name);
         // 'orchestrator', not the orchestrator's name. The orchestrator never said this, and
         // posting it under their name put words in the sovereign's court: it
-        // appears in the bus and the chronicle as the orchestrator speaking, and a
+        // appears in the bus and the log as the orchestrator speaking, and a
         // peasant may reply to the orchestrator about a message the orchestrator never sent,
         // costing a turn on both sides. Every other orchestrator message uses
         // this sender.

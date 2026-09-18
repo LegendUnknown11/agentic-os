@@ -331,10 +331,10 @@ try {
     console.log('  action routes reject malformed JSON as 400');
   }
 
-  /* ---------- 2b. the chronicle ---------- */
+  /* ---------- 2b. the log ---------- */
   {
     // Seed a mixed history: summaries and errors are EVENTS, messages are
-    // messages, and the chronicle has to merge two tables into one timeline.
+    // messages, and the log has to merge two tables into one timeline.
     const { Bus: B } = await import('../src/bus.js');
     const bus = new B(dbPath(repo));
     bus.logEvent('coder', 'summary', { text: 'Fixed the webhook idempotency key.' });
@@ -346,7 +346,7 @@ try {
     bus.post('orchestrator', null, '{"kind":"summon"}', 'approval');
     bus.close();
 
-    const all = await get('/api/chronicle');
+    const all = await get('/api/log');
     a.ok(all.ok);
     const kinds = new Set(all.rows.map((r) => r.kind));
     a.ok(!kinds.has('notice') && !kinds.has('approval'),
@@ -354,31 +354,32 @@ try {
     a.ok(kinds.has('summary') && kinds.has('message') && kinds.has('done') && kinds.has('error'),
       'events and messages must be merged into one timeline');
 
-    // Newest first, always — a chronicle that reads oldest-first is a log file.
+    // Newest first, always — a log that reads oldest-first is a log FILE, not
+    // something you can scan.
     for (let i = 1; i < all.rows.length; i++) {
       a.ok(all.rows[i - 1].ts >= all.rows[i].ts, 'rows must be newest first');
     }
 
-    const hit = await get('/api/chronicle?q=webhook');
+    const hit = await get('/api/log?q=webhook');
     a.equal(hit.total, 2, 'search spans both tables: one summary and one done');
     a.ok(hit.rows.every((r) => /webhook/i.test(r.text)));
 
     // A term nobody said must return NOTHING. The UI bug this pairs with was a
     // stale response repainting 78 rows over an empty result.
-    const none = await get('/api/chronicle?q=zzzznope');
+    const none = await get('/api/log?q=zzzznope');
     a.equal(none.total, 0);
     a.deepEqual(none.rows, []);
 
-    const byWho = await get('/api/chronicle?q=tester');
+    const byWho = await get('/api/log?q=tester');
     a.ok(byWho.total >= 2, 'searching a member name finds what they said and what was said to them');
 
-    const only = await get('/api/chronicle?kinds=summary');
+    const only = await get('/api/log?kinds=summary');
     a.ok(only.rows.every((r) => r.kind === 'summary'), 'the kind filter is honoured');
     a.equal(only.total, 2);
 
-    const bounded = await get('/api/chronicle?limit=-1');
-    a.equal(bounded.rows.length, 1, 'a hostile negative limit must not turn the chronicle into an unbounded page');
-    console.log('  chronicle: two tables merged, newest first, filtered and searchable');
+    const bounded = await get('/api/log?limit=-1');
+    a.equal(bounded.rows.length, 1, 'a hostile negative limit must not turn the log into an unbounded page');
+    console.log('  log: two tables merged, newest first, filtered and searchable');
   }
 
   /* ---------- 2c. campaigns: one sovereign order, one bounded interval ---- */
@@ -414,7 +415,7 @@ try {
     const old = campaigns.campaigns.find((c) => c.id === first.id);
     a.equal(old.spentUsd, 0.5, 'the next campaign snapshot closes the earlier interval');
 
-    const scoped = await get(`/api/chronicle?campaign=${second.id}`);
+    const scoped = await get(`/api/log?campaign=${second.id}`);
     a.ok(scoped.rows.some((r) => /ship the formatter/.test(r.text)));
     a.ok(scoped.rows.some((r) => /Formatter campaign finished/.test(r.text)));
     a.ok(!scoped.rows.some((r) => /parser|Parser campaign/i.test(r.text)),
