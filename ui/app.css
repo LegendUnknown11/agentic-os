@@ -326,6 +326,8 @@ body.sidebar-collapsed .app-identity { display: grid; }
  * everywhere it appears — mid-turn avatars and now the row-level dots below
  * are both "actively in progress", not two different concepts. */
 .status-dot.live { background: var(--tone-live); box-shadow: 0 0 0 4px rgb(var(--tone-live-rgb) / .13); animation: busy 1.6s ease-in-out infinite alternate; }
+/* An agent awaiting approval is not doing work yet; keep its dot still. */
+.agent-card.requested .status-dot { animation: none; }
 
 .status-dot.attention { background: var(--danger); }
 
@@ -893,7 +895,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .task-row + .task-row, .doctor-row + .doctor-row, .quota + .quota { margin-top: var(--space-2); }
 
-.doctor-row > span { flex: 1; overflow-wrap: anywhere; }
+.doctor-row > span:not(.status-dot) { flex: 1; overflow-wrap: anywhere; }
 
 .task-row b { flex: none; color: var(--muted); font-size: var(--t-xs); font-weight: 650; }
 
@@ -903,7 +905,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .task-row.idle b { color: var(--faint); }
 
-.task-row > span { display: grid; min-width: 0; flex: 1; gap: var(--space-1); overflow-wrap: anywhere; text-align: left; }
+.task-row > span:not(.status-dot) { display: grid; min-width: 0; flex: 1; gap: var(--space-1); overflow-wrap: anywhere; text-align: left; }
 
 .task-row small { color: var(--muted); font-size: var(--t-xs); }
 
