@@ -190,8 +190,16 @@ export const tasks = {
       if (!t) return `No task #${id}.`;
       if (t.state === 'done') return `Task #${id} is already done — nothing to reassign.`;
       // Verification runs against the submitter's worktree; moving the task
-      // now would show it as fresh work while that check is still in flight (#53).
-      if (t.state === 'verifying') return `Task #${id} is being verified — wait for the controller's result before reassigning it.`;
+      // while that check is in flight would show it as fresh work (#53). Once
+      // the controller has recorded its evidence the task is still 'verifying'
+      // (nothing moves it on), so reassigning is then the recovery path.
+      if (t.state === 'verifying' && t.owner) {
+        const submission = bus.history({ agent: t.owner, limit: 500, tail: true })
+          .findLast((m) => m.sender === t.owner && m.kind === 'done' && m.body.startsWith(`Task #${id} `));
+        if (submission && !bus.get(`verification:${t.owner}:${submission.id}`)) {
+          return `Task #${id} is being verified — wait for the controller's result before reassigning it.`;
+        }
+      }
       if (t.owner === to) return `Task #${id} is already ${to}'s.`;
       const summoned = stateArray('summoned');
       if (!summoned) return `Cannot reassign to ${to}: summoned crew is unavailable.`;
