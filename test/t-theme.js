@@ -6,88 +6,80 @@ import { join } from 'node:path';
 
 const css = readFileSync(join(import.meta.dirname, '..', 'ui', 'app.css'), 'utf8');
 const index = readFileSync(join(import.meta.dirname, '..', 'ui', 'index.html'), 'utf8');
-const bootstrap = readFileSync(join(import.meta.dirname, '..', 'ui', 'theme-bootstrap.js'), 'utf8');
 const main = readFileSync(join(import.meta.dirname, '..', 'ui', 'main.js'), 'utf8');
 const sidebar = readFileSync(join(import.meta.dirname, '..', 'ui', 'sidebar.js'), 'utf8');
 const util = readFileSync(join(import.meta.dirname, '..', 'ui', 'views', 'util.js'), 'utf8');
 const thread = readFileSync(join(import.meta.dirname, '..', 'ui', 'thread.js'), 'utf8');
 const avatar = readFileSync(join(import.meta.dirname, '..', 'ui', 'avatar.js'), 'utf8');
 const root = /:root\s*\{([\s\S]*?)\n\}/.exec(css)?.[1] ?? '';
-const dark = /:root\[data-theme="dark"\]\s*\{([\s\S]*?)\n\}/.exec(css)?.[1] ?? '';
 const rules = css.replace(/\/\*[\s\S]*?\*\//g, '').slice(css.indexOf('* { box-sizing'));
 
 const token = (name) => new RegExp(`${name}\\s*:\\s*([^;]+);`).exec(root)?.[1].trim();
-const darkToken = (name) => new RegExp(`${name}\\s*:\\s*([^;]+);`).exec(dark)?.[1].trim();
-// Prototype.zip's Editorial (Industrial minimal) theme is the visual source
-// of truth for the neutral canvas, shape, spacing and motion. Status hues
-// (teal live/settled, red attention) stay from the prior reskin — Industrial
-// has no equivalent status colours of its own. The app stays offline, so it
-// keeps local type stacks instead of importing Editorial's webfonts.
-a.equal(token('--paper'), '#f5f5f2');
-a.equal(token('color-scheme'), 'light');
-a.equal(token('--paper-deep'), '#ebebe6');
-a.equal(token('--white'), '#ffffff');
-a.equal(token('--ink'), '#161616');
-a.equal(token('--teal'), '#0d6663');
-a.equal(token('--teal-dark'), '#084a4a');
-a.equal(token('--teal-soft'), '#d8ebe5');
-a.equal(token('--red'), '#b84e42');
-a.equal(token('--red-dark'), '#8d3935');
-a.equal(token('--red-soft'), '#f4ded5');
-a.equal(token('--due'), '#af4a3f');
-a.equal(token('--bg'), 'var(--paper)');
-a.equal(token('--bg-rgb'), '245 245 242');
-a.equal(token('--surface'), 'var(--paper-deep)');
-a.equal(token('--surface-rgb'), '235 235 230');
-a.equal(token('--raised'), 'var(--white)');
-a.equal(token('--raised-rgb'), '255 255 255');
-a.equal(token('--text'), 'var(--ink)');
-a.equal(token('--text-rgb'), '22 22 22');
-a.equal(token('--muted'), '#6b6b69');
-a.equal(token('--muted-rgb'), '107 107 105');
-a.equal(token('--faint'), '#8f8f8c');
-a.equal(token('--faint-rgb'), '143 143 140');
-a.equal(token('--line'), '#dcdcd7');
-a.equal(token('--line-rgb'), '220 220 215');
-a.equal(token('--border-strong'), '#b9b9b3');
-a.equal(token('--border-strong-rgb'), '185 185 179');
-a.equal(token('--accent'), 'var(--teal)');
-a.equal(token('--accent-rgb'), '13 102 99');
-a.equal(token('--accent-ink'), 'var(--white)');
-a.equal(token('--danger'), 'var(--red-dark)');
-a.equal(token('--danger-rgb'), '141 57 53');
-a.equal(token('--ok'), 'var(--teal-dark)');
-a.equal(token('--ok-rgb'), '8 74 74');
-a.equal(token('--gold'), '#6b4f10');
-a.equal(token('--gold-rgb'), '107 79 16');
-a.equal(token('--radius-ctl'), '8px');
-a.equal(token('--radius-card'), '20px');
+// Hiveory (github.com/raktim-yoddha/hiveory), adopted in full per PLAN.md
+// section 1: literal values read from its shipped app.css, dark only (no
+// light/dark toggle survives the swap). This app's own token discipline
+// (:root, -rgb twins, no literal colour outside :root, gold identifies the
+// orchestrator alone) is unaffected by which palette supplies the values.
+a.equal(token('color-scheme'), 'dark');
+a.equal(token('--bg'), '#111418');
+a.equal(token('--bg-rgb'), '17 20 24');
+a.equal(token('--bg-alt'), '#0f141a');
+a.equal(token('--bg-alt-rgb'), '15 20 26');
+a.equal(token('--surface'), '#14181d');
+a.equal(token('--surface-rgb'), '20 24 29');
+a.equal(token('--raised'), '#181d23');
+a.equal(token('--raised-rgb'), '24 29 35');
+a.equal(token('--text'), '#f5f7fa');
+a.equal(token('--text-rgb'), '245 247 250');
+a.equal(token('--muted'), '#aeb8c5');
+a.equal(token('--muted-rgb'), '174 184 197');
+a.equal(token('--faint'), '#758192');
+a.equal(token('--faint-rgb'), '117 129 146');
+a.equal(token('--line'), '#272d35');
+a.equal(token('--line-rgb'), '39 45 53');
+a.equal(token('--line-soft'), '#29323c');
+a.equal(token('--line-soft-rgb'), '41 50 60');
+a.equal(token('--accent'), '#2b5f96');
+a.equal(token('--accent-rgb'), '43 95 150');
+a.equal(token('--accent-border'), '#4a6d98');
+a.equal(token('--accent-hover'), '#3675b7');
+a.equal(token('--accent-ink'), '#f7fbff');
+// Four genuinely distinct status hues, not one hue split by chroma.
+a.equal(token('--tone-live'), '#48a7ed');
+a.equal(token('--tone-live-rgb'), '72 167 237');
+a.equal(token('--tone-settled'), '#45c47b');
+a.equal(token('--tone-settled-rgb'), '69 196 123');
+a.equal(token('--tone-attention'), '#d46d77');
+a.equal(token('--tone-attention-rgb'), '212 109 119');
+a.equal(token('--tone-idle'), '#d2a05f');
+a.equal(token('--tone-idle-rgb'), '210 160 95');
+a.equal(token('--danger'), 'var(--tone-attention)', 'general-purpose danger must agree with the attention status hue');
+a.equal(token('--danger-rgb'), 'var(--tone-attention-rgb)');
+a.equal(token('--ok'), 'var(--tone-settled)', 'general-purpose ok must agree with the settled status hue');
+a.equal(token('--ok-rgb'), 'var(--tone-settled-rgb)');
+a.equal(token('--gold'), '#d9b25c');
+a.equal(token('--gold-rgb'), '217 178 92');
+// Shape: pills are back. Controls take 6px, cards/panels take 10px (one
+// shared value), icon-only buttons stay tighter at 4px.
+a.equal(token('--radius-ctl'), '6px');
+a.equal(token('--radius-card'), '10px');
+a.equal(token('--radius-icon'), '4px');
+a.equal(token('--radius-pill'), '999px');
 a.deepEqual([1, 2, 3, 4, 5, 6, 7, 8].map((n) => token(`--space-${n}`)), ['4px', '8px', '12px', '16px', '24px', '32px', '48px', '64px']);
 a.equal(token('--tap-target-min'), '44px');
-a.equal(token('--ease'), 'cubic-bezier(.16, 1, .3, 1)');
-a.match(css, /--display:\s*-apple-system/, 'headings must use the offline editorial system-sans stack');
-a.match(index, /<meta name="color-scheme" content="light dark">/, 'the document chrome must advertise both theme surfaces');
-a.match(index, /<script src="\.\/theme-bootstrap\.js"><\/script>\s*<link rel="stylesheet"/, 'the saved theme must load before the stylesheet paints');
-a.match(bootstrap, /localStorage\.getItem\('kd\.prefs'\)/, 'the saved theme must come from the existing preference store');
-a.match(bootstrap, /document\.documentElement\.dataset\.theme = prefs\.theme/, 'an explicit saved theme must apply before first paint');
-a.doesNotMatch(index, /<script>(?!\s*<\/script>)/, 'the theme bootstrap must obey the daemon script CSP');
-a.match(css, /:root\[data-theme="dark"\]/, 'the stylesheet must provide an explicit dark palette');
-a.match(css, /@media \(prefers-color-scheme: dark\)[\s\S]*?:root:not\(\[data-theme\]\)/, 'system theme must follow the operating-system preference');
-for (const [name, value] of Object.entries({
-  '--dark-bg': '#141414', '--dark-surface': '#1c1c1b', '--dark-raised': '#242423',
-  '--dark-text': '#f0f0ec', '--dark-muted': '#b4b4b0', '--dark-faint': '#8a8a86',
-  '--dark-line': '#3a3a38', '--dark-border': '#55554f', '--dark-accent': '#4fb6aa',
-  '--dark-accent-ink': '#141414', '--dark-danger': '#f19a8b', '--dark-ok': '#79c6b5',
-  '--dark-gold': '#d9b25c',
-})) a.equal(token(name), value);
-a.equal(darkToken('--bg'), 'var(--dark-bg)');
-a.equal(darkToken('color-scheme'), 'dark');
-a.equal(darkToken('--gold'), 'var(--dark-gold)');
-a.equal(darkToken('--gold-rgb'), 'var(--dark-gold-rgb)');
-a.doesNotMatch(css, /linear-gradient|radial-gradient/, 'the app foundation must not depend on gradients');
+a.equal(token('--ease'), 'ease', 'the old custom easing curve is dropped for Hiveory\'s plain ease');
+a.equal(token('--fast'), '150ms', 'hover/press transitions run at 0.15s per the source');
+a.match(css, /--display:\s*-apple-system, "Segoe UI", Roboto, system-ui, sans-serif/, 'headings must use the local sans stack approximating Hiveory\'s IBM Plex Sans');
+a.doesNotMatch(css, /--mono:\s*['"]?(IBM Plex Mono|JetBrains Mono)/, 'this app runs offline in Electron — no webfont stack for --mono, including Hiveory\'s real JetBrains Mono choice');
+a.match(index, /<meta name="color-scheme" content="dark">/, 'the document chrome must advertise the single dark surface, not a toggle');
+a.doesNotMatch(index, /theme-bootstrap/, 'the light/dark bootstrap script is gone along with the toggle');
+a.doesNotMatch(index, /<script>(?!\s*<\/script>)/, 'the shell must obey the daemon script CSP');
+a.doesNotMatch(css, /:root\[data-theme=|prefers-color-scheme: dark/, 'the light/dark toggle must not survive the Hiveory swap — dark is the only ground now');
+a.doesNotMatch(css, /--dark-/, 'the --dark- prefix convention is gone now that dark is the only palette');
+a.doesNotMatch(css, /linear-gradient|radial-gradient/, 'the optional Hiveory panel-wash gradient is deferred to a later pass, not adopted yet');
 a.match(css, /\.mode-switcher\s*\{[^}]*border-radius:\s*var\(--radius-pill\)/, 'work modes must read as one segmented control');
-a.match(css, /\.mode-option\.selected\s*\{[^}]*background:\s*var\(--accent\)/, 'the active work mode needs one clear teal state');
-a.match(css, /\.view-heading::before\s*\{[^}]*content:\s*"AGENTOS \/ WORKSPACE"/, 'pages need one editorial eyebrow from the shared heading primitive');
+a.match(css, /\.mode-option\.selected\s*\{[^}]*background:\s*var\(--accent\)/, 'the active work mode needs one clear accent state');
+a.match(css, /\.view-heading::before\s*\{[^}]*content:\s*"AGENTIC OS \/ WORKSPACE"/, 'pages need one eyebrow from the shared heading primitive, naming the product correctly');
 a.match(css, /\.thread-header\s*\{[^}]*background:\s*var\(--surface\)/, 'threads need the same paper panel primitive as dashboard pages');
 a.doesNotMatch(css, /--mono:\s*['"]?(IBM Plex Mono|Playfair Display)/, 'this app runs offline in Electron — no webfont stack for --mono');
 a.match(css, /grid-template:\s*"sidebar main" 1fr \/ 260px/);
@@ -266,4 +258,4 @@ a.deepEqual(rgb.filter((v) => {
   return !(n[0] === n[1] && n[1] === n[2]);
 }), [], 'coloured rgb literals must come from channel tokens');
 
-console.log('t-theme.js OK — the paper/ink palette is tokenised and has one fixed layout');
+console.log('t-theme.js OK — the Hiveory palette is tokenised, dark-only, and has one fixed layout');

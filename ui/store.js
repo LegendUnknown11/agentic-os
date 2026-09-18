@@ -6,18 +6,6 @@ import { STICKY, verbFor } from './status.js';
 const PREFS_KEY = 'kd.prefs';
 const LOG_CAP = 400;
 const MESSAGE_CAP = 300;
-const THEMES = new Set(['system', 'light', 'dark']);
-
-export const themeOf = (value) => THEMES.has(value) ? value : 'system';
-export const applyTheme = (value) => {
-  const theme = themeOf(value);
-  const root = globalThis.document?.documentElement;
-  if (root) {
-    if (theme === 'system') root.removeAttribute('data-theme');
-    else root.dataset.theme = theme;
-  }
-  return theme;
-};
 
 const readPrefs = () => {
   try {
@@ -81,8 +69,6 @@ export const state = {
   workflowsError: null,
 };
 
-applyTheme(state.prefs.theme);
-
 const subs = new Set();
 let frame = 0;
 
@@ -110,7 +96,6 @@ export function subscribe(fn) {
 
 export function setPrefs(patch = {}) {
   state.prefs = { ...state.prefs, ...patch };
-  applyTheme(state.prefs.theme);
   try { globalThis.localStorage?.setItem(PREFS_KEY, JSON.stringify(state.prefs)); } catch {}
   schedule();
   return state.prefs;
