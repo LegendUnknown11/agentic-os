@@ -82,6 +82,20 @@ a.match(css, /\.mode-option\.selected\s*\{[^}]*background:\s*var\(--accent\)/, '
 a.match(css, /\.view-heading::before\s*\{[^}]*content:\s*"AGENTIC OS \/ WORKSPACE"/, 'pages need one eyebrow from the shared heading primitive, naming the product correctly');
 a.match(css, /\.thread-header\s*\{[^}]*background:\s*var\(--surface\)/, 'threads need the same paper panel primitive as dashboard pages');
 a.doesNotMatch(css, /--mono:\s*['"]?(IBM Plex Mono|Playfair Display)/, 'this app runs offline in Electron — no webfont stack for --mono');
+
+// PLAN.md section 1: mono is reserved for code/terminal/diff/log content,
+// never ordinary UI metadata; uppercase-tracked treatment is reserved for
+// small section/rail headings, not every label, badge, or chip. Swept for
+// both across every selector that isn't a section/rail heading — issue #39.
+for (const sel of ['\\.button\\.chip', '\\.field-value', '\\.metric-label', '\\.run-badge', '\\.usage-breakdown dd, \\.agent-usage-details dd']) {
+  a.doesNotMatch(css, new RegExp(`${sel}\\s*\\{[^}]*font-family:\\s*var\\(--mono\\)`),
+    `${sel.replace(/\\\\/g, '')} is ordinary UI metadata, not code — must not use --mono`);
+}
+for (const sel of ['\\.metric-label', '\\.run-badge', '\\.mode-kicker', '\\.task-row b']) {
+  a.doesNotMatch(css, new RegExp(`${sel}\\s*\\{[^}]*text-transform:\\s*uppercase`),
+    `${sel.replace(/\\\\/g, '')} is a label, not a section/rail heading — must not be uppercase-tracked by default`);
+}
+a.match(css, /\.run-badge\s*\{[^}]*border-radius:\s*var\(--radius-pill\)/, 'Hiveory pills every status chip, count badge, and tag — the run badge is one');
 a.match(css, /grid-template:\s*"sidebar main" 1fr \/ 260px/);
 a.match(css, /#bg\s*\{[\s\S]*?z-index:\s*0;/, 'wallpaper must sit between the body and shell');
 a.match(css, /body\.has-bg\s*\{[\s\S]*?--shell-alpha:\s*\.82;/, 'wallpaper selection must open the shell surfaces');
@@ -183,7 +197,7 @@ a.match(css, /\.field-check\s*\{[^}]*grid-template-columns:\s*18px minmax\(0, 1f
 a.match(css, /\.field-check > input\s*\{[^}]*grid-column:\s*1;[^}]*grid-row:\s*1 \/ span 2;/, 'checkbox fields must keep the control beside both label lines');
 a.match(css, /\.field input\[type="range"\]\s*\{[^}]*border:\s*0;[^}]*background:\s*transparent;[^}]*accent-color:\s*var\(--accent\)/, 'range controls need a compact native control treatment');
 a.match(css, /\.field-label\s*\{[^}]*display:\s*flex;[^}]*justify-content:\s*space-between;/, 'field labels must make room for live range values');
-a.match(css, /\.field-value\s*\{[^}]*font-family:\s*var\(--mono\);/, 'range values must use the compact metadata treatment');
+a.doesNotMatch(css, /\.field-value\s*\{[^}]*font-family:\s*var\(--mono\)/, 'range values are ordinary UI metadata, not code — mono is reserved for code/terminal/diff/log content');
 a.match(css, /@media \(max-width: 900px\)/, 'the compact header must protect the required 800px layout');
 a.match(css, /@media \(max-width: 720px\)[\s\S]*?\.search-row input\s*\{[^}]*flex:\s*1 1 100%;[^}]*min-width:\s*0;/, 'phone search rows must give the query its own full-width line');
 a.match(css, /@media \(max-width: 720px\)[\s\S]*?\.thread-controls\s*\{[^}]*width:\s*100%;[^}]*justify-content:\s*stretch;/, 'phone thread controls must use the available row width');

@@ -371,7 +371,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .button.link:hover { border-color: transparent; background: transparent; color: var(--text); }
 
-.button.chip { min-height: var(--tap-target-min); padding: var(--space-1) var(--space-2); font-family: var(--mono); font-size: var(--t-xs); }
+.button.chip { min-height: var(--tap-target-min); padding: var(--space-1) var(--space-2); font-size: var(--t-xs); }
 
 .button:disabled, .icon-button:disabled { cursor: not-allowed; opacity: .5; }
 
@@ -381,7 +381,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .field-label { display: flex; min-width: 0; align-items: baseline; justify-content: space-between; gap: var(--space-2); }
 
-.field-value { flex: none; color: var(--text); font-family: var(--mono); font-size: var(--t-xs); }
+.field-value { flex: none; color: var(--text); font-size: var(--t-xs); }
 
 .field-check { grid-template-columns: 18px minmax(0, 1fr); align-items: center; column-gap: var(--space-2); }
 
@@ -654,7 +654,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .view-heading { display: grid; max-width: 720px; gap: var(--space-2); padding-bottom: var(--space-4); border-bottom: 1px solid var(--line); }
 
-.view-heading::before { color: var(--accent); content: "AGENTIC OS / WORKSPACE"; font: 600 var(--t-xs)/1.4 var(--mono); letter-spacing: .12em; text-transform: uppercase; }
+.view-heading::before { color: var(--accent); content: "AGENTIC OS / WORKSPACE"; font: 600 var(--t-xs)/1.4 var(--ui); letter-spacing: .12em; text-transform: uppercase; }
 
 .view-heading h1 { margin: 0; color: var(--text); font-family: var(--display); font-size: clamp(32px, 5vw, 48px); letter-spacing: -.04em; line-height: 1.05; }
 
@@ -698,7 +698,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .metric-card { display: grid; min-width: 0; align-content: start; gap: var(--space-1); padding: var(--space-4); border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--raised); box-shadow: var(--shadow-card); }
 
-.metric-label { color: var(--muted); font: 600 var(--t-xs)/1.4 var(--mono); letter-spacing: .06em; text-transform: uppercase; }
+.metric-label { color: var(--muted); font: 600 var(--t-xs)/1.4 var(--ui); }
 
 .metric-value { color: var(--text); font-size: clamp(20px, 3vw, 28px); overflow-wrap: anywhere; }
 
@@ -720,7 +720,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .usage-breakdown dd, .classification-list dd, .agent-usage-details dd { min-width: 0; margin: 0; color: var(--text); overflow-wrap: anywhere; }
 
-.usage-breakdown dd, .agent-usage-details dd { font-family: var(--mono); text-align: right; }
+.usage-breakdown dd, .agent-usage-details dd { text-align: right; }
 
 .classification-list dd { text-align: left; }
 
@@ -802,7 +802,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .run-summary-head > div { min-width: 0; }
 
-.run-badge { flex: none; padding: var(--space-1) var(--space-2); border: 1px solid var(--line); border-radius: var(--radius-ctl); color: var(--muted); font: 600 var(--t-xs)/1.4 var(--mono); letter-spacing: .04em; text-transform: uppercase; }
+.run-badge { flex: none; padding: var(--space-1) var(--space-2); border: 1px solid var(--line); border-radius: var(--radius-pill); color: var(--muted); font: 600 var(--t-xs)/1.4 var(--ui); }
 
 /* One status vocabulary (ui/views/util.js#tone) for every status-bearing
  * surface below: run summary/badge/item, review command, task row, activity
@@ -883,7 +883,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .home-efficiency-warning .button { justify-self: end; }
 
-.mode-kicker { margin: 0; color: var(--accent); font-size: var(--t-xs); font-weight: 650; letter-spacing: .08em; text-transform: uppercase; }
+.mode-kicker { margin: 0; color: var(--accent); font-size: var(--t-xs); font-weight: 650; }
 
 .home-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 
@@ -900,7 +900,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 .task-row.settled, .doctor-row.settled { border-left-color: var(--ok); }
 .task-row.idle, .doctor-row.idle { border-left-color: var(--faint); }
 
-.task-row b { flex: none; color: var(--muted); font-size: var(--t-xs); font-weight: 650; letter-spacing: .04em; text-transform: uppercase; }
+.task-row b { flex: none; color: var(--muted); font-size: var(--t-xs); font-weight: 650; }
 
 .task-row.live b { color: var(--accent); }
 
