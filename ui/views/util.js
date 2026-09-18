@@ -124,7 +124,7 @@ const TONE_LIVE = new Set(['running', 'active', 'working', 'busy', 'verifying', 
   'assigning', 'summoning', 'coordinating']);
 const TONE_SETTLED = new Set(['done', 'completed', 'verified', 'merged', 'dropped', 'ready_for_review', 'ok']);
 const TONE_IDLE = new Set(['idle', 'pending', 'planning', 'paused', 'awake', 'resting', 'off']);
-const TONE_ATTENTION = new Set(['blocked', 'failed', 'rate limited', 'error', 'cancelled', 'warn']);
+const TONE_ATTENTION = new Set(['blocked', 'failed', 'rate limited', 'error', 'cancelled', 'warn', 'fail']);
 export function tone(status) {
   const value = String(status ?? '').trim().toLowerCase();
   if (TONE_ATTENTION.has(value)) return 'attention';

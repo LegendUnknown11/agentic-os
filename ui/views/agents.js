@@ -56,7 +56,6 @@ export function renderAgents(state, root) {
     const dot = statusDot(name, member.role);
     const dotTone = tone(stateLabel);
     if (dotTone) dot.classList.add(dotTone);
-    if (stateLabel === 'busy') dot.classList.add('busy');
     dot.dataset.tip = stateLabel;
     const row = h('article', { class: `agent-card ${on ? 'on-team' : ''}${pending ? ' requested' : ''}` }, h('div', { class: 'agent-heading' }, dot, h('div', {}, h('h3', { text: displayName(name, member.role) }), h('p', { class: 'muted', text: member.title ?? member.description ?? stateLabel }))), h('p', { class: 'muted', text: on ? `On team · ${stateLabel}` : pending ? 'Awaiting approval' : inBench ? 'Available to add' : `Not available in ${state.mode ?? 'this'} mode` }));
     const actions = h('div', { class: 'button-row' });

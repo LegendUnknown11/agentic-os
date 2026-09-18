@@ -1,4 +1,5 @@
 import { h, page, section, empty, note, button, get, subscribe, editing, tone } from './util.js';
+import { statusDot } from '../avatar.js';
 
 const apiError = (result, fallback) => result?.ok === false ? result.error ?? fallback : null;
 const requestToken = (state) => { state.doctorRequest = (state.doctorRequest ?? 0) + 1; return state.doctorRequest; };
@@ -17,7 +18,13 @@ export function renderDoctor(state, root) {
   else {
     if (loadFailure) body.append(note(loadFailure, 'danger'));
     else if (!checks.length) body.append(empty('No checks returned.'));
-    else checks.forEach((item) => body.append(h('div', { class: `doctor-row ${item.level} ${tone(item.level)}`.trim(), text: `${item.level === 'ok' ? '✓' : item.level === 'warn' ? '!' : '×'} ${item.message}` })));
+    else checks.forEach((item) => {
+      const dot = statusDot();
+      const dotTone = tone(item.level);
+      if (dotTone) dot.classList.add(dotTone);
+      body.append(h('div', { class: `doctor-row ${item.level} ${tone(item.level)}`.trim() }, dot,
+        h('span', { text: `${item.level === 'ok' ? '✓' : item.level === 'warn' ? '!' : '×'} ${item.message}` })));
+    });
     if (state.doctor) body.append(note(state.doctor.ready ? 'Ready.' : 'Fix the failed checks, then run Doctor again.'));
   }
   const run = button(state.doctorLoading ? 'Checking…' : 'Run checks', async () => {

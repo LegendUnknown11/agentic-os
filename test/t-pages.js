@@ -143,6 +143,9 @@ a.match(homeSource, /attention\.map\(\(\[name, member\]\) => \{[\s\S]*?tone: ton
 a.doesNotMatch(homeSource, /button\(item\.text, item\.open, 'list-row'\)/, 'urgent approvals and members must not fall back to an untoned list-row button');
 a.match(homeSource, /const cls = `task-row \$\{item\.tone \?\? ''\}`\.trim\(\);/, 'every urgent row must resolve to the shared task-row tone treatment, whether clickable or not');
 a.match(homeSource, /h\('button', \{ class: `button \$\{cls\}`,/, 'a clickable urgent row must also carry the shared button class, or it has no hover affordance and no enforced tap target');
+a.match(homeSource, /import \{ statusDot \} from '\.\.\/avatar\.js'/, 'Home rows must use the shared status-dot surface, not a bespoke indicator');
+a.match(homeSource, /h\('button', \{ class: `button \$\{cls\}`, type: 'button', on: \{ click: item\.open \} \}, dot, h\('span'/, 'an urgent row must lead with the shared status dot now that the left-rule is gone');
+a.match(homeSource, /queue\.append\(h\('div', \{ class: `task-row task-\$\{task\.shown\} \$\{tone\(task\.shown\)\}`\.trim\(\) \},\s*dot, h\('b'/, 'a queue row must lead with the shared status dot now that the left-rule is gone');
 a.match(homeSource, /nextStepFor\(\{ urgent, changesVisible, changes, goal \}\)/, 'with no active run, Home must lead with the single most urgent next step');
 a.match(homeSource, /const shell = page\('Overview', mode\.blurb\)/, 'Home must not repeat mode and repository context in its page heading');
 a.match(homeSource, /const attention =/, 'Home must separate terminal member states from active work');
@@ -151,6 +154,9 @@ a.match(homeSource, /statusLabel\(currentStatus\(name, member\)\)/, 'Home workin
 a.match(viewSources.agents, /displayStatus\(member\)/, 'Agents must share the rail status classifier');
 a.match(viewSources.agents, /const dotTone = tone\(stateLabel\)/, 'Agents status dots must use the shared tone vocabulary, not a second literal-state mapping');
 a.doesNotMatch(viewSources.agents, /\['awake', 'resting', 'busy', 'failed'\]\.includes/, 'Agents must not keep its own copy of the tone vocabulary');
+a.doesNotMatch(viewSources.agents, /classList\.add\('busy'\)/, 'a busy member already gets the live tone class, which now pulses on its own — a second busy class would be dead weight');
+a.match(viewSources.doctor, /import \{ statusDot \} from '\.\.\/avatar\.js'/, 'Doctor checks must use the shared status-dot surface, not a bespoke indicator');
+a.match(viewSources.doctor, /body\.append\(h\('div', \{ class: `doctor-row \$\{item\.level\} \$\{tone\(item\.level\)\}`\.trim\(\) \}, dot,/, 'a Doctor check row must lead with the shared status dot now that the left-rule is gone');
 a.match(homeSource, /working\.slice\(0, 8\)\.forEach\(\(\[name, member\]\) => card\.append\(button\([\s\S]*?open\(\{ page: 'thread', member: name \}\)/, 'Home working rows must open the selected agent thread');
 a.equal(visibleQueueRows(Array.from({ length: 8 }, (_, id) => ({ id }))).length, 7, 'Home queue previews seven rows');
 a.equal(visibleQueueRows(Array.from({ length: 8 }, (_, id) => ({ id })), true).length, 8, 'Home queue expansion reveals every queued row');
