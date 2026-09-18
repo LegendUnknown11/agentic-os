@@ -407,7 +407,8 @@ export class Kingdom extends EventEmitter {
 
   /** Model choices offered in the UI. Editable in kingdom.config.json. */
   models() {
-    return this.config.models ?? { claude: ['opus', 'sonnet', 'haiku', 'fable'], codex: [] };
+    return this.config.models
+      ?? { claude: ['claude-opus-5', 'claude-sonnet-5', 'claude-haiku-4-5', 'claude-fable-5-1'], codex: [] };
   }
 
   /**
