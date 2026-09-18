@@ -111,8 +111,12 @@ try {
     .findLast((m) => m.body.startsWith('The sovereign answered'));
   a.ok(reply, 'the answer must land in the asking peasant\'s own mailbox');
   a.match(reply.body, /Zustand/);
-  a.equal(reply.sender, 'designer', 'the reply must not be misattributed to the orchestrator');
+  // CROWN, not the asker: bus.pending() drops rows where sender === reader,
+  // so a self-addressed answer was stored but never delivered (#54).
+  a.equal(reply.sender, 'crown', 'the reply must come from the crown, not be self-addressed or misattributed to the orchestrator');
   a.equal(reply.recipient, 'designer');
+  a.ok(kingdom.bus.pending('designer').some((m) => m.id === reply.id),
+    'the answer must actually be delivered to the asker, not just stored');
 
   a.throws(() => kingdom.answerQuestion(approval.id, [['Zustand']]), /No pending question/,
     'answering twice must not silently succeed');
