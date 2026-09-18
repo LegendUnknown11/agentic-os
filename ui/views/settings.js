@@ -1,5 +1,5 @@
 import { h, page, section, empty, note, button, field, input, textarea, select, check, modeDef, post, subscribe, editing } from './util.js';
-import { setPrefs, themeOf } from '../store.js';
+import { setPrefs } from '../store.js';
 
 let Assets, Notify, soundOn, setSound, cue;
 let dependencies;
@@ -210,9 +210,6 @@ function efficiency(state) {
 }
 
 function appearance(state, root) {
-  const theme = select([['system', 'System'], ['light', 'Light'], ['dark', 'Dark']], themeOf(state.prefs.theme));
-  theme.setAttribute('aria-label', 'Theme');
-  theme.addEventListener('change', () => setPrefs({ theme: theme.value }));
   const current = Assets.background();
   const feedback = assetMessage(state, 'image');
   const upload = button('Upload image', () => uploadAssets(state, root, 'image', 'image/*', upload, feedback));
@@ -222,7 +219,7 @@ function appearance(state, root) {
   fileList('image').forEach((asset) => grid.append(h('button', { class: `asset-tile ${current.image === asset.name ? 'selected' : ''}`, type: 'button', style: { backgroundImage: `url("${Assets.src(asset.name)}")` }, on: { click: () => Assets.useWallpaper(asset.name) } }, h('span', { text: asset.name }))));
   const dim = input(current.dim ?? 55); dim.type = 'range'; dim.min = 0; dim.max = 90; dim.addEventListener('input', () => Assets.setBackground({ dim: Number(dim.value) }));
   const blur = input(current.blur ?? 0); blur.type = 'range'; blur.min = 0; blur.max = 24; blur.addEventListener('input', () => Assets.setBackground({ blur: Number(blur.value) }));
-  return section('Appearance', field('Theme', theme, 'Use the system setting or choose a fixed light or dark palette.'), h('div', { class: 'button-row' }, upload, reset), feedback, grid, rangeField('Dim', dim, (value) => `${value}%`), rangeField('Blur', blur, (value) => `${value}px`));
+  return section('Appearance', h('div', { class: 'button-row' }, upload, reset), feedback, grid, rangeField('Dim', dim, (value) => `${value}%`), rangeField('Blur', blur, (value) => `${value}px`));
 }
 
 function music(state, root) {
