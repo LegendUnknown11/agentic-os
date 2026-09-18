@@ -371,6 +371,7 @@ try {
     a.equal(k.bus.claimTask('coder', v).ok, true);
     k.bus.updateTask(v, { state: 'verifying' });
     const sub = k.bus.post('coder', 'orchestrator', `Task #${v} (Verify me) submitted for verification. x`, 'done');
+    k.bus.set(`submission:task:${v}`, String(sub));   // what finish_task records
     const { said: vs } = mcp([{ name: 'reassign_task', arguments: { id: v, to: 'briefer' } }], { db });
     a.match(vs[0], /being verified/, 'reassigning mid-verification must be refused');
     a.equal(k.bus.task(v).state, 'verifying', 'and the task must keep its verifying state');
