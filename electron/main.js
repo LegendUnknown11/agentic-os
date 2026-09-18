@@ -95,6 +95,7 @@ async function startDaemon(repo, logPath) {
   ], {
     detached: true,
     stdio: ['ignore', out, out],
+    windowsHide: true,
   });
   let spawnError = null;
   let childExit = null;

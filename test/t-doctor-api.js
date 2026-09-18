@@ -9,7 +9,7 @@
 //   node test/t-doctor-api.js
 import { strict as a } from 'node:assert';
 import { execFileSync, spawn } from 'node:child_process';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -109,4 +109,22 @@ process.env.KINGDOM_CODEX_BIN = STUB;
 }
 
 rmSync(dir, { recursive: true, force: true });
+
+/* ---------- 3. every probe spawn is hidden on Windows ------------------- */
+// Doctor's probes ran right after startup and fired one spawn per installed
+// CLI (agy models, then one PROBES entry each) — on Windows, a spawn without
+// windowsHide flashes a console window, so a freshly started app looked like
+// several terminals popping open unprompted. Source-checked because the
+// property lives on the spawn() options object, not on anything the child
+// process handle exposes back.
+{
+  const doctorSource = readFileSync(join(HERE, '..', 'src', 'doctor.js'), 'utf8');
+  const spawnCalls = [...doctorSource.matchAll(/spawn\(resolved\.command,[\s\S]*?\);/g)];
+  a.ok(spawnCalls.length >= 2, `expected at least 2 CLI probe spawns, found ${spawnCalls.length}`);
+  for (const [call] of spawnCalls) {
+    a.match(call, /windowsHide:\s*true/, `every doctor CLI probe spawn must set windowsHide: true — got:\n${call}`);
+  }
+  console.log('  every doctor CLI probe spawn sets windowsHide: true');
+}
+
 console.log('t-doctor-api.js OK — runDoctor() is a pure structured probe, and the daemon serves it live');

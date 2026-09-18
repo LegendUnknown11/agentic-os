@@ -84,6 +84,7 @@ a.match(settingsSource, /Attached: \$\{result\.repo \?\? value\}/, 'a successful
 a.match(settingsSource, /window\.kingdomShell\?\.openPet \? window\.kingdomShell\.openPet\(\) : window\.open/, 'the native desk-pet control must use its IPC bridge');
 a.match(courtPreloadSource, /openPet: \(\) => ipcRenderer\.send\('pet:open'\)/, 'the court preload must expose the desk-pet command');
 a.match(electronMainSource, /ipcMain\.on\('pet:open', openPet\)/, 'the native main process must reopen the desk pet');
+a.match(electronMainSource, /spawn\(node, \[[\s\S]*?windowsHide: true/, 'the daemon spawn must not flash a console window on Windows startup');
 a.match(automationsSource, /workflow-run-message/, 'a manual workflow run must leave visible feedback');
 a.match(automationsSource, /result\?\.steps/, 'workflow feedback must report the returned run trace');
 a.match(automationsSource, /automationEditor/, 'live updates must not discard an open workflow editor');
