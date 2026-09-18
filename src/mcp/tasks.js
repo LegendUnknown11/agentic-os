@@ -189,6 +189,9 @@ export const tasks = {
       const t = bus.tasks().find((x) => x.id === Number(id));
       if (!t) return `No task #${id}.`;
       if (t.state === 'done') return `Task #${id} is already done — nothing to reassign.`;
+      // Verification runs against the submitter's worktree; moving the task
+      // now would show it as fresh work while that check is still in flight (#53).
+      if (t.state === 'verifying') return `Task #${id} is being verified — wait for the controller's result before reassigning it.`;
       if (t.owner === to) return `Task #${id} is already ${to}'s.`;
       const summoned = stateArray('summoned');
       if (!summoned) return `Cannot reassign to ${to}: summoned crew is unavailable.`;

@@ -366,6 +366,15 @@ try {
       m.recipient === 'coder' && /reassigned to briefer/.test(m.body)),
     'and the old owner must be told to stop, or it keeps working a task it no longer owns');
 
+    // #53: a task awaiting controller verification must not be reset to active
+    const v = k.bus.addTask({ title: 'Verify me', by: 'orchestrator' });
+    a.equal(k.bus.claimTask('coder', v).ok, true);
+    k.bus.updateTask(v, { state: 'verifying' });
+    const { said: vs } = mcp([{ name: 'reassign_task', arguments: { id: v, to: 'briefer' } }], { db });
+    a.match(vs[0], /being verified/, 'reassigning mid-verification must be refused');
+    a.equal(k.bus.task(v).state, 'verifying', 'and the task must keep its verifying state');
+    a.equal(k.bus.task(v).owner, 'coder');
+
     console.log('  the orchestrator can move a stuck task without a dismissal round-trip');
   }
 
