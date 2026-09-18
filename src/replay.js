@@ -45,6 +45,11 @@ export function replay(msgs, opts = {}) {
 
   const queues = new Map();
   const busyUntil = new Map();
+  // Mirrors kingdom.js's `hadReal:` bus flag (see ripeness.js's `hadRealTurn`):
+  // a lone notice may only ripen on its own once this recipient has actually
+  // been delivered a real turn — otherwise a member's very first "turn" would
+  // be manufactured from housekeeping traffic nobody sent it (#40).
+  const hadReal = new Set();
   let turns = 0;
   let delivered = 0;
   // The saving is turns; the price is waiting. Accounting for both here stops
@@ -72,9 +77,10 @@ export function replay(msgs, opts = {}) {
       const allNotices = q.every((m) => m.kind === 'notice');
       const urgent = q.some((m) => m.sender === 'sovereign');
       const ripe = allNotices
-        ? t - oldest > noticeHold
+        ? hadReal.has(name) && t - oldest > noticeHold
         : (urgent || t - newest >= settle) || t - oldest > backstop;
       if (!ripe) continue;
+      if (!allNotices) hadReal.add(name);
       turns++;
       delivered += q.length;
       for (const m of q) {
@@ -197,10 +203,21 @@ if (process.argv[1]?.endsWith('replay.js') && !process.argv[2]) {
   a.ok(nowait.waitMaxMs < 1_000,
     `the sovereign must not be recorded as waiting, got ${nowait.waitMaxMs}ms`);
 
-  // With no real traffic to ride, it still lands once the hold expires — a
-  // notice is delayed, never dropped.
+  // issue #40 — a member with NO real turn behind it must never be given one
+  // by a lone notice, however long it waits: that is a turn the sovereign
+  // never asked for, answered by a member the sovereign never addressed.
   const alone = [{ ts: 0, sender: 'orchestrator', recipient: 'orchestrator', kind: 'notice' }];
-  a.equal(replay(alone, { noticeHold: 5_000 }).turns, 1, 'a notice is delayed, never dropped');
+  a.equal(replay(alone, { noticeHold: 5_000 }).turns, 0,
+    'a lone notice with no real history behind it must never manufacture a turn');
+
+  // Once a real turn HAS happened, a later lone notice still rides the
+  // original rule: delayed, never dropped.
+  const realThenAlone = [
+    { ts: 0, sender: 'sovereign', recipient: 'orchestrator', kind: 'assignment' },
+    { ts: 10_000, sender: 'orchestrator', recipient: 'orchestrator', kind: 'notice' },
+  ];
+  a.equal(replay(realThenAlone, { settle: 1_000, noticeHold: 5_000, turnMs: 1_000 }).turns, 2,
+    'once real history exists, a later lone notice still eventually lands on its own');
 
   // The backstop must release a batch even when messages keep arriving inside
   // the window forever, or a chatty pair could starve a member indefinitely.

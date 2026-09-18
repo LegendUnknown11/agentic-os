@@ -37,26 +37,83 @@ Each was read directly in the source, not inferred.
 
 ## 1. Establish one design system
 
-Invert the Cold-Call Workflow design system onto a dark ink ground. Its structure
-carries over; its palette is rebuilt for a console.
+**Superseded 2026-09-17.** The prototype-derived "paper and ink" system above is
+retired. The sovereign asked for Hiveory's (github.com/raktim-yoddha/hiveory)
+actual visual language adopted in full, not as loose inspiration — its literal
+values, read from its shipped `app.css`, not a paraphrase. This app keeps its
+own token architecture (`:root`, `-rgb` twins, no literal colour outside
+`:root` — that discipline is this app's, not Hiveory's, and survives the swap);
+only the values and a few structural rules change.
 
-- Adopt its real scales: spacing `4, 8, 16, 24, 32, 48, 64, 88`; the product
-  radius pair, 16px card and 12px control, with no pills; layered shadow as
-  hairline plus tight plus ambient; `cubic-bezier(.2,0,0,1)` as the single easing;
-  a 44px minimum tap target, enforced rather than suggested.
-- Adopt its conventions: mono, uppercase, tracked labels carry every piece of
-  metadata; status reads through colour, label, dot, and geometry with no icon
-  set; a status row takes a full hairline border **and** a 3px coloured left rule.
-- Derive the ground ladder from its `--ink`, and take `--paper` as body text.
-  Record the measured contrast beside each value, as `ui/app.css` already does.
-- Two deviations, both stated in the stylesheet rather than left implicit. No
-  webfonts: this application runs offline in Electron and a failed font fetch
-  degrades silently, so `--mono` stays a local stack and Playfair Display is
-  unused. A third status hue: a console must separate running from settled, so
-  the accent and the settled tone stay in one hue family and separate by chroma.
-- Gold identifies the orchestrator and never encodes a status.
-- Every colour needs an `-rgb` channel twin, because the sheet composes alpha as
-  `rgb(var(--x-rgb) / a)` and the suite forbids literal colours outside `:root`.
+- **Dark only.** Hiveory ships no light theme (`color-scheme: dark`, hard-set).
+  Drop this app's light/dark toggle and its `--dark-*` prefix convention; the
+  one ground becomes the token set itself. Existing `--dark-*` values are the
+  ones to keep (closest ancestry to the new palette); the light `--paper`
+  family is deleted, not backfilled.
+- **Ground ladder** (from Hiveory's `app.css`, chosen per surface depth):
+  `--bg: #111418` (shell/base), `--bg-alt: #0f141a` (code/runs surfaces),
+  `--surface: #14181d`/`#15191e`/`#181c21` (panels, picked per view — these
+  are siblings, not a strict ladder, in the source), `--raised: #181d23`.
+  Record measured contrast beside each text-on-ground pairing, same discipline
+  as before.
+- **Text**: `--text: #f5f7fa`, `--muted: #aeb8c5`, `--faint: #758192`.
+- **Lines**: `--line: #272d35` (titlebar/rail dividers), `--line-soft: #29323c`
+  (panel borders) — both hairline, both real values from the source, not
+  invented shades between them.
+- **Accent** (brand + primary interactive, one hue doing both jobs in the
+  source, so it does here too): `--accent: #2b5f96` fill, `--accent-border:
+  #4a6d98`, `--accent-hover: #3675b7`. Accent text-on-fill is `#f7fbff`.
+- **Status hues — four, genuinely distinct, not one hue split by chroma**:
+  running `#48a7ed` (blue), completed `#45c47b` (green), failed/cancelled
+  `#d46d77` (red), blocked/interrupted `#d2a05f` (amber). This replaces the old
+  "accent and settled share a hue" rule — Hiveory separates them by hue
+  outright, and adopting its system means adopting that choice too.
+- **Shape — pills are back.** The old "no pills" rule is dropped; Hiveory pills
+  every status chip, count badge, and tag (`border-radius: 99px`). Controls
+  (buttons, inputs) take 6px; cards and panels take 10px. Icon-only buttons
+  stay tighter at 4px. These are the modal values from the source's own
+  distribution, not an average.
+- **Status reads through a dot, not a left rule.** Replace the hairline-plus-
+  3px-left-rule convention with Hiveory's: a small filled circle (7px, status
+  colour) plus, only on the currently-active state, a soft glow —
+  `box-shadow: 0 0 0 4px rgb(var(--x-rgb) / .13)` — animated at a slow pulse
+  (`1.5-1.7s ease-in-out infinite`) for anything actually in progress, static
+  for settled states. The status label itself still carries colour and text;
+  the dot adds geometry, it doesn't replace the label.
+- **Labels are not mono-uppercase-tracked by default.** That was this app's
+  own prior convention, not Hiveory's — Hiveory uses its regular sans for
+  every label except small section/rail headings, which alone stay uppercase
+  and tracked (`font-size: 11px; font-weight: 700; letter-spacing: .08em;`).
+  Reserve mono for what Hiveory reserves it for: code, terminal, diff, and log
+  content, never for ordinary UI metadata.
+- **Typography stays local-stack, per the existing offline-Electron
+  constraint** — that constraint is a fact about this app's runtime, not a
+  Hiveory-vs-not-Hiveory choice, and doesn't change. Hiveory's real font is
+  "IBM Plex Sans" (with Inter, system-ui as its own fallbacks); since a
+  webfont fetch can silently fail here, take a local sans stack
+  (`-apple-system, "Segoe UI", Roboto, system-ui, sans-serif`) as the visual
+  equivalent rather than shipping the actual webfont. Mono stays whatever
+  local mono stack this app already uses; Hiveory's real choice there
+  (JetBrains Mono) is webfont-only same as Plex, same reasoning applies.
+- **Shadow and motion**: flat and hairline-bordered by default — Hiveory does
+  not layer ambient shadow on ordinary cards. Reserve elevation shadow
+  (`0 10px 26px rgb(0 0 0 / .16)`) for genuinely floating elements (a
+  composer, a popover), not cards at rest. A subtle radial gradient
+  (`radial-gradient(circle at 52% -20%, [surface-lifted] 0, [bg] 42%)`) may
+  wash large panel backgrounds, same as the source, but never text-bearing
+  content directly. Hover/press transitions run at `0.15s ease` — the old
+  single custom easing curve is dropped in favour of the source's plain
+  `ease`, since matching Hiveory means matching its actual timing function,
+  not preserving this app's prior one under a new name.
+- **Gold still identifies the orchestrator and never encodes a status** — this
+  rule is this app's own and orthogonal to Hiveory's palette (Hiveory has no
+  orchestrator-identity convention to borrow), so it survives unchanged;
+  reintroduce it against the new dark ground with fresh measured contrast.
+- **44px minimum tap target, enforced rather than suggested** — also this
+  app's own rule, not sourced from Hiveory either way; keep it.
+- Every colour still needs an `-rgb` channel twin; the suite still forbids
+  literal colour outside `:root`. This is this app's discipline, unaffected by
+  which design system supplies the values.
 
 ## 2. Give status one vocabulary
 

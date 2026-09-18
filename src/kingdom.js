@@ -1668,7 +1668,7 @@ export class Kingdom extends EventEmitter {
   }
 
   #runBlock(run, operation, next, extra = {}) {
-    if (!run || !['planning', 'running', 'verifying'].includes(run.state)) return;
+    if (!run || !['planning', 'running', 'paused', 'verifying'].includes(run.state)) return;
     const blocker = { operation, next, at: Date.now(), ...extra };
     const nextRun = { ...run, state: 'blocked', blocker,
       blockers: [...(Array.isArray(run.blockers) ? run.blockers : []), blocker] };
@@ -1686,7 +1686,12 @@ export class Kingdom extends EventEmitter {
     const next = { ...run, recoveryHistory: [...history, entry] };
     this.#saveRun(next);
     this.emit('recovery', entry);
-    return { run: next, entry, attempts: next.recoveryHistory.length };
+    // Per (name, operation), not the whole run's history: a benign, already-
+    // resolved transport-retry on one worker must not count toward another
+    // worker's unresolved-process-failure threshold — or toward its own,
+    // since a resolved retry and an unresolved failure are different kinds.
+    const attempts = next.recoveryHistory.filter((e) => e.name === name && e.operation === operation).length;
+    return { run: next, entry, attempts };
   }
 
   /** Evidence for a done submission, including the exact revision tested. */
@@ -1739,10 +1744,12 @@ export class Kingdom extends EventEmitter {
       if ((run.taskIds ?? []).map(Number).includes(Number(t.id)) && t.owner) names.add(t.owner);
     }
     for (const name of names) {
-      if (this.agents.has(name)) {
-        this.agents.get(name).stop(why);
-        this.agents.delete(name);
-      }
+      // Route through sleep(), not a raw agents.delete: it also drops the
+      // name from `summoned` (or the delivery loop respawns it on the next
+      // message addressed to it) and releases whatever it still owns back to
+      // pending (or the task board keeps reporting stale "active" work that
+      // nobody is doing).
+      if (this.agents.has(name)) this.sleep(name, why);
     }
     const stopped = { ...run, state: 'cancelled', cancelledAt: Date.now(), cancelReason: why };
     this.#saveRun(stopped);
@@ -1980,7 +1987,14 @@ export class Kingdom extends EventEmitter {
       // so wait for it to finish — but never forever. The decision itself lives
       // in ripeness.js: it is pure, and the bugs that lived here were only ever
       // findable by driving states that a real court reaches once an hour.
+      //
+      // `hadReal:${name}` persists (survives a restart) whether this member has
+      // EVER been handed a real, non-notice batch — see ripeness.js's
+      // `hadRealTurn`. A member spawned at boot with nothing but housekeeping
+      // notices in its inbox (inherited crew, orphaned tasks) must not take a
+      // turn nobody asked for just because it sat there long enough (#40).
       const agent = this.agents.get(name);
+      const allNotices = deliverable.every((m) => m.kind === 'notice');
       const { ripe } = ripeness(deliverable, {
         now,
         awake: Boolean(agent),
@@ -1989,8 +2003,10 @@ export class Kingdom extends EventEmitter {
         settleMs: settleMs(),
         backstopMs: BATCH_MAX_WAIT_MS,
         noticeHoldMs: NOTICE_HOLD_MS,
+        hadRealTurn: this.bus.get(`hadReal:${name}`) === '1',
       });
       if (!ripe) continue;
+      if (!allNotices) this.bus.set(`hadReal:${name}`, '1');
 
       // An idle-slept member is revived on demand; its session resumes.
       //
@@ -2378,10 +2394,20 @@ export class Kingdom extends EventEmitter {
     if (activeRun && typeof this.bus.updateRun === 'function') {
       const evidenceRows = Array.isArray(activeRun.verificationEvidence)
         ? activeRun.verificationEvidence : [];
-      this.bus.updateRun(activeRun.id, {
-        state: valid ? 'verifying' : 'blocked',
-        verificationEvidence: [...evidenceRows, { peasant, ...evidence }],
-      });
+      const verificationEvidence = [...evidenceRows, { peasant, ...evidence }];
+      // A run already blocked on something else — or in any state this
+      // submission cannot legally leave — must not be silently cleared back
+      // to verifying by an unrelated, later peasant's success. transitionRun's
+      // allowed-map is the one source of truth for that, not a raw write; a
+      // disallowed move still records the evidence, just without forcing
+      // state. An invalid submission's own 'blocked' transition is #runBlock's
+      // job below, which the caller already guards by run state.
+      if (valid && typeof this.bus.transitionRun === 'function') {
+        try { this.bus.transitionRun(activeRun.id, 'verifying', { verificationEvidence }); }
+        catch { this.bus.updateRun(activeRun.id, { verificationEvidence }); }
+      } else {
+        this.bus.updateRun(activeRun.id, { verificationEvidence });
+      }
     }
     const [diff, stat] = await Promise.all([
       diffOf(this.repo, peasant, this.base),
@@ -2903,8 +2929,8 @@ export class Kingdom extends EventEmitter {
   }
 
   /** Explicit stop: leaves service entirely, unlike an idle sleep. */
-  sleep(name) {
-    this.agents.get(name)?.stop();
+  sleep(name, why) {
+    this.agents.get(name)?.stop(why);
     this.agents.delete(name);
     this.summoned.delete(name);
     this.bus.set('summoned', JSON.stringify([...this.summoned]));
@@ -3272,8 +3298,11 @@ export class Kingdom extends EventEmitter {
       this.bus.post(CROWN, this.config.orchestrator.name,
         `The sovereign approved the new role "${p.name}". It is in the roster permanently.`);
     } else if (p.kind === 'merge') {
-      await this.merge(p.peasant);
+      // Consumed exactly once, before the awaited merge — not after — or a
+      // concurrent reject()/approve() on the same id can still find it while
+      // the merge is in flight and race a card whose merge already landed.
       this.approvals.delete(id);
+      await this.merge(p.peasant);
       this.bus.set(`resolved:${id}`, 'approved');
     } else if (p.kind === 'push') {
       // A push approval is consumed exactly once. Whether Git succeeds is a

@@ -138,6 +138,11 @@ a.doesNotMatch(homeSource, /home-mode-card|modeCard/, 'Overview must not carry a
 a.match(homeSource, /home-objective/, 'Home must keep the objective as an ambient card');
 a.match(homeSource, /grid\.append\(ambient\);[\s\S]*?if \(!runSummary && !urgent\.length/, 'the objective must render last, after every urgent and secondary card');
 a.match(homeSource, /const urgent = \[/, 'Home must rank approvals, failed members, and blocked tasks into one urgency list');
+a.match(homeSource, /approvals\.map\(\(a\) => \(\{[\s\S]*?tone: tone\('blocked'\),/, 'pending approvals must carry the shared attention tone, not render as a plain nav row');
+a.match(homeSource, /attention\.map\(\(\[name, member\]\) => \{[\s\S]*?tone: tone\(label\),/, 'failed or rate-limited members must carry their real status tone, not render as a plain nav row');
+a.doesNotMatch(homeSource, /button\(item\.text, item\.open, 'list-row'\)/, 'urgent approvals and members must not fall back to an untoned list-row button');
+a.match(homeSource, /const cls = `task-row \$\{item\.tone \?\? ''\}`\.trim\(\);/, 'every urgent row must resolve to the shared task-row tone treatment, whether clickable or not');
+a.match(homeSource, /h\('button', \{ class: `button \$\{cls\}`,/, 'a clickable urgent row must also carry the shared button class, or it has no hover affordance and no enforced tap target');
 a.match(homeSource, /nextStepFor\(\{ urgent, changesVisible, changes, goal \}\)/, 'with no active run, Home must lead with the single most urgent next step');
 a.match(homeSource, /const shell = page\('Overview', mode\.blurb\)/, 'Home must not repeat mode and repository context in its page heading');
 a.match(homeSource, /const attention =/, 'Home must separate terminal member states from active work');
@@ -167,6 +172,16 @@ a.match(mainSource, /event\.target\?\.closest\?\.\('\.vault-link'\)/, 'vault cit
 a.match(mainSource, /\/api\/vault\?path=\$\{encodeURIComponent\(notePath\)\}/, 'vault citations must load the selected note by path');
 a.match(mainSource, /detail\?\.ok === false/, 'vault citation failures must stay distinct from note content');
 a.match(mainSource, /if \(name !== 'notes'\) noteRequest\+\+/, 'leaving Notes must invalidate a slow vault detail request');
+// Issue #43: the advisor can flip the court from Chat into Cowork or Code on
+// its own reading of one plain message (Kingdom#queueMode, by: 'advisor'),
+// which is how a sovereign who typed a single line ends up with delegation,
+// a task list and a crew they never asked to start. The stream event carries
+// exactly who did it, so the shell must not apply it as silently as a mode
+// change the sovereign picked themself.
+a.match(mainSource, /event\.type === 'mode' && event\.by && event\.by !== 'sovereign'/,
+  'a mode change the sovereign did not choose must be handled differently from one they clicked');
+a.match(mainSource, /event\.type === 'mode' && event\.by && event\.by !== 'sovereign'[\s\S]{0,400}toast\(/,
+  'an advisor-driven mode switch must raise a visible toast — "just one prompt" silently becoming autonomous delegation is the bug in #43');
 a.match(viewSources.memory, /vault-link/, 'Memory note results must open the selected note');
 a.match(viewSources.memory, /return \(\) => \{[\s\S]*?requestToken\(state, 'memoryRequest'\)/, 'leaving Memory must invalidate an in-flight search');
 a.match(viewSources.activity, /return \(\) => \{[\s\S]*?requestToken\(state, 'activityRequest'\)/, 'leaving Activity must invalidate an in-flight search');

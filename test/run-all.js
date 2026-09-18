@@ -63,6 +63,7 @@ const suites = [
   ['/argue', join(HERE, 't-argue.js')],
   ['repo creation', join(HERE, 't-ensure-repo.js')],
   ['turn batching', join(HERE, 't-batching.js')],
+  ['a member\'s first turn is never manufactured', join(HERE, 't-first-turn.js')],
   ['obsidian vault', join(HERE, 't-vault.js')],
   ['ai turn markdown', join(HERE, 't-markdown.js')],
   ['budget + recycling', join(HERE, 't-budget.js')],
@@ -109,6 +110,7 @@ const suites = [
   ['state reducer', join(HERE, 't-store.js')],
   ['flat palette', join(HERE, 't-theme.js')],
   ['a claude that dies mid-turn', join(HERE, 't-claude-death.js')],
+  ['send() guards a claude that never spawned', join(HERE, 't-agent-guard.js')],
 ];
 
 // A suite that hangs used to hang `npm test` forever with no output — the exact

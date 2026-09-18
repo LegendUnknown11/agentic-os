@@ -18,14 +18,16 @@ const rules = css.replace(/\/\*[\s\S]*?\*\//g, '').slice(css.indexOf('* { box-si
 
 const token = (name) => new RegExp(`${name}\\s*:\\s*([^;]+);`).exec(root)?.[1].trim();
 const darkToken = (name) => new RegExp(`${name}\\s*:\\s*([^;]+);`).exec(dark)?.[1].trim();
-// Prototype.zip is the visual source of truth: paper surfaces, ink type,
-// teal actions, and terracotta attention. The app stays offline, so it keeps
-// local type stacks instead of importing the prototype's webfonts.
-a.equal(token('--paper'), '#f7f1e7');
+// Prototype.zip's Editorial (Industrial minimal) theme is the visual source
+// of truth for the neutral canvas, shape, spacing and motion. Status hues
+// (teal live/settled, red attention) stay from the prior reskin — Industrial
+// has no equivalent status colours of its own. The app stays offline, so it
+// keeps local type stacks instead of importing Editorial's webfonts.
+a.equal(token('--paper'), '#f5f5f2');
 a.equal(token('color-scheme'), 'light');
-a.equal(token('--paper-deep'), '#ebe1d2');
-a.equal(token('--white'), '#fffdf9');
-a.equal(token('--ink'), '#17332f');
+a.equal(token('--paper-deep'), '#ebebe6');
+a.equal(token('--white'), '#ffffff');
+a.equal(token('--ink'), '#161616');
 a.equal(token('--teal'), '#0d6663');
 a.equal(token('--teal-dark'), '#084a4a');
 a.equal(token('--teal-soft'), '#d8ebe5');
@@ -34,21 +36,21 @@ a.equal(token('--red-dark'), '#8d3935');
 a.equal(token('--red-soft'), '#f4ded5');
 a.equal(token('--due'), '#af4a3f');
 a.equal(token('--bg'), 'var(--paper)');
-a.equal(token('--bg-rgb'), '247 241 231');
+a.equal(token('--bg-rgb'), '245 245 242');
 a.equal(token('--surface'), 'var(--paper-deep)');
-a.equal(token('--surface-rgb'), '235 225 210');
+a.equal(token('--surface-rgb'), '235 235 230');
 a.equal(token('--raised'), 'var(--white)');
-a.equal(token('--raised-rgb'), '255 253 249');
+a.equal(token('--raised-rgb'), '255 255 255');
 a.equal(token('--text'), 'var(--ink)');
-a.equal(token('--text-rgb'), '23 51 47');
-a.equal(token('--muted'), '#5c6c66');
-a.equal(token('--muted-rgb'), '92 108 102');
-a.equal(token('--faint'), '#718078');
-a.equal(token('--faint-rgb'), '113 128 120');
-a.equal(token('--line'), '#cec7ba');
-a.equal(token('--line-rgb'), '206 199 186');
-a.equal(token('--border-strong'), '#9b9e94');
-a.equal(token('--border-strong-rgb'), '155 158 148');
+a.equal(token('--text-rgb'), '22 22 22');
+a.equal(token('--muted'), '#6b6b69');
+a.equal(token('--muted-rgb'), '107 107 105');
+a.equal(token('--faint'), '#8f8f8c');
+a.equal(token('--faint-rgb'), '143 143 140');
+a.equal(token('--line'), '#dcdcd7');
+a.equal(token('--line-rgb'), '220 220 215');
+a.equal(token('--border-strong'), '#b9b9b3');
+a.equal(token('--border-strong-rgb'), '185 185 179');
 a.equal(token('--accent'), 'var(--teal)');
 a.equal(token('--accent-rgb'), '13 102 99');
 a.equal(token('--accent-ink'), 'var(--white)');
@@ -56,12 +58,14 @@ a.equal(token('--danger'), 'var(--red-dark)');
 a.equal(token('--danger-rgb'), '141 57 53');
 a.equal(token('--ok'), 'var(--teal-dark)');
 a.equal(token('--ok-rgb'), '8 74 74');
-a.equal(token('--radius-ctl'), '12px');
-a.equal(token('--radius-card'), '16px');
-a.deepEqual([1, 2, 3, 4, 5, 6, 7, 8].map((n) => token(`--space-${n}`)), ['4px', '8px', '16px', '24px', '32px', '48px', '64px', '88px']);
+a.equal(token('--gold'), '#6b4f10');
+a.equal(token('--gold-rgb'), '107 79 16');
+a.equal(token('--radius-ctl'), '8px');
+a.equal(token('--radius-card'), '20px');
+a.deepEqual([1, 2, 3, 4, 5, 6, 7, 8].map((n) => token(`--space-${n}`)), ['4px', '8px', '12px', '16px', '24px', '32px', '48px', '64px']);
 a.equal(token('--tap-target-min'), '44px');
-a.equal(token('--ease'), 'cubic-bezier(.2, 0, 0, 1)');
-a.match(css, /--display:\s*Georgia/, 'headings must use an offline editorial serif stack');
+a.equal(token('--ease'), 'cubic-bezier(.16, 1, .3, 1)');
+a.match(css, /--display:\s*-apple-system/, 'headings must use the offline editorial system-sans stack');
 a.match(index, /<meta name="color-scheme" content="light dark">/, 'the document chrome must advertise both theme surfaces');
 a.match(index, /<script src="\.\/theme-bootstrap\.js"><\/script>\s*<link rel="stylesheet"/, 'the saved theme must load before the stylesheet paints');
 a.match(bootstrap, /localStorage\.getItem\('kd\.prefs'\)/, 'the saved theme must come from the existing preference store');
@@ -70,15 +74,18 @@ a.doesNotMatch(index, /<script>(?!\s*<\/script>)/, 'the theme bootstrap must obe
 a.match(css, /:root\[data-theme="dark"\]/, 'the stylesheet must provide an explicit dark palette');
 a.match(css, /@media \(prefers-color-scheme: dark\)[\s\S]*?:root:not\(\[data-theme\]\)/, 'system theme must follow the operating-system preference');
 for (const [name, value] of Object.entries({
-  '--dark-bg': '#102421', '--dark-surface': '#17332f', '--dark-raised': '#1f403a',
-  '--dark-text': '#f7f1e7', '--dark-muted': '#b8c4bd', '--dark-faint': '#95a89f',
-  '--dark-line': '#425f58', '--dark-border': '#6f8a82', '--dark-accent': '#4fb6aa',
-  '--dark-accent-ink': '#102421', '--dark-danger': '#f19a8b', '--dark-ok': '#79c6b5',
+  '--dark-bg': '#141414', '--dark-surface': '#1c1c1b', '--dark-raised': '#242423',
+  '--dark-text': '#f0f0ec', '--dark-muted': '#b4b4b0', '--dark-faint': '#8a8a86',
+  '--dark-line': '#3a3a38', '--dark-border': '#55554f', '--dark-accent': '#4fb6aa',
+  '--dark-accent-ink': '#141414', '--dark-danger': '#f19a8b', '--dark-ok': '#79c6b5',
+  '--dark-gold': '#d9b25c',
 })) a.equal(token(name), value);
 a.equal(darkToken('--bg'), 'var(--dark-bg)');
 a.equal(darkToken('color-scheme'), 'dark');
+a.equal(darkToken('--gold'), 'var(--dark-gold)');
+a.equal(darkToken('--gold-rgb'), 'var(--dark-gold-rgb)');
 a.doesNotMatch(css, /linear-gradient|radial-gradient/, 'the app foundation must not depend on gradients');
-a.match(css, /\.mode-switcher\s*\{[^}]*border-radius:\s*999px/, 'work modes must read as one segmented control');
+a.match(css, /\.mode-switcher\s*\{[^}]*border-radius:\s*var\(--radius-pill\)/, 'work modes must read as one segmented control');
 a.match(css, /\.mode-option\.selected\s*\{[^}]*background:\s*var\(--accent\)/, 'the active work mode needs one clear teal state');
 a.match(css, /\.view-heading::before\s*\{[^}]*content:\s*"AGENTOS \/ WORKSPACE"/, 'pages need one editorial eyebrow from the shared heading primitive');
 a.match(css, /\.thread-header\s*\{[^}]*background:\s*var\(--surface\)/, 'threads need the same paper panel primitive as dashboard pages');
@@ -105,7 +112,8 @@ a.match(css, /\.sidebar-mode/, 'the sidebar needs the same mode choices');
 a.match(sidebar, /options\.modes/, 'the sidebar renders the shared mode choices');
 a.match(sidebar, /dataset\.action = 'mode'/, 'sidebar mode choices use the shared action path');
 a.match(thread, /`thread-heading\$\{sovereign \? ' sovereign' : ''\}`/, 'the open thread must mark whether it is the orchestrator, once, at render time');
-a.match(css, /\.thread-heading\.sovereign h1\s*\{[^}]*var\(--accent\)/, 'the orchestrator must use the shared teal accent');
+a.match(css, /\.thread-heading\.sovereign h1\s*\{[^}]*var\(--gold\)/, 'the orchestrator must use the dedicated gold identity token, never a status colour');
+a.doesNotMatch(css, /\.thread-heading\.sovereign h1\s*\{[^}]*var\(--accent\)/, 'the orchestrator heading must not reuse the live-status accent');
 a.doesNotMatch(css, /#d8ac54|--crown/, 'the old gold role color must not survive the prototype reskin');
 a.match(util, /class: `button \$\{cls\}`/, 'page controls inherit the shared button treatment');
 a.match(util, /role: 'progressbar'[\s\S]*?'aria-valuenow'/, 'visual meters must expose their value without relying on geometry or colour');
@@ -167,6 +175,7 @@ a.match(css, /\.wfgraph/, 'the surviving workflow editor needs a visible editing
 a.match(css, /\.wfport\[aria-pressed="true"\]\s*\{[^}]*box-shadow:/, 'keyboard-selected graph ports need a visible pending cue');
 a.match(css, /\.usage-lead\s*\{[^}]*grid-template-columns:\s*repeat\(4, minmax\(0, 1fr\)\);/, 'Usage must lead with four cost-decision metrics');
 a.match(css, /\.agent-usage-grid\s*\{[^}]*repeat\(auto-fit, minmax\(min\(100%, 280px\), 1fr\)\)/, 'per-agent records must wrap without a wide table');
+a.match(css, /\.usage-breakdown\.compact\s*\{[^}]*gap:\s*var\(--space-1\)/, 'the auxiliary breakdown\'s denser row count needs a tighter rhythm than the other breakdown lists, not the unstyled modifier it had before');
 a.match(css, /\.agent-usage-details\s*\{[^}]*grid-template-columns:/, 'per-agent definition lists need a readable desktop relationship');
 a.match(css, /\.agent-usage-card h3, \.agent-usage-card p\s*\{[^}]*overflow-wrap:\s*anywhere;/, 'long agent and model names must wrap instead of clipping');
 a.match(css, /\.usage-recommendation\s*\{[^}]*border:\s*1px solid var\(--line\);[^}]*border-left:\s*3px solid var\(--danger\)/, 'Usage advice must use the shared attention-row geometry');
