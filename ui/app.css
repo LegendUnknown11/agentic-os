@@ -322,16 +322,16 @@ body.sidebar-collapsed .app-identity { display: grid; }
  * distinction between them is still in the row's text label, not a second
  * colour encoding of the same fact. Each tone gets its own dedicated hue
  * (--tone-*), distinct from --accent (brand/interactive) and --faint
- * (secondary text) even where a value happens to look similar. */
-.status-dot.live { background: var(--tone-live); }
+ * (secondary text) even where a value happens to look similar. Live pulses
+ * everywhere it appears — mid-turn avatars and now the row-level dots below
+ * are both "actively in progress", not two different concepts. */
+.status-dot.live { background: var(--tone-live); box-shadow: 0 0 0 4px rgb(var(--tone-live-rgb) / .13); animation: busy 1.6s ease-in-out infinite alternate; }
 
 .status-dot.attention { background: var(--danger); }
 
 .status-dot.settled { background: var(--ok); }
 
 .status-dot.idle { background: var(--tone-idle); }
-
-.status-dot.busy { box-shadow: 0 0 0 4px rgb(var(--tone-live-rgb) / .13); animation: busy 1.6s ease-in-out infinite alternate; }
 
 .sidebar-heading { display: flex; align-items: center; gap: var(--space-2); margin: 0; padding: 0 var(--space-2); color: var(--faint); font-size: var(--t-xs); letter-spacing: .08em; text-transform: uppercase; }
 
@@ -829,15 +829,13 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .run-grid .view-section { min-width: 0; padding: var(--space-3); }
 
-.run-item { display: flex; min-width: 0; align-items: baseline; justify-content: space-between; gap: var(--space-2); padding: var(--space-2) 0 var(--space-2) var(--space-2); border-bottom: 1px solid var(--line); border-left: 3px solid transparent; color: var(--muted); }
+.run-item { display: flex; min-width: 0; align-items: baseline; justify-content: space-between; gap: var(--space-2); padding: var(--space-2) 0 var(--space-2) var(--space-2); border-bottom: 1px solid var(--line); color: var(--muted); }
 
 .run-item span { min-width: 0; overflow-wrap: anywhere; }
 
-.run-item b { flex: none; color: var(--faint); font-size: var(--t-xs); font-weight: 600; }
+.run-item-label { display: flex; min-width: 0; align-items: center; gap: var(--space-2); }
 
-.run-item.live { border-left-color: var(--accent); }
-.run-item.attention { border-left-color: var(--danger); }
-.run-item.settled { border-left-color: var(--ok); }
+.run-item b { flex: none; color: var(--faint); font-size: var(--t-xs); font-weight: 600; }
 
 .run-item.live b { color: var(--accent); }
 .run-item.attention b { color: var(--danger); }
@@ -891,14 +889,11 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .list-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
 
-.task-row, .doctor-row, .quota { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); padding: var(--space-3); border: 1px solid var(--line); border-left: 3px solid transparent; border-radius: var(--radius-ctl); background: var(--raised); box-shadow: var(--shadow-small); }
+.task-row, .doctor-row, .quota { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-ctl); background: var(--raised); box-shadow: var(--shadow-small); }
 
 .task-row + .task-row, .doctor-row + .doctor-row, .quota + .quota { margin-top: var(--space-2); }
 
-.task-row.live, .doctor-row.live { border-left-color: var(--accent); }
-.task-row.attention, .doctor-row.attention { border-left-color: var(--danger); }
-.task-row.settled, .doctor-row.settled { border-left-color: var(--ok); }
-.task-row.idle, .doctor-row.idle { border-left-color: var(--faint); }
+.doctor-row > span { flex: 1; overflow-wrap: anywhere; }
 
 .task-row b { flex: none; color: var(--muted); font-size: var(--t-xs); font-weight: 650; }
 

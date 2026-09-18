@@ -1,5 +1,6 @@
 import { h, page, section, empty, button, membersOf, displayName, modeDef, setView, subscribe, tone, spendText } from './util.js';
 import { statusLabel } from '../status.js';
+import { statusDot } from '../avatar.js';
 import { renderRunOverview } from '../run.js';
 import { cancelMetrics, loadMetrics, warningFor } from './usage.js';
 
@@ -129,12 +130,14 @@ export function render(state, root, actions = {}, queueExpanded = false) {
     const needs = h('div', { class: 'home-card' }, h('h2', { text: `Needs you · ${urgent.length}` }));
     for (const item of urgent) {
       const cls = `task-row ${item.tone ?? ''}`.trim();
+      const dot = statusDot();
+      if (item.tone) dot.classList.add(item.tone);
       // The clickable branch also carries `button`, or it is the only
       // interactive control in the app with no hover affordance and no
       // enforced tap target — .task-row alone declares neither.
       needs.append(item.open
-        ? h('button', { class: `button ${cls}`, type: 'button', on: { click: item.open } }, h('span', { text: item.text }))
-        : h('div', { class: cls }, h('span', { text: item.text })));
+        ? h('button', { class: `button ${cls}`, type: 'button', on: { click: item.open } }, dot, h('span', { text: item.text }))
+        : h('div', { class: cls }, dot, h('span', { text: item.text })));
     }
     grid.append(needs);
   }
@@ -155,8 +158,11 @@ export function render(state, root, actions = {}, queueExpanded = false) {
   if (queueVisible) {
     const queue = h('div', { class: 'home-card' }, h('h2', { text: `Queue · ${queueRows.length}` }));
     for (const task of visibleQueueRows(queueRows, queueExpanded)) {
+      const dot = statusDot();
+      const dotTone = tone(task.shown);
+      if (dotTone) dot.classList.add(dotTone);
       queue.append(h('div', { class: `task-row task-${task.shown} ${tone(task.shown)}`.trim() },
-        h('b', { text: `#${task.id} · ${task.shown}` }), h('span', {},
+        dot, h('b', { text: `#${task.id} · ${task.shown}` }), h('span', {},
           h('span', { text: task.title ?? task.detail ?? `Task #${task.id}` }),
           h('small', { class: 'muted', text: taskMeta(task) }))));
     }

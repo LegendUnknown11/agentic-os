@@ -1,4 +1,5 @@
 import { h, section, button, note, date, tone } from './views/util.js';
+import { statusDot } from './avatar.js';
 
 const array = (value, keys = []) => {
   if (Array.isArray(value)) return value;
@@ -49,8 +50,11 @@ function itemRows(items, emptyText = 'Nothing recorded yet.') {
   if (!items.length) return [h('p', { class: 'empty', text: emptyText })];
   return items.map((item) => {
     const status = itemStatus(item) || 'pending';
+    const dot = statusDot();
+    const dotTone = tone(status);
+    if (dotTone) dot.classList.add(dotTone);
     return h('div', { class: `run-item ${statusClass(status)} ${tone(status)}`.trim() },
-      h('span', { text: itemLabel(item) }),
+      h('span', { class: 'run-item-label' }, dot, h('span', { text: itemLabel(item) })),
       h('b', { text: runStatusLabel(status) }));
   });
 }

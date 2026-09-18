@@ -141,6 +141,21 @@ a.match(run, /run-item \$\{statusClass\(status\)\} \$\{tone\(status\)\}/, 'run d
 a.match(run, /run-badge \$\{tone\(status\)\}/, 'the run badge must carry the shared tone class');
 a.match(css, /\.doctor-row\.settled\s*\{[^}]*color:\s*var\(--ok\)/, 'passing checks need a positive cue');
 a.match(css, /\.doctor-row\.attention\s*\{[^}]*color:\s*var\(--danger\)/, 'warnings and failures share one attention cue, not two different colours');
+
+// Issue #39/#48: "status reads through a dot, not a left rule" — applied to
+// the genuinely row-shaped families (task/doctor/quota, run deliverables).
+// The card-shaped families (.activity-row, .review-command, pinned above and
+// below) deliberately keep their left-rule geometry — they aren't rows.
+a.doesNotMatch(css, /\.task-row, \.doctor-row, \.quota \{[^}]*border-left/, 'task/doctor/quota rows must not keep the left-rule geometry the dot replaces');
+a.doesNotMatch(css, /\.task-row\.live, \.doctor-row\.live|\.task-row\.idle, \.doctor-row\.idle/, 'the retired border-left-color tone variants must not survive the dot conversion');
+a.doesNotMatch(css, /\.run-item \{[^}]*border-left/, 'run deliverables must not keep the left-rule geometry the dot replaces');
+a.doesNotMatch(css, /\.run-item\.live \{|\.run-item\.attention \{|\.run-item\.settled \{/, 'the retired run-item border-left-color variants must not survive the dot conversion');
+a.match(css, /\.run-item-label\s*\{[^}]*display:\s*flex;[^}]*align-items:\s*center;[^}]*gap:/, 'a run item\'s dot must sit in its own aligned group so space-between still separates label from status');
+a.match(css, /\.doctor-row > span\s*\{[^}]*flex:\s*1;/, 'a doctor check\'s message must fill the row now that a dot leads it');
+a.match(run, /import \{ statusDot \} from '\.\/avatar\.js'/, 'run deliverables must use the shared status-dot surface, not a bespoke indicator');
+a.match(run, /h\('span', \{ class: 'run-item-label' \}, dot, h\('span'/, 'a run item must lead with the shared status dot');
+a.match(css, /\.status-dot\.live\s*\{[^}]*box-shadow:\s*0 0 0 4px rgb\(var\(--tone-live-rgb\) \/ \.13\);[^}]*animation:\s*busy 1\.6s/, 'the live tone must pulse everywhere it appears, not only on a separately-flagged busy dot');
+a.doesNotMatch(css, /\.status-dot\.busy/, 'busy is a case of the live tone now, not a second animated class the dot needs');
 a.doesNotMatch(css, /\.home-mode-card|\.home-lead/, 'Overview must not carry its own mode display — mode has exactly one home, the header and drawer control');
 a.match(css, /\.home-objective\s*\{[^}]*grid-column:\s*1 \/ -1;/, 'the Home objective must lead the grid full width now that it stands alone');
 a.match(css, /\.home-attention\s*\{[^}]*border-color:\s*rgb\(var\(--danger-rgb\)/, 'Home attention states need a local danger treatment');
