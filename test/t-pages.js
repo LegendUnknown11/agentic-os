@@ -171,7 +171,7 @@ a.match(viewSources.memory, /vault-link/, 'Memory note results must open the sel
 a.match(viewSources.memory, /return \(\) => \{[\s\S]*?requestToken\(state, 'memoryRequest'\)/, 'leaving Memory must invalidate an in-flight search');
 a.match(viewSources.activity, /return \(\) => \{[\s\S]*?requestToken\(state, 'activityRequest'\)/, 'leaving Activity must invalidate an in-flight search');
 a.match(viewSources.notes, /return \(\) => \{[\s\S]*?requestToken\(state, 'notesRequest'\)/, 'leaving Notes must invalidate an in-flight request');
-a.match(indexSource, /<title>AgentOS<\/title>/, 'the document title must match the visible AgentOS identity');
+a.match(indexSource, /<title>Agentic OS<\/title>/, 'the document title must match the product name, Agentic OS');
 a.match(indexSource, /<noscript>/, 'the shell must explain its connection requirement when scripts are disabled');
 a.match(indexSource, /JavaScript/, 'the no-script fallback must name the missing capability');
 a.doesNotMatch(indexSource, /<section id="view"[^>]*aria-live=/, 'the rerendered view must not announce its entire page on every stream event');
