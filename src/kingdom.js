@@ -3382,7 +3382,9 @@ export class Kingdom extends EventEmitter {
     this.bus.set(`resolved:${id}`, 'answered');
     const text = p.questions.map((q, i) =>
       `${q.question}\n${(answers[i] ?? []).join(', ') || '(no answer)'}`).join('\n\n');
-    this.bus.post(p.from, p.from, `The sovereign answered:\n\n${text}`);
+    // CROWN, not p.from: bus.pending() drops rows where sender === reader, so
+    // posting as the asker swallowed the answer before delivery (#54).
+    this.bus.post(CROWN, p.from, `The sovereign answered:\n\n${text}`);
     this.emit('resolved', { id, approved: true });
   }
 

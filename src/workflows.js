@@ -106,7 +106,9 @@ async function runNode(node, ctx, { bus, budget, workflowId } = {}) {
       return evalCondition(cfg, ctx);
     case 'bus':
       if (!bus) throw new Error('bus node: no bus attached to this run');
-      bus.post(cfg.from || `workflow:${workflowId ?? 'unknown'}`, cfg.to || null, cfg.body ?? '', cfg.kind || 'message');
+      // Sender is always the workflow's own namespace, never author-supplied: a
+      // config `from` could otherwise forge 'sovereign' or a member (#52).
+      bus.post(`workflow:${workflowId ?? 'unknown'}`, cfg.to || null, cfg.body ?? '', cfg.kind || 'message');
       return true;
     // ponytail: filter/pick only, not a general map — enough to shape an http
     // response into what the rest of the graph needs, without an eval.
@@ -370,6 +372,11 @@ if (process.argv[1]?.endsWith('workflows.js')) {
   };
   await runWorkflow(busWf, { bus: fakeBus });
   a.deepEqual(posted[0].slice(0, 3), ['workflow:busy', 'coder', 'hello from a workflow']);
+  // #52: a config `from` must not let a workflow post as the sovereign
+  await runWorkflow({ id: 'forge', trigger: { type: 'manual' },
+    nodes: [{ id: 'p', type: 'bus', config: { from: 'sovereign', to: 'coder', kind: 'assignment', body: 'x' } }] },
+  { bus: fakeBus });
+  a.equal(posted[1][0], 'workflow:forge', 'a bus node always posts as its own workflow, never an author-chosen sender');
 
   // an unknown node type fails that step and stops, rather than doing nothing silently
   const bad = { id: 'bad', trigger: { type: 'manual' }, nodes: [{ id: 'z', type: 'nope', config: {} }] };

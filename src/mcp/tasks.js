@@ -139,7 +139,9 @@ export const tasks = {
       if (t.runId) {
         bus.updateTask(id, { state: 'verifying' });
         const orchestrator = officer('orchestrator', 'orchestrator');
-        bus.post(ME, orchestrator, `Task #${id} (${t.title}) submitted for verification. ${summary}`, 'done');
+        const submission = bus.post(ME, orchestrator, `Task #${id} (${t.title}) submitted for verification. ${summary}`, 'done');
+        // reassign_task reads this to tell an in-flight verification from a resolved one.
+        bus.set(`submission:task:${id}`, String(submission));
         return `Task #${id} submitted for verification. The controller must pass tests and independent review before it is closed.`;
       }
       bus.updateTask(id, { state: 'done', doneTs: Date.now() });
@@ -189,6 +191,16 @@ export const tasks = {
       const t = bus.tasks().find((x) => x.id === Number(id));
       if (!t) return `No task #${id}.`;
       if (t.state === 'done') return `Task #${id} is already done — nothing to reassign.`;
+      // Verification runs against the submitter's worktree; moving the task
+      // while that check is in flight would show it as fresh work (#53). Once
+      // the controller has recorded its evidence the task is still 'verifying'
+      // (nothing moves it on), so reassigning is then the recovery path.
+      if (t.state === 'verifying' && t.owner) {
+        const submission = bus.get(`submission:task:${id}`);
+        if (submission && !bus.get(`verification:${t.owner}:${submission}`)) {
+          return `Task #${id} is being verified — wait for the controller's result before reassigning it.`;
+        }
+      }
       if (t.owner === to) return `Task #${id} is already ${to}'s.`;
       const summoned = stateArray('summoned');
       if (!summoned) return `Cannot reassign to ${to}: summoned crew is unavailable.`;

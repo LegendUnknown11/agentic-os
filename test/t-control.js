@@ -366,6 +366,22 @@ try {
       m.recipient === 'coder' && /reassigned to briefer/.test(m.body)),
     'and the old owner must be told to stop, or it keeps working a task it no longer owns');
 
+    // #53: a task awaiting controller verification must not be reset to active
+    const v = k.bus.addTask({ title: 'Verify me', by: 'orchestrator' });
+    a.equal(k.bus.claimTask('coder', v).ok, true);
+    k.bus.updateTask(v, { state: 'verifying' });
+    const sub = k.bus.post('coder', 'orchestrator', `Task #${v} (Verify me) submitted for verification. x`, 'done');
+    k.bus.set(`submission:task:${v}`, String(sub));   // what finish_task records
+    const { said: vs } = mcp([{ name: 'reassign_task', arguments: { id: v, to: 'briefer' } }], { db });
+    a.match(vs[0], /being verified/, 'reassigning mid-verification must be refused');
+    a.equal(k.bus.task(v).state, 'verifying', 'and the task must keep its verifying state');
+    a.equal(k.bus.task(v).owner, 'coder');
+    // Once the controller records evidence the task stays 'verifying' forever,
+    // so reassigning must work again or the task is stranded.
+    k.bus.set(`verification:coder:${sub}`, JSON.stringify({ valid: false }));
+    const { said: vs2 } = mcp([{ name: 'reassign_task', arguments: { id: v, to: 'briefer' } }], { db });
+    a.match(vs2[0], /Reassigned/, 'a resolved verification must not strand the task');
+
     console.log('  the orchestrator can move a stuck task without a dismissal round-trip');
   }
 
