@@ -45,6 +45,7 @@ export const PRICES = {
   'claude/sonnet':        [2.00, 0.20, 10.00],
   'claude/haiku':         [1.00, 0.10,  5.00],
   'claude/claude-fable-5':      [10.00, 1.00, 50.00],
+  'claude/claude-fable-5-1':    [10.00, 1.00, 50.00],
   'claude/claude-opus-5':       [5.00, 0.50, 25.00],
   'claude/claude-sonnet-5':     [2.00, 0.20, 10.00],
   'claude/claude-haiku-4-5':    [1.00, 0.10,  5.00],
@@ -120,6 +121,11 @@ if (process.argv[1]?.endsWith('price.js')) {
   // claude's cache_creation is billed at 1.25x input.
   near(costOf({ in: 1e6, cached: 0, written: 1e6, out: 0 }, 'claude', 'sonnet'),
     2.00 * 1.25, 'cache writes cost 1.25x the input rate');
+
+  // The model selector now offers full ids (kingdom.config.json), so the
+  // current Fable generation must be priced under its real id, not just its
+  // predecessor's — an unpriced current model would silently stop billing.
+  a.ok(rateOf('claude', 'claude-fable-5-1'), 'claude-fable-5-1 (the current Fable generation) must have a published price');
 
   // An unpriced model must refuse to answer rather than invent a number.
   a.equal(costOf({ in: 1e6 }, 'codex', 'gpt-9-unreleased'), null,

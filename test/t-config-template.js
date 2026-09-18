@@ -33,6 +33,21 @@ const cfg = JSON.parse(readFileSync(join(ROOT, 'kingdom.config.json'), 'utf8'));
   console.log('  template carries no personal path, no pinned allowlist, no live goal');
 }
 
+/* ---------- the claude model list names real, current model ids --------- */
+// The model selector rendered whatever this array held verbatim
+// (`${cli} · ${model}` in ui/views/agents.js), so a bare alias like "opus"
+// showed as "opus" with no version at all — issue #45: "it just says Opus
+// Sonnet, not the model number at all". Every entry must be a real,
+// versioned id, not a short alias the UI cannot distinguish from a stale one.
+{
+  a.ok(cfg.models?.claude?.length > 0, 'the template must offer at least one claude model');
+  for (const model of cfg.models.claude) {
+    a.match(model, /^claude-/, `"${model}" must be a full model id (e.g. claude-opus-5), not a bare alias — `
+      + 'the model selector shows this value verbatim with no separate version label');
+  }
+  console.log('  the claude model list names full, versioned model ids');
+}
+
 /* ---------- package.json ships what src/skills.js and #seedRoles() read -- */
 {
   const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
@@ -49,6 +64,19 @@ const cfg = JSON.parse(readFileSync(join(ROOT, 'kingdom.config.json'), 'utf8'));
   const skillFiles = readdirSync(join(ROOT, 'skills')).filter((f) => f.endsWith('.md'));
   a.ok(skillFiles.length > 0, 'skills/ must exist and hold at least one skill for build.files to package');
   console.log(`  build.files packages skills/ (${skillFiles.length} files) and roles.json`);
+}
+
+/* ---------- kingdom.js's own fallback default matches the template ------- */
+// Kingdom#models() falls back to a hardcoded default only when a config
+// carries no `models` key at all (e.g. one built by hand in a test, or an
+// older workspace's config predating this key). That default must not
+// regress to the same bare-alias bug the template was just fixed for.
+{
+  const kingdomSource = readFileSync(join(ROOT, 'src', 'kingdom.js'), 'utf8');
+  a.match(kingdomSource,
+    /claude: \['claude-opus-5', 'claude-sonnet-5', 'claude-haiku-4-5', 'claude-fable-5-1'\]/,
+    'Kingdom#models()\'s hardcoded fallback must also name full, versioned model ids');
+  console.log('  Kingdom#models()\'s fallback default matches the template\'s versioned ids');
 }
 
 console.log('t-config-template.js OK — the shipped template is clean, and the packaged app carries its own skills');
