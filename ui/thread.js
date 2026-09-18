@@ -65,7 +65,7 @@ function workContext(state, conversationId) {
   else if (conversationId) facts.push(conversationId);
   if (repo) facts.push(repo);
   if (goal) facts.push(`Goal: ${goal.slice(0, 96)}${goal.length > 96 ? '…' : ''}`);
-  if (members.length) facts.push(`${awake}/${members.length} awake`);
+  if (members.length) facts.push(`Team ${awake}/${members.length} awake`);
   if (tasks.length) facts.push(`${tasks.length} open task${tasks.length === 1 ? '' : 's'}`);
   if (changes.length) facts.push(`${changes.length} change${changes.length === 1 ? '' : 's'} to review`);
   return facts.join(' · ') || 'No team or work context yet';
