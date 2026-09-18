@@ -574,7 +574,7 @@ const READS = {
 
   // ---- the shared task list --------------------------------------------
   // The one question the panels could not answer: what is still outstanding.
-  // Approvals show what the sovereign must decide and the chronicle shows what
+  // Approvals show what the sovereign must decide and the log shows what
   // was said, but an assignment nobody acted on appeared in neither.
   '/api/tasks': async (url, req) => {
     const runId = url.searchParams.get('runId') ?? url.searchParams.get('run_id');
@@ -610,11 +610,11 @@ const READS = {
     }];
   },
 
-  // ---- the chronicle: everything that happened, in order ---------------
+  // ---- the log: everything that happened, in order ----------------------
   // The bus panel shows messages; a member's panel shows one transcript. There
   // was no view of the court as a whole over time, and no way to find which of
   // sixteen members said a thing. This is both.
-  '/api/chronicle': async (url, req) => {
+  '/api/log': async (url, req) => {
     const q = (url.searchParams.get('q') ?? '').trim().toLowerCase();
     const requestedLimit = Number(url.searchParams.get('limit') ?? 200);
     const limit = Number.isSafeInteger(requestedLimit) ? Math.min(500, Math.max(1, requestedLimit)) : 200;
@@ -672,7 +672,7 @@ const READS = {
       query: q,
       campaign,
       total: hits.length,
-      // Bodies can be enormous; the chronicle is for scanning, and the member's
+      // Bodies can be enormous; the log is for scanning, and the member's
       // own panel is where you go for the whole thing.
       rows: hits.slice(0, limit).map((r) => ({
         ...r,
