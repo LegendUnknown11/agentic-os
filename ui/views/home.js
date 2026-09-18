@@ -5,8 +5,8 @@ import { cancelMetrics, loadMetrics, warningFor } from './usage.js';
 
 const open = (view) => () => setView(view);
 const MODE_COPY = {
-  chat: { label: 'Chat', blurb: 'Start a direct conversation with AgentOS.', action: 'Talk directly with the orchestrator.', cta: 'Start a direct chat' },
-  cowork: { label: 'Cowork', blurb: 'Delegate multi-step workspace work to your team.', action: 'Describe the outcome and let AgentOS plan the work.', cta: 'Delegate workspace work' },
+  chat: { label: 'Chat', blurb: 'Start a direct conversation with Agentic OS.', action: 'Talk directly with the orchestrator.', cta: 'Start a direct chat' },
+  cowork: { label: 'Cowork', blurb: 'Delegate multi-step workspace work to your team.', action: 'Describe the outcome and let Agentic OS plan the work.', cta: 'Delegate workspace work' },
   code: { label: 'Code', blurb: 'Change a repository with tests and review.', action: 'Work in isolation, then review what is ready to merge.', cta: 'Plan a repo change' },
 };
 
@@ -64,7 +64,7 @@ export function render(state, root, actions = {}, queueExpanded = false) {
     const message = state.conn === 'down'
       ? 'The local service is offline. Reconnecting…'
       : 'Loading the team, conversations, and current work…';
-    const shell = page('AgentOS', 'Your local team workspace.');
+    const shell = page('Agentic OS', 'Your local team workspace.');
     shell.append(section('Connection', empty(message)));
     root.append(shell);
     return;

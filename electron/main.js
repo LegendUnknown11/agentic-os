@@ -146,7 +146,7 @@ function openWindow() {
     width: 1500,
     height: 950,
     backgroundColor: '#0a0c0f',
-    title: 'Kingdom',
+    title: 'Agentic OS',
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,

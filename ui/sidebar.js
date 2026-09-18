@@ -89,7 +89,7 @@ export function mountSidebar(root, options = {}) {
   root.textContent = '';
 
   const header = node('div', 'sidebar-header');
-  const brand = node('div', 'sidebar-brand', 'AgentOS');
+  const brand = node('div', 'sidebar-brand', 'Agentic OS');
   const add = node('button', 'sidebar-new', '+ New');
   add.type = 'button';
   add.dataset.action = 'new';
