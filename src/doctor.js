@@ -172,7 +172,7 @@ export async function runDoctor({ repo } = {}) {
       // stdin, and cap it. A probe that can hang is worse than no probe.
       const out = await new Promise((res) => {
         const p = spawn(resolved.command, [...resolved.prefixArgs, 'models'],
-          { stdio: ['ignore', 'pipe', 'pipe'] });
+          { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
         let buf = '';
         p.stdout.on('data', (d) => (buf += d));
         p.stderr.on('data', (d) => (buf += d));
@@ -228,7 +228,7 @@ export async function runDoctor({ repo } = {}) {
     }
 
     const out = await new Promise((res) => {
-      const p = spawn(resolved.command, [...resolved.prefixArgs, ...args], { stdio: ['ignore', 'pipe', 'pipe'] });
+      const p = spawn(resolved.command, [...resolved.prefixArgs, ...args], { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
       let buf = '';
       p.stdout.on('data', (d) => (buf += d));
       p.stderr.on('data', (d) => (buf += d));
