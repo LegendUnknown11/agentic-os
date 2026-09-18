@@ -109,6 +109,18 @@ const stop = mountThread(root, { state, composer, post: async (action) => {
   return { ok: true };
 }, toast: (message, error) => { state.lastToast = { message, error }; } });
 
+// Rendering-level coverage for workContext()'s header fact — a raw "N/M"
+// fraction named nothing was cryptic (issue #39/#48). Neither fixture member
+// above is awake, so this must read "Team 0/2 awake", not a bare "0/2".
+const findByClass = (node, cls) => {
+  if (node.className === cls) return node;
+  for (const child of node.children ?? []) { const found = findByClass(child, cls); if (found) return found; }
+  return null;
+};
+const subtitle = findByClass(root, 'thread-subtitle');
+a.ok(subtitle, 'the thread header must render a work-context subtitle');
+a.match(subtitle.textContent, /Team 0\/2 awake/, 'the header awake-count fact must name what it counts, not read as a bare fraction');
+
 let field = composer.querySelector('.thread-input');
 field.value = 'draft A';
 field.focus();
