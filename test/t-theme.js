@@ -162,6 +162,13 @@ a.match(css, /\.status-dot\.live\s*\{[^}]*box-shadow:\s*0 0 0 4px rgb\(var\(--to
 a.doesNotMatch(css, /\.status-dot\.busy/, 'busy is a case of the live tone now, not a second animated class the dot needs');
 a.doesNotMatch(css, /\.home-mode-card|\.home-lead/, 'Overview must not carry its own mode display — mode has exactly one home, the header and drawer control');
 a.match(css, /\.home-objective\s*\{[^}]*grid-column:\s*1 \/ -1;/, 'the Home objective must lead the grid full width now that it stands alone');
+// .run-summary spans 1 / -1, so auto-fit can never collapse an empty track:
+// at 1080px the grid held four 261px columns and the Queue card rendered in
+// one of them, four words wide, beside 800px of nothing.
+a.match(css, /\.home-grid\s*\{[^}]*minmax\(min\(100%, 420px\), 1fr\)/, 'the Home grid must size its columns for cards that share a row with the full-width run panel');
+a.match(css, /\.approval-card, \.agent-card, \.home-card,[^}]*align-content:\s*start;/, 'a card must hug its content rather than spread it down the height of its tallest neighbour');
+a.match(css, /\.view-section\s*\{[^}]*align-content:\s*start;/, 'a view section must hug its content');
+a.match(css, /\.run-grid\s*\{[^}]*align-items:\s*start;/, 'run panels must be as tall as what they hold, not as tall as their tallest neighbour');
 a.match(css, /\.home-attention\s*\{[^}]*border-color:\s*rgb\(var\(--danger-rgb\)/, 'Home attention states need a local danger treatment');
 a.match(css, /\.home-empty\s*\{[^}]*grid-column:\s*1 \/ -1;[^}]*color:\s*var\(--faint\);/, 'an empty Home must use one quiet full-width cue');
 a.match(css, /\.sidebar-mode\s*\{\s*display:\s*none;/, 'desktop must not duplicate the header mode switcher in the sidebar');
@@ -250,7 +257,14 @@ a.match(css, /\.sidebar\.collapsed \.sidebar-new\s*\{[^}]*width:\s*var\(--tap-ta
 a.match(css, /\.sidebar\.collapsed \.sidebar-new::before\s*\{[^}]*content:\s*"\+";/, 'the collapsed new button must render its plus glyph');
 a.match(css, /\.sidebar\.collapsed \.sidebar-collapse\s*\{[^}]*width:\s*var\(--tap-target-min\);[^}]*font-size:\s*0;/, 'the collapsed rail control must keep a full touch target');
 a.match(css, /\.sidebar\.collapsed \.sidebar-collapse::before\s*\{[^}]*content:\s*"[^"}]+";/, 'the collapsed rail must retain a visible expand affordance');
-a.match(css, /\.conversation-row:hover \.conversation-actions, \.conversation-row\.selected \.conversation-actions, \.conversation-row:focus-within \.conversation-actions/, 'conversation actions must be visible to keyboard users');
+a.match(css, /\.conversation-row:hover \.conversation-actions, \.conversation-row:focus-within \.conversation-actions/, 'conversation actions must be visible to keyboard users');
+// Measured live 2026-09-21 at 1440x900: with .selected here too, the selected
+// row's three actions held 150px of a 225px rail and its title rendered
+// "Conv...". Hover, focus-within and the <=720px touch rule cover every input.
+a.doesNotMatch(css, /\.conversation-row\.selected \.conversation-actions/, 'the selected row must not spend its title width on permanently visible actions');
+a.match(css, /\.conversation-list\s*\{[^}]*align-content:\s*start;/, 'conversation rows must keep their own height instead of stretching to fill the list');
+a.match(css, /\.sidebar-section\s*\{[^}]*align-content:\s*start;/, 'a rail section must not spread its heading across the free space below it');
+a.match(css, /\.sidebar-conversations\s*\{[^}]*grid-template-rows:\s*auto minmax\(0, 1fr\);/, 'the conversation list, not the heading, takes the height the rail has left');
 a.match(css, /\.conversation-actions\s*\{[^}]*flex:\s*none;/, 'conversation actions must keep their own width beside the title');
 a.match(css, /\.conversation-action\s*\{[^}]*min-height:\s*var\(--tap-target-min\);[^}]*padding:[^;]+;[^}]*white-space:\s*nowrap;/, 'conversation actions need full touch-sized labels');
 a.match(css, /@media \(max-width: 720px\)[\s\S]*?\.conversation-actions\s*\{\s*display:\s*flex;/, 'conversation actions must remain reachable on touch-sized navigation drawers');

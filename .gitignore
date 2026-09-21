@@ -36,3 +36,7 @@ tokens.json
 
 # per-machine Claude Code state (machineID, userID, local project history)
 .claude.json
+
+# Playwright MCP session output: screenshots and page/console dumps from
+# driving the UI in a real browser. Evidence for a session, not project state.
+.playwright-mcp/
