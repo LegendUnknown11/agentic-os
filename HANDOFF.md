@@ -14,8 +14,11 @@ workflow run results survive store repaints through keyed state instead of a
 DOM reference, and the automation graph editor is widened to two columns. Its
 `test/t-theme.js` change moved with it.
 
-`origin/ui-enhancement` still exists and `main` is ahead of `origin/main` by two
-commits. Neither the push nor the remote branch deletion has been performed.
+The push has since happened. Verified 2026-09-21: `main` and `origin/main` are
+in sync. `origin` still carries 21 branches, `origin/ui-enhancement` among them;
+every one of them has a merged pull request, so all 21 are safe to delete. They
+do not appear under `git branch -r --merged origin/main` because this repository
+squash-merges — ancestry is the wrong test here, the PR record is the right one.
 
 The autonomous-improvement run system is implemented and on `main`. It has not
 been demonstrated in a browser or Electron window. The Habitable pilot has not
@@ -23,17 +26,32 @@ begun.
 
 The approved next body of work is a full interface rebuild. [PLAN.md](PLAN.md)
 holds its contract and acceptance criteria. Its design system source is
-`E:\Prototype.zip` — the Cold-Call Workflow design system, inverted onto a dark
-ink ground. Keep that archive reachable; the contract depends on its real token
-values, not on a summary of them.
+Hiveory (github.com/raktim-yoddha/hiveory), adopted in full from its shipped
+`app.css`. This supersedes the earlier `E:\Prototype.zip` / Cold-Call Workflow
+source, retired by PLAN.md section 1 on 2026-09-17. The contract depends on
+Hiveory's real token values, not on a summary of them.
+
+Sections 1 through 4 of that contract are landed on `main`: the token adoption
+(`c4c6573`), the dot-and-glow status cue (`9524d3f`), the header's awake-count
+label (`b67ed9e`), the `tone()` vocabulary in `ui/views/util.js`, and Overview's
+render-time urgency ranking in `ui/views/home.js`. Section 5 is partly open.
 
 ## Evidence
 
-The combined source gate passed on merged `main`: `npm.cmd test` completed
-**71 suites, 4-wide, all passed**. A run on 2026-09-14 took 36.8s on the
-same machine; an earlier handoff recorded 64.1s. The suite count is the
-contract. The duration varies with machine load under 4-wide contention and is
-not a threshold — do not treat a slower run as a regression on its own.
+The combined source gate passed on `main`: `npm.cmd test` completed **73 suites,
+4-wide, all passed** on 2026-09-21. Earlier handoffs recorded 71 suites; the
+runner's array has grown since, and 73 is the count the run itself printed. The
+suite count is the contract.
+
+Durations on the same machine: 36.8s (2026-09-14), 64.1s earlier still, 179.6s
+on 2026-09-21. That spread is machine load under 4-wide contention, not
+regression — `test/run-all.js` documents the same effect and measures it. Do
+not treat a slower run as a failure on its own.
+
+`court self-control` failed inside the pool and passed when retried alone on
+the 2026-09-21 run. The runner reports that as `flaky`, and it is the one suite
+known to do this. Treat a bare pool failure there as unproven until the retry
+result is read.
 
 This is source and HTTP-level evidence. It is not visual, Electron, device,
 signing, provider, or human-acceptance evidence.
@@ -219,10 +237,13 @@ current proof; refresh them before the snapshot.
 
 ## Remaining acceptance work
 
-- Push `main` and delete `origin/ui-enhancement`. Both are outward-facing and
-  await the sovereign's word.
-- Execute the interface rebuild in `PLAN.md`, phase by phase, leaving the suite
-  green at each phase boundary.
+- Delete the 21 merged remote branches, `origin/ui-enhancement` included. The
+  push is done; the deletion is outward-facing and awaits the sovereign's word.
+- Finish section 5 of `PLAN.md`. Sections 1 through 4 are landed. What remains:
+  `ui/views/approvals.js` still hand-rolls a private status vocabulary in
+  `approvalStatus()` instead of using `tone()`, the header names the repository
+  but not the branch, and `ui/thread.js`, `ui/views/settings.js` and
+  `ui/views/automations.js` have not been verified against the adopted system.
 - Exercise the run controls and final review in a visible browser or Electron
   session, including reduced-motion behavior and an actual interactive
   walkthrough. Screenshots alone are insufficient.
