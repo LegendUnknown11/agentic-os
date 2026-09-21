@@ -17,7 +17,6 @@ dist/
 # `git add -A`, so anything untracked here gets committed onto a branch and
 # merged by whoever presses the button.
 .agents/
-.claude/
 kingdom.config.json.tmp
 kingdom.config.json.broken
 
@@ -36,3 +35,13 @@ tokens.json
 
 # per-machine Claude Code state (machineID, userID, local project history)
 .claude.json
+
+# The ARMS layer under .claude/ IS project state and is tracked deliberately.
+# Everything else there is per-machine: sessions, backups, handoffs, launch
+# ports, lock files. `.claude/*` rather than `.claude/` because git will not
+# descend into an excluded directory, so the negations below need the parent
+# reachable.
+.claude/*
+!.claude/arms/
+!.claude/skills/
+!.claude/routines/

@@ -7,6 +7,10 @@ traps that fail silently, and the current continuation state.
 [PLAN.md](PLAN.md) owns the approved product contract and its acceptance
 criteria. Read it before scoping or starting work.
 
+[.claude/arms/index.md](.claude/arms/index.md) routes by domain: which paths,
+skill and trap apply to the work in front of you. It points; the two files
+above still rule.
+
 ## Standing discipline
 
 **Type every claim before asserting it.** A claim is *read* (seen directly this
