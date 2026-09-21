@@ -122,9 +122,14 @@ const TONE_LIVE = new Set(['running', 'active', 'working', 'busy', 'verifying', 
   'reading', 'editing', 'searching', 'delegating', 'thinking', 'speaking', 'messaging', 'briefing',
   'consulting', 'recording', 'catching up', 'reviewing', 'proposing', 'rejecting', 'finishing',
   'assigning', 'summoning', 'coordinating']);
-const TONE_SETTLED = new Set(['done', 'completed', 'verified', 'merged', 'dropped', 'ready_for_review', 'ok']);
+const TONE_SETTLED = new Set(['done', 'completed', 'verified', 'merged', 'dropped', 'ready_for_review', 'ok',
+  // An approval's resolution is the same question in another domain. "answered"
+  // settles a question; "approved" settles a request. "rejected" is a decision,
+  // not a fault, but it is the branch that stops work, so it reads as attention
+  // for the same reason "blocked" does.
+  'approved', 'answered']);
 const TONE_IDLE = new Set(['idle', 'pending', 'planning', 'paused', 'awake', 'resting', 'off']);
-const TONE_ATTENTION = new Set(['blocked', 'failed', 'rate limited', 'error', 'cancelled', 'warn', 'fail']);
+const TONE_ATTENTION = new Set(['blocked', 'failed', 'rate limited', 'error', 'cancelled', 'warn', 'fail', 'rejected']);
 export function tone(status) {
   const value = String(status ?? '').trim().toLowerCase();
   if (TONE_ATTENTION.has(value)) return 'attention';

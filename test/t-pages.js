@@ -534,6 +534,15 @@ a.match(approvalsSource, /displayName\(approval\.from/, 'approval metadata must 
 a.match(approvalsSource, /data-question-other/, 'approval-page questions must support a custom answer');
 a.match(approvalsSource, /Answer every question before submitting\./, 'approval-page questions must reject incomplete answers');
 a.match(approvalsSource, /Other answer for/, 'approval-page custom answers must have a descriptive accessible name');
+
+// A resolved approval is the sixth domain that reads as "how did this go", and
+// it was the last one still naming its own colours. The label map may stay
+// local (statusLabel() is the same shape for members); the tone may not.
+a.match(approvalsSource, /const resolvedStatus = \(resolved/, 'resolved approvals must render through one shared status helper, not a bare note');
+a.match(approvalsSource, /const shared = tone\(resolved\)/, 'a resolved approval must take its tone from the shared classifier');
+a.doesNotMatch(approvalsSource, /note\(`\$\{approvalStatus|note\(approvalStatus/, 'a resolved approval must not fall back to an untoned note');
+a.match(utilSource, /'approved', 'answered'\]\)/, 'the shared classifier must settle an approved request and an answered question');
+a.match(utilSource, /'fail', 'rejected'\]\)/, 'a rejected request must read as attention, the branch that stops work');
 a.match(threadSource, /From \$\{displayName\(approval\.from\)\}/, 'inline approval metadata must use the shared display-name layer');
 a.doesNotMatch(visibleCopySource, /local court|court[’']s history|source material the court|Checking the court|sovereign[’']s durable vault|The sovereign requested|list_uploads|Search what the court/, 'visible UI copy must use the team vocabulary');
 a.doesNotMatch(graphSource, /Post a message to the court/, 'workflow descriptions must use the team vocabulary');

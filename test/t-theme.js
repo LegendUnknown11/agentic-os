@@ -141,6 +141,8 @@ a.match(run, /run-item \$\{statusClass\(status\)\} \$\{tone\(status\)\}/, 'run d
 a.match(run, /run-badge \$\{tone\(status\)\}/, 'the run badge must carry the shared tone class');
 a.match(css, /\.doctor-row\.settled\s*\{[^}]*color:\s*var\(--ok\)/, 'passing checks need a positive cue');
 a.match(css, /\.doctor-row\.attention\s*\{[^}]*color:\s*var\(--danger\)/, 'warnings and failures share one attention cue, not two different colours');
+a.match(css, /\.approval-status\.settled\s*\{[^}]*color:\s*var\(--ok\)/, 'a settled decision must use the shared positive cue');
+a.match(css, /\.approval-status\.attention\s*\{[^}]*color:\s*var\(--danger\)/, 'a rejected decision must use the shared attention cue, not a colour of its own');
 
 // Issue #39/#48: "status reads through a dot, not a left rule" — applied to
 // the genuinely row-shaped families (task/doctor/quota, run deliverables).

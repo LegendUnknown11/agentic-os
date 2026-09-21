@@ -768,6 +768,15 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .approval-card.resolved { opacity: .7; }
 
+/* A resolved decision reads through the same dot-plus-label geometry as every
+ * other status in the app; .status-dot already carries the tone colour, so only
+ * the label needs one here. */
+.approval-status { display: flex; align-items: center; gap: var(--space-2); }
+
+.approval-status.attention { color: var(--danger); }
+
+.approval-status.settled { color: var(--ok); }
+
 .activity-row { border-left: 3px solid transparent; padding-left: calc(var(--space-3) - 2px); }
 
 .activity-row.live { border-left-color: var(--accent); }

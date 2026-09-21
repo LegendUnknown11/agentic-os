@@ -1,7 +1,8 @@
 import {
   h, page, section, empty, note, button, kb, money, date, modeAllows, displayName,
-  get, post, subscribe, editing,
+  get, post, subscribe, editing, tone,
 } from './util.js';
+import { statusDot } from '../avatar.js';
 
 const rows = (value, key = 'rows') => Array.isArray(value) ? value : value?.[key] ?? [];
 const refresh = async (state, key, url) => { const result = await get(url); if (result?.ok !== false) state[key] = result; return result; };
@@ -11,6 +12,17 @@ const rerender = (state, root, render) => { if (root.isConnected) render(state, 
 const approvalKind = (kind) => ({ summon: 'Team request', role: 'Role request', merge: 'Merge request', push: 'Push request', question: 'Question' }[kind]
   ?? `${String(kind ?? 'request').replace(/[-_]+/g, ' ')} request`);
 const approvalStatus = (status) => ({ approved: 'Approved', rejected: 'Rejected', blocked: 'Blocked', answered: 'Answered' }[status] ?? 'Decision recorded');
+// approvalStatus() names the decision; tone() decides how it reads. Keeping the
+// label map here is fine — statusLabel() does the same job for members — but the
+// colour must come from the one shared classifier, or this view is the sixth
+// private status vocabulary the tone primitive exists to collapse.
+const resolvedStatus = (resolved, extra = '') => {
+  const shared = tone(resolved);
+  const dot = statusDot();
+  if (shared) dot.classList.add(shared);
+  return h('p', { class: `note approval-status ${shared}`.trim() },
+    dot, h('span', { text: `${approvalStatus(resolved)}${extra}` }));
+};
 
 function bind(state, root, render) {
   const off = subscribe(() => { if (!editing(root)) render(state, root); });
@@ -73,7 +85,7 @@ function approvalCard(state, approval, root) {
         }
       }, 'primary');
       card.append(form, answer, feedback);
-    } else card.append(note(`${approvalStatus(approval.resolved)}${approval.answers ? `: ${JSON.stringify(approval.answers)}` : ''}`));
+    } else card.append(resolvedStatus(approval.resolved, approval.answers ? `: ${JSON.stringify(approval.answers)}` : ''));
     return card;
   }
 
@@ -100,7 +112,7 @@ function approvalCard(state, approval, root) {
     approve.disabled = no.disabled = !allowed;
     actions.append(approve, no);
     card.append(actions, feedback);
-  } else card.append(note(approvalStatus(approval.resolved)));
+  } else card.append(resolvedStatus(approval.resolved));
   return card;
 }
 
