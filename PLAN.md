@@ -8,7 +8,7 @@ from. What closed each one:
 
 | Section | Closed by |
 |---|---|
-| 1. One design system | `c4c6573` (Hiveory tokens in full), `9524d3f` (dot-and-glow status cue), `b67ed9e` (the header's awake-count label) |
+| 1. One design system | Reversed to the Cold-Call Workflow kit 2026-09-21 at the sovereign's direction — see section 1. The Hiveory work it replaced was `c4c6573`, `9524d3f`, `b67ed9e`. |
 | 2. One status vocabulary | `tone()` in `ui/views/util.js`; the last private vocabulary, Approvals, folded in by `b310960` |
 | 3. Rebuild the shell | Header carries repository, branch, objective, mode with its permissions, and connection; the rail is down to two lists; mode has one home |
 | 4. Overview as mission control | `ui/views/home.js` ranks by urgency at render time and leads with the run, or the next-step surface when there is none |
@@ -37,6 +37,22 @@ created. Fixed in `fix/live-layout-defects`; `test/t-theme.js` and
 
 This is Electron and browser evidence. It is not device, signing, provider, or
 human-acceptance evidence.
+
+**Re-walked 2026-09-21 on the redesign**, because a palette swap is not a
+behaviour change but the layout under it moved. The same live pass found five
+more defects, none of them visible to the 73 suites: twenty-eight text-on-
+ground pairings under 4.5:1 (the kit publishes its ratios against the wrong
+one of its own two papers); `.conversation-open` at 210x24 and `.sidebar-repo`
+at 227x27 against an enforced 44px; the collapsed rail's nav buttons at 34x44
+inside a 16px inset; the 720px drawer's mode section reporting 287x0 while its
+pills painted straight through the Overview row; and that same drawer running
+122px past the viewport, squashing the conversation list to nothing so there
+was no way to reach a conversation at all. All fixed at their declarations and
+pinned in `test/t-theme.js`. Re-verified live afterwards: a 14-view audit
+returns clean at 1440x900, the collapsed rail is 47x44 throughout, the drawer's
+keyboard path still traps Tab across 26 presses and returns focus to Menu on
+Escape, and reduced motion holds at both `reduce` (every animation `none`,
+transitions `0.001s`) and `no-preference` (`0.15s`).
 
 ## Goal and boundaries
 
@@ -75,8 +91,65 @@ Each was read directly in the source, not inferred.
 
 ## 1. Establish one design system
 
-**Superseded 2026-09-17.** The prototype-derived "paper and ink" system above is
-retired. The sovereign asked for Hiveory's (github.com/raktim-yoddha/hiveory)
+**Reversed 2026-09-21.** The sovereign supplied `Prototype.zip` — the
+Cold-Call Workflow kit, the same prototype-derived "paper and ink" source this
+section retired four days earlier — and asked for the app redesigned on it
+outright. That instruction supersedes the Hiveory adoption spelled out below,
+which stays in place as the record of what was agreed on 2026-09-17 and is no
+longer what the app implements. The reversal is written down rather than made
+quietly, and `ui/app.css`'s `:root` comment says the same thing at the code.
+
+What the app runs now, read from the kit's own `tokens/*.css` and its three
+shipped client builds rather than paraphrased:
+
+- **Light, not dark.** `color-scheme: light`. Three grounds and no ladder:
+  `--bg: #f7f1e7` (page), `--surface: #ebe1d2` (rail, sections, meter tracks,
+  code), `--raised: #fffdf9` (the panel a card is drawn on).
+- **Text two values, not three.** `--text: #17332f`; `--muted` and `--faint`
+  are both `#55635e`. Metadata separates from body copy by type treatment, not
+  by a third grey.
+- **One hairline**, `--line: #cec7ba`. **One accent**, teal `#0d6663`, carrying
+  brand and primary interactive together; the kit calls swapping that single
+  value the whole reskin.
+- **Two status hue families against four tones.** Live and settled share teal
+  and separate by depth plus the pulse; attention is `#9e4239`; idle is
+  ink-soft, because in this system waiting is not a colour. A run in flight and
+  a finished one are harder to tell apart here than under the retired palette —
+  that is the cost, stated rather than papered over, and the dot and the label
+  carry the difference.
+- **The product scale, not the marketing one.** This is a dense tool: 16px
+  card, 12px control, **no pill buttons** except where the kit itself pills —
+  the status badge and the segmented control. Spacing is the kit's own
+  4/8/16/24/32/48/64/88.
+- **Metadata is mono, uppercase and tracked.** This inverts the Hiveory rule
+  below. It is the one convention all three of the kit's client sources share
+  exactly, and it is how `.card-meta`, `.message-meta`, `.metric-label`,
+  `.field-label`, `.data-table th` and the rail headings read now.
+- **Paper grain**, the kit's CSS dot technique, over its tiled photograph:
+  it ships no binary into an offline Electron bundle and tokenises without
+  putting a literal colour outside `:root`.
+
+Unchanged, because they are this app's rules and not any design system's:
+local-stack type (an offline Electron webfont fetch fails silently), the `-rgb`
+channel twin on every colour, no literal colour outside `:root`, gold for the
+orchestrator alone and never for status, and 44px enforced rather than
+suggested.
+
+Two departures from the kit's published numbers, both found by measuring and
+both pinned in `test/t-theme.js` so nobody "restores" them: the kit quotes
+every contrast ratio against `--paper` and never against `--paper-deep`, which
+is the ground under the rail and every section here, so `--muted`/`--faint`
+went `#5c6c66` → `#55635e` and `--tone-attention` went `#af4a3f` → `#9e4239`
+to clear 4.5:1 on that ground. And the kit's contrast card claims 12.1:1 for
+ink on paper; its other five figures reproduce exactly and that one gives
+9.6:1, so the code records the number computed.
+
+### The 2026-09-17 Hiveory adoption, kept as record
+
+Everything from here to the end of this section is what was agreed on
+2026-09-17 and is no longer what the app implements. It read, in full:
+
+The sovereign asked for Hiveory's (github.com/raktim-yoddha/hiveory)
 actual visual language adopted in full, not as loose inspiration — its literal
 values, read from its shipped `app.css`, not a paraphrase. This app keeps its
 own token architecture (`:root`, `-rgb` twins, no literal colour outside

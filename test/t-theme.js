@@ -15,87 +15,126 @@ const root = /:root\s*\{([\s\S]*?)\n\}/.exec(css)?.[1] ?? '';
 const rules = css.replace(/\/\*[\s\S]*?\*\//g, '').slice(css.indexOf('* { box-sizing'));
 
 const token = (name) => new RegExp(`${name}\\s*:\\s*([^;]+);`).exec(root)?.[1].trim();
-// Hiveory (github.com/raktim-yoddha/hiveory), adopted in full per PLAN.md
-// section 1: literal values read from its shipped app.css, dark only (no
-// light/dark toggle survives the swap). This app's own token discipline
-// (:root, -rgb twins, no literal colour outside :root, gold identifies the
-// orchestrator alone) is unaffected by which palette supplies the values.
-a.equal(token('color-scheme'), 'dark');
-a.equal(token('--bg'), '#111418');
-a.equal(token('--bg-rgb'), '17 20 24');
-a.equal(token('--bg-alt'), '#0f141a');
-a.equal(token('--bg-alt-rgb'), '15 20 26');
-a.equal(token('--surface'), '#14181d');
-a.equal(token('--surface-rgb'), '20 24 29');
-a.equal(token('--raised'), '#181d23');
-a.equal(token('--raised-rgb'), '24 29 35');
-a.equal(token('--text'), '#f5f7fa');
-a.equal(token('--text-rgb'), '245 247 250');
-a.equal(token('--muted'), '#aeb8c5');
-a.equal(token('--muted-rgb'), '174 184 197');
-a.equal(token('--faint'), '#758192');
-a.equal(token('--faint-rgb'), '117 129 146');
-a.equal(token('--line'), '#272d35');
-a.equal(token('--line-rgb'), '39 45 53');
-a.equal(token('--line-soft'), '#29323c');
-a.equal(token('--line-soft-rgb'), '41 50 60');
-a.equal(token('--accent'), '#2b5f96');
-a.equal(token('--accent-rgb'), '43 95 150');
-a.equal(token('--accent-border'), '#4a6d98');
-a.equal(token('--accent-hover'), '#3675b7');
-a.equal(token('--accent-ink'), '#f7fbff');
+// The Cold-Call Workflow system (E:\Prototype.zip), adopted in full at the
+// sovereign's direction 2026-09-21, reversing PLAN.md section 1's retirement
+// of it. Paper, not a dark shell, and the product half of the kit rather than
+// the marketing half. Every value below is read from the kit's tokens/*.css.
+// This app's own token discipline (:root, -rgb twins, no literal colour
+// outside :root, gold identifies the orchestrator alone) is unaffected by
+// which system supplies the values.
+a.equal(token('color-scheme'), 'light');
+a.equal(token('--bg'), '#f7f1e7', 'Smart Tuitions --paper is the page ground');
+a.equal(token('--bg-rgb'), '247 241 231');
+a.equal(token('--surface'), '#ebe1d2', '--paper-deep is the recessed ground');
+a.equal(token('--surface-rgb'), '235 225 210');
+a.equal(token('--raised'), '#fffdf9', '--white is the panel a card is drawn on');
+a.equal(token('--raised-rgb'), '255 253 249');
+a.equal(token('--text'), '#17332f');
+a.equal(token('--text-rgb'), '23 51 47');
+// The one departure from the kit's literal hexes, and the reason is pinned
+// with it: the kit measures every ratio against --paper and never against
+// --paper-deep, which is the ground under the rail and under every section
+// here. Its --ink-soft is 4.28:1 there, under AA. Do not "restore" #5c6c66.
+a.equal(token('--muted'), '#55635e');
+a.equal(token('--muted-rgb'), '85 99 94');
+// The system ships two text values, not three. Metadata separates by type
+// treatment, not by a third grey — one light enough to read as faint on paper
+// would not clear the 4.5:1 AA minimum.
+a.equal(token('--faint'), '#55635e');
+a.equal(token('--faint-rgb'), '85 99 94');
+a.equal(token('--line'), '#cec7ba');
+a.equal(token('--line-rgb'), '206 199 186');
+// Three grounds, one hairline, one accent slot. Tokens the retired palette
+// needed and this one has no counterpart for are deleted, not left declared
+// and unread.
+for (const dead of ['--bg-alt', '--line-soft', '--accent-border', '--radius-icon', '--raised-alpha']) {
+  a.equal(token(dead), undefined, `${dead} has no counterpart in this system and must not survive as a dead declaration`);
+}
+a.equal(token('--accent'), '#0d6663', 'teal is the one accent slot, brand and primary interactive together');
+a.equal(token('--accent-rgb'), '13 102 99');
+a.equal(token('--accent-hover'), '#084a4a');
+a.equal(token('--accent-ink'), '#fffdf9');
 // Four genuinely distinct status hues, not one hue split by chroma.
-a.equal(token('--tone-live'), '#48a7ed');
-a.equal(token('--tone-live-rgb'), '72 167 237');
-a.equal(token('--tone-settled'), '#45c47b');
-a.equal(token('--tone-settled-rgb'), '69 196 123');
-a.equal(token('--tone-attention'), '#d46d77');
-a.equal(token('--tone-attention-rgb'), '212 109 119');
-a.equal(token('--tone-idle'), '#d2a05f');
-a.equal(token('--tone-idle-rgb'), '210 160 95');
+// Two hue families, four tones. Live and settled share teal and separate by
+// depth plus the pulse; that is the cost of this system and it is pinned here
+// so nobody later "fixes" it by importing a hue the kit does not have.
+a.equal(token('--tone-live'), '#0d6663');
+a.equal(token('--tone-live-rgb'), '13 102 99');
+a.equal(token('--tone-settled'), '#084a4a');
+a.equal(token('--tone-settled-rgb'), '8 74 74');
+// ViniYoga's --due is its own hex and deliberately not marketing's --red;
+// this is that hue taken down until it clears AA on --paper-deep too (4.19:1
+// there as published, 4.93:1 here).
+a.equal(token('--tone-attention'), '#9e4239');
+a.equal(token('--tone-attention-rgb'), '158 66 57');
+a.equal(token('--tone-idle'), '#55635e', 'in this system waiting is not a colour');
+a.equal(token('--tone-idle-rgb'), '85 99 94');
 a.equal(token('--danger'), 'var(--tone-attention)', 'general-purpose danger must agree with the attention status hue');
 a.equal(token('--danger-rgb'), 'var(--tone-attention-rgb)');
 a.equal(token('--ok'), 'var(--tone-settled)', 'general-purpose ok must agree with the settled status hue');
 a.equal(token('--ok-rgb'), 'var(--tone-settled-rgb)');
-a.equal(token('--gold'), '#d9b25c');
-a.equal(token('--gold-rgb'), '217 178 92');
-// Shape: pills are back. Controls take 6px, cards/panels take 10px (one
-// shared value), icon-only buttons stay tighter at 4px.
-a.equal(token('--radius-ctl'), '6px');
-a.equal(token('--radius-card'), '10px');
-a.equal(token('--radius-icon'), '4px');
+// Gold is this app's own rule, not the kit's, so it is reintroduced against
+// paper rather than carried over: #d9b25c measures 1.9:1 here and would be a
+// decoration nobody could read.
+a.equal(token('--gold'), '#7f6019');
+a.equal(token('--gold-rgb'), '127 96 25');
+// Shape: the product scale, kept apart from the marketing one. 16px card,
+// 12px control, no pill buttons — pills survive only where the kit pills.
+a.equal(token('--radius-ctl'), '12px');
+a.equal(token('--radius-card'), '16px');
 a.equal(token('--radius-pill'), '999px');
-a.deepEqual([1, 2, 3, 4, 5, 6, 7, 8].map((n) => token(`--space-${n}`)), ['4px', '8px', '12px', '16px', '24px', '32px', '48px', '64px']);
+// Smart Tuitions' real scale, which widens faster than linear on purpose. The
+// kit records that a generic 4px ladder here was a bug it corrected, so a
+// return to 4/8/12/16 is a regression, not a tidy-up.
+a.deepEqual([1, 2, 3, 4, 5, 6, 7, 8].map((n) => token(`--space-${n}`)), ['4px', '8px', '16px', '24px', '32px', '48px', '64px', '88px']);
 a.equal(token('--tap-target-min'), '44px');
-a.equal(token('--ease'), 'ease', 'the old custom easing curve is dropped for Hiveory\'s plain ease');
-a.equal(token('--fast'), '150ms', 'hover/press transitions run at 0.15s per the source');
-a.match(css, /--display:\s*-apple-system, "Segoe UI", Roboto, system-ui, sans-serif/, 'headings must use the local sans stack approximating Hiveory\'s IBM Plex Sans');
-a.doesNotMatch(css, /--mono:\s*['"]?(IBM Plex Mono|JetBrains Mono)/, 'this app runs offline in Electron — no webfont stack for --mono, including Hiveory\'s real JetBrains Mono choice');
-a.match(index, /<meta name="color-scheme" content="dark">/, 'the document chrome must advertise the single dark surface, not a toggle');
+a.equal(token('--ease'), 'cubic-bezier(.2, 0, 0, 1)', "the product easing (Tailwind ease-ui), because this is a product screen");
+a.equal(token('--fast'), '150ms', 'hover/press transitions run at 0.15s per the product source');
+a.match(css, /--display:\s*Georgia, "Times New Roman", serif/, "the display serif must be Playfair Display's own declared fallback, not a webfont this offline shell may fail to fetch");
+a.match(css, /--ui:\s*-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif/, "--ui is the kit's --font-product-body verbatim");
+a.doesNotMatch(css, /--mono:\s*['"]?(IBM Plex Mono|JetBrains Mono)/, 'this app runs offline in Electron — no webfont stack for --mono, including the kit\'s real IBM Plex Mono choice');
+a.doesNotMatch(css, /@import|fonts\.googleapis/, "the kit's token files fetch Playfair, Inter and Plex over the network; this shell must not");
+a.match(index, /<meta name="color-scheme" content="light">/, 'the document chrome must advertise the single paper surface, not a toggle');
 a.doesNotMatch(index, /theme-bootstrap/, 'the light/dark bootstrap script is gone along with the toggle');
 a.doesNotMatch(index, /<script>(?!\s*<\/script>)/, 'the shell must obey the daemon script CSP');
-a.doesNotMatch(css, /:root\[data-theme=|prefers-color-scheme: dark/, 'the light/dark toggle must not survive the Hiveory swap — dark is the only ground now');
-a.doesNotMatch(css, /--dark-/, 'the --dark- prefix convention is gone now that dark is the only palette');
-a.doesNotMatch(css, /linear-gradient|radial-gradient/, 'the optional Hiveory panel-wash gradient is deferred to a later pass, not adopted yet');
+// The kit ships a light system and an opt-in energetic/editorial theme scope.
+// Only the default paper/teal one is adopted; a second scope here would be the
+// second styling vocabulary this file exists to prevent.
+a.doesNotMatch(css, /:root\[data-theme=|data-palette=|prefers-color-scheme/, 'one ground only — the kit\'s alternate theme scopes are opt-in and are not adopted');
+a.doesNotMatch(css, /--dark-|--ed-/, 'neither the retired --dark- convention nor the kit\'s editorial --ed- namespace belongs in this palette');
+// Paper needs grain or it reads as flat beige. The kit gives two techniques;
+// this shell takes the CSS-generated one, so the gradient is expected — but
+// only as the tokenised grain, and nowhere else.
+a.match(css, /--grain:\s*radial-gradient\(rgb\(var\(--text-rgb\) \/ \.05\)/, 'the paper grain must be a token, so its colour stays inside :root');
+a.match(css, /body \{[^}]*background:\s*var\(--bg\) var\(--grain\);/, 'the page ground must carry the grain');
+a.doesNotMatch(rules, /linear-gradient/, 'no rule may invent a gradient of its own');
 a.match(css, /\.mode-switcher\s*\{[^}]*border-radius:\s*var\(--radius-pill\)/, 'work modes must read as one segmented control');
 a.match(css, /\.mode-option\.selected\s*\{[^}]*background:\s*var\(--accent\)/, 'the active work mode needs one clear accent state');
 a.match(css, /\.view-heading::before\s*\{[^}]*content:\s*"AGENTIC OS \/ WORKSPACE"/, 'pages need one eyebrow from the shared heading primitive, naming the product correctly');
 a.match(css, /\.thread-header\s*\{[^}]*background:\s*var\(--surface\)/, 'threads need the same paper panel primitive as dashboard pages');
 a.doesNotMatch(css, /--mono:\s*['"]?(IBM Plex Mono|Playfair Display)/, 'this app runs offline in Electron — no webfont stack for --mono');
 
-// PLAN.md section 1: mono is reserved for code/terminal/diff/log content,
-// never ordinary UI metadata; uppercase-tracked treatment is reserved for
-// small section/rail headings, not every label, badge, or chip. Swept for
-// both across every selector that isn't a section/rail heading — issue #39.
-for (const sel of ['\\.button\\.chip', '\\.field-value', '\\.metric-label', '\\.run-badge', '\\.usage-breakdown dd, \\.agent-usage-details dd']) {
-  a.doesNotMatch(css, new RegExp(`${sel}\\s*\\{[^}]*font-family:\\s*var\\(--mono\\)`),
-    `${sel.replace(/\\\\/g, '')} is ordinary UI metadata, not code — must not use --mono`);
+// This inverts the rule the retired system imposed. The kit is explicit that
+// mono-uppercase-tracked labels carrying metadata is "the one convention every
+// client source shares exactly" — eyebrows, timestamps, board names, form
+// labels. So metadata takes mono here, and the sweep runs the other way.
+for (const sel of ['\\.card-meta', '\\.message-meta', '\\.metric-label', '\\.mode-kicker', '\\.sidebar-heading', '\\.brand-tag', '\\.thread-control-label', '\\.field-label', '\\.data-table th']) {
+  a.match(css, new RegExp(`${sel}\\s*\\{[^}]*var\\(--mono\\)`),
+    `${sel.replace(/\\\\/g, '')} carries metadata — in this system that means mono`);
+  a.match(css, new RegExp(`${sel}\\s*\\{[^}]*text-transform:\\s*uppercase`),
+    `${sel.replace(/\\\\/g, '')} carries metadata — in this system that means uppercase and tracked`);
 }
-for (const sel of ['\\.metric-label', '\\.run-badge', '\\.mode-kicker', '\\.task-row b']) {
+// What is NOT metadata stays in the product sans: a status badge states a
+// status, and a control is a control. The kit sets both in its own sans.
+for (const sel of ['\\.button\\.chip', '\\.field-value', '\\.run-badge', '\\.task-row b']) {
+  a.doesNotMatch(css, new RegExp(`${sel}\\s*\\{[^}]*font-family:\\s*var\\(--mono\\)|${sel}\\s*\\{[^}]*\\bvar\\(--mono\\)`),
+    `${sel.replace(/\\\\/g, '')} states a status or is a control — not metadata, so not mono`);
   a.doesNotMatch(css, new RegExp(`${sel}\\s*\\{[^}]*text-transform:\\s*uppercase`),
-    `${sel.replace(/\\\\/g, '')} is a label, not a section/rail heading — must not be uppercase-tracked by default`);
+    `${sel.replace(/\\\\/g, '')} states a status or is a control — not metadata, so not uppercase-tracked`);
 }
-a.match(css, /\.run-badge\s*\{[^}]*border-radius:\s*var\(--radius-pill\)/, 'Hiveory pills every status chip, count badge, and tag — the run badge is one');
+// The kit's StatusBadge: a pill filled with its own hue at 12%, no border.
+a.match(css, /\.run-badge\s*\{[^}]*border:\s*0;[^}]*border-radius:\s*var\(--radius-pill\);[^}]*background:\s*rgb\(var\(--muted-rgb\) \/ \.12\)/, 'the run badge is the kit\'s StatusBadge — a tinted pill, not a bordered one');
+a.match(css, /\.run-badge\.live\s*\{[^}]*background:\s*rgb\(var\(--accent-rgb\) \/ \.12\);[^}]*color:\s*var\(--accent\)/, 'each badge tone fills with its own hue at 12%');
 a.match(css, /grid-template:\s*"sidebar main" 1fr \/ 260px/);
 a.match(css, /#bg\s*\{[\s\S]*?z-index:\s*0;/, 'wallpaper must sit between the body and shell');
 a.match(css, /body\.has-bg\s*\{[\s\S]*?--shell-alpha:\s*\.82;/, 'wallpaper selection must open the shell surfaces');
@@ -256,6 +295,15 @@ a.match(css, /\.sidebar-repo\s*\{[^}]*border:\s*0;[^}]*background:\s*transparent
 a.match(css, /\.sidebar\.collapsed \.sidebar-new\s*\{[^}]*width:\s*var\(--tap-target-min\);[^}]*font-size:\s*0;[^}]*text-indent:\s*0;/, 'the collapsed rail must keep a full new-conversation touch target');
 a.match(css, /\.sidebar\.collapsed \.sidebar-new::before\s*\{[^}]*content:\s*"\+";/, 'the collapsed new button must render its plus glyph');
 a.match(css, /\.sidebar\.collapsed \.sidebar-collapse\s*\{[^}]*width:\s*var\(--tap-target-min\);[^}]*font-size:\s*0;/, 'the collapsed rail control must keep a full touch target');
+
+// Three defects the live 2026-09-21 session found and no source suite could.
+// Each assertion names the measurement, so a later edit that reverts one
+// fails here instead of shipping.
+a.match(css, /#sidebar\.collapsed\s*\{[^}]*padding-inline:\s*var\(--space-2\);/, 'the collapsed rail measured 34x44 buttons inside its 16px inset; 8px is what leaves 44');
+a.match(css, /body\.sidebar-open #sidebar \.sidebar-mode\s*\{[^}]*flex-shrink:\s*0;/, 'the drawer mode section measured 287x0 and painted through the nav below it');
+a.match(css, /body\.sidebar-open #sidebar\s*\{[^}]*overflow-y:\s*auto;/, 'the drawer ran 122px past the viewport and swallowed the conversation list; it scrolls as one column');
+a.match(css, /body\.sidebar-open #sidebar \.sidebar-conversations\s*\{[^}]*flex:\s*none;/, 'the conversation list must keep its natural height in the drawer, not absorb a deficit');
+a.match(css, /body\.sidebar-open #sidebar \.sidebar-collapse\s*\{[^}]*display:\s*none;/, 'the collapse control is a rail affordance and there is no rail at drawer width');
 a.match(css, /\.sidebar\.collapsed \.sidebar-collapse::before\s*\{[^}]*content:\s*"[^"}]+";/, 'the collapsed rail must retain a visible expand affordance');
 a.match(css, /\.conversation-row:hover \.conversation-actions, \.conversation-row:focus-within \.conversation-actions/, 'conversation actions must be visible to keyboard users');
 // Measured live 2026-09-21 at 1440x900: with .selected here too, the selected
@@ -267,6 +315,10 @@ a.match(css, /\.sidebar-section\s*\{[^}]*align-content:\s*start;/, 'a rail secti
 a.match(css, /\.sidebar-conversations\s*\{[^}]*grid-template-rows:\s*auto minmax\(0, 1fr\);/, 'the conversation list, not the heading, takes the height the rail has left');
 a.match(css, /\.conversation-actions\s*\{[^}]*flex:\s*none;/, 'conversation actions must keep their own width beside the title');
 a.match(css, /\.conversation-action\s*\{[^}]*min-height:\s*var\(--tap-target-min\);[^}]*padding:[^;]+;[^}]*white-space:\s*nowrap;/, 'conversation actions need full touch-sized labels');
+// Measured live 2026-09-21: both were under the 44px this system enforces —
+// the conversation title at 210x24 and the repository control at 227x27.
+a.match(css, /\.conversation-open\s*\{[^}]*min-height:\s*var\(--tap-target-min\);/, 'the conversation title is the row tap target and must carry the enforced minimum');
+a.match(css, /\.sidebar-repo\s*\{[^}]*min-height:\s*var\(--tap-target-min\);/, 'the repository control must carry the enforced minimum');
 a.match(css, /@media \(max-width: 720px\)[\s\S]*?\.conversation-actions\s*\{\s*display:\s*flex;/, 'conversation actions must remain reachable on touch-sized navigation drawers');
 a.match(css, /\.wfn-x\s*\{[^}]*min-width:\s*var\(--tap-target-min\);[^}]*min-height:\s*var\(--tap-target-min\);[^}]*padding:\s*var\(--space-1\);/, 'workflow deletion needs a full touch-sized target');
 a.match(css, /\.wfport::after\s*\{[^}]*inset:\s*-18px;/, 'workflow ports need a full touch target around the visible dot');
@@ -306,4 +358,4 @@ a.deepEqual(rgb.filter((v) => {
   return !(n[0] === n[1] && n[1] === n[2]);
 }), [], 'coloured rgb literals must come from channel tokens');
 
-console.log('t-theme.js OK — the Hiveory palette is tokenised, dark-only, and has one fixed layout');
+console.log('t-theme.js OK — the Cold-Call Workflow palette is tokenised, paper-only, and has one fixed layout');
