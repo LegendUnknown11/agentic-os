@@ -708,14 +708,14 @@ export class Kingdom extends EventEmitter {
     // simply "can anybody work this" — no special cases for the crown.
     const orphans = this.bus.tasks()
       .filter((t) => t.owner && t.state !== 'done' && !this.summoned.has(t.owner));
-    for (const t of orphans) this.bus.updateTask(t.id, { owner: null, state: 'pending' });
+    const orphanLoss = this.#releaseHeldTasks(orphans);
     if (orphans.length) {
       this.bus.post(CROWN, this.config.orchestrator.name,
         `AWARENESS ONLY — TAKE NO ACTION. ${orphans.map((t) => `#${t.id} (${t.title})`).join(', ')} `
         + `${orphans.length === 1 ? 'was' : 'were'} still held by somebody no longer in this court `
         + `(${[...new Set(orphans.map((t) => t.owner))].join(', ')}). `
         + `${orphans.length === 1 ? 'It is' : 'They are'} unclaimed again — nobody is working on `
-        + `${orphans.length === 1 ? 'it' : 'them'}.`, 'notice');
+        + `${orphans.length === 1 ? 'it' : 'them'}.${orphanLoss}`, 'notice');
     }
 
     this.timer = setInterval(() => this.#tick().catch((e) => this.emit('error', e)), POLL_MS);
@@ -873,7 +873,7 @@ export class Kingdom extends EventEmitter {
     if (inWorktree) {
       const behind = await behindBase(this.repo, name, this.base);
       if (behind) {
-        this.bus.post('orchestrator', name,
+        this.bus.post(CROWN, name,
           `Your worktree is ${behind} commit(s) behind "${this.base}" and still holds your `
           + `own unmerged work, so the crown did not move it for you. Anything you read here `
           + `may be out of date — say so in what you report, and ask before rebasing.`,
@@ -1185,7 +1185,7 @@ export class Kingdom extends EventEmitter {
     if (resumed) {
       const block = brainBlock(this.config.vault, dir);
       if (block.trim()) {
-        this.bus.post('orchestrator', name,
+        this.bus.post(CROWN, name,
           `AWARENESS ONLY — TAKE NO ACTION. The sovereign's standing instructions or the `
           + `court's memory have changed since your session began. This replaces what you `
           + `were told at your accession:\n${block}`, 'notice');
@@ -1452,7 +1452,7 @@ export class Kingdom extends EventEmitter {
       // know it owned workflow_save, delegated the request to a "coder"
       // peasant that does not exist in this mode, and needed three rounds of
       // the sovereign hand-writing the exact tool call before it worked.
-      this.bus.post('orchestrator', who,
+      this.bus.post(CROWN, who,
         modeBlock(next).trim() + (why ? `\nWhy: ${why}` : ''),
         'notice');
     }
@@ -2129,7 +2129,13 @@ export class Kingdom extends EventEmitter {
     // The verdict goes back to WHOEVER ASKED. Hardcoding the orchestrator here is
     // the bug t-questions.js exists to pin, and the argument court has the
     // same shape: it answers a caller, not a fixed address.
-    const reply = (body) => this.bus.post('orchestrator', asker, body, 'notice');
+    //
+    // CROWN, not the literal 'orchestrator': argue is roles: ['orchestrator'],
+    // so the asker is ALWAYS the orchestrator, and the shipped orchestrator
+    // name is "orchestrator" too. Posted role-to-name, every verdict was sender
+    // === recipient and bus.pending() dropped it — #54's bug in the one tool
+    // whose whole purpose is settling a contested decision.
+    const reply = (body) => this.bus.post(CROWN, asker, body, 'notice');
 
     const cap = this.#kingdomBudget();
     const spent = Number(this.bus.get('spentUsd') ?? 0);
@@ -2187,7 +2193,12 @@ export class Kingdom extends EventEmitter {
       if (m.kind !== 'control') continue;
       let req;
       try { req = JSON.parse(m.body); } catch { continue; }
-      const say = (body) => body && this.bus.post('orchestrator', m.sender, body, 'notice');
+      // CROWN for the same reason the argument verdict uses it: every lever in
+      // src/mcp/control.js is roles: ['orchestrator'], so m.sender is the
+      // orchestrator, and role-as-sender to name-as-recipient is self-addressed
+      // mail that pending() drops. Every "mode switched", every "wake failed",
+      // every `${op} failed: …` below was written and never delivered.
+      const say = (body) => body && this.bus.post(CROWN, m.sender, body, 'notice');
       // Degrade, never wedge: every path here ends in something the caller can
       // read, because a member told nothing cannot tell "refused" from "lost".
       try {
@@ -2290,7 +2301,7 @@ export class Kingdom extends EventEmitter {
         // peasant may reply to the orchestrator about a message the orchestrator never sent,
         // costing a turn on both sides. Every other orchestrator message uses
         // this sender.
-        this.bus.post('orchestrator', name,
+        this.bus.post(CROWN, name,
           `You have gone quiet with ${open.length} task${open.length > 1 ? 's' : ''} unclaimed. `
           + `Call claim_task to take the next one, or say what is blocking you. Do not stop with work on the list.`,
           'assignment');
@@ -2345,6 +2356,40 @@ export class Kingdom extends EventEmitter {
         + 'Do not ask for approval only in prose; prose does not create an approval card.'
       : '';
     return `[${tag} ${msg.sender}]\n${msg.body}${files}${control}`;
+  }
+
+  /**
+   * Release tasks held by somebody who is no longer going to finish them, and
+   * return the sentence naming whatever that release threw away (empty when it
+   * threw away nothing).
+   *
+   * Shared by the boot-time orphan sweep and dismissal because the invariant is
+   * the same and #53 taught the cost of fixing one door: a task in `verifying`
+   * has a controller check running against the DEPARTING owner's worktree, and
+   * that worktree leaves with them. Releasing it is right — nobody can finish
+   * that check — but a plain `state: 'pending'` write is the same silent
+   * collapse #53 was: the submission is discarded and nothing says so.
+   *
+   * The submission marker goes with it. finish_task records
+   * `submission:task:<id>` and reassign_task reads it to tell an in-flight
+   * verification from a resolved one; left behind, it points at a verification
+   * that can never land. Cleared to '' rather than deleted — the bus has no
+   * key delete, and its reader already guards on falsy.
+   */
+  #releaseHeldTasks(tasks) {
+    const discarded = [];
+    for (const t of tasks) {
+      if (t.state === 'verifying') {
+        this.bus.set(`submission:task:${t.id}`, '');
+        discarded.push(t.id);
+      }
+      this.bus.updateTask(t.id, { owner: null, state: 'pending' });
+    }
+    if (!discarded.length) return '';
+    return ` ${discarded.map((id) => `#${id}`).join(', ')} `
+      + `${discarded.length === 1 ? 'was' : 'were'} awaiting verification, and that check went with `
+      + `${discarded.length === 1 ? 'its' : 'their'} owner — the submitted work must be redone or `
+      + 'resubmitted, not assumed verified.';
   }
 
   /** peasant done -> run its tests -> hand the diff to the briefer to digest. */
@@ -2779,7 +2824,7 @@ export class Kingdom extends EventEmitter {
     // does not have to act on it, so it rides along with real traffic instead
     // of buying a full context replay of its own.
     const to = tell ?? this.config.orchestrator.name;
-    this.bus.post('orchestrator', to,
+    this.bus.post(CROWN, to,
       (tell
         ? `AWARENESS ONLY — the argument court settled the question you put to it.\n`
         : `AWARENESS ONLY — the argument court settled a question for the sovereign.\n`)
@@ -2899,7 +2944,7 @@ export class Kingdom extends EventEmitter {
       // saved session, which the sovereign would find reset on switching back.
       if (cliChanged) this.bus.set(`session:${name}:${convId}`, '');
       await this.#spawn(name, note || null, convId);
-      this.bus.post('orchestrator', name,
+      this.bus.post(CROWN, name,
         `AWARENESS ONLY — TAKE NO ACTION. The sovereign changed your model to ` +
         `${spec.cli ?? 'claude'}${spec.model ? ' / ' + spec.model : ' (default)'}` +
         `${spec.effort ? ' at ' + spec.effort + ' effort' : ''}. ` +
@@ -2953,13 +2998,13 @@ export class Kingdom extends EventEmitter {
     // peasant can claim the next thing, and picking the claimant is the
     // orchestrator's job, not a side effect of a merge.
     const stranded = this.bus.tasks().filter((t) => t.owner === name && t.state !== 'done');
-    for (const t of stranded) this.bus.updateTask(t.id, { owner: null, state: 'pending' });
+    const strandedLoss = this.#releaseHeldTasks(stranded);
     if (stranded.length) {
       this.bus.post(CROWN, this.config.orchestrator.name,
         `"${name}" left service still holding ${stranded.map((t) => `#${t.id} (${t.title})`).join(', ')}. `
         + `${stranded.length === 1 ? 'It is' : 'They are'} unclaimed again and can be picked up by `
         + 'anyone — assign or summon somebody, because nobody is working on '
-        + `${stranded.length === 1 ? 'it' : 'them'} now.`, 'notice');
+        + `${stranded.length === 1 ? 'it' : 'them'} now.${strandedLoss}`, 'notice');
     }
 
     this.emit('agent', { name, state: 'exited' });

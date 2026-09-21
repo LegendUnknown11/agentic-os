@@ -209,6 +209,24 @@ try {
     .some((m) => m.recipient === 'coder' && /No such control/.test(m.body))),
   'and so must a lever that does not exist');
 
+  /* ---- 3c. and it must reach the ORCHESTRATOR, which is who actually calls -- */
+  // Every lever in src/mcp/control.js is roles: ['orchestrator'], so the real
+  // caller is never 'coder' — the two checks above use a peasant the tool does
+  // not grant, which is how this survived. Posted from the orchestrator's own
+  // name and asserted through pending(), not history(): #54 was exactly a
+  // message that stored fine and was never delivered, because bus.pending()
+  // drops rows whose sender is the reader and the shipped orchestrator name IS
+  // "orchestrator".
+  {
+    const boss = k.config.orchestrator.name;
+    const before = k.bus.get(`cursor:${boss}`);
+    k.bus.post(boss, null, JSON.stringify({ op: 'levitate' }), 'control');
+    a.ok(await until(() => k.bus.pending(boss, 400)
+      .some((m) => m.recipient === boss && /No such control/.test(m.body))),
+    'a refused lever must be DELIVERABLE to the orchestrator that pulled it, not just stored');
+    if (before != null) k.bus.set(`cursor:${boss}`, before);
+  }
+
   /* ---- 3b. a member that uses its CLI's own court must be reported ------- */
   // codex 0.145.0 ships spawn_agent/wait/todo_list and no feature flag removes
   // them, so the prompt is the only guard — and a prompt can be talked past.
@@ -485,7 +503,13 @@ try {
     await k.wake('coder');   // it has to actually be in service before it can leave it
     const stranded = k.bus.addTask({ title: 'Work held by a departed hand', by: 'orchestrator' });
     const mine = k.bus.addTask({ title: 'Held by somebody still here', by: 'orchestrator' });
+    // A task already submitted for verification is the sharp case: the check
+    // runs against the DEPARTING owner's worktree, which leaves with them.
+    const submitted = k.bus.addTask({ title: 'Submitted, then its owner left', by: 'orchestrator' });
     a.equal(k.bus.claimTask('coder', stranded).ok, true, 'sanity: the claim must land');
+    a.equal(k.bus.claimTask('coder', submitted).ok, true, 'sanity: the third claim must land');
+    k.bus.updateTask(submitted, { state: 'verifying' });
+    k.bus.set(`submission:task:${submitted}`, '4242');   // what finish_task records
     a.equal(k.bus.claimTask('briefer', mine).ok, true, 'sanity: the second claim must land');
     a.ok(JSON.parse(k.bus.get('summoned') ?? '[]').includes('coder'),
       'sanity: the departing member must be in the persisted roster to begin with');
@@ -511,6 +535,18 @@ try {
 
     a.equal(k.bus.task(mine).owner, 'briefer',
       'and a task held by somebody still in service must be left exactly alone');
+
+    // #53 was a 'verifying' task silently collapsed to 'active' by one caller.
+    // The release sweeps are the same collapse through another door, and a
+    // plain state write here discards a submission without a word.
+    a.equal(k.bus.task(submitted).state, 'pending',
+      'a submitted task whose owner left must be released — nobody can finish a check against a gone worktree');
+    a.ok(!k.bus.get(`submission:task:${submitted}`),
+      'and its submission marker must go with it, or reassign_task reads a pointer to a verification that can never land');
+    a.ok(k.bus.history({ limit: 400 }).some((m) =>
+      m.recipient === k.config.orchestrator.name
+      && /awaiting verification/.test(m.body) && new RegExp(`#${submitted}`).test(m.body)),
+    'and the discarded verification must be named, not folded into "unclaimed again"');
 
     a.ok(k.bus.history({ limit: 400 }).some((m) =>
       m.recipient === k.config.orchestrator.name && /no longer in this court/.test(m.body)
