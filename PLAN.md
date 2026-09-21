@@ -1,5 +1,26 @@
 # Rebuild the Agentic OS interface around the run
 
+## Status — closed 2026-09-21
+
+Every section below is implemented on `main`. The contract stays here in full
+because it is the record of what was agreed and why, not a checklist to work
+from. What closed each one:
+
+| Section | Closed by |
+|---|---|
+| 1. One design system | `c4c6573` (Hiveory tokens in full), `9524d3f` (dot-and-glow status cue), `b67ed9e` (the header's awake-count label) |
+| 2. One status vocabulary | `tone()` in `ui/views/util.js`; the last private vocabulary, Approvals, folded in by `b310960` |
+| 3. Rebuild the shell | Header carries repository, branch, objective, mode with its permissions, and connection; the rail is down to two lists; mode has one home |
+| 4. Overview as mission control | `ui/views/home.js` ranks by urgency at render time and leads with the run, or the next-step surface when there is none |
+| 5. Rebuild the views | `b310960`; `ui/thread.js`, `ui/views/settings.js` and `ui/views/automations.js` were verified against the system and needed no change |
+
+**Acceptance is not complete.** The clause below — source evidence is not
+acceptance — is unmet and is not waived by this closure. No Electron or browser
+session has demonstrated a run through its lifecycle, a blocked run's recovery,
+the collapsed rail's controls, the drawer at 720px with its keyboard path, or
+reduced-motion behaviour. The evidence held for all five sections is source and
+HTTP-level only.
+
 ## Goal and boundaries
 
 The daemon's spine is the run: a durable record moving through `planning`,

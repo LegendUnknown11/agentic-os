@@ -15,10 +15,14 @@ DOM reference, and the automation graph editor is widened to two columns. Its
 `test/t-theme.js` change moved with it.
 
 The push has since happened. Verified 2026-09-21: `main` and `origin/main` are
-in sync. `origin` still carries 21 branches, `origin/ui-enhancement` among them;
-every one of them has a merged pull request, so all 21 are safe to delete. They
-do not appear under `git branch -r --merged origin/main` because this repository
-squash-merges — ancestry is the wrong test here, the PR record is the right one.
+in sync. `origin` now carries two branches, `main` and `ui-enhancement`; the
+other twenty were merged long ago and were deleted on 2026-09-21. The sovereign
+chose to keep `ui-enhancement`.
+
+Keep this trap in mind before judging a branch dead or alive: this repository
+squash-merges, so a merged branch does NOT appear under
+`git branch -r --merged origin/main`. Ancestry is the wrong test. The PR record
+is the right one — `gh pr list --state all --json headRefName,state`.
 
 The autonomous-improvement run system is implemented and on `main`. It has not
 been demonstrated in a browser or Electron window. The Habitable pilot has not
@@ -31,15 +35,17 @@ Hiveory (github.com/raktim-yoddha/hiveory), adopted in full from its shipped
 source, retired by PLAN.md section 1 on 2026-09-17. The contract depends on
 Hiveory's real token values, not on a summary of them.
 
-Sections 1 through 4 of that contract are landed on `main`: the token adoption
-(`c4c6573`), the dot-and-glow status cue (`9524d3f`), the header's awake-count
-label (`b67ed9e`), the `tone()` vocabulary in `ui/views/util.js`, and Overview's
-render-time urgency ranking in `ui/views/home.js`. Section 5 is partly open.
+**All five sections of that contract are implemented on `main`**, closed
+2026-09-21. `PLAN.md` carries the table of what closed each. Its acceptance
+clause is a separate matter and is still unmet: no Electron or browser session
+has demonstrated any of it. Source evidence is not acceptance, and the closure
+does not waive that.
 
 ## Evidence
 
-The combined source gate passed on `main`: `npm.cmd test` completed **73 suites,
-4-wide, all passed** on 2026-09-21. Earlier handoffs recorded 71 suites; the
+The combined source gate passed on merged `main`: `npm.cmd test` completed
+**73 suites, 4-wide, 59.3s, all passed** on 2026-09-21, after #63, #64 and #65
+landed. Earlier handoffs recorded 71 suites; the
 runner's array has grown since, and 73 is the count the run itself printed. The
 suite count is the contract.
 
@@ -237,16 +243,18 @@ current proof; refresh them before the snapshot.
 
 ## Remaining acceptance work
 
-- Delete the 21 merged remote branches, `origin/ui-enhancement` included. The
-  push is done; the deletion is outward-facing and awaits the sovereign's word.
-- Finish section 5 of `PLAN.md`. Sections 1 through 4 are landed. What remains:
-  `ui/views/approvals.js` still hand-rolls a private status vocabulary in
-  `approvalStatus()` instead of using `tone()`, the header names the repository
-  but not the branch, and `ui/thread.js`, `ui/views/settings.js` and
-  `ui/views/automations.js` have not been verified against the adopted system.
-- Exercise the run controls and final review in a visible browser or Electron
-  session, including reduced-motion behavior and an actual interactive
-  walkthrough. Screenshots alone are insufficient.
+- **Exercise the interface in a visible browser or Electron session.** This is
+  the single largest gap in this repository. `PLAN.md`'s five sections are
+  implemented and their acceptance clause is unmet: nothing has demonstrated a
+  run through its lifecycle, a blocked run's recovery, the collapsed rail's
+  controls, the drawer at 720px with its keyboard path, or reduced-motion
+  behavior. Screenshots alone are insufficient, and the Browser pane cannot
+  supply this — see the trap above about its reduced motion and pane-visible
+  compositing.
+- Watch the two fixes in `6bec8c8` in a live court. Both are proven by source
+  tests only: that the crown's replies now reach an orchestrator whose name is
+  "orchestrator", and that releasing a departed member's work names the
+  verification it discarded instead of silently collapsing it.
 - Run the Habitable pilot preparation above. Its backlog needs approval before
   implementation starts; physical-device, signing, store release, and iOS remain
   separate from the pilot unless explicitly added.
