@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Runs the kingdom and serves the throne room over HTTP + SSE.
 //
-//   node src/daemon.js [repo] [--port 7777] [--config path]
+//   node src/daemon.js [repo] [--port 7777] [--config path] [--bind 127.0.0.1]
 //
 // repo is optional: Chat and Cowork run with none attached, and Code
 // mode is refused (see Kingdom#setMode) until one is picked in the app —
@@ -13,7 +13,8 @@
 // does not kill the court.
 import { createServer } from 'node:http';
 import { readFile, mkdir, writeFile, readdir, unlink } from 'node:fs/promises';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, mkdirSync, writeFileSync, unlinkSync } from 'node:fs';
+import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { join, dirname, resolve, extname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Kingdom, defaultConfigPath } from './kingdom.js';
@@ -60,6 +61,55 @@ const port = Number(flag('--port', 7777));
 // "kingdom" on every repo-less restart).
 const homeRepo = repoArg ? repo : null;
 const configPath = flag('--config', defaultConfigPath(homeRepo));
+
+// ---- Approve from a phone: bearer-token auth for a non-loopback bind ------
+// Loopback (the default) needs nothing beyond originAllowed() below — this
+// is purely additive. A bind address reachable from off-machine changes the
+// threat model: anyone on that network can open a TCP connection here, so a
+// connection that did not arrive over loopback must present a bearer token,
+// and even then reaches only reads plus approve/reject/answerQuestion (see
+// remoteGate below). Ordering is the whole point: the token exists and the
+// refusal below is checked before bindAddr is ever passed to .listen().
+const bindAddr = flag('--bind', process.env.KINGDOM_BIND ?? '127.0.0.1');
+const LOOPBACK_BINDS = new Set(['127.0.0.1', 'localhost', '::1']);
+const bindIsLoopback = LOOPBACK_BINDS.has(bindAddr);
+
+// KINGDOM_TEST_DISABLE_TOKEN and KINGDOM_TEST_FORCE_REMOTE (used in
+// remoteConnection() below) exist only for test/t-csrf.js — the same way
+// KINGDOM_CODEX_BIN, KINGDOM_SETTLE_MS etc. stub real dependencies elsewhere
+// in this repo's test suites. Neither is read by electron/main.js or
+// documented for real use; a real deploy always generates a real token.
+const authToken = process.env.KINGDOM_TEST_DISABLE_TOKEN === '1'
+  ? null
+  : randomBytes(32).toString('hex');
+
+if (!bindIsLoopback && !authToken) {
+  console.error(`daemon: refusing to bind ${bindAddr} with no bearer token generated — `
+    + 'a non-loopback bind must be authenticated. This should never happen outside a test.');
+  process.exit(1);
+}
+
+// The token is generated, never configured: never read from or written to
+// kingdom.config.json, and never printed to stdout/stderr — Electron pipes
+// both straight into daemon.log (electron/main.js's startDaemon()), so a
+// console.log here would put a working phone credential on disk on every
+// boot. Instead it goes to its own untracked file beside this repo's
+// existing out-of-tree secret (src/set-token.js's tokens.json is the same
+// convention: kingdomDir is already gitignored), overwritten fresh on every
+// start so a stale token never outlives the process that issued it. A
+// QR-code-style pairing flow reads this file; that flow is not part of this
+// change.
+const PHONE_TOKEN_FILE = join(kingdomDir(homeRepo), 'phone-token.txt');
+if (!bindIsLoopback) {
+  try {
+    mkdirSync(dirname(PHONE_TOKEN_FILE), { recursive: true });
+    writeFileSync(PHONE_TOKEN_FILE, `${authToken}\n`, { mode: 0o600 });
+  } catch (e) {
+    console.error(`daemon: could not write the phone approval token to disk: ${e.message}`);
+  }
+} else {
+  try { unlinkSync(PHONE_TOKEN_FILE); } catch { /* nothing to clean up */ }
+}
 
 const kingdom = new Kingdom(homeRepo, configPath);
 const speech = new Speech(process.env.KINGDOM_SPEECHBIRD ?? kingdom.config.speechbird);
@@ -497,6 +547,53 @@ function originAllowed(req) {
   return origin === `http://127.0.0.1:${port}` || origin === `http://localhost:${port}`;
 }
 
+// Loopback classification is by CONNECTION, not by the configured bind —
+// binding 0.0.0.0 still accepts connections that arrive via 127.0.0.1, and
+// those must keep working exactly as they do today (rule 7's whole point).
+// Only a connection that actually arrived over a non-loopback interface is
+// gated below.
+function remoteConnection(req) {
+  if (process.env.KINGDOM_TEST_FORCE_REMOTE === '1') return true; // test seam only, see above
+  const ip = req.socket.remoteAddress ?? '';
+  return ip !== '127.0.0.1' && ip !== '::1' && ip !== '::ffff:127.0.0.1';
+}
+
+function bearerAuthorized(req) {
+  if (!authToken) return false;
+  const [scheme, value] = (req.headers.authorization ?? '').split(' ');
+  if (scheme !== 'Bearer' || !value) return false;
+  // Fixed-length compare: a phone token is worth guarding against timing.
+  const presented = Buffer.from(value);
+  const expected = Buffer.from(authToken);
+  return presented.length === expected.length && timingSafeEqual(presented, expected);
+}
+
+// The one surface a bearer-authenticated, non-loopback request may reach:
+// the approval queue, and the three actions it can act on. Run controls,
+// repo switching, asset uploads and the UI itself stay loopback-only no
+// matter what token is presented — "the write surface stays limited to
+// approvals" is explicit in the backlog's acceptance clause.
+const REMOTE_READS = new Set(['/api/ping', '/api/approvals']);
+const REMOTE_ACTIONS = new Set(['approve', 'reject', 'answerQuestion']);
+
+/**
+ * null: not a remote connection — the existing loopback/origin path below
+ *   applies completely unchanged.
+ * 'authorized': a valid token AND an allowed route — proceed, and skip the
+ *   origin/CSRF check for this one request (the bearer token already is
+ *   one: a cross-site page can neither read nor attach it).
+ * otherwise: {status, error} — refuse verbatim, before any route runs.
+ */
+function remoteGate(req, url) {
+  if (!remoteConnection(req)) return null;
+  if (!bearerAuthorized(req)) return { status: 401, error: 'missing or invalid bearer token' };
+  const allowedRead = req.method === 'GET' && REMOTE_READS.has(url.pathname);
+  const allowedAction = req.method === 'POST' && url.pathname.startsWith('/api/')
+    && REMOTE_ACTIONS.has(url.pathname.slice(5));
+  return allowedRead || allowedAction ? 'authorized'
+    : { status: 403, error: 'this route is not available for remote approval' };
+}
+
 // Every GET that answers with JSON, keyed by path.
 //
 // This mirrors ACTIONS above. The POST side has had a dispatch table since it
@@ -776,8 +873,15 @@ const READS = {
 const handle = async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
 
+  const remote = remoteGate(req, url);
+  if (remote && remote !== 'authorized') {
+    return res.writeHead(remote.status, { 'content-type': 'application/json' })
+      .end(JSON.stringify({ ok: false, error: remote.error }));
+  }
+  const bearerAuthed = remote === 'authorized';
+
   if (req.method === 'POST' && url.pathname.startsWith('/api/')) {
-    if (!originAllowed(req)) return res.writeHead(403, { 'content-type': 'application/json' })
+    if (!bearerAuthed && !originAllowed(req)) return res.writeHead(403, { 'content-type': 'application/json' })
       .end(JSON.stringify({ ok: false, error: 'origin not allowed' }));
     // /api/transcribe and /api/assets (upload, not /delete) post a raw file
     // as the body with its own mime type, by design (ui/assets.js's own
@@ -1098,7 +1202,7 @@ createServer((req, res) => handle(req, res).catch((e) => {
   console.error(e?.stack ?? e);
   if (!res.headersSent) res.writeHead(e?.status ?? 500, { 'content-type': 'application/json' });
   res.end(JSON.stringify({ ok: false, error: String(e?.message ?? e) }));
-})).listen(port, '127.0.0.1', async () => {
+})).listen(port, bindAddr, async () => {
   try {
     // A saved repo (found via savedRepo(), not named on the CLI) boots from
     // the workspace home above — re-attach it now, live, exactly as the UI's
@@ -1123,7 +1227,7 @@ createServer((req, res) => handle(req, res).catch((e) => {
     }
     await kingdom.start();
     ready = true;
-    console.log(`throne room: http://127.0.0.1:${port}  (repo: ${kingdom.repo})`);
+    console.log(`throne room: http://${bindAddr}:${port}  (repo: ${kingdom.repo})`);
     // Interval-triggered workflows. 5s resolution, not per-workflow timers —
     // same tradeoff bus.js's own poll makes: fewer moving parts, and a newly
     // saved or edited workflow is picked up on the very next tick for free.
