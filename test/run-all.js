@@ -109,6 +109,7 @@ const suites = [
   ['skill set + observation masking', join(HERE, 't-skills.js')],
   ['state reducer', join(HERE, 't-store.js')],
   ['flat palette', join(HERE, 't-theme.js')],
+  ['flat palette — computed geometry', join(HERE, 't-theme-geometry.js')],
   ['a claude that dies mid-turn', join(HERE, 't-claude-death.js')],
   ['send() guards a claude that never spawned', join(HERE, 't-agent-guard.js')],
 ];

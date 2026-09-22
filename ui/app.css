@@ -211,7 +211,6 @@ body.has-bg {
   /* Default alpha tokens remain 1, so the no-wallpaper shell stays flat. */
   --shell-alpha: .82;
   --surface-alpha: .88;
-  --raised-alpha: .90;
 }
 
 button, input, select, textarea { font: inherit; }
