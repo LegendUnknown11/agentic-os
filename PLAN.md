@@ -14,12 +14,29 @@ from. What closed each one:
 | 4. Overview as mission control | `ui/views/home.js` ranks by urgency at render time and leads with the run, or the next-step surface when there is none |
 | 5. Rebuild the views | `b310960`; `ui/thread.js`, `ui/views/settings.js` and `ui/views/automations.js` were verified against the system and needed no change |
 
-**Acceptance is not complete.** The clause below — source evidence is not
-acceptance — is unmet and is not waived by this closure. No Electron or browser
-session has demonstrated a run through its lifecycle, a blocked run's recovery,
-the collapsed rail's controls, the drawer at 720px with its keyboard path, or
-reduced-motion behaviour. The evidence held for all five sections is source and
-HTTP-level only.
+**Acceptance met 2026-09-21, and it cost eight defects.** The clause below was
+satisfied in one live session against a demo court on `127.0.0.1:7788`, driven
+first in a real browser and then confirmed in the Electron shell
+(`navigator.userAgent` contains "Electron"). Every item in the clause was
+demonstrated by clicking the interface's own controls, not by writing state
+behind it:
+
+| Clause item | What was done |
+|---|---|
+| A run through its lifecycle | planning → running → paused → running → verifying → ready_for_review, each transition from the run panel |
+| A blocked run's recovery | blocked with a visible blocker, then recovered and carried on to verifying |
+| The final-review gate | Apply disabled until "Approve final review"; then Apply refused by the baseline guard with a visible danger message, which is the guard working |
+| The collapsed rail's controls | 64px rail, expand affordance, drawn `.hover-tip` (not native `title`) |
+| The drawer at 720px with its keyboard path | drawer open, main `inert`, scrim, real Tab focus trap wrapping to "+ New" without escaping, Escape returning focus to the Menu button |
+| Reduced-motion behaviour | at `reduce`, every animation `none` and transitions `0.001s`; at `no-preference`, `.status-dot.live` pulsing at 1.6s |
+
+Running it also exposed eight layout defects that 73 passing suites could not
+see — six of them one root cause, a grid handing its free height to every row it
+created. Fixed in `fix/live-layout-defects`; `test/t-theme.js` and
+`test/t-pages.js` now pin each one.
+
+This is Electron and browser evidence. It is not device, signing, provider, or
+human-acceptance evidence.
 
 ## Goal and boundaries
 

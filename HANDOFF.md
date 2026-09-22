@@ -24,9 +24,9 @@ squash-merges, so a merged branch does NOT appear under
 `git branch -r --merged origin/main`. Ancestry is the wrong test. The PR record
 is the right one — `gh pr list --state all --json headRefName,state`.
 
-The autonomous-improvement run system is implemented and on `main`. It has not
-been demonstrated in a browser or Electron window. The Habitable pilot has not
-begun.
+The autonomous-improvement run system is implemented and on `main`, and as of
+2026-09-21 it has been driven through its lifecycle in a live browser and in the
+Electron shell. The Habitable pilot has not begun.
 
 The approved next body of work is a full interface rebuild. [PLAN.md](PLAN.md)
 holds its contract and acceptance criteria. Its design system source is
@@ -36,10 +36,19 @@ source, retired by PLAN.md section 1 on 2026-09-17. The contract depends on
 Hiveory's real token values, not on a summary of them.
 
 **All five sections of that contract are implemented on `main`**, closed
-2026-09-21. `PLAN.md` carries the table of what closed each. Its acceptance
-clause is a separate matter and is still unmet: no Electron or browser session
-has demonstrated any of it. Source evidence is not acceptance, and the closure
-does not waive that.
+2026-09-21. `PLAN.md` carries the table of what closed each, and now also the
+table of how its acceptance clause was met: one live session on 2026-09-21 drove
+a run through its lifecycle, recovered a blocked run, exercised the collapsed
+rail, the 720px drawer with its keyboard path, and reduced motion — first in a
+browser, then confirmed inside Electron.
+
+That session is also the strongest argument in this repository for not trusting
+source evidence. The interface had 73 green suites and eight visible layout
+defects, six of them one root cause: a CSS grid distributes leftover height
+across every row it created, so headings floated mid-section and a conversation
+row stood 165px tall with 49px left for its title. `align-content: start` at each
+shared declaration fixed all six; `fix/live-layout-defects` carries them with
+tests that pin the measured numbers.
 
 ## Evidence
 
@@ -49,8 +58,8 @@ landed. Earlier handoffs recorded 71 suites; the
 runner's array has grown since, and 73 is the count the run itself printed. The
 suite count is the contract.
 
-Durations on the same machine: 36.8s (2026-09-14), 64.1s earlier still, 179.6s
-on 2026-09-21. That spread is machine load under 4-wide contention, not
+Durations on the same machine: 36.8s (2026-09-14), 64.1s earlier still, 105.8s
+and 179.6s on 2026-09-21. That spread is machine load under 4-wide contention, not
 regression — `test/run-all.js` documents the same effect and measures it. Do
 not treat a slower run as a failure on its own.
 
@@ -59,8 +68,10 @@ the 2026-09-21 run. The runner reports that as `flaky`, and it is the one suite
 known to do this. Treat a bare pool failure there as unproven until the retry
 result is read.
 
-This is source and HTTP-level evidence. It is not visual, Electron, device,
-signing, provider, or human-acceptance evidence.
+That gate is source and HTTP-level evidence on its own. Separate from it, the
+2026-09-21 live session supplies visual and Electron evidence for the interface
+contract — see `PLAN.md`. Neither is device, signing, provider, or
+human-acceptance evidence.
 
 ## What the application does
 
@@ -243,14 +254,18 @@ current proof; refresh them before the snapshot.
 
 ## Remaining acceptance work
 
-- **Exercise the interface in a visible browser or Electron session.** This is
-  the single largest gap in this repository. `PLAN.md`'s five sections are
-  implemented and their acceptance clause is unmet: nothing has demonstrated a
-  run through its lifecycle, a blocked run's recovery, the collapsed rail's
-  controls, the drawer at 720px with its keyboard path, or reduced-motion
-  behavior. Screenshots alone are insufficient, and the Browser pane cannot
-  supply this — see the trap above about its reduced motion and pane-visible
-  compositing.
+- ~~Exercise the interface in a visible browser or Electron session.~~ Done
+  2026-09-21; `PLAN.md` records what each clause item demonstrated. Method worth
+  reusing: the daemon serves the whole UI over HTTP, so a real browser at
+  `127.0.0.1:<port>` exercises the same code Electron loads, and Electron
+  launched with `--remote-debugging-port` is reachable over CDP for the same
+  measurements. The Browser pane still cannot supply this, for the reason in the
+  trap above.
+- **Measure the collapsed rail's tap targets.** Read live at 1440x900: its
+  buttons are 39x44, short of `PLAN.md` §1's 44px minimum on the horizontal
+  axis. The 64px rail width is itself a measured, test-pinned decision, so this
+  is a real conflict between two pinned numbers and needs a decision, not a
+  quiet widening.
 - Watch the two fixes in `6bec8c8` in a live court. Both are proven by source
   tests only: that the crown's replies now reach an orchestrator whose name is
   "orchestrator", and that releasing a departed member's work names the

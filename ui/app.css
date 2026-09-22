@@ -469,7 +469,12 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .sidebar-new:hover { border-color: transparent; background: var(--accent-hover); }
 
-.sidebar-section { display: grid; gap: var(--space-2); min-height: 0; }
+/* align-content: start, because an implicit grid hands its free space to every
+   row it created. Measured live 2026-09-21 at 1440x900: the rail's
+   Conversations heading was given 121px of the section's 295px of slack and
+   floated in the middle of it. The list below is the one row that may grow,
+   and .sidebar-conversations names it explicitly. */
+.sidebar-section { display: grid; align-content: start; gap: var(--space-2); min-height: 0; }
 
 .sidebar-nav-list { display: grid; gap: 2px; }
 
@@ -518,9 +523,12 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .hover-tip { position: fixed; z-index: 50; max-width: 260px; padding: var(--space-2) var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-ctl); background: var(--raised); color: var(--text); font-size: var(--t-xs); line-height: 1.4; white-space: pre-line; pointer-events: none; box-shadow: var(--shadow-panel); }
 
-.sidebar-conversations { flex: 1; min-height: 0; }
+.sidebar-conversations { flex: 1; grid-template-rows: auto minmax(0, 1fr); min-height: 0; }
 
-.conversation-list { display: grid; gap: var(--space-1); min-height: 0; overflow: auto; scrollbar-width: thin; }
+/* Same measurement: the single conversation in a 165px list became a 165px
+   row with its title centred in the void. Rows keep their own height; the
+   list scrolls when there are more of them than fit. */
+.conversation-list { display: grid; align-content: start; gap: var(--space-1); min-height: 0; overflow: auto; scrollbar-width: thin; }
 
 .conversation-row { display: flex; min-width: 0; align-items: center; gap: var(--space-2); padding: var(--space-2); border: 1px solid transparent; border-radius: var(--radius-ctl); background: transparent; color: var(--muted); text-align: left; transition: border-color var(--fast) var(--ease), background-color var(--fast) var(--ease), color var(--fast) var(--ease); }
 
@@ -532,7 +540,11 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .conversation-actions { display: none; flex: none; gap: var(--space-1); }
 
-.conversation-row:hover .conversation-actions, .conversation-row.selected .conversation-actions, .conversation-row:focus-within .conversation-actions { display: flex; }
+/* NOT .selected. Showing three text actions permanently on the selected row
+   spent 150px of a 225px rail on them and left its title 49px, rendering
+   "Conv...". Hover covers pointers, focus-within covers keyboards, and the
+   <=720px block shows them unconditionally for touch, which has neither. */
+.conversation-row:hover .conversation-actions, .conversation-row:focus-within .conversation-actions { display: flex; }
 
 .conversation-action { min-height: var(--tap-target-min); padding: var(--space-1); border: 0; background: transparent; color: var(--faint); font-size: var(--t-xs); white-space: nowrap; }
 
@@ -644,7 +656,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .skill-option small { color: var(--muted); }
 
-.view-page { display: grid; gap: var(--space-5); max-width: 1080px; margin: 0 auto; }
+.view-page { display: grid; align-content: start; gap: var(--space-5); max-width: 1080px; margin: 0 auto; }
 
 .boot-failure { display: grid; max-width: 520px; gap: var(--space-3); margin: var(--space-5) auto; }
 
@@ -662,7 +674,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .view-description { max-width: 60ch; margin: 0; color: var(--muted); font-size: var(--t-md); }
 
-.view-section { display: grid; gap: var(--space-3); padding: var(--space-4); border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--surface); box-shadow: var(--shadow-card); }
+.view-section { display: grid; align-content: start; gap: var(--space-3); padding: var(--space-4); border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--surface); box-shadow: var(--shadow-card); }
 
 .view-section h2 { margin: 0; font-family: var(--display); font-size: 22px; letter-spacing: -.02em; }
 
@@ -690,7 +702,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .stat span, .card-meta { color: var(--muted); font-size: var(--t-xs); }
 
-.usage-dashboard { display: grid; gap: var(--space-4); }
+.usage-dashboard { display: grid; align-content: start; gap: var(--space-4); }
 
 .usage-toolbar { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: var(--space-3); }
 
@@ -762,7 +774,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .agent-heading h3 { font-size: var(--t-md); }
 
-.approval-card, .agent-card, .home-card, .workflow-row, .activity-row, .message-row { display: grid; gap: var(--space-2); padding: var(--space-4); border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--raised); box-shadow: var(--shadow-card); }
+.approval-card, .agent-card, .home-card, .workflow-row, .activity-row, .message-row { display: grid; align-content: start; gap: var(--space-2); padding: var(--space-4); border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--raised); box-shadow: var(--shadow-card); }
 
 .approval-card.pending { border-color: rgb(var(--accent-rgb) / .55); }
 
@@ -801,7 +813,12 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .data-table th { color: var(--muted); font-size: var(--t-xs); font-weight: 600; }
 
-.home-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: var(--space-3); }
+/* 420px, not the 240px this carried: auto-fit only collapses tracks that are
+   empty, and .run-summary spans 1 / -1, so every track stays occupied. At
+   1080px that left four 261px tracks with the Queue card rendering in one of
+   them, four words wide, beside 800px of nothing. Two real columns here, one
+   below ~860px. */
+.home-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: var(--space-3); }
 
 .home-card h2, .home-card p { margin: 0; }
 
@@ -836,7 +853,10 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .run-progress b { color: var(--text); font-size: var(--t-xs); }
 
-.run-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: var(--space-3); margin-top: var(--space-3); }
+/* align-items: start so each panel is as tall as what it holds. Stretching
+   them to the tallest sibling left an empty "Verified deliverables" reading
+   as a 200px hole beside a three-item list. */
+.run-grid { display: grid; align-items: start; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: var(--space-3); margin-top: var(--space-3); }
 
 .run-grid .view-section { min-width: 0; padding: var(--space-3); }
 

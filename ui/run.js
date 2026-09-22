@@ -132,11 +132,16 @@ export function renderRunOverview(state, options = {}) {
     ...(Array.isArray(state.approvals) ? state.approvals.filter((item) => item.runId === runId(run) || item.run_id === runId(run)) : []),
   ].filter((item) => item?.resolved !== true && item?.status !== 'resolved');
   const recovery = recoveryFor(run);
+  // The heading falls back to the objective when a run carries no title of its
+  // own, and every run the daemon creates is one of those — so this printed the
+  // same sentence twice, as heading and as body. Seen live 2026-09-21.
+  const objective = objectiveFor(state, run);
+  const heading = run.title ?? objective;
   const shell = h('section', { class: `home-card run-summary ${statusClass(status)} ${tone(status)}`.trim() },
     h('div', { class: 'run-summary-head' },
-      h('div', {}, h('p', { class: 'mode-kicker', text: 'Improvement run' }), h('h2', { text: run.title ?? objectiveFor(state, run) })),
+      h('div', {}, h('p', { class: 'mode-kicker', text: 'Improvement run' }), h('h2', { text: heading })),
       h('b', { class: `run-badge ${tone(status)}`.trim(), text: runStatusLabel(status) })),
-    h('p', { class: 'run-objective', text: objectiveFor(state, run) }),
+    heading === objective ? null : h('p', { class: 'run-objective', text: objective }),
     progressBlock(run));
   const grid = h('div', { class: 'run-grid' });
   grid.append(section(`Verified deliverables${verified.length ? ` · ${verified.length}` : ''}`, ...itemRows(verified, 'No deliverable has passed verification yet.')));

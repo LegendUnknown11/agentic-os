@@ -18,6 +18,7 @@ const courtPreloadSource = readFileSync(new URL('../electron/court-preload.cjs',
 const electronMainSource = readFileSync(new URL('../electron/main.js', import.meta.url), 'utf8');
 const threadSource = readFileSync(new URL('../ui/thread.js', import.meta.url), 'utf8');
 const utilSource = readFileSync(new URL('../ui/views/util.js', import.meta.url), 'utf8');
+const runSource = readFileSync(new URL('../ui/run.js', import.meta.url), 'utf8');
 const usageSource = readFileSync(new URL('../ui/views/usage.js', import.meta.url), 'utf8');
 const storeSource = readFileSync(new URL('../ui/store.js', import.meta.url), 'utf8');
 
@@ -136,7 +137,13 @@ a.match(homeSource, /class: 'home-empty'/, 'an empty Home must keep one quiet ne
 a.match(homeSource, /!taskFailure && !queueVisible && !workingVisible && !changesVisible/, 'Home must only show secondary blocks when they contain work');
 a.doesNotMatch(homeSource, /home-mode-card|modeCard/, 'Overview must not carry a mode card — mode lives in the header and drawer only');
 a.match(homeSource, /home-objective/, 'Home must keep the objective as an ambient card');
-a.match(homeSource, /grid\.append\(ambient\);[\s\S]*?if \(!runSummary && !urgent\.length/, 'the objective must render last, after every urgent and secondary card');
+a.match(homeSource, /grid\.append\(ambient\);[\s\S]*?if \(!runSummary && !next && !urgent\.length/, 'the objective must render last, after every urgent and secondary card');
+// Seen live 2026-09-21 on a fresh court: the lead "Next step" card and the
+// ambient "Start here" card rendered the same sentence and the same two
+// buttons, one above the other, and the empty-state line said it a third time.
+a.match(homeSource, /card\.dataset\.lead = 'objective';/, 'the lead card must say when it is already the objective prompt');
+a.match(homeSource, /else if \(!leadAsksForObjective\) ambient\.append/, 'the ambient card must not repeat a prompt the lead card is already making');
+a.match(homeSource, /if \(ambient\.children\.length > 1\) grid\.append\(ambient\);/, 'an ambient card reduced to its heading must not render at all');
 a.match(homeSource, /const urgent = \[/, 'Home must rank approvals, failed members, and blocked tasks into one urgency list');
 a.match(homeSource, /approvals\.map\(\(a\) => \(\{[\s\S]*?tone: tone\('blocked'\),/, 'pending approvals must carry the shared attention tone, not render as a plain nav row');
 a.match(homeSource, /attention\.map\(\(\[name, member\]\) => \{[\s\S]*?tone: tone\(label\),/, 'failed or rate-limited members must carry their real status tone, not render as a plain nav row');
@@ -147,6 +154,10 @@ a.match(homeSource, /import \{ statusDot \} from '\.\.\/avatar\.js'/, 'Home rows
 a.match(homeSource, /h\('button', \{ class: `button \$\{cls\}`, type: 'button', on: \{ click: item\.open \} \}, dot, h\('span'/, 'an urgent row must lead with the shared status dot now that the left-rule is gone');
 a.match(homeSource, /queue\.append\(h\('div', \{ class: `task-row task-\$\{task\.shown\} \$\{tone\(task\.shown\)\}`\.trim\(\) \},\s*dot, h\('b'/, 'a queue row must lead with the shared status dot now that the left-rule is gone');
 a.match(homeSource, /nextStepFor\(\{ urgent, changesVisible, changes, goal \}\)/, 'with no active run, Home must lead with the single most urgent next step');
+// Every run the daemon creates carries no title, so the heading falls back to
+// the objective and the body printed the same sentence again. Seen live
+// 2026-09-21 in the run panel at every lifecycle state.
+a.match(runSource, /heading === objective \? null : h\('p', \{ class: 'run-objective'/, 'the run panel must not print its objective twice when the heading already is it');
 a.match(homeSource, /const shell = page\('Overview', mode\.blurb\)/, 'Home must not repeat mode and repository context in its page heading');
 a.match(homeSource, /const attention =/, 'Home must separate terminal member states from active work');
 a.match(homeSource, /home-attention/, 'Home must give terminal member states a direct attention surface');
