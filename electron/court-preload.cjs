@@ -9,5 +9,6 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('kingdomShell', {
   chooseRepo: () => ipcRenderer.invoke('repo:choose'),
+  switchRepo: (path) => ipcRenderer.invoke('court:switchRepo', path),
   openPet: () => ipcRenderer.send('pet:open'),
 });
