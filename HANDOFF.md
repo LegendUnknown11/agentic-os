@@ -240,6 +240,15 @@ current proof; refresh them before the snapshot.
 - `AGENTS.md` points to `CLAUDE.md`; `docs/HANDOFF.md` points here. Git history
   retains their former text. Do not recreate parallel active instruction
   documents.
+- `.claude/arms/` and `.claude/skills/` are delegated by this section and hold
+  no authority of their own. A router under `.claude/arms/` indexes work by
+  domain: paths, and which skill and trap apply. A skill under
+  `.claude/skills/` is a procedure loaded when its trigger fires, in the sense
+  `src/skills.js` defines — a method invoked on purpose for the task at hand,
+  not knowledge and not a standing rule. Neither may state a rule this file,
+  `PLAN.md` or the source owns; where such a rule bears on the work, they name
+  the file that owns it. Any contradiction with this file or `PLAN.md` is a
+  defect in the subordinate document, and this file wins without argument.
 
 ## Remaining acceptance work
 

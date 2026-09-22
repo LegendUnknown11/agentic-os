@@ -4,21 +4,19 @@ Companion to [SKILL.md](SKILL.md). Values live in `ui/app.css` and are pinned in
 `test/t-theme.js`; read them there. This file holds the rules and reasons those
 files do not state.
 
-## Where a rule goes
+## The rules, and who owns them
 
-Edit each selector **at its declaration**. Appending an override block at the
-bottom of the file is how a stylesheet becomes two stylesheets that disagree,
-and it is explicitly banned by HANDOFF.md operating rule 6.
+HANDOFF.md operating rule 6 owns where a rule goes and where colour may live.
+Read it there. What follows is only what makes those rules actionable and is
+written nowhere else.
 
-## Colour
-
-- Only the `:root` token block holds a colour. Nothing else, ever.
-- Every colour token carries an `-rgb` channel twin (`--text` and
-  `--text-rgb: 245 247 250`). Alpha is expressed as
-  `rgb(var(--text-rgb) / 0.6)`, which is why the twin exists.
-- `test/t-theme.js` scans for stray hex literals and for coloured `rgb()` calls
-  that did not come from a channel token. Both fail the suite.
-- Gold identifies the orchestrator and nothing else.
+- The ban on override blocks exists because an appended block turns one
+  stylesheet into two that disagree. Edit at the declaration.
+- Every colour token carries an `-rgb` channel twin, because alpha is expressed
+  as `rgb(var(--text-rgb) / 0.6)` and a hex token cannot supply it. A new token
+  needs both halves or the twin is missing exactly when someone needs alpha.
+- `test/t-theme.js` is what catches a violation: it scans for stray hex literals
+  and for coloured `rgb()` calls that did not come from a channel token.
 
 ## Where the palette came from
 

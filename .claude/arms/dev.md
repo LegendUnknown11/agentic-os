@@ -19,9 +19,10 @@ Its key-files table is the map; this file is the dispatch by task.
 
 ## Gate
 
-One command, `npm.cmd test`, and the pre-commit hook runs it again. Read
-[verify](../skills/verify/SKILL.md) before reporting a result — the suite count,
-the known flaky suite, and what the evidence does not cover are all there.
+The gate and its operating rules belong to HANDOFF.md; the commands belong to
+the `scripts` block in [package.json](../../package.json). Reach
+[verify](../skills/verify/SKILL.md) before reporting a result — it covers the
+suite count, the known flaky suite, and what the evidence does not reach.
 
 ## Traps this domain owns
 
@@ -32,6 +33,7 @@ array, and branch liveness cannot be read from ancestry.
 
 ## Build
 
-`npm.cmd start` for Electron, `npm.cmd run dist` for the installer. The
-`build.files` list in [package.json](../../package.json) decides what ships;
-adding a runtime asset directory means editing it.
+Commands are in [package.json](../../package.json)'s `scripts`. The one thing
+that block does not announce: its `build.files` list decides what ships inside
+the installer, so a new runtime asset directory is invisible to the packaged app
+until it is added there.
