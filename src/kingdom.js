@@ -269,6 +269,9 @@ export class Kingdom extends EventEmitter {
       specOf: (n) => this.specOf(n),
       table: tableFrom(this.config),
       quotaClis: Object.keys(this.config.quotas ?? {}),
+      // Small table (one row per sovereign order), so unlike #turnEndRows()
+      // this needs no memoisation of its own — re-read fresh every call.
+      campaigns: this.bus.campaigns(),
     });
   }
 
@@ -1250,6 +1253,28 @@ export class Kingdom extends EventEmitter {
         `$${perMember}) and has been stopped. Do not wait on it. The sovereign ` +
         `must raise its budget or reassign the work.`);
     }
+    this.#enforceRunBudget(spentTotal);
+  }
+
+  /**
+   * A per-run ceiling, beside maxBudgetUsd (per member, forever) and
+   * maxKingdomUsd (the whole court, forever). A run's own baseline is
+   * captured once in createRun(); this compares cumulative kingdom spend
+   * against that baseline, so it survives a restart the same way the other
+   * two ceilings do. Unrelated work is deliberately left alone — #runBlock is
+   * the same mechanism a stuck recovery or a failed verification already
+   * uses to stop THIS run while the rest of the court keeps going.
+   */
+  #enforceRunBudget(spentTotal) {
+    const run = this.#activeRun();
+    const cap = this.config.maxRunUsd ?? 0;
+    if (!run?.id || !cap) return;
+    const baseline = Number(this.bus.get(`run:${run.id}:baselineSpentUsd`) ?? 0);
+    const spent = spentTotal - baseline;
+    if (spent < cap) return;
+    this.emit('budget', { scope: 'run', runId: run.id, spent, cap });
+    this.#runBlock(run, `run spend ceiling reached ($${spent.toFixed(2)} of $${cap})`,
+      'the sovereign must raise maxRunUsd or stop the run');
   }
 
   #cliOf(name) {
@@ -1762,6 +1787,11 @@ export class Kingdom extends EventEmitter {
   async createRun(fields = {}) {
     const baselineRevision = fields.baselineRevision ?? (this.repo ? await revisionOf(this.repo) : null);
     const run = this.bus.createRun({ ...fields, baselineRevision });
+    // maxRunUsd is scoped to what THIS run spends, not lifetime court spend —
+    // captured once, here, in the bus's own restart-safe key-value store (no
+    // runs-table column needed). Same reasoning as #enforceBudget's own
+    // comment on why counting per-process was the bug in the first place.
+    this.bus.set(`run:${run.id}:baselineSpentUsd`, String(Number(this.bus.get('spentUsd') ?? 0)));
     await this.#reconcileRun();
     const current = this.bus.run(run.id);
     this.emit('run', current);
