@@ -143,14 +143,20 @@ function connect() {
   const query = params.size ? `?${params}` : '';
   source = new EventSource(`/stream${query}`);
   connection('connecting');
+  // ponytail: diagnostic only, for the CI-only t-electron.js run-lifecycle
+  // timeout — remove once root-caused. Distinguishes "no event ever arrived"
+  // from "an event arrived but the repaint didn't reflect it".
+  console.log('[sse] connect() attempt', attempt, 'query', query || '(none)');
   source.onopen = () => {
     if (attempt !== connectionAttempt) return;
+    console.log('[sse] onopen, readyState', source.readyState);
     connection('up');
   };
   source.onmessage = (message) => {
     if (attempt !== connectionAttempt) return;
     try {
       const event = JSON.parse(message.data);
+      console.log('[sse] message type', event.type);
       const firstSnapshot = event.type === 'snapshot' && !state.ready;
       // The advisor can flip the court's mode on its own reading of one plain
       // message (Kingdom#queueMode, by: 'advisor') — Chat becomes Cowork or
@@ -181,6 +187,7 @@ function connect() {
   };
   source.onerror = () => {
     if (attempt !== connectionAttempt) return;
+    console.log('[sse] onerror, readyState', source?.readyState);
     connection('down');
     source?.close();
     source = null;
