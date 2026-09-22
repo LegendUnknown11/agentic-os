@@ -87,11 +87,20 @@ a.ok(!first.includes('--resume'));
 agent.send('try again');
 // Waited on the condition, not on a clock: a fixed sleep here was long enough
 // alone and not long enough with three other suites spawning processes beside it.
-for (let i = 0; i < 200 && !existsSync(argvPath(2)); i++) {
-  await new Promise((r) => setTimeout(r, 50));
+// existsSync alone is not that condition: writeFileSync in the stub is open,
+// write, close as three separate syscalls, so existsSync can see the file the
+// moment open() lands, before its bytes are on disk. Under normal load the gap
+// is too narrow to hit; a 2026-09-22 CI run at reduced (2-wide) concurrency hit
+// it — same commit passed at 4-wide seconds earlier. Poll the actual thing this
+// test needs, a file that parses, not the proxy for it.
+let second;
+for (let i = 0; i < 200 && !second; i++) {
+  if (existsSync(argvPath(2))) {
+    try { second = JSON.parse(readFileSync(argvPath(2), 'utf8')); } catch { /* still being written */ }
+  }
+  if (!second) await new Promise((r) => setTimeout(r, 50));
 }
-a.ok(existsSync(argvPath(2)), 'the member must be restartable at all');
-const second = JSON.parse(readFileSync(argvPath(2), 'utf8'));
+a.ok(second, 'the member must be restartable at all, with argv2.json fully written');
 a.ok(second.includes('--resume'),
   'the restart must --resume: the CLI already created this session, and --session-id with an '
   + 'existing id is refused, which left the member dead while the roster called it awake');
