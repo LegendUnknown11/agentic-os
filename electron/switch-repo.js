@@ -1,0 +1,39 @@
+// The pure control flow behind the "End court and switch to this
+// repository…" action, pulled out of main.js so it can run under a plain
+// Node test with fake dependencies instead of a real Electron process, a
+// real daemon, and a real confirmation dialog.
+//
+// Order matters and is exactly what makes this worth testing on its own:
+// validate BEFORE confirming (a bad path must never reach the user's "are
+// you sure"), confirm BEFORE anything destructive, end the old court BEFORE
+// starting a new one, and only reload once the new court actually answered.
+export async function switchRepo(rawPath, { resolve, assertRepo, confirm, shutdown, courtOnPort, startDaemon, reload, logPath, now = Date.now, wait = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
+  if (!rawPath) return { ok: false, error: 'Choose a repository first.' };
+  const repo = resolve(String(rawPath));
+
+  try {
+    await assertRepo(repo);
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+
+  const proceed = await confirm(repo);
+  if (!proceed) return { canceled: true };
+
+  await shutdown();
+
+  const freeBy = now() + 15_000;
+  while (await courtOnPort()) {
+    if (now() > freeBy) return { ok: false, error: 'The previous court did not end in time. Try again in a moment.' };
+    await wait(300);
+  }
+
+  try {
+    await startDaemon(repo, logPath);
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+
+  reload();
+  return { ok: true, repo };
+}

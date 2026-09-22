@@ -97,6 +97,10 @@ const suites = [
   // must run with none attached, and only Code may ever require one.
   ['repo becomes optional', join(HERE, 't-repo-optional.js')],
   ['court self-control', join(HERE, 't-control.js')],
+  // The end-court-and-switch-repo flow (issue #42): a plain function with
+  // injected dependencies, so its step ordering runs for real without an
+  // Electron process, a daemon, or a native dialog.
+  ['end court and switch repository', join(HERE, 't-repo-switch.js')],
   // A repo attached live must survive a daemon restart in the same
   // workspace home it was attached in — see kingdom.js's this.dbPath and
   // daemon.js's homeRepo for the bug this guards against.

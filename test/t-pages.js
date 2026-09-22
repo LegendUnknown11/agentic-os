@@ -94,13 +94,19 @@ a.match(settingsSource, /if \(\/fresh court\/\.test\(result\.error \?\? ''\) && 
 a.match(settingsSource, /const result = await window\.kingdomShell\.switchRepo\(path\.value\.trim\(\)\);/, 'switching repositories must go through the dedicated shell bridge, not attachRepo');
 a.match(settingsSource, /if \(result\?\.canceled\)/, 'a cancelled repository switch must leave the control usable again, not stuck disabled');
 a.match(courtPreloadSource, /switchRepo: \(path\) => ipcRenderer\.invoke\('court:switchRepo', path\)/, 'the court preload must expose the repository-switch command');
-a.match(electronMainSource, /ipcMain\.handle\('court:switchRepo', async \(event, rawPath\) => \{/, 'the native main process must own ending and respawning the court');
-a.match(electronMainSource, /if \(!existsSync\(join\(repo, '\.git'\)\)\) return \{ ok: false, error: `\$\{repo\} is not a git repository\.` \};/, 'a repository switch must validate the target before ending the running court');
-a.match(electronMainSource, /buttons: \['Cancel', 'End court and switch'\][\s\S]*?if \(response === 0\) return \{ canceled: true \};/, 'ending a court is destructive — it must be confirmed natively before anything is torn down');
-a.match(electronMainSource, /fetch\(`\$\{ORIGIN\}\/api\/shutdown`, \{ method: 'POST' \}\)/, 'a repository switch must end the running court through its own shutdown endpoint');
-a.match(electronMainSource, /while \(await courtOnPort\(\)\) \{[\s\S]*?The previous court did not end in time/, 'a repository switch must wait for the old court to actually free the port before starting a new one');
-a.match(electronMainSource, /await startDaemon\(repo, logPath\);/, 'a repository switch must start the fresh court through the same path the app itself boots with');
-a.match(electronMainSource, /BrowserWindow\.fromWebContents\(event\.sender\)\?\.loadURL\(`\$\{ORIGIN\}\/`\);/, 'a successful repository switch must reload the window instead of resuming a stale event cursor from the old repo');
+a.match(electronMainSource, /ipcMain\.handle\('court:switchRepo', async \(event, rawPath\) => switchRepo\(rawPath, \{/, 'the native main process must own ending and respawning the court');
+// The step sequence itself (validate before confirm, confirm before
+// shutdown, shutdown before startDaemon, reload only after it answers) is a
+// plain function in electron/switch-repo.js, exercised end-to-end without
+// Electron in test/t-repo-switch.js — including the exact ordering risk
+// Greptile flagged on PR #69 (a bad path reaching the destructive steps).
+// This suite only has to pin that main.js wires REAL dependencies into it.
+a.match(electronMainSource, /import \{ assertRepo \} from '\.\.\/src\/worktree\.js'/, 'a repository switch must validate the target with a real git check (assertRepo), not an existsSync(.git) peek a corrupt or empty entry would pass');
+a.match(electronMainSource, /assertRepo,\s*\n\s*confirm: async \(repo\) => \{/, 'a repository switch must use the real git validator, not a bespoke check');
+a.match(electronMainSource, /buttons: \['Cancel', 'End court and switch'\][\s\S]*?return response === 1;/, 'ending a court is destructive — it must be confirmed natively before anything is torn down');
+a.match(electronMainSource, /shutdown: \(\) => fetch\(`\$\{ORIGIN\}\/api\/shutdown`, \{ method: 'POST' \}\)/, 'a repository switch must end the running court through its own shutdown endpoint');
+a.match(electronMainSource, /courtOnPort,\s*\n\s*startDaemon,/, 'a repository switch must poll the real port state and start the fresh court through the same path the app itself boots with');
+a.match(electronMainSource, /reload: \(\) => BrowserWindow\.fromWebContents\(event\.sender\)\?\.loadURL\(`\$\{ORIGIN\}\/`\)/, 'a successful repository switch must reload the window instead of resuming a stale event cursor from the old repo');
 a.match(automationsSource, /workflow-run-message/, 'a manual workflow run must leave visible feedback');
 a.match(automationsSource, /result\?\.steps/, 'workflow feedback must report the returned run trace');
 a.match(automationsSource, /automationEditor/, 'live updates must not discard an open workflow editor');
