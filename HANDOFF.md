@@ -29,11 +29,26 @@ The autonomous-improvement run system is implemented and on `main`, and as of
 Electron shell. The Habitable pilot has not begun.
 
 The approved next body of work is a full interface rebuild. [PLAN.md](PLAN.md)
-holds its contract and acceptance criteria. Its design system source is
-Hiveory (github.com/raktim-yoddha/hiveory), adopted in full from its shipped
-`app.css`. This supersedes the earlier `E:\Prototype.zip` / Cold-Call Workflow
-source, retired by PLAN.md section 1 on 2026-09-17. The contract depends on
-Hiveory's real token values, not on a summary of them.
+holds its contract and acceptance criteria.
+
+**Its design system source reversed on 2026-09-21.** The sovereign supplied
+`Prototype.zip` — the Cold-Call Workflow kit that PLAN.md section 1 had retired
+on 2026-09-17 — and asked for the app redesigned on it outright. That is the
+system the app runs now: paper, not a dark shell. Three grounds (`#f7f1e7`,
+`#ebe1d2`, `#fffdf9`), one teal accent doing brand and primary interactive
+together, the kit's product scale rather than its marketing one (16px card,
+12px control, no pill buttons), and metadata set in mono, uppercase and tracked
+— which is the exact inverse of the Hiveory rule it replaced. Hiveory's spec
+stays in PLAN.md section 1 as the record of what was agreed on 2026-09-17; it
+is no longer what the app implements. `ui/app.css`'s `:root` comment says the
+same thing at the code, and `test/t-theme.js` pins every value.
+
+Before reading a colour out of the kit: it publishes its contrast ratios
+against `--paper` only, and this app's rail and every section sit on
+`--paper-deep`. Two tokens are deliberately darker than the kit's
+(`--muted`/`--faint` `#55635e`, not `#5c6c66`; `--tone-attention` `#9e4239`,
+not `#af4a3f`) so they clear 4.5:1 on the ground they actually sit on. The
+suite fails if either is "restored".
 
 **All five sections of that contract are implemented on `main`**, closed
 2026-09-21. `PLAN.md` carries the table of what closed each, and now also the
@@ -41,6 +56,18 @@ table of how its acceptance clause was met: one live session on 2026-09-21 drove
 a run through its lifecycle, recovered a blocked run, exercised the collapsed
 rail, the 720px drawer with its keyboard path, and reduced motion — first in a
 browser, then confirmed inside Electron.
+
+The redesign re-ran that whole walk on 2026-09-21 and it paid for itself again:
+twenty-eight sub-AA contrast pairings, `.conversation-open` at 210x24 and
+`.sidebar-repo` at 227x27 against the enforced 44px, the collapsed rail's nav
+buttons at 34x44 inside the rail's own 16px inset, the 720px drawer's mode
+section reporting 287x0 while its pills painted through the Overview row, and
+that drawer running 122px past the viewport and squashing the conversation list
+to 287x0 — no way to reach a conversation at all. Every one fixed at its
+declaration and pinned. Re-verified live: 14-view audit clean at 1440x900,
+collapsed rail 47x44 throughout, Tab trapped across 26 presses in the drawer
+with Escape returning focus to Menu, reduced motion correct at both `reduce`
+and `no-preference`.
 
 That session is also the strongest argument in this repository for not trusting
 source evidence. The interface had 73 green suites and eight visible layout
@@ -58,8 +85,9 @@ landed. Earlier handoffs recorded 71 suites; the
 runner's array has grown since, and 73 is the count the run itself printed. The
 suite count is the contract.
 
-Durations on the same machine: 36.8s (2026-09-14), 64.1s earlier still, 105.8s
-and 179.6s on 2026-09-21. That spread is machine load under 4-wide contention, not
+Durations on the same machine: 36.8s (2026-09-14), 64.1s earlier still, 105.8s,
+179.6s and 61.2s on 2026-09-21 — the last of those on
+`redesign/cold-call-workflow`, same 73 suites, all passed. That spread is machine load under 4-wide contention, not
 regression — `test/run-all.js` documents the same effect and measures it. Do
 not treat a slower run as a failure on its own.
 
@@ -261,11 +289,11 @@ current proof; refresh them before the snapshot.
   launched with `--remote-debugging-port` is reachable over CDP for the same
   measurements. The Browser pane still cannot supply this, for the reason in the
   trap above.
-- **Measure the collapsed rail's tap targets.** Read live at 1440x900: its
-  buttons are 39x44, short of `PLAN.md` §1's 44px minimum on the horizontal
-  axis. The 64px rail width is itself a measured, test-pinned decision, so this
-  is a real conflict between two pinned numbers and needs a decision, not a
-  quiet widening.
+- ~~Measure the collapsed rail's tap targets.~~ Done 2026-09-21. The conflict
+  between the pinned 64px rail width and the pinned 44px minimum was real and
+  resolved without moving either: the rail's own 16px inset drops to 8px when
+  collapsed, which was the only axis with slack. Buttons now measure 47x44 and
+  the rail is still 64px. Both numbers are pinned in `test/t-theme.js`.
 - Watch the two fixes in `6bec8c8` in a live court. Both are proven by source
   tests only: that the crown's replies now reach an orchestrator whose name is
   "orchestrator", and that releasing a departed member's work names the

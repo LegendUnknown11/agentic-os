@@ -32,14 +32,14 @@
      auto-stacked, so the dog painted straight over the × and swallowed every
      click on it. */
   #shoo{position:absolute;top:0;right:0;z-index:3;width:20px;height:20px;
-    padding:0;border:0;border-radius:50%;background:rgba(10,13,18,.9);color:#cfd8e3;
+    padding:0;border:0;border-radius:50%;background:rgba(23,51,47,.9);color:#f7f1e7;
     font:600 12px/20px system-ui,sans-serif;cursor:pointer;opacity:0;transition:opacity .14s}
-  #shoo:hover{background:rgba(255,133,133,.92);color:#1a0707}
+  #shoo:hover{background:rgba(175,74,63,.94);color:#fffdf9}
 
   /* Size. Its own strip under him, so it never overlaps the dog and never
      competes with the drag. */
   #size{order:2;position:relative;z-index:2;width:82%;height:12px;margin-top:2px;
-    opacity:0;transition:opacity .14s;accent-color:#45ecc6;cursor:pointer}
+    opacity:0;transition:opacity .14s;accent-color:#0d6663;cursor:pointer}
 
   body:hover #shoo,body:hover #size{opacity:1}
   body.dragging #shoo,body.dragging #size{opacity:0}
