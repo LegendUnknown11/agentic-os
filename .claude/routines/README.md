@@ -1,16 +1,20 @@
 # Routines
 
-Three recurring loops. Each is one command; the scheduler is Windows Task
-Scheduler, because this workspace is win32 and `cron` is not on it.
+Three recurring loops. The scheduler is Windows Task Scheduler, because this
+workspace is win32 and `cron` is not on it.
+
+Two files, and the split matters: [run.cmd](run.cmd) holds what each routine
+*does*, and [register.ps1](register.ps1) only decides *when*. Editing a routine's
+command means editing `run.cmd` and nothing else — no re-registration.
 
 Logs are written to `.kingdom/routines/`, which is gitignored. Routine output is
 per-machine evidence, not project state.
 
-| Routine | When | Command |
+| Routine | When | Does |
 |---|---|---|
-| `handoff-sweep` | daily 09:00 | `claude -p "/handoff-audit"` |
-| `branch-record` | Mondays 09:15 | `claude -p` over the PR record |
-| `gate-log` | nightly 02:00 | `npm test`, tail appended to the log |
+| `handoff-sweep` | daily 09:00 | `claude -p "/handoff-audit"`, allowed to write its corrections |
+| `branch-record` | Mondays 09:15 | reads the PR record, reports, deletes nothing |
+| `gate-log` | nightly 02:00 | `npm test`, printed summary appended to the log |
 
 Register or re-register all three:
 
@@ -19,7 +23,8 @@ powershell -ExecutionPolicy Bypass -File .claude\routines\register.ps1
 ```
 
 It is idempotent — re-running replaces the existing tasks. Remove them with
-`-Unregister`. Nothing is registered until you run it.
+`-Unregister`. Nothing is registered until you run it, and `-WhatIf` prints what
+each task would get while registering nothing.
 
 ## Why these three
 
@@ -43,9 +48,13 @@ where the next session can look up what the last run actually printed.
 ## Running one by hand
 
 ```powershell
-claude -p "/handoff-audit" --permission-mode acceptEdits --permission-prompts none
-claude -p "/verify"
+.\.claude\routines\run.cmd gate-log
+.\.claude\routines\run.cmd handoff-sweep
 ```
+
+`run.cmd` resolves the repository from its own location, so it works from any
+working directory, and an unknown routine name logs an error and exits 2 rather
+than exiting clean.
 
 A routine that fails should fail loudly. Check its log before assuming it ran:
 
