@@ -24,22 +24,58 @@ squash-merges, so a merged branch does NOT appear under
 `git branch -r --merged origin/main`. Ancestry is the wrong test. The PR record
 is the right one — `gh pr list --state all --json headRefName,state`.
 
-The autonomous-improvement run system is implemented and on `main`. It has not
-been demonstrated in a browser or Electron window. The Habitable pilot has not
-begun.
+The autonomous-improvement run system is implemented and on `main`, and as of
+2026-09-21 it has been driven through its lifecycle in a live browser and in the
+Electron shell. The Habitable pilot has not begun.
 
 The approved next body of work is a full interface rebuild. [PLAN.md](PLAN.md)
-holds its contract and acceptance criteria. Its design system source is
-Hiveory (github.com/raktim-yoddha/hiveory), adopted in full from its shipped
-`app.css`. This supersedes the earlier `E:\Prototype.zip` / Cold-Call Workflow
-source, retired by PLAN.md section 1 on 2026-09-17. The contract depends on
-Hiveory's real token values, not on a summary of them.
+holds its contract and acceptance criteria.
+
+**Its design system source reversed on 2026-09-21.** The sovereign supplied
+`Prototype.zip` — the Cold-Call Workflow kit that PLAN.md section 1 had retired
+on 2026-09-17 — and asked for the app redesigned on it outright. That is the
+system the app runs now: paper, not a dark shell. Three grounds (`#f7f1e7`,
+`#ebe1d2`, `#fffdf9`), one teal accent doing brand and primary interactive
+together, the kit's product scale rather than its marketing one (16px card,
+12px control, no pill buttons), and metadata set in mono, uppercase and tracked
+— which is the exact inverse of the Hiveory rule it replaced. Hiveory's spec
+stays in PLAN.md section 1 as the record of what was agreed on 2026-09-17; it
+is no longer what the app implements. `ui/app.css`'s `:root` comment says the
+same thing at the code, and `test/t-theme.js` pins every value.
+
+Before reading a colour out of the kit: it publishes its contrast ratios
+against `--paper` only, and this app's rail and every section sit on
+`--paper-deep`. Two tokens are deliberately darker than the kit's
+(`--muted`/`--faint` `#55635e`, not `#5c6c66`; `--tone-attention` `#9e4239`,
+not `#af4a3f`) so they clear 4.5:1 on the ground they actually sit on. The
+suite fails if either is "restored".
 
 **All five sections of that contract are implemented on `main`**, closed
-2026-09-21. `PLAN.md` carries the table of what closed each. Its acceptance
-clause is a separate matter and is still unmet: no Electron or browser session
-has demonstrated any of it. Source evidence is not acceptance, and the closure
-does not waive that.
+2026-09-21. `PLAN.md` carries the table of what closed each, and now also the
+table of how its acceptance clause was met: one live session on 2026-09-21 drove
+a run through its lifecycle, recovered a blocked run, exercised the collapsed
+rail, the 720px drawer with its keyboard path, and reduced motion — first in a
+browser, then confirmed inside Electron.
+
+The redesign re-ran that whole walk on 2026-09-21 and it paid for itself again:
+twenty-eight sub-AA contrast pairings, `.conversation-open` at 210x24 and
+`.sidebar-repo` at 227x27 against the enforced 44px, the collapsed rail's nav
+buttons at 34x44 inside the rail's own 16px inset, the 720px drawer's mode
+section reporting 287x0 while its pills painted through the Overview row, and
+that drawer running 122px past the viewport and squashing the conversation list
+to 287x0 — no way to reach a conversation at all. Every one fixed at its
+declaration and pinned. Re-verified live: 14-view audit clean at 1440x900,
+collapsed rail 47x44 throughout, Tab trapped across 26 presses in the drawer
+with Escape returning focus to Menu, reduced motion correct at both `reduce`
+and `no-preference`.
+
+That session is also the strongest argument in this repository for not trusting
+source evidence. The interface had 73 green suites and eight visible layout
+defects, six of them one root cause: a CSS grid distributes leftover height
+across every row it created, so headings floated mid-section and a conversation
+row stood 165px tall with 49px left for its title. `align-content: start` at each
+shared declaration fixed all six; `fix/live-layout-defects` carries them with
+tests that pin the measured numbers.
 
 ## Evidence
 
@@ -49,8 +85,9 @@ landed. Earlier handoffs recorded 71 suites; the
 runner's array has grown since, and 73 is the count the run itself printed. The
 suite count is the contract.
 
-Durations on the same machine: 36.8s (2026-09-14), 64.1s earlier still, 179.6s
-on 2026-09-21. That spread is machine load under 4-wide contention, not
+Durations on the same machine: 36.8s (2026-09-14), 64.1s earlier still, 105.8s,
+179.6s and 61.2s on 2026-09-21 — the last of those on
+`redesign/cold-call-workflow`, same 73 suites, all passed. That spread is machine load under 4-wide contention, not
 regression — `test/run-all.js` documents the same effect and measures it. Do
 not treat a slower run as a failure on its own.
 
@@ -59,8 +96,10 @@ the 2026-09-21 run. The runner reports that as `flaky`, and it is the one suite
 known to do this. Treat a bare pool failure there as unproven until the retry
 result is read.
 
-This is source and HTTP-level evidence. It is not visual, Electron, device,
-signing, provider, or human-acceptance evidence.
+That gate is source and HTTP-level evidence on its own. Separate from it, the
+2026-09-21 live session supplies visual and Electron evidence for the interface
+contract — see `PLAN.md`. Neither is device, signing, provider, or
+human-acceptance evidence.
 
 ## What the application does
 
@@ -252,14 +291,18 @@ current proof; refresh them before the snapshot.
 
 ## Remaining acceptance work
 
-- **Exercise the interface in a visible browser or Electron session.** This is
-  the single largest gap in this repository. `PLAN.md`'s five sections are
-  implemented and their acceptance clause is unmet: nothing has demonstrated a
-  run through its lifecycle, a blocked run's recovery, the collapsed rail's
-  controls, the drawer at 720px with its keyboard path, or reduced-motion
-  behavior. Screenshots alone are insufficient, and the Browser pane cannot
-  supply this — see the trap above about its reduced motion and pane-visible
-  compositing.
+- ~~Exercise the interface in a visible browser or Electron session.~~ Done
+  2026-09-21; `PLAN.md` records what each clause item demonstrated. Method worth
+  reusing: the daemon serves the whole UI over HTTP, so a real browser at
+  `127.0.0.1:<port>` exercises the same code Electron loads, and Electron
+  launched with `--remote-debugging-port` is reachable over CDP for the same
+  measurements. The Browser pane still cannot supply this, for the reason in the
+  trap above.
+- ~~Measure the collapsed rail's tap targets.~~ Done 2026-09-21. The conflict
+  between the pinned 64px rail width and the pinned 44px minimum was real and
+  resolved without moving either: the rail's own 16px inset drops to 8px when
+  collapsed, which was the only axis with slack. Buttons now measure 47x44 and
+  the rail is still 64px. Both numbers are pinned in `test/t-theme.js`.
 - Watch the two fixes in `6bec8c8` in a live court. Both are proven by source
   tests only: that the crown's replies now reach an orchestrator whose name is
   "orchestrator", and that releasing a departed member's work names the

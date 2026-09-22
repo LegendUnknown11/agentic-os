@@ -7,7 +7,7 @@ Companion to [SKILL.md](SKILL.md). Run these from the repository root.
 | Suite count | `npm.cmd test`, read the printed `N suites` line | yes — recorded 71, run printed 73 (`018fae7`) |
 | Local vs remote sync | `git status -sb` | yes — claimed two commits ahead with the push outstanding; they were in sync |
 | Which branches are alive | `gh pr list --state all --json headRefName,state` | yes — 21 branches read as unmerged by ancestry with every PR merged |
-| Design-system source | `PLAN.md` section 1, then the header comment in `ui/app.css` | yes — named `E:\Prototype.zip` after Hiveory replaced it on 2026-09-17 |
+| Design-system source | the header comment in `ui/app.css`, which is at the code | yes, twice and in opposite directions — Hiveory replaced the Cold-Call kit on 2026-09-17, then the kit was reinstated on 2026-09-21. `PLAN.md` section 1 still holds the Hiveory spec as the record of what was agreed then, so PLAN is the wrong file to read for what ships |
 | What is implemented | `PLAN.md`'s closed-by table against `git log` | yes — listed the whole interface rebuild outstanding with sections 1–4 landed |
 | External toolchain presence | `command -v flutter dart adb gh claude` | yes — Flutter and Android discovery recorded unresolved; all three are on PATH as of 2026-09-22 |
 | A named key file exists | `git ls-files <path>` for each row of the key-files table | not yet |
@@ -26,10 +26,22 @@ Companion to [SKILL.md](SKILL.md). Run these from the repository root.
   emulator is available, a device is attached, or signing is configured. Correct
   the tooling claim without inflating it into an acceptance claim.
 
-## The acceptance clause
+## A suite that skipped is not a suite that passed
 
-`PLAN.md`'s five sections are closed and its acceptance clause is unmet: no
-Electron or browser session has demonstrated a run lifecycle, a blocked run's
-recovery, the collapsed rail, the 720px drawer with its keyboard path, or
-reduced-motion behaviour. A sweep must not quietly resolve that gap. Source
-evidence is not acceptance, and closure does not waive it.
+`t-theme-geometry.js` needs Chromium and skips itself with a note when it
+cannot launch one. This repository's CI has no browser install step, so it
+skips there every time. A sweep that reads "all suites passed" as "layout is
+covered" has recorded the one thing this suite was written to prevent.
+
+## Evidence classes, which also go stale
+
+The acceptance clause of `PLAN.md` section 1 was unmet for weeks and is now
+met: a live session on 2026-09-21 drove a run through its lifecycle, recovered
+a blocked run, and exercised the collapsed rail, the 720px drawer with its
+keyboard path, and reduced motion, first in a browser and then in Electron.
+
+So the sweep runs in both directions. An unmet gap that has since been closed
+is as stale a claim as a figure that moved, and re-asserting it is the same
+error as quoting an old suite count. What has *not* been supplied is device,
+signing, provider and human-acceptance evidence. Check the current text before
+repeating any of it.

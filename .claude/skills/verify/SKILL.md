@@ -53,10 +53,22 @@ confirm the printed suite count went up by one.
 ## Type the evidence
 
 Close with what the run proves and what it does not. A passing suite is *source*
-evidence. It is never visual, Electron, device, signing, provider, or
-human-acceptance evidence. The single largest gap in this repository is that
-`PLAN.md`'s five closed sections have no Electron or browser session behind them,
-so "tests pass" must never be reported as "it works".
+evidence. It is never device, signing, provider, or human-acceptance evidence.
+
+This repository has the sharpest available demonstration of why that matters,
+and it is worth carrying: on 2026-09-21 the interface had **73 green suites and
+eight visible layout defects**, six of them a single root cause — a CSS grid
+distributing leftover height across every row it created, so a conversation row
+stood 165px tall with 49px left for its title. The suite was green throughout.
+"Tests pass" is not "it works".
+
+A suite that skipped is also not a suite that passed. `t-theme-geometry.js`
+needs Chromium and skips itself with a note when it cannot launch one, which is
+what happens in this repository's CI. Read whether it ran before counting it.
+
+Visual and Electron evidence for the interface contract does now exist, from
+that live session; `PLAN.md` records what it covered. Point at that record
+rather than re-asserting the gap it closed.
 
 Done when: the printed summary line is quoted, every failure is resolved or
 named with its retry result, and the report states which kinds of evidence are

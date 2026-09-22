@@ -51,10 +51,16 @@ function nextStepFor({ urgent, changesVisible, changes, goal }) {
       h('div', { class: 'button-row' }, button('Review changes', open('changes'), 'primary')));
   }
   if (!goal?.text) {
-    return h('section', { class: 'home-card home-next-step' },
+    // Tagged, because the ambient card at the foot of the grid says exactly
+    // this when there is no objective either. Seen live 2026-09-21 on a fresh
+    // court: "Next step" and "Start here" rendered the same sentence and the
+    // same two buttons, one above the other.
+    const card = h('section', { class: 'home-card home-next-step' },
       h('h2', { text: 'Next step' }),
       h('p', { text: 'Set the outcome first. Every agent receives it before it starts work.' }),
       h('div', { class: 'button-row' }, button('Set objective', open('objective'), 'primary'), button('Start a conversation', open({ page: 'thread', member: 'orchestrator' }))));
+    card.dataset.lead = 'objective';
+    return card;
   }
   return null;
 }
@@ -115,11 +121,10 @@ export function render(state, root, actions = {}, queueExpanded = false) {
   ];
 
   const runSummary = renderRunOverview(state, { post: actions.post, toast: actions.toast });
+  const next = runSummary ? null : nextStepFor({ urgent, changesVisible, changes, goal });
   if (runSummary) grid.append(runSummary);
-  else {
-    const next = nextStepFor({ urgent, changesVisible, changes, goal });
-    if (next) grid.append(next);
-  }
+  else if (next) grid.append(next);
+  const leadAsksForObjective = next?.dataset?.lead === 'objective';
 
   const efficiencyWarning = state.metrics?.ok === false ? null : warningFor(state.metrics);
   if (efficiencyWarning) grid.append(h('aside', { class: 'home-card home-efficiency-warning attention' },
@@ -190,13 +195,16 @@ export function render(state, root, actions = {}, queueExpanded = false) {
   // doing and what it has spent, not a call to action.
   const ambient = h('div', { class: 'home-card home-objective' }, h('h2', { text: goal?.text ? 'Current objective' : 'Start here' }));
   if (goal?.text) ambient.append(h('p', { text: goal.text }), h('div', { class: 'button-row' }, button('Talk to the orchestrator', open({ page: 'thread', member: 'orchestrator' }), 'primary'), button('Edit objective', open('objective'))));
-  else ambient.append(h('p', { class: 'muted', text: 'Set the outcome first. Every agent receives it before it starts work.' }), h('div', { class: 'button-row' }, button('Set objective', open('objective'), 'primary'), button('Start a conversation', open({ page: 'thread', member: 'orchestrator' }))));
+  else if (!leadAsksForObjective) ambient.append(h('p', { class: 'muted', text: 'Set the outcome first. Every agent receives it before it starts work.' }), h('div', { class: 'button-row' }, button('Set objective', open('objective'), 'primary'), button('Start a conversation', open({ page: 'thread', member: 'orchestrator' }))));
   if (goal?.milestones?.length) ambient.append(h('p', { class: 'muted', text: `${goal.milestones.filter((x) => x.done).length}/${goal.milestones.length} milestones complete` }));
   const spend = spendText(state.spend);
   if (spend) ambient.append(h('p', { class: 'muted', text: `Spend so far: ${spend}` }));
-  grid.append(ambient);
+  // A heading with nothing under it is not ambient context. When the lead card
+  // has already asked for the objective, this one only appears if it has
+  // something of its own to add.
+  if (ambient.children.length > 1) grid.append(ambient);
 
-  if (!runSummary && !urgent.length && !taskLoading && !taskFailure && !queueVisible && !workingVisible && !changesVisible) {
+  if (!runSummary && !next && !urgent.length && !taskLoading && !taskFailure && !queueVisible && !workingVisible && !changesVisible) {
     grid.append(h('p', { class: 'home-empty', text: 'Your workspace is ready. Set an objective or start a conversation to begin.' }));
   }
 

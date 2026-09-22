@@ -36,6 +36,10 @@ tokens.json
 # per-machine Claude Code state (machineID, userID, local project history)
 .claude.json
 
+# Playwright MCP session output: screenshots and page/console dumps from
+# driving the UI in a real browser. Evidence for a session, not project state.
+.playwright-mcp/
+
 # The ARMS layer under .claude/ IS project state and is tracked deliberately.
 # Everything else there is per-machine: sessions, backups, handoffs, launch
 # ports, lock files. `.claude/*` rather than `.claude/` because git will not

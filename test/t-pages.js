@@ -18,6 +18,7 @@ const courtPreloadSource = readFileSync(new URL('../electron/court-preload.cjs',
 const electronMainSource = readFileSync(new URL('../electron/main.js', import.meta.url), 'utf8');
 const threadSource = readFileSync(new URL('../ui/thread.js', import.meta.url), 'utf8');
 const utilSource = readFileSync(new URL('../ui/views/util.js', import.meta.url), 'utf8');
+const runSource = readFileSync(new URL('../ui/run.js', import.meta.url), 'utf8');
 const usageSource = readFileSync(new URL('../ui/views/usage.js', import.meta.url), 'utf8');
 const storeSource = readFileSync(new URL('../ui/store.js', import.meta.url), 'utf8');
 
@@ -84,6 +85,29 @@ a.match(settingsSource, /window\.kingdomShell\?\.openPet \? window\.kingdomShell
 a.match(courtPreloadSource, /openPet: \(\) => ipcRenderer\.send\('pet:open'\)/, 'the court preload must expose the desk-pet command');
 a.match(electronMainSource, /ipcMain\.on\('pet:open', openPet\)/, 'the native main process must reopen the desk pet');
 a.match(electronMainSource, /spawn\(node, \[[\s\S]*?windowsHide: true/, 'the daemon spawn must not flash a console window on Windows startup');
+
+// Issue #42 (reopened): attachRepo refuses a live repo swap on purpose
+// (src/kingdom.js, locked in by test/t-control.js's "requires a fresh
+// court" pin) — the real gap was that nothing in the app could actually end
+// the court and start a fresh one. Settings now offers that, gated to the
+// exact wall attachRepo hits, wired through a dedicated shell bridge.
+a.match(settingsSource, /if \(\/fresh court\/\.test\(result\.error \?\? ''\) && window\.kingdomShell\?\.switchRepo\) switchRepo\.hidden = false;/, 'the repository switcher must only appear once attach has actually hit the fresh-court wall');
+a.match(settingsSource, /const result = await window\.kingdomShell\.switchRepo\(path\.value\.trim\(\)\);/, 'switching repositories must go through the dedicated shell bridge, not attachRepo');
+a.match(settingsSource, /if \(result\?\.canceled\)/, 'a cancelled repository switch must leave the control usable again, not stuck disabled');
+a.match(courtPreloadSource, /switchRepo: \(path\) => ipcRenderer\.invoke\('court:switchRepo', path\)/, 'the court preload must expose the repository-switch command');
+a.match(electronMainSource, /ipcMain\.handle\('court:switchRepo', async \(event, rawPath\) => switchRepo\(rawPath, \{/, 'the native main process must own ending and respawning the court');
+// The step sequence itself (validate before confirm, confirm before
+// shutdown, shutdown before startDaemon, reload only after it answers) is a
+// plain function in electron/switch-repo.js, exercised end-to-end without
+// Electron in test/t-repo-switch.js — including the exact ordering risk
+// Greptile flagged on PR #69 (a bad path reaching the destructive steps).
+// This suite only has to pin that main.js wires REAL dependencies into it.
+a.match(electronMainSource, /import \{ assertRepo \} from '\.\.\/src\/worktree\.js'/, 'a repository switch must validate the target with a real git check (assertRepo), not an existsSync(.git) peek a corrupt or empty entry would pass');
+a.match(electronMainSource, /assertRepo,\s*\n\s*confirm: async \(repo\) => \{/, 'a repository switch must use the real git validator, not a bespoke check');
+a.match(electronMainSource, /buttons: \['Cancel', 'End court and switch'\][\s\S]*?return response === 1;/, 'ending a court is destructive — it must be confirmed natively before anything is torn down');
+a.match(electronMainSource, /shutdown: \(\) => fetch\(`\$\{ORIGIN\}\/api\/shutdown`, \{ method: 'POST' \}\)/, 'a repository switch must end the running court through its own shutdown endpoint');
+a.match(electronMainSource, /courtOnPort,\s*\n\s*startDaemon,/, 'a repository switch must poll the real port state and start the fresh court through the same path the app itself boots with');
+a.match(electronMainSource, /reload: \(\) => BrowserWindow\.fromWebContents\(event\.sender\)\?\.loadURL\(`\$\{ORIGIN\}\/`\)/, 'a successful repository switch must reload the window instead of resuming a stale event cursor from the old repo');
 a.match(automationsSource, /workflow-run-message/, 'a manual workflow run must leave visible feedback');
 a.match(automationsSource, /result\?\.steps/, 'workflow feedback must report the returned run trace');
 a.match(automationsSource, /automationEditor/, 'live updates must not discard an open workflow editor');
@@ -136,7 +160,13 @@ a.match(homeSource, /class: 'home-empty'/, 'an empty Home must keep one quiet ne
 a.match(homeSource, /!taskFailure && !queueVisible && !workingVisible && !changesVisible/, 'Home must only show secondary blocks when they contain work');
 a.doesNotMatch(homeSource, /home-mode-card|modeCard/, 'Overview must not carry a mode card — mode lives in the header and drawer only');
 a.match(homeSource, /home-objective/, 'Home must keep the objective as an ambient card');
-a.match(homeSource, /grid\.append\(ambient\);[\s\S]*?if \(!runSummary && !urgent\.length/, 'the objective must render last, after every urgent and secondary card');
+a.match(homeSource, /grid\.append\(ambient\);[\s\S]*?if \(!runSummary && !next && !urgent\.length/, 'the objective must render last, after every urgent and secondary card');
+// Seen live 2026-09-21 on a fresh court: the lead "Next step" card and the
+// ambient "Start here" card rendered the same sentence and the same two
+// buttons, one above the other, and the empty-state line said it a third time.
+a.match(homeSource, /card\.dataset\.lead = 'objective';/, 'the lead card must say when it is already the objective prompt');
+a.match(homeSource, /else if \(!leadAsksForObjective\) ambient\.append/, 'the ambient card must not repeat a prompt the lead card is already making');
+a.match(homeSource, /if \(ambient\.children\.length > 1\) grid\.append\(ambient\);/, 'an ambient card reduced to its heading must not render at all');
 a.match(homeSource, /const urgent = \[/, 'Home must rank approvals, failed members, and blocked tasks into one urgency list');
 a.match(homeSource, /approvals\.map\(\(a\) => \(\{[\s\S]*?tone: tone\('blocked'\),/, 'pending approvals must carry the shared attention tone, not render as a plain nav row');
 a.match(homeSource, /attention\.map\(\(\[name, member\]\) => \{[\s\S]*?tone: tone\(label\),/, 'failed or rate-limited members must carry their real status tone, not render as a plain nav row');
@@ -147,6 +177,10 @@ a.match(homeSource, /import \{ statusDot \} from '\.\.\/avatar\.js'/, 'Home rows
 a.match(homeSource, /h\('button', \{ class: `button \$\{cls\}`, type: 'button', on: \{ click: item\.open \} \}, dot, h\('span'/, 'an urgent row must lead with the shared status dot now that the left-rule is gone');
 a.match(homeSource, /queue\.append\(h\('div', \{ class: `task-row task-\$\{task\.shown\} \$\{tone\(task\.shown\)\}`\.trim\(\) \},\s*dot, h\('b'/, 'a queue row must lead with the shared status dot now that the left-rule is gone');
 a.match(homeSource, /nextStepFor\(\{ urgent, changesVisible, changes, goal \}\)/, 'with no active run, Home must lead with the single most urgent next step');
+// Every run the daemon creates carries no title, so the heading falls back to
+// the objective and the body printed the same sentence again. Seen live
+// 2026-09-21 in the run panel at every lifecycle state.
+a.match(runSource, /heading === objective \? null : h\('p', \{ class: 'run-objective'/, 'the run panel must not print its objective twice when the heading already is it');
 a.match(homeSource, /const shell = page\('Overview', mode\.blurb\)/, 'Home must not repeat mode and repository context in its page heading');
 a.match(homeSource, /const attention =/, 'Home must separate terminal member states from active work');
 a.match(homeSource, /home-attention/, 'Home must give terminal member states a direct attention surface');

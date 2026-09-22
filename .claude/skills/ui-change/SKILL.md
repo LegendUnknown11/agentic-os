@@ -32,13 +32,17 @@ node test/t-thread.js
 npm.cmd test
 ```
 
-Then read [verify](../verify/SKILL.md) before reporting the result. A green
-stylesheet suite is source evidence about the *stylesheet*. It says nothing
-about how the pixels look, and this repository has no visual acceptance for any
-of it — the Browser pane cannot supply that, because its screenshots compose
-only while the pane is visible and it runs with reduced motion. Visual
-acceptance needs a visible Electron or browser session.
+`t-theme.js` matches CSS source text. `t-theme-geometry.js` reads real computed
+geometry from a real Chromium tab, and **skips itself with a note when Chromium
+cannot be launched** — which is the case in this repository's CI. A green run
+that skipped it proves nothing about layout, so read whether it ran.
 
-Done when: the suites above pass, no literal colour was added outside `:root`,
-the selector was edited at its declaration, and the report says which evidence
-is held and that visual acceptance is not.
+Then read [verify](../verify/SKILL.md) before reporting the result. This is the
+domain where source evidence has failed hardest here: on 2026-09-21 the
+interface had 73 green suites and eight visible layout defects, six of them one
+root cause. Visual evidence means a browser or Electron session, and the
+repository now has a path for it rather than an excuse — see [apps](../../arms/apps.md).
+
+Done when: the suites above pass, `t-theme-geometry` either asserted or is
+reported as skipped, no literal colour was added outside `:root`, the selector
+was edited at its declaration, and the report says which evidence is held.

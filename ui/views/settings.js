@@ -135,6 +135,7 @@ function repository(state) {
   const attach = button('Attach repository', async () => {
     const value = path.value.trim();
     pickerMessage.hidden = true;
+    switchRepo.hidden = true;
     if (!value) {
       pickerMessage.textContent = 'Choose a repository first.';
       pickerMessage.hidden = false;
@@ -146,6 +147,11 @@ function repository(state) {
       attach.disabled = false;
       pickerMessage.textContent = result.error ?? 'Could not attach that repository.';
       pickerMessage.hidden = false;
+      // attachRepo refuses this one way on purpose (src/kingdom.js) — a
+      // different repo needs a fresh court, not a live swap. Offer the real
+      // fix only when we actually hit that wall, and only where a shell
+      // bridge exists to end and respawn the daemon (i.e. inside Electron).
+      if (/fresh court/.test(result.error ?? '') && window.kingdomShell?.switchRepo) switchRepo.hidden = false;
     } else {
       attach.disabled = false;
       pickerMessage.className = 'note success';
@@ -163,7 +169,27 @@ function repository(state) {
       pickerMessage.hidden = false;
     }
   }) : null;
-  return section('Repository', note(state.repo ? `Attached: ${state.repo}` : 'No repository attached. Chat and Cowork can run without one.'), field('Path', path, 'Code mode requires an existing git repository with at least one commit.'), h('div', { class: 'button-row' }, choose, attach), pickerMessage);
+  const switchRepo = button('End court and switch to this repository…', async () => {
+    switchRepo.disabled = true;
+    try {
+      const result = await window.kingdomShell.switchRepo(path.value.trim());
+      if (result?.canceled) { switchRepo.disabled = false; return; }
+      if (result?.ok === false) {
+        pickerMessage.className = 'note danger';
+        pickerMessage.textContent = result.error ?? 'Could not switch repositories.';
+        pickerMessage.hidden = false;
+        switchRepo.disabled = false;
+      }
+      // On success the shell reloads this window itself — nothing left to do here.
+    } catch (error) {
+      pickerMessage.className = 'note danger';
+      pickerMessage.textContent = error?.message ?? 'Could not switch repositories.';
+      pickerMessage.hidden = false;
+      switchRepo.disabled = false;
+    }
+  });
+  switchRepo.hidden = true;
+  return section('Repository', note(state.repo ? `Attached: ${state.repo}` : 'No repository attached. Chat and Cowork can run without one.'), field('Path', path, 'Code mode requires an existing git repository with at least one commit.'), h('div', { class: 'button-row' }, choose, attach, switchRepo), pickerMessage);
 }
 
 function efficiency(state) {

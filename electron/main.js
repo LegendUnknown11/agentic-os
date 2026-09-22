@@ -10,6 +10,8 @@ import { spawn, execFileSync } from 'node:child_process';
 import { openSync, existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { assertRepo } from '../src/worktree.js';
+import { switchRepo } from './switch-repo.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.KINGDOM_PORT ?? 7777);
@@ -338,6 +340,49 @@ ipcMain.on('pet:open', openPet);
 // The throne room's own request for a repository — Code mode asks for this
 // when none is attached yet, rather than the app blocking on it at launch.
 ipcMain.handle('repo:choose', () => chooseRepoDialog());
+
+// Kingdom#attachRepo refuses to move a LIVE court onto a different repo on
+// purpose (its DB path, live worktrees, and every agent cwd are all derived
+// from the first repo attached — swapping them out from under a running
+// court would corrupt in-progress worktrees rather than cleanly switch
+// projects). The only real fix is a fresh court: end this one, then start
+// another pointed at the new path — the same startDaemon() the app itself
+// boots with. This is the one truly destructive action reachable from
+// Settings (it stops every in-flight agent turn in the current court), so it
+// gets a native confirmation before anything is torn down — and the target
+// gets a REAL git check (assertRepo, the same one Kingdom itself boots
+// with), not just an existsSync(.git) peek: a corrupt or empty .git entry
+// passes that peek, and startDaemon's own boot path (src/worktree.js's
+// ensureRepo) is deliberately permissive — it would silently `git init` a
+// brand new repo there rather than fail, which is fine for a first boot but
+// not something a destructive court-ending action should risk triggering.
+// The actual step sequence lives in switch-repo.js, as a plain function
+// tested without Electron, a real daemon, or a real dialog.
+ipcMain.handle('court:switchRepo', async (event, rawPath) => switchRepo(rawPath, {
+  resolve,
+  assertRepo,
+  confirm: async (repo) => {
+    const { response } = await dialog.showMessageBox({
+      type: 'warning',
+      title: 'End this court?',
+      message: `End the current court and start a fresh one for:\n\n${repo}`,
+      detail: 'Any work in progress in the current court will stop. This cannot be undone.',
+      buttons: ['Cancel', 'End court and switch'],
+      defaultId: 0,
+      cancelId: 0,
+    });
+    return response === 1;
+  },
+  shutdown: () => fetch(`${ORIGIN}/api/shutdown`, { method: 'POST' }).catch(() => { /* it may already be gone */ }),
+  courtOnPort,
+  startDaemon,
+  // A fresh window load, not the renderer's own SSE reconnect: the new
+  // daemon's event cursor starts back at zero, and resuming with the old
+  // court's `since` would ask for events that no longer exist in this repo's
+  // fresh store.
+  reload: () => BrowserWindow.fromWebContents(event.sender)?.loadURL(`${ORIGIN}/`),
+  logPath: join(app.getPath('userData'), 'daemon.log'),
+}));
 
 app.whenReady().then(async () => {
   // No blocking dialog here anymore: Chat/Research/Build don't need a repo at

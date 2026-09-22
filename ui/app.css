@@ -1,143 +1,179 @@
-/* Hiveory foundation (github.com/raktim-yoddha/hiveory), adopted in full per
- * PLAN.md section 1: literal values read from its shipped app.css, not a
- * paraphrase. Dark only — Hiveory ships no light theme, so the light/dark
- * toggle and its dark-prefixed token convention are gone; this token set IS
- * the one ground. This app's own discipline survives the swap unchanged: no
- * literal colour outside this block, every colour carries an -rgb channel
- * twin, gold identifies the orchestrator alone, 44px is the enforced tap
- * target, and type stays local-stack (offline Electron — a webfont fetch can
- * silently fail here, so Hiveory's real faces, IBM Plex Sans / JetBrains
- * Mono, are approximated with local equivalents rather than shipped).
+/* Cold-Call Workflow design system (E:\Prototype.zip, SKILL.md
+ * "cold-call-workflow-design"), adopted in full at the sovereign's direction
+ * 2026-09-21. This reverses PLAN.md section 1, which retired this same source
+ * on 2026-09-17 in favour of Hiveory. The reversal is the sovereign's call,
+ * and it is recorded here rather than made quietly.
  *
- * Contrast measured 2026-09-18 (WCAG relative-luminance ratio) against this
- * exact palette: --text on --bg/--surface/--raised 17.2/16.6/15.8:1; --muted
- * on --bg/--surface 9.2/8.9:1; --faint on --bg/--surface 4.7/4.5:1 (clears
- * the 4.5:1 AA normal-text minimum); --gold on --surface/--raised 8.9/8.5:1;
- * --accent-ink on --accent 6.35:1; the four status hues on --surface: live
- * 6.81:1, settled 8.01:1, attention 5.31:1, idle 7.58:1 — all clear AA. */
+ * Paper, not a dark shell. Every value below is read from the kit's own
+ * tokens/*.css, which trace in turn to three shipped client builds (Smart
+ * Tuitions index.html, ViniYoga app/globals.css and tailwind.config.ts,
+ * Dance Class styles.css). Where the kit ships two scales this app takes the
+ * product one, because it is a dense tool and not a marketing page: 16px
+ * card, 12px control, no pill buttons, a real 44px tap target, hairline
+ * border plus a 3px left rule on result rows. Marketing supplies display type
+ * and the mono-uppercase metadata label, which the kit names as the one
+ * convention all three of its sources share exactly.
+ *
+ * This app's own discipline survives the swap unchanged: no literal colour
+ * outside this block, every colour carries an -rgb channel twin, gold
+ * identifies the orchestrator alone, 44px is enforced rather than suggested,
+ * and type stays local-stack — an offline Electron webfont fetch can fail
+ * silently, so Playfair Display, Inter and IBM Plex Mono are taken at their
+ * own declared fallbacks (Georgia, a system sans, a local mono) instead of
+ * being shipped.
+ *
+ * Contrast computed here 2026-09-21 (WCAG relative luminance), against this
+ * exact palette, on --bg #f7f1e7: --text 9.6:1, --muted/--faint 4.9:1,
+ * --accent 6.0:1, --tone-settled 8.9:1, --tone-attention 4.8:1, --gold 5.2:1
+ * — all clear the 4.5:1 AA minimum, and --accent-ink on --accent is 6.7:1.
+ * The kit's own contrast card claims 12.1:1 for ink on paper; its other five
+ * figures reproduce exactly here and that one does not, so this file records
+ * 9.6:1, the number computed, not the number quoted. */
 :root {
-  color-scheme: dark;
+  color-scheme: light;
 
-  /* Ground ladder — surfaces are siblings picked per view in the source, not
-   * a strict ladder; --surface is the default, later view work may draw the
-   * #15191e / #181c21 siblings directly where a specific view needs them. */
-  --bg: #111418;
-  --bg-rgb: 17 20 24;
-  --bg-alt: #0f141a;           /* code/runs surfaces */
-  --bg-alt-rgb: 15 20 26;
-  --surface: #14181d;
-  --surface-rgb: 20 24 29;
-  --raised: #181d23;
-  --raised-rgb: 24 29 35;
+  /* Ground — three papers, not a dark ladder. --bg is the page, --surface the
+   * recessed one (rail, sections, meter tracks, code), --raised the white
+   * panel a card is drawn on. Smart Tuitions --paper / --paper-deep / --white.
+   * The retired --bg-alt is gone: this system has exactly three grounds, and
+   * that token was declared but never used by any rule. */
+  --bg: #f7f1e7;
+  --bg-rgb: 247 241 231;
+  --surface: #ebe1d2;
+  --surface-rgb: 235 225 210;
+  --raised: #fffdf9;
+  --raised-rgb: 255 253 249;
   --shell-alpha: 1;
   --surface-alpha: 1;
-  --raised-alpha: 1;
 
-  /* Text */
-  --text: #f5f7fa;
-  --text-rgb: 245 247 250;
-  --muted: #aeb8c5;
-  --muted-rgb: 174 184 197;
-  --faint: #758192;
-  --faint-rgb: 117 129 146;
+  /* Text — the system ships two values, not three. Metadata separates from
+   * body copy by type treatment (mono, uppercase, tracked), which is how all
+   * three client sources do it, so --faint is --ink-soft rather than a third
+   * grey; a lighter one would not clear AA on paper.
+   *
+   * --muted is NOT the kit's --ink-soft #5c6c66, and this is the one place
+   * this palette departs from its source. The kit publishes every ratio
+   * against --paper and never against --paper-deep, but --paper-deep is the
+   * ground under the rail and under every section here. Measured in a live
+   * browser 2026-09-21 at 1440x900: #5c6c66 on #ebe1d2 is 4.28:1, under the
+   * 4.5:1 AA minimum, and it was doing that behind all seventeen rail
+   * controls. Taken down ~8% in lightness, same hue, it measures 4.87:1 on
+   * --surface, 5.4:1 on --bg and 6.1:1 on --raised. */
+  --text: #17332f;
+  --text-rgb: 23 51 47;
+  --muted: #55635e;
+  --muted-rgb: 85 99 94;
+  --faint: #55635e;
+  --faint-rgb: 85 99 94;
 
-  /* Lines — both hairline; --line for titlebar/rail dividers, --line-soft
-   * for panel borders. Real source values, not invented shades between them. */
-  --line: #272d35;
-  --line-rgb: 39 45 53;
-  --line-soft: #29323c;
-  --line-soft-rgb: 41 50 60;
+  /* One hairline — --line/--border in every source. The kit's --border-strong
+   * is scrollbar-and-strong-dividers only and no rule here needs it, so the
+   * retired --line-soft has no successor. */
+  --line: #cec7ba;
+  --line-rgb: 206 199 186;
 
-  /* Accent — brand and primary interactive, one hue doing both jobs, same as
-   * the source. Distinct from the status "live" blue below: Hiveory uses two
-   * different blues for "this is the brand/actionable colour" and "this is
-   * actively running", and adopting its system means keeping them separate. */
-  --accent: #2b5f96;
-  --accent-rgb: 43 95 150;
-  --accent-border: #4a6d98;
-  --accent-border-rgb: 74 109 152;
-  --accent-hover: #3675b7;
-  --accent-hover-rgb: 54 117 183;
-  --accent-ink: #f7fbff;
-  --accent-ink-rgb: 247 251 255;
+  /* Accent — one slot, teal, carrying brand and primary interactive together.
+   * The kit calls swapping this single value the entire reskin step. Hover is
+   * --teal-dark, which is what the kit's own Button mixes toward. */
+  --accent: #0d6663;
+  --accent-rgb: 13 102 99;
+  --accent-hover: #084a4a;
+  --accent-hover-rgb: 8 74 74;
+  --accent-ink: #fffdf9;
+  --accent-ink-rgb: 255 253 249;
 
-  /* Status — four genuinely distinct hues, not one hue split by chroma.
-   * live=running(blue), settled=completed(green), attention=failed/
-   * cancelled(red), idle=blocked/interrupted/paused/pending/planning/
-   * resting/off(amber) — idle gets a real hue instead of disappearing into
-   * --faint, so a stalled run reads as "may need a look" rather than
-   * invisible. --danger/--ok stay as general-purpose error/success aliases
-   * (note.danger, note.success, etc.), equal in value to attention/settled
-   * so a failure message and a failed status dot always agree. */
-  --tone-live: #48a7ed;
-  --tone-live-rgb: 72 167 237;
-  --tone-settled: #45c47b;
-  --tone-settled-rgb: 69 196 123;
-  --tone-attention: #d46d77;
-  --tone-attention-rgb: 212 109 119;
-  --tone-idle: #d2a05f;
-  --tone-idle-rgb: 210 160 95;
+  /* Status — this system ships two status hue families and the app needs four
+   * tones, so state the cost instead of papering over it: live and settled now
+   * share teal and separate by depth plus the pulse, where the retired palette
+   * gave them separate hues. A run in flight and a finished one are harder to
+   * tell apart at a glance here; the pulsing dot and the status label carry
+   * the difference. Attention is ViniYoga's --due, which is its own hex and
+   * deliberately not marketing's --red. Idle is ink-soft: in this system
+   * waiting is not a colour, and the kit warns outright against inventing a
+   * third status hue. */
+  --tone-live: #0d6663;
+  --tone-live-rgb: 13 102 99;
+  --tone-settled: #084a4a;
+  --tone-settled-rgb: 8 74 74;
+  /* Same departure, same reason: the kit's --due #af4a3f is 4.8:1 on --paper
+   * and 4.19:1 on --paper-deep, where every blocked run and failed check
+   * actually renders. Down ~10%, it is 4.93:1 there. */
+  --tone-attention: #9e4239;
+  --tone-attention-rgb: 158 66 57;
+  --tone-idle: #55635e;
+  --tone-idle-rgb: 85 99 94;
   --danger: var(--tone-attention);
   --danger-rgb: var(--tone-attention-rgb);
   --ok: var(--tone-settled);
   --ok-rgb: var(--tone-settled-rgb);
 
-  /* Identity, not status: the orchestrator alone. Never reused by tone().
-   * Not sourced from Hiveory (it has no orchestrator-identity convention) —
-   * this app's own rule, reintroduced against the new ground. */
-  --gold: #d9b25c;
-  --gold-rgb: 217 178 92;
+  /* Identity, not status. The kit has no orchestrator convention to borrow, so
+   * this app's own rule is reintroduced against paper. The dark-ground #d9b25c
+   * is unreadable here (1.9:1), so gold goes down to a depth that clears AA on
+   * both papers and still reads as gold. */
+  --gold: #7f6019;
+  --gold-rgb: 127 96 25;
 
-  /* Shape — pills are back: Hiveory pills every status chip, count badge and
-   * tag. Controls take 6px, cards and panels take 10px (one shared value —
-   * the source draws no distinction), icon-only buttons stay tighter at 4px.
-   * These are the modal values from the source's own distribution. */
-  --radius-ctl: 6px;
-  --radius-card: 10px;
-  --radius-icon: 4px;
+  /* Paper grain — Dance Class's CSS dot-grain, the kit's second documented
+   * texture technique. Chosen over Smart Tuitions' tiled photograph because it
+   * ships no binary into an offline Electron bundle and tokenises without
+   * putting a literal colour outside this block. */
+  --grain: radial-gradient(rgb(var(--text-rgb) / .05) .65px, transparent .65px);
+
+  /* Shape — the product scale, kept deliberately apart from the marketing one:
+   * 16px card, 12px control, and no pill buttons. Pills survive only where the
+   * kit pills — the status badge and the segmented control. The retired
+   * --radius-icon is gone; the product source gives icon buttons the same 12px
+   * control radius as everything else, and no rule used it. */
+  --radius-card: 16px;
+  --radius-ctl: 12px;
   --radius-pill: 999px;
 
+  /* Spacing — Smart Tuitions' real scale, copied verbatim. It widens faster
+   * than linear on purpose (4, 8, 16, 24, 32, 48, 64, 88): tight near the
+   * type, generous at the section level. This is not the 4/8/12/16 ladder it
+   * replaces, so every gap and pad in the app moves one step out. */
   --space-1: 4px;
   --space-2: 8px;
-  --space-3: 12px;
-  --space-4: 16px;
-  --space-5: 24px;
-  --space-6: 32px;
-  --space-7: 48px;
-  --space-8: 64px;             /* unaffected by the palette swap: 4, 8, 12, 16, 24, 32, 48, 64 */
-  --tap-target-min: 44px;      /* enforced on every interactive control, not just suggested */
+  --space-3: 16px;
+  --space-4: 24px;
+  --space-5: 32px;
+  --space-6: 48px;
+  --space-7: 64px;
+  --space-8: 88px;
+  --tap-target-min: 44px;      /* a real enforced minimum in the product source, not a suggestion */
   --t-xs: 12px;
   --t-sm: 13px;
   --t-md: 15px;
   --t-lg: 20px;
 
-  /* Typography — local-stack per the offline-Electron constraint, which is a
-   * fact about this app's runtime and doesn't change with the palette.
-   * Hiveory's real face is IBM Plex Sans (Inter, system-ui as its own
-   * fallbacks); Roboto is added here as the closest local equivalent step. */
-  --display: -apple-system, "Segoe UI", Roboto, system-ui, sans-serif;
-  --ui: -apple-system, "Segoe UI", Roboto, system-ui, sans-serif;
+  /* Typography — local-stack, per the offline-Electron constraint, which is a
+   * fact about this runtime and does not change with the design system. The
+   * substitutes are each face's own declared fallback in the kit's
+   * tokens/typography.css: Playfair Display falls back to Georgia, Inter to a
+   * system sans, IBM Plex Mono to a local mono. --ui is the kit's
+   * --font-product-body verbatim. */
+  --display: Georgia, "Times New Roman", serif;
+  --ui: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --mono: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
 
-  /* Motion — plain ease, not a custom curve: matching Hiveory means matching
-   * its actual timing function. --view (route-change transitions) keeps its
-   * existing duration; only the shared curve and the hover/press duration
-   * change. */
+  /* Motion — the product easing (Tailwind ease-ui / --ease-product), since
+   * this is a product screen. Hover and press run at .15s, matching the real
+   * transitions in the product source; route changes take marketing's .3s. */
   --fast: 150ms;
-  --view: 380ms;
-  --ease: ease;
+  --view: 300ms;
+  --ease: cubic-bezier(.2, 0, 0, 1);
 
-  /* Shadow — flat and hairline-bordered by default; Hiveory does not layer
-   * ambient shadow on ordinary cards at rest (thread-header, view-section,
-   * metric-card, approval/agent/home-card, activity-row, message-row,
-   * task-row, doctor-row, quota, the primary button — all already carry
-   * their own 1px border and need nothing more). Elevation is reserved for
-   * genuinely floating elements: the hover tooltip, the toast, and the
-   * mobile navigation drawer all already reference --shadow-panel. */
+  /* Shadow — the kit's literal ground truth, both values teal-tinted and
+   * single-layer, not its optional layered refinement: that refinement opens
+   * with a 1px ring every card here already draws for itself. Cards at rest
+   * carry a hairline and nothing more, which is the system's own default.
+   * Elevation is for what actually floats — tooltip, toast, drawer — and for
+   * the one marketing-shaped control, the primary button. */
   --shadow-card: none;
   --shadow-small: none;
-  --shadow-panel: 0 10px 26px rgb(0 0 0 / .16);
-  --shadow-button: none;
+  --shadow-panel: 0 24px 64px -38px rgb(8 74 74 / .62);
+  --shadow-button: 0 14px 28px -20px rgb(13 102 99 / .7);
 }
 
 * { box-sizing: border-box; }
@@ -148,7 +184,12 @@ body {
   display: grid;
   grid-template: "sidebar main" 1fr / 260px minmax(0, 1fr);
   overflow: hidden;
-  background: var(--bg);
+  /* The grain is what makes paper read as paper rather than as flat beige.
+   * Dance Class generates it in CSS instead of tiling a photograph, which is
+   * the technique this app takes: no binary in the bundle, and the colour
+   * stays a token. */
+  background: var(--bg) var(--grain);
+  background-size: 4px 4px;
   color: var(--text);
   font: 400 var(--t-md)/1.45 var(--ui);
 }
@@ -170,7 +211,6 @@ body.has-bg {
   /* Default alpha tokens remain 1, so the no-wallpaper shell stays flat. */
   --shell-alpha: .82;
   --surface-alpha: .88;
-  --raised-alpha: .90;
 }
 
 button, input, select, textarea { font: inherit; }
@@ -269,13 +309,13 @@ a:focus-visible, summary:focus-visible, button:focus-visible, input:focus-visibl
 
 .brand, .repo, .header-title { min-width: 0; }
 
-.brand { color: var(--accent); font-family: var(--display); font-size: 18px; font-weight: 700; letter-spacing: -.02em; }
+.brand { color: var(--accent); font-family: var(--display); font-size: 18px; font-weight: 700; letter-spacing: -.01em; }
 
 .app-identity { display: none; flex: none; gap: 1px; }
 
 body.sidebar-collapsed .app-identity { display: grid; }
 
-.brand-tag { color: var(--faint); font-size: 10px; letter-spacing: .04em; }
+.brand-tag { color: var(--faint); font: 500 10px/1.4 var(--mono); letter-spacing: .1em; text-transform: uppercase; }
 
 .repo { flex: none; overflow: hidden; color: var(--text); text-overflow: ellipsis; white-space: nowrap; }
 
@@ -335,13 +375,13 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .status-dot.idle { background: var(--tone-idle); }
 
-.sidebar-heading { display: flex; align-items: center; gap: var(--space-2); margin: 0; padding: 0 var(--space-2); color: var(--faint); font-size: var(--t-xs); letter-spacing: .08em; text-transform: uppercase; }
+.sidebar-heading { display: flex; align-items: center; gap: var(--space-2); margin: 0; padding: 0 var(--space-2); color: var(--faint); font: 500 10px/1.5 var(--mono); letter-spacing: .1em; text-transform: uppercase; }
 
 .sidebar-empty { margin: 0; padding: var(--space-2); color: var(--faint); font-size: var(--t-xs); }
 
 .sidebar-footer { display: grid; flex-shrink: 0; gap: var(--space-2); margin-top: auto; padding-top: var(--space-3); border-top: 1px solid var(--line); }
 
-.sidebar-repo { width: 100%; overflow: hidden; padding: var(--space-1) var(--space-2); border: 0; background: transparent; color: var(--muted); font-size: var(--t-sm); text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar-repo { display: flex; width: 100%; min-height: var(--tap-target-min); align-items: center; overflow: hidden; padding: var(--space-1) var(--space-2); border: 0; background: transparent; color: var(--muted); font-size: var(--t-sm); text-align: left; text-overflow: ellipsis; white-space: nowrap; }
 
 .sidebar-repo:hover { color: var(--text); }
 
@@ -363,9 +403,14 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .button:hover, .icon-button:hover { border-color: var(--accent); background: rgb(var(--accent-rgb) / .12); }
 
-.button.primary { border-color: transparent; background: var(--accent); box-shadow: var(--shadow-button); color: var(--accent-ink); }
+/* Lift 2px on hover, settle 1px on press — the kit's real interaction, and
+ * the only control it gives one to. Reduced motion already collapses the
+ * transition, so the movement never runs for anyone who asked it not to. */
+.button.primary { border-color: transparent; background: var(--accent); box-shadow: var(--shadow-button); color: var(--accent-ink); transition: border-color var(--fast) var(--ease), background-color var(--fast) var(--ease), transform var(--fast) var(--ease); }
 
-.button.primary:hover { border-color: transparent; background: var(--accent-hover); }
+.button.primary:hover { border-color: transparent; background: var(--accent-hover); transform: translateY(-2px); }
+
+.button.primary:active { transform: translateY(1px); }
 
 .button.danger { border-color: rgb(var(--danger-rgb) / .6); color: var(--danger); }
 
@@ -381,7 +426,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .field { display: grid; gap: var(--space-1); color: var(--muted); font-size: var(--t-sm); }
 
-.field-label { display: flex; min-width: 0; align-items: baseline; justify-content: space-between; gap: var(--space-2); }
+.field-label { display: flex; min-width: 0; align-items: baseline; justify-content: space-between; gap: var(--space-2); font: 500 10px/1.6 var(--mono); letter-spacing: .1em; text-transform: uppercase; }
 
 .field-value { flex: none; color: var(--text); font-size: var(--t-xs); }
 
@@ -463,13 +508,18 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .mobile-menu:hover, .sidebar-mobile-close:hover { border-color: var(--accent); color: var(--text); }
 
-.sidebar-brand { min-width: 0; overflow: hidden; color: var(--text); font-family: var(--display); font-size: 22px; font-weight: 700; letter-spacing: -.02em; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar-brand { min-width: 0; overflow: hidden; color: var(--text); font-family: var(--display); font-size: 22px; font-weight: 700; letter-spacing: -.01em; text-overflow: ellipsis; white-space: nowrap; }
 
 .sidebar-new { flex: 1; min-width: 0; min-height: var(--tap-target-min); overflow: hidden; padding: 0 var(--space-3); border: 1px solid transparent; border-radius: var(--radius-ctl); background: var(--accent); color: var(--accent-ink); font-weight: 650; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
 
 .sidebar-new:hover { border-color: transparent; background: var(--accent-hover); }
 
-.sidebar-section { display: grid; gap: var(--space-2); min-height: 0; }
+/* align-content: start, because an implicit grid hands its free space to every
+   row it created. Measured live 2026-09-21 at 1440x900: the rail's
+   Conversations heading was given 121px of the section's 295px of slack and
+   floated in the middle of it. The list below is the one row that may grow,
+   and .sidebar-conversations names it explicitly. */
+.sidebar-section { display: grid; align-content: start; gap: var(--space-2); min-height: 0; }
 
 .sidebar-nav-list { display: grid; gap: 2px; }
 
@@ -518,21 +568,32 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .hover-tip { position: fixed; z-index: 50; max-width: 260px; padding: var(--space-2) var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-ctl); background: var(--raised); color: var(--text); font-size: var(--t-xs); line-height: 1.4; white-space: pre-line; pointer-events: none; box-shadow: var(--shadow-panel); }
 
-.sidebar-conversations { flex: 1; min-height: 0; }
+.sidebar-conversations { flex: 1; grid-template-rows: auto minmax(0, 1fr); min-height: 0; }
 
-.conversation-list { display: grid; gap: var(--space-1); min-height: 0; overflow: auto; scrollbar-width: thin; }
+/* Same measurement: the single conversation in a 165px list became a 165px
+   row with its title centred in the void. Rows keep their own height; the
+   list scrolls when there are more of them than fit. */
+.conversation-list { display: grid; align-content: start; gap: var(--space-1); min-height: 0; overflow: auto; scrollbar-width: thin; }
 
-.conversation-row { display: flex; min-width: 0; align-items: center; gap: var(--space-2); padding: var(--space-2); border: 1px solid transparent; border-radius: var(--radius-ctl); background: transparent; color: var(--muted); text-align: left; transition: border-color var(--fast) var(--ease), background-color var(--fast) var(--ease), color var(--fast) var(--ease); }
+.conversation-row { display: flex; min-width: 0; align-items: center; gap: var(--space-2); padding: 0 var(--space-2); border: 1px solid transparent; border-radius: var(--radius-ctl); background: transparent; color: var(--muted); text-align: left; transition: border-color var(--fast) var(--ease), background-color var(--fast) var(--ease), color var(--fast) var(--ease); }
 
 .conversation-row:hover { border-color: var(--line); background: var(--raised); color: var(--text); }
 
 .conversation-row.selected { border-color: transparent; background: rgb(var(--accent-rgb) / .12); color: var(--text); }
 
-.conversation-open { min-width: 0; flex: 1; overflow: hidden; border: 0; background: transparent; color: inherit; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+/* The row's height is this control's tap target, not padding around a 24px
+   button. Measured live 2026-09-21: it was 210x24, and the 44px minimum this
+   system enforces is a real minimum, not a suggestion. The row loses its
+   block padding in exchange, so the list gets taller by 3px, not by 20. */
+.conversation-open { display: flex; min-width: 0; min-height: var(--tap-target-min); flex: 1; align-items: center; overflow: hidden; border: 0; background: transparent; color: inherit; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
 
 .conversation-actions { display: none; flex: none; gap: var(--space-1); }
 
-.conversation-row:hover .conversation-actions, .conversation-row.selected .conversation-actions, .conversation-row:focus-within .conversation-actions { display: flex; }
+/* NOT .selected. Showing three text actions permanently on the selected row
+   spent 150px of a 225px rail on them and left its title 49px, rendering
+   "Conv...". Hover covers pointers, focus-within covers keyboards, and the
+   <=720px block shows them unconditionally for touch, which has neither. */
+.conversation-row:hover .conversation-actions, .conversation-row:focus-within .conversation-actions { display: flex; }
 
 .conversation-action { min-height: var(--tap-target-min); padding: var(--space-1); border: 0; background: transparent; color: var(--faint); font-size: var(--t-xs); white-space: nowrap; }
 
@@ -554,11 +615,11 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .sidebar-spend { color: var(--muted); font-size: var(--t-xs); }
 
-.thread-header { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); padding: var(--space-4); border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--surface); box-shadow: var(--shadow-card); }
+.thread-header { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--surface); box-shadow: var(--shadow-card); }
 
 .thread-heading { min-width: 0; flex: 1 1 320px; }
 
-.thread-heading h1 { margin: 0; font-family: var(--display); font-size: clamp(24px, 3vw, 34px); letter-spacing: -.025em; }
+.thread-heading h1 { margin: 0; font-family: var(--display); font-size: clamp(24px, 3vw, 34px); letter-spacing: -.01em; }
 
 .thread-heading.sovereign h1 { color: var(--gold); }
 
@@ -568,7 +629,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .thread-control { display: grid; min-width: 0; gap: 2px; color: var(--faint); font-size: var(--t-xs); }
 
-.thread-control-label { padding-inline: var(--space-1); }
+.thread-control-label { padding-inline: var(--space-1); font: 500 10px/1.5 var(--mono); letter-spacing: .1em; text-transform: uppercase; }
 
 .thread-model, .thread-effort { width: 18ch; min-width: 0; max-width: 100%; height: var(--tap-target-min); padding: 0 var(--space-2); border: 1px solid var(--line); border-radius: var(--radius-ctl); background: var(--raised); color: var(--muted); }
 
@@ -582,7 +643,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .thread-message.mine { justify-self: end; }
 
-.message-meta { padding: 0 var(--space-2); color: var(--faint); font-size: var(--t-xs); }
+.message-meta { padding: 0 var(--space-2); color: var(--faint); font: 500 10px/1.5 var(--mono); letter-spacing: .1em; text-transform: uppercase; }
 
 .thread-message.mine .message-meta { text-align: right; }
 
@@ -592,11 +653,11 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .message-body > :last-child { margin-bottom: 0; }
 
-.message-body pre { max-width: 100%; overflow: auto; padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-ctl); background: var(--bg); font: var(--t-xs)/1.5 var(--mono); white-space: pre; }
+.message-body pre { max-width: 100%; overflow: auto; padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-ctl); background: var(--surface); font: var(--t-xs)/1.5 var(--mono); white-space: pre; }
 
 .message-body code { font-family: var(--mono); font-size: .92em; }
 
-.message-body :not(pre) > code { padding: 1px var(--space-1); border: 1px solid var(--line); border-radius: 4px; background: var(--bg); }
+.message-body :not(pre) > code { padding: 1px var(--space-1); border: 1px solid var(--line); border-radius: 4px; background: var(--surface); }
 
 .message-body ul, .message-body ol { margin: 0; padding-left: 1.4em; }
 
@@ -644,7 +705,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .skill-option small { color: var(--muted); }
 
-.view-page { display: grid; gap: var(--space-5); max-width: 1080px; margin: 0 auto; }
+.view-page { display: grid; align-content: start; gap: var(--space-5); max-width: 1080px; margin: 0 auto; }
 
 .boot-failure { display: grid; max-width: 520px; gap: var(--space-3); margin: var(--space-5) auto; }
 
@@ -656,15 +717,19 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .view-heading { display: grid; max-width: 720px; gap: var(--space-2); padding-bottom: var(--space-4); border-bottom: 1px solid var(--line); }
 
-.view-heading::before { color: var(--accent); content: "AGENTIC OS / WORKSPACE"; font: 600 var(--t-xs)/1.4 var(--ui); letter-spacing: .12em; text-transform: uppercase; }
+/* Mono, uppercase and tightly tracked, at the kit's own EyebrowLabel size.
+ * Its leading 7px accent dot is deliberately not reproduced: in this app a
+ * 7px dot means status, and a decorative one beside a page title would be the
+ * only place it did not. */
+.view-heading::before { color: var(--muted); content: "AGENTIC OS / WORKSPACE"; font: 500 10px/1.4 var(--mono); letter-spacing: .12em; text-transform: uppercase; }
 
-.view-heading h1 { margin: 0; color: var(--text); font-family: var(--display); font-size: clamp(32px, 5vw, 48px); letter-spacing: -.04em; line-height: 1.05; }
+.view-heading h1 { margin: 0; color: var(--text); font-family: var(--display); font-size: clamp(32px, 5vw, 48px); letter-spacing: -.01em; line-height: 1.05; }
 
 .view-description { max-width: 60ch; margin: 0; color: var(--muted); font-size: var(--t-md); }
 
-.view-section { display: grid; gap: var(--space-3); padding: var(--space-4); border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--surface); box-shadow: var(--shadow-card); }
+.view-section { display: grid; align-content: start; gap: var(--space-3); padding: var(--space-4); border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--surface); box-shadow: var(--shadow-card); }
 
-.view-section h2 { margin: 0; font-family: var(--display); font-size: 22px; letter-spacing: -.02em; }
+.view-section h2 { margin: 0; font-family: var(--display); font-size: 22px; letter-spacing: -.01em; }
 
 .view-page h3, .view-page h4 { font-family: var(--display); letter-spacing: -.015em; }
 
@@ -688,9 +753,16 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .stat { display: grid; gap: var(--space-1); padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-ctl); }
 
-.stat span, .card-meta { color: var(--muted); font-size: var(--t-xs); }
+.stat span { color: var(--muted); font-size: var(--t-xs); }
 
-.usage-dashboard { display: grid; gap: var(--space-4); }
+/* Mono, uppercase, tracked, small. The kit is explicit that this treatment is
+ * what carries metadata — eyebrows, timestamps, board names, form labels — in
+ * all three of its client sources, and that ordinary sans is what carries
+ * everything else. Status badges are not in this family: the kit sets those
+ * in its product sans, and they stay there. */
+.card-meta { color: var(--muted); font: 500 10px/1.5 var(--mono); letter-spacing: .1em; text-transform: uppercase; }
+
+.usage-dashboard { display: grid; align-content: start; gap: var(--space-4); }
 
 .usage-toolbar { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: var(--space-3); }
 
@@ -698,9 +770,9 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .usage-lead { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-3); }
 
-.metric-card { display: grid; min-width: 0; align-content: start; gap: var(--space-1); padding: var(--space-4); border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--raised); box-shadow: var(--shadow-card); }
+.metric-card { display: grid; min-width: 0; align-content: start; gap: var(--space-1); padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--raised); box-shadow: var(--shadow-card); }
 
-.metric-label { color: var(--muted); font: 600 var(--t-xs)/1.4 var(--ui); }
+.metric-label { color: var(--muted); font: 500 10px/1.4 var(--mono); letter-spacing: .1em; text-transform: uppercase; }
 
 .metric-value { color: var(--text); font-size: clamp(20px, 3vw, 28px); overflow-wrap: anywhere; }
 
@@ -762,7 +834,11 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .agent-heading h3 { font-size: var(--t-md); }
 
-.approval-card, .agent-card, .home-card, .workflow-row, .activity-row, .message-row { display: grid; gap: var(--space-2); padding: var(--space-4); border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--raised); box-shadow: var(--shadow-card); }
+/* 16px, the product source's own card padding, against the section's 24px.
+ * The spacing scale this system brings widens faster than the one it
+ * replaces, so holding cards at --space-4 would have pushed every card in the
+ * app from 16px of padding to 24px at once. */
+.approval-card, .agent-card, .home-card, .workflow-row, .activity-row, .message-row { display: grid; align-content: start; gap: var(--space-2); padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--raised); box-shadow: var(--shadow-card); }
 
 .approval-card.pending { border-color: rgb(var(--accent-rgb) / .55); }
 
@@ -785,7 +861,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .question-card, .question-options, .check-row { display: grid; gap: var(--space-2); }
 
-.diff { margin: 0; padding: var(--space-3); overflow: auto; background: var(--bg); color: var(--muted); }
+.diff { margin: 0; padding: var(--space-3); overflow: auto; background: var(--surface); color: var(--muted); }
 
 .diff .add { color: var(--ok); }
 
@@ -799,13 +875,18 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .data-table th, .data-table td { padding: var(--space-2); border-bottom: 1px solid var(--line); text-align: left; }
 
-.data-table th { color: var(--muted); font-size: var(--t-xs); font-weight: 600; }
+.data-table th { color: var(--muted); font: 500 10px/1.5 var(--mono); letter-spacing: .1em; text-transform: uppercase; }
 
-.home-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: var(--space-3); }
+/* 420px, not the 240px this carried: auto-fit only collapses tracks that are
+   empty, and .run-summary spans 1 / -1, so every track stays occupied. At
+   1080px that left four 261px tracks with the Queue card rendering in one of
+   them, four words wide, beside 800px of nothing. Two real columns here, one
+   below ~860px. */
+.home-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: var(--space-3); }
 
 .home-card h2, .home-card p { margin: 0; }
 
-.home-card h2 { font-family: var(--display); font-size: 22px; letter-spacing: -.02em; }
+.home-card h2 { font-family: var(--display); font-size: 22px; letter-spacing: -.01em; }
 
 .run-summary { grid-column: 1 / -1; }
 
@@ -813,7 +894,10 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .run-summary-head > div { min-width: 0; }
 
-.run-badge { flex: none; padding: var(--space-1) var(--space-2); border: 1px solid var(--line); border-radius: var(--radius-pill); color: var(--muted); font: 600 var(--t-xs)/1.4 var(--ui); }
+/* The kit's StatusBadge verbatim: a pill filled with its own hue at 12%,
+ * no border, product sans at 11px/600 — not mono, because a badge states a
+ * status and is not metadata. */
+.run-badge { flex: none; padding: var(--space-1) var(--space-3); border: 0; border-radius: var(--radius-pill); background: rgb(var(--muted-rgb) / .12); color: var(--muted); font: 600 11px/1.5 var(--ui); }
 
 /* One status vocabulary (ui/views/util.js#tone) for every status-bearing
  * surface below: run summary/badge/item, review command, task row, activity
@@ -822,13 +906,13 @@ body.sidebar-collapsed .app-identity { display: grid; }
  * colour signal for "how is this going", replacing what used to be a
  * different treatment (border colour here, text colour there, badge colour
  * elsewhere) per view. */
-.run-summary.live, .run-badge.live { border-color: rgb(var(--accent-rgb) / .65); }
-.run-summary.attention, .run-badge.attention { border-color: rgb(var(--danger-rgb) / .65); }
-.run-summary.settled, .run-badge.settled { border-color: rgb(var(--ok-rgb) / .65); }
+.run-summary.live { border-color: rgb(var(--accent-rgb) / .65); }
+.run-summary.attention { border-color: rgb(var(--danger-rgb) / .65); }
+.run-summary.settled { border-color: rgb(var(--ok-rgb) / .65); }
 
-.run-badge.live { color: var(--accent); }
-.run-badge.attention { color: var(--danger); }
-.run-badge.settled { color: var(--ok); }
+.run-badge.live { background: rgb(var(--accent-rgb) / .12); color: var(--accent); }
+.run-badge.attention { background: rgb(var(--danger-rgb) / .1); color: var(--danger); }
+.run-badge.settled { background: rgb(var(--ok-rgb) / .12); color: var(--ok); }
 
 .run-objective { margin-top: var(--space-2) !important; color: var(--muted); overflow-wrap: anywhere; }
 
@@ -836,7 +920,10 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .run-progress b { color: var(--text); font-size: var(--t-xs); }
 
-.run-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: var(--space-3); margin-top: var(--space-3); }
+/* align-items: start so each panel is as tall as what it holds. Stretching
+   them to the tallest sibling left an empty "Verified deliverables" reading
+   as a 200px hole beside a three-item list. */
+.run-grid { display: grid; align-items: start; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: var(--space-3); margin-top: var(--space-3); }
 
 .run-grid .view-section { min-width: 0; padding: var(--space-3); }
 
@@ -892,7 +979,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .home-efficiency-warning .button { justify-self: end; }
 
-.mode-kicker { margin: 0; color: var(--accent); font-size: var(--t-xs); font-weight: 650; }
+.mode-kicker { margin: 0; color: var(--accent); font: 500 10px/1.4 var(--mono); letter-spacing: .12em; text-transform: uppercase; }
 
 .home-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 
@@ -946,7 +1033,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .markdown h3 { font-size: var(--t-sm); }
 
-.markdown blockquote { margin: var(--space-3) 0; padding: var(--space-2) 0 var(--space-2) var(--space-3); border-left: 2px solid var(--accent); color: var(--muted); }
+.markdown blockquote { margin: var(--space-3) 0; padding: var(--space-2) 0 var(--space-2) var(--space-3); border-left: 2px solid var(--accent); color: var(--muted); font-family: var(--display); font-style: italic; }
 
 .markdown table { display: block; max-width: 100%; overflow: auto; border-collapse: collapse; }
 
@@ -986,7 +1073,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .notes-body, .note-body { white-space: pre-wrap; overflow-wrap: anywhere; }
 
-.note-body { margin: 0; padding: var(--space-3); background: var(--bg); }
+.note-body { margin: 0; padding: var(--space-3); background: var(--surface); }
 
 .now-playing { color: var(--muted); }
 
@@ -1074,6 +1161,12 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
   .sidebar.collapsed .sidebar-conversations, .sidebar.collapsed .sidebar-footer > :not(.sidebar-collapse), .sidebar.collapsed .sidebar-brand { display: none; }
 
+  /* The rail's own 16px inset left a 64px column with 32px of content, so
+     every collapsed nav button measured 34x44 live at 1440x900 — short of the
+     44px this system enforces rather than suggests. The inset drops to 8px
+     when collapsed, which is the only axis with slack to give. */
+  #sidebar.collapsed { padding-inline: var(--space-2); }
+
   .sidebar.collapsed .sidebar-nav-button { justify-content: center; gap: 0; padding-inline: var(--space-2); font-size: 0; }
 
   .sidebar.collapsed .sidebar-nav-button .icon { opacity: 1; }
@@ -1110,9 +1203,30 @@ body.sidebar-collapsed .app-identity { display: grid; }
 @media (max-width: 720px) {
   body { grid-template: "main" 1fr / 1fr; }
   #sidebar { display: none; }
-  body.sidebar-open #sidebar { position: fixed; z-index: 5; inset: 0 auto 0 0; display: flex; width: min(320px, 85vw); box-shadow: var(--shadow-panel); }
-  body.sidebar-open #sidebar-scrim { position: fixed; z-index: 4; inset: 0; display: block; width: 100%; height: 100%; border: 0; border-radius: 0; background: rgb(0 0 0 / .52); cursor: default; }
-  body.sidebar-open #sidebar .sidebar-mode { display: grid; }
+  /* The drawer scrolls as one column. Measured live 2026-09-21 at 720x900:
+     with every section pinned, the content ran 122px past the viewport and
+     the only unpinned one left — Conversations — was squashed to 287x0, so
+     the drawer offered no way to reach a conversation at all. Scrolling the
+     whole rail is what a phone drawer does; the inner list gives up its own
+     scroller below so there is only ever one. */
+  body.sidebar-open #sidebar { position: fixed; z-index: 5; inset: 0 auto 0 0; display: flex; width: min(320px, 85vw); overflow-y: auto; box-shadow: var(--shadow-panel); }
+
+  body.sidebar-open #sidebar .sidebar-conversations { flex: none; }
+
+  body.sidebar-open #sidebar .conversation-list { overflow: visible; }
+
+  /* Collapsing is a rail affordance and there is no rail at this width — the
+     collapsed layout lives behind a min-width: 901px query. The control was
+     taking 50px of a drawer that had none to spare and doing nothing. */
+  body.sidebar-open #sidebar .sidebar-collapse { display: none; }
+  body.sidebar-open #sidebar-scrim { position: fixed; z-index: 4; inset: 0; display: block; width: 100%; height: 100%; border: 0; border-radius: 0; background: rgb(var(--text-rgb) / .38); cursor: default; }
+  /* flex-shrink: 0 alongside display, not as an afterthought. Measured live
+     in the 720px drawer 2026-09-21: the section reported 287x0 while its own
+     mode pills painted at y 105-155, straight through the Overview row. The
+     rail is a flex column with overflow: hidden, so an unpinned section is
+     the one the browser squashes when the drawer's content exceeds its
+     height; .sidebar-nav was already pinned and this one was not. */
+  body.sidebar-open #sidebar .sidebar-mode { display: grid; flex-shrink: 0; }
   .mobile-menu, .sidebar-mobile-close { display: inline-flex; align-items: center; justify-content: center; }
   .sidebar-mobile-close { flex: none; }
   .conversation-actions { display: flex; }
