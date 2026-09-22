@@ -11,6 +11,25 @@ stays where it already lives:
 
 A fact stated here and also stated there is a bug. Point, do not restate.
 
+## Why this is not a parallel instruction set
+
+HANDOFF.md forbids recreating parallel *active instruction documents*, and this
+layer is built to stay on the right side of that line in two ways.
+
+The routers hold no rules. They hold paths and the condition for reaching them.
+Where a rule exists, they name the file that owns it — HANDOFF.md's operating
+rules, `ui/app.css`'s token block, `src/skills.js`'s header — rather than
+copying it.
+
+The skills are procedures, not standing rules. That distinction is the
+repository's own: `src/skills.js` defines a skill as "a method, invoked on
+purpose, for a task that is happening now", explicitly *not* knowledge and
+*not* a standing rule. A skill is loaded when its trigger fires and is absent
+otherwise, which is the opposite of a standing instruction document.
+
+If a router or a skill ever contradicts HANDOFF.md or PLAN.md, those two win
+and the copy here is the bug.
+
 ## Domains
 
 | You are working on | Router | First read |

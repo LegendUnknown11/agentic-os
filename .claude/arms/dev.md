@@ -25,13 +25,10 @@ the known flaky suite, and what the evidence does not cover are all there.
 
 ## Traps this domain owns
 
-Full list in HANDOFF.md under "Windows and CLI traps". The two that bite most
-often here:
-
-- A new suite is invisible until it is added by hand to the array in
-  [test/run-all.js](../../test/run-all.js). Discovery is not a glob.
-- A merged branch does not show under `git branch -r --merged`; this repo
-  squash-merges. `gh pr list --state all --json headRefName,state` is the record.
+HANDOFF.md's "Windows and CLI traps" section owns the list. The two that bite
+most often in this domain, so you know which entries to look for: suite
+discovery in [test/run-all.js](../../test/run-all.js) is a hand-maintained
+array, and branch liveness cannot be read from ancestry.
 
 ## Build
 
