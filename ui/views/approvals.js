@@ -43,7 +43,19 @@ function approvalCard(state, approval, root) {
   const what = approval.names?.length ? approval.names.join(', ') : approval.peasant ?? approval.name ?? approval.reason ?? '';
   if (what) card.append(h('h3', { text: what }));
   if (approval.reason) card.append(h('p', { text: approval.reason }));
-  if (approval.forecast?.crew) card.append(note(`Estimated ${approval.forecast.crew.perTurnUsd == null ? `${kb(approval.forecast.crew.perTurnTokens)} tokens/turn` : `${money(approval.forecast.crew.perTurnUsd)}/turn`}`));
+  if (approval.forecast?.crew) {
+    const crew = approval.forecast.crew;
+    const rate = crew.perTurnUsd == null ? `${kb(crew.perTurnTokens)} tokens/turn` : `${money(crew.perTurnUsd)}/turn`;
+    // The projected total only ever prints when it was actually measured from
+    // closed campaigns — src/forecast.js returns null rather than a guessed
+    // multiplier when there is nothing to measure, and this degrades to the
+    // same honest absence: no placeholder, no zero, just the rate alone. The
+    // campaign count travels right beside the number it produced.
+    const projected = crew.projectedTotalUsd != null
+      ? ` · projected ${money(crew.projectedTotalUsd)} total (${crew.campaignsSampled} campaign${crew.campaignsSampled === 1 ? '' : 's'} measured)`
+      : '';
+    card.append(note(`Estimated ${rate}${projected}`));
+  }
 
   if (approval.kind === 'question') {
     if (live) {

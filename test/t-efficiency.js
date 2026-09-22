@@ -3,14 +3,18 @@
 //
 //   node test/t-efficiency.js
 import { strict as a } from 'node:assert';
-import { spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Bus } from '../src/bus.js';
+import { Kingdom } from '../src/kingdom.js';
 import { buildPrompt } from '../src/prompt.js';
 import { cachedTokens, deltaOf, hasUsage, totalsOf } from '../src/usage.js';
 import { costClassOf } from '../src/price.js';
+import { forecast as forecastOf, turnsPerClosedCampaign } from '../src/forecast.js';
+
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const ROOT = join(import.meta.dirname, '..');
 const MCP = join(ROOT, 'src', 'mcp.js');
@@ -191,6 +195,98 @@ console.log('  MCP surfaces are under budget and roster supports query, activeOn
   seen.close();
   rmSync(maskDir, { recursive: true, force: true });
   console.log('  observation masking increments durable call and character counters');
+}
+
+/* ---------- a projected total is measured from REAL campaign/event ids --- */
+{
+  const campDb = join(dir, 'campaigns.sqlite');
+  const cb = new Bus(campDb);
+  const specOf = () => ({ cli: 'codex', model: 'gpt-5.6-luna' });
+
+  // Campaign 1: two real turns, closed by the sovereign's next order.
+  cb.beginCampaign('order one');
+  cb.logEvent('coder', 'turn_end', { usage: { input_tokens: 1000, output_tokens: 100 } });
+  cb.logEvent('coder', 'turn_end', { usage: { input_tokens: 1000, output_tokens: 100 } });
+  // Campaign 2: one real turn, also closed.
+  cb.beginCampaign('order two');
+  cb.logEvent('coder', 'turn_end', { usage: { input_tokens: 1000, output_tokens: 100 } });
+  // Campaign 3: still open when read below — must not count toward the mean.
+  cb.beginCampaign('order three');
+  cb.logEvent('coder', 'turn_end', { usage: { input_tokens: 1000, output_tokens: 100 } });
+  cb.logEvent('coder', 'turn_end', { usage: { input_tokens: 1000, output_tokens: 100 } });
+  cb.logEvent('coder', 'turn_end', { usage: { input_tokens: 1000, output_tokens: 100 } });
+
+  const rows = cb.events({ type: 'turn_end' });
+  const campaigns = cb.campaigns();
+  a.equal(campaigns.length, 3);
+  a.equal(campaigns.filter((c) => !c.current).length, 2, 'the still-open campaign must not read as closed');
+
+  // The real event ids the bus assigns are the whole point of this check —
+  // forecast.js's own self-check only ever proves the arithmetic against
+  // hand-picked ids, never against what SQLite autoincrement actually hands
+  // back campaign to campaign.
+  a.deepEqual(turnsPerClosedCampaign(campaigns, rows), [2, 1],
+    'turn counts bracketed by real bus event ids, not array position');
+
+  const f = forecastOf(rows, ['coder'], { specOf, campaigns });
+  a.equal(f.crew.campaignsSampled, 2);
+  a.equal(f.crew.turnsPerCampaign, 1.5, 'mean of 2 and 1 real closed-campaign turn counts');
+  a.ok(f.crew.projectedTotalUsd > 0);
+  const near = Math.abs(f.crew.projectedTotalUsd - f.crew.perTurnUsd * 1.5) < 1e-9;
+  a.ok(near, 'projected total must be the measured rate times the measured mean, end to end against a real bus');
+  cb.close();
+  console.log('  the summon card projected total is measured from a real bus\'s campaign/event-id brackets');
+}
+
+/* ---------- a per-run ceiling actually stops the run, restart-safe ------- */
+{
+  const runRepo = mkdtempSync(join(tmpdir(), 'kingdom-runcap-'));
+  const git = (...x) => execFileSync('git', x, { cwd: runRepo, stdio: 'pipe' });
+  git('init', '-q');
+  git('config', 'user.email', 'k@kingdom');
+  git('config', 'user.name', 'kingdom');
+  writeFileSync(join(runRepo, 'README.md'), '# t\n');
+  git('add', '-A');
+  git('commit', '-qm', 'init');
+
+  const runConfigPath = join(runRepo, 'kingdom.config.json');
+  writeFileSync(runConfigPath, JSON.stringify({
+    maxRunUsd: 1,
+    orchestrator: { name: 'orchestrator', cli: 'codex' },
+    briefer: { name: 'briefer', cli: 'codex' },
+    peasants: [{ name: 'coder', cli: 'codex' }],
+  }));
+
+  const rk = new Kingdom(runRepo, runConfigPath);
+  rk.on('error', () => {});
+  await rk.start();
+  // Same technique as t-budget.js: a REAL agent so the turn_end wiring under
+  // test is genuine, with send/stop patched so nothing actually spawns.
+  await rk.wake('coder');
+  const coder = rk.agents.get('coder');
+  coder.send = () => {};
+  coder.stop = function () { this.stopped = true; };
+
+  const run = await rk.createRun({ objective: 'prove a per-run ceiling actually stops the run' });
+  a.equal(run.state, 'planning', 'sanity: a fresh run has not been approved yet');
+
+  const runEvents = [];
+  rk.on('run', (r) => runEvents.push(r));
+
+  // Three turns of $0.40 = $1.20, over the $1 run cap.
+  for (let i = 0; i < 3; i++) coder.emit('turn_end', { usage: { input_tokens: 10 }, costUsd: 0.4 });
+  await wait(200);
+
+  const blocked = runEvents.find((r) => r.id === run.id && r.state === 'blocked');
+  a.ok(blocked, 'crossing maxRunUsd must block the run, not just log it');
+  a.match(blocked.blocker?.operation ?? '', /run spend ceiling/,
+    'the blocker must name what actually happened, not a generic message');
+  a.equal(rk.bus.run(run.id).state, 'blocked', 'and the state must persist in the bus');
+  a.equal(coder.stopped, undefined, 'a run ceiling stops the RUN, not unrelated work on the same member');
+
+  await rk.stop();
+  rmSync(runRepo, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  console.log('  maxRunUsd stops a run that crosses it, the same restart-safe way maxBudgetUsd/maxKingdomUsd already do');
 }
 
 rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
