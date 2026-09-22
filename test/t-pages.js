@@ -85,6 +85,29 @@ a.match(settingsSource, /window\.kingdomShell\?\.openPet \? window\.kingdomShell
 a.match(courtPreloadSource, /openPet: \(\) => ipcRenderer\.send\('pet:open'\)/, 'the court preload must expose the desk-pet command');
 a.match(electronMainSource, /ipcMain\.on\('pet:open', openPet\)/, 'the native main process must reopen the desk pet');
 a.match(electronMainSource, /spawn\(node, \[[\s\S]*?windowsHide: true/, 'the daemon spawn must not flash a console window on Windows startup');
+
+// Issue #42 (reopened): attachRepo refuses a live repo swap on purpose
+// (src/kingdom.js, locked in by test/t-control.js's "requires a fresh
+// court" pin) — the real gap was that nothing in the app could actually end
+// the court and start a fresh one. Settings now offers that, gated to the
+// exact wall attachRepo hits, wired through a dedicated shell bridge.
+a.match(settingsSource, /if \(\/fresh court\/\.test\(result\.error \?\? ''\) && window\.kingdomShell\?\.switchRepo\) switchRepo\.hidden = false;/, 'the repository switcher must only appear once attach has actually hit the fresh-court wall');
+a.match(settingsSource, /const result = await window\.kingdomShell\.switchRepo\(path\.value\.trim\(\)\);/, 'switching repositories must go through the dedicated shell bridge, not attachRepo');
+a.match(settingsSource, /if \(result\?\.canceled\)/, 'a cancelled repository switch must leave the control usable again, not stuck disabled');
+a.match(courtPreloadSource, /switchRepo: \(path\) => ipcRenderer\.invoke\('court:switchRepo', path\)/, 'the court preload must expose the repository-switch command');
+a.match(electronMainSource, /ipcMain\.handle\('court:switchRepo', async \(event, rawPath\) => switchRepo\(rawPath, \{/, 'the native main process must own ending and respawning the court');
+// The step sequence itself (validate before confirm, confirm before
+// shutdown, shutdown before startDaemon, reload only after it answers) is a
+// plain function in electron/switch-repo.js, exercised end-to-end without
+// Electron in test/t-repo-switch.js — including the exact ordering risk
+// Greptile flagged on PR #69 (a bad path reaching the destructive steps).
+// This suite only has to pin that main.js wires REAL dependencies into it.
+a.match(electronMainSource, /import \{ assertRepo \} from '\.\.\/src\/worktree\.js'/, 'a repository switch must validate the target with a real git check (assertRepo), not an existsSync(.git) peek a corrupt or empty entry would pass');
+a.match(electronMainSource, /assertRepo,\s*\n\s*confirm: async \(repo\) => \{/, 'a repository switch must use the real git validator, not a bespoke check');
+a.match(electronMainSource, /buttons: \['Cancel', 'End court and switch'\][\s\S]*?return response === 1;/, 'ending a court is destructive — it must be confirmed natively before anything is torn down');
+a.match(electronMainSource, /shutdown: \(\) => fetch\(`\$\{ORIGIN\}\/api\/shutdown`, \{ method: 'POST' \}\)/, 'a repository switch must end the running court through its own shutdown endpoint');
+a.match(electronMainSource, /courtOnPort,\s*\n\s*startDaemon,/, 'a repository switch must poll the real port state and start the fresh court through the same path the app itself boots with');
+a.match(electronMainSource, /reload: \(\) => BrowserWindow\.fromWebContents\(event\.sender\)\?\.loadURL\(`\$\{ORIGIN\}\/`\)/, 'a successful repository switch must reload the window instead of resuming a stale event cursor from the old repo');
 a.match(automationsSource, /workflow-run-message/, 'a manual workflow run must leave visible feedback');
 a.match(automationsSource, /result\?\.steps/, 'workflow feedback must report the returned run trace');
 a.match(automationsSource, /automationEditor/, 'live updates must not discard an open workflow editor');
