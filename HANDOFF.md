@@ -80,14 +80,23 @@ tests that pin the measured numbers.
 ## Evidence
 
 The combined source gate passed on merged `main`: `npm.cmd test` completed
-**73 suites, 4-wide, 59.3s, all passed** on 2026-09-21, after #63, #64 and #65
-landed. Earlier handoffs recorded 71 suites; the
-runner's array has grown since, and 73 is the count the run itself printed. The
-suite count is the contract.
+**77 suites, 4-wide, 71.6s, all passed** on 2026-09-22, after four backlog
+items landed one at a time with the full gate re-run between each: target-repo
+snapshot/restore (`src/snapshot.js`), a per-run spend ceiling plus a projected
+total measured from the campaign boundary (`src/kingdom.js`, `src/forecast.js`),
+bearer-token auth for a non-loopback daemon bind (`src/daemon.js`), and a
+self-contained evidence folder per completed run (`src/evidence.js`). Earlier
+handoffs recorded 73 suites; the runner's array has grown by two
+(`t-snapshot.js`, `t-evidence.js` — new suites) plus new cases inside two
+already-registered suites (`t-efficiency.js`, `t-csrf.js`). The suite count is
+the contract.
+`test/t-electron.js` (the recovered Electron acceptance harness) is not yet in
+this count — it lands with PR #71, still open pending manual merge.
 
 Durations on the same machine: 36.8s (2026-09-14), 64.1s earlier still, 105.8s,
-179.6s and 61.2s on 2026-09-21 — the last of those on
-`redesign/cold-call-workflow`, same 73 suites, all passed. That spread is machine load under 4-wide contention, not
+179.6s and 61.2s on 2026-09-21, 68.6-78.7s across the five 2026-09-22
+integration runs (four merges plus the final suite-registration run). That
+spread is machine load under 4-wide contention, not
 regression — `test/run-all.js` documents the same effect and measures it. Do
 not treat a slower run as a failure on its own.
 
@@ -171,7 +180,9 @@ stateDiagram-v2
 | [src/bus.js](src/bus.js) | SQLite schema, migrations, run lifecycle, task and approval associations. |
 | [src/kingdom.js](src/kingdom.js) | Worker lifecycle, recovery, verification, run worktrees, and guarded application. |
 | [src/worktree.js](src/worktree.js) | Worktree creation, revision-bound tests, conflict-safe integration, and run-branch application. |
-| [src/daemon.js](src/daemon.js) | HTTP actions, run reads, snapshots, and SSE run events. |
+| [src/daemon.js](src/daemon.js) | HTTP actions, run reads, snapshots, SSE run events, and bearer-token auth for a non-loopback bind. |
+| [src/snapshot.js](src/snapshot.js) | Target-repo snapshot/restore before a worker touches it (Habitable pilot step one). Read-only against the repo it snapshots. |
+| [src/evidence.js](src/evidence.js) | Exports one self-contained folder per completed run: objective, diff, tests, reviews, cost, timeline. |
 | [src/modes.js](src/modes.js) | The mode table: crew, worktrees, merge, tasks, vault directory. Pure and self-checking. |
 | [src/mcp/tasks.js](src/mcp/tasks.js) | Run-owned task submission and controller-owned closure. |
 | [src/mcp/approvals.js](src/mcp/approvals.js), [src/mcp/comms.js](src/mcp/comms.js) | Run association for approvals and direct messages. |
@@ -253,9 +264,14 @@ boundaries and generated-code ownership.
 
 Before a worker changes Habitable:
 
-1. Create a snapshot that includes tracked dirty work and relevant untracked
+1. ~~Create a snapshot that includes tracked dirty work and relevant untracked
    source files, but excludes credentials, build output, caches, and identity.
-   Record its manifest and leave the original checkout unchanged.
+   Record its manifest and leave the original checkout unchanged.~~ Implemented
+   2026-09-22: `src/snapshot.js`'s `snapshotRepo`/`restoreSnapshot`, proven
+   against the acceptance scenario verbatim in `test/t-snapshot.js` — tracked
+   edit, tracked deletion, untracked source (flat and nested), a secret, and a
+   build directory. Source evidence only; never run against the real Habitable
+   checkout.
 2. Read its specification, capture fresh `flutter analyze`, `flutter test`,
    handwritten coverage, debug APK, and emulator readiness evidence.
 3. Demonstrate existing flows, audit observed defects, and prepare a finite
@@ -312,3 +328,6 @@ current proof; refresh them before the snapshot.
   separate from the pilot unless explicitly added.
 - Validate live subscription-model pool behavior without paid API fallback when
   a real approved run is started.
+- Running several courts (kingdoms) at once was proposed as a 2026-09-22
+  backlog item; the sovereign declined it for this round ("Not even using
+  it"). Not started — no code exists for it.

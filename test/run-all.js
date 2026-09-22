@@ -56,6 +56,10 @@ const suites = [
   ['concurrency', join(HERE, 't-concurrent.js')],
   ['token pool', join(HERE, 't-tokens.js')],
   ['worktree + merge', join(HERE, 't-merge.js')],
+  // The Habitable pilot's step one: a worker must never touch a target
+  // repo's dirty checkout without first being able to put it back exactly
+  // as found — see src/snapshot.js.
+  ['target-repo snapshot + restore', join(HERE, 't-snapshot.js')],
   ['briefer recycle', join(HERE, 't-recycle.js')],
   ['compaction window', join(HERE, '..', 'src', 'compact.js')],
   ['/autocompact', join(HERE, 't-compact.js')],
@@ -85,6 +89,10 @@ const suites = [
   ['wallpaper and music assets', join(HERE, 't-assets.js')],
   ['uploaded documents surfaced to the court', join(HERE, 't-uploads.js')],
   ['metrics, diff and vault panels', join(HERE, 't-panels.js')],
+  // One self-contained folder per completed run — objective, diff, tests,
+  // reviews, cost and a timeline, reconstructed without the SQLite file it
+  // lives in. See src/evidence.js.
+  ['run evidence export', join(HERE, 't-evidence.js')],
   ['cross-origin POSTs are refused', join(HERE, 't-csrf.js')],
   ['the shipped config template is clean', join(HERE, 't-config-template.js')],
   ['doctor report, structured and served live', join(HERE, 't-doctor-api.js')],
