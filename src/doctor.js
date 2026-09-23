@@ -26,7 +26,7 @@ const exec = promisify(execFile);
  */
 async function tryExec(cmd, args) {
   try {
-    const { stdout, stderr } = await exec(cmd, args);
+    const { stdout, stderr } = await exec(cmd, args, { windowsHide: true });
     return { ok: true, out: (stdout || stderr || '').trim() };
   } catch (e) {
     return { ok: false, out: ((e.stdout ?? '') + (e.stderr ?? '')).trim() || e.message };
@@ -60,7 +60,7 @@ export async function runDoctor({ repo } = {}) {
 
   // --- git -------------------------------------------------------------
   try {
-    const { stdout } = await exec('git', ['--version']);
+    const { stdout } = await exec('git', ['--version'], { windowsHide: true });
     ok(stdout.trim());
   } catch {
     fail('git not found on PATH');

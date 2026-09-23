@@ -649,6 +649,9 @@ const READS = {
       if (p.kind === 'push') {
         try { row.push = JSON.parse(kingdom.bus.get(`push:${m.id}`) ?? 'null'); } catch { /* card still renders */ }
       }
+      if (p.kind === 'merge') {
+        try { row.merge = JSON.parse(kingdom.bus.get(`merge:${m.id}`) ?? 'null'); } catch { /* card still renders */ }
+      }
       // The cost of the crew being proposed, and ONLY while it is still
       // being proposed. A forecast is a trimming aid and there is nothing
       // left to trim once the summon is answered — which also keeps this

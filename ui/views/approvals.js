@@ -24,6 +24,17 @@ const resolvedStatus = (resolved, extra = '') => {
     dot, h('span', { text: `${approvalStatus(resolved)}${extra}` }));
 };
 
+// A push or merge approval records what actually happened separately from the
+// decision (push:${id} / merge:${id}) because approving is not the same fact as
+// it landing — Git still gets the last word. Surface that message on the
+// resolved card, or a blocked outcome reads as a bare "Blocked" with no history
+// of why. Only those two kinds carry an outcome record.
+export const resolvedOutcome = (approval) => {
+  if (approval?.kind !== 'push' && approval?.kind !== 'merge') return '';
+  const message = approval[approval.kind]?.message;
+  return message ? `: ${message}` : '';
+};
+
 function bind(state, root, render) {
   const off = subscribe(() => { if (!editing(root)) render(state, root); });
   return () => off?.();
@@ -124,7 +135,7 @@ function approvalCard(state, approval, root) {
     approve.disabled = no.disabled = !allowed;
     actions.append(approve, no);
     card.append(actions, feedback);
-  } else card.append(resolvedStatus(approval.resolved));
+  } else card.append(resolvedStatus(approval.resolved, resolvedOutcome(approval)));
   return card;
 }
 

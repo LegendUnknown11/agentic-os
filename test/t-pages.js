@@ -4,6 +4,7 @@ import { changeStage, pushState } from '../ui/views/pages.js';
 import { turnsText } from '../ui/views/util.js';
 import { lastMessageIdFor } from '../ui/sidebar.js';
 import { taskMeta, visibleQueueRows } from '../ui/views/home.js';
+import { resolvedOutcome } from '../ui/views/approvals.js';
 import { cancelMetrics, loadMetrics, metricsView, recommendationFor, warningFor } from '../ui/views/usage.js';
 
 const settingsSource = readFileSync(new URL('../ui/views/settings.js', import.meta.url), 'utf8');
@@ -574,6 +575,16 @@ a.match(approvalsSource, /Other answer for/, 'approval-page custom answers must 
 // A resolved approval is the sixth domain that reads as "how did this go", and
 // it was the last one still naming its own colours. The label map may stay
 // local (statusLabel() is the same shape for members); the tone may not.
+// #6: a merge or push that was approved but did not land must say why on its
+// resolved card, not just "Blocked".
+a.equal(resolvedOutcome({ kind: 'merge', resolved: 'blocked', merge: { status: 'blocked', message: 'master has uncommitted changes' } }),
+  ': master has uncommitted changes', 'a blocked merge card must carry the recorded failure message');
+a.equal(resolvedOutcome({ kind: 'push', resolved: 'blocked', push: { status: 'blocked', message: 'no remote configured' } }),
+  ': no remote configured', 'a blocked push card must carry the recorded failure message');
+a.equal(resolvedOutcome({ kind: 'merge', resolved: 'approved' }), '', 'a merge with no outcome record adds nothing');
+a.equal(resolvedOutcome({ kind: 'summon', resolved: 'approved', summon: { message: 'x' } }), '', 'only push and merge carry an outcome record');
+a.match(approvalsSource, /resolvedStatus\(approval\.resolved, resolvedOutcome\(approval\)\)/,
+  'the resolved card must render the outcome through resolvedOutcome()');
 a.match(approvalsSource, /const resolvedStatus = \(resolved/, 'resolved approvals must render through one shared status helper, not a bare note');
 a.match(approvalsSource, /const shared = tone\(resolved\)/, 'a resolved approval must take its tone from the shared classifier');
 a.doesNotMatch(approvalsSource, /note\(`\$\{approvalStatus|note\(approvalStatus/, 'a resolved approval must not fall back to an untoned note');

@@ -57,6 +57,11 @@ const suites = [
   // scheduled workflow cannot loop unboundedly within one firing.
   ['turn guardrails audit', join(HERE, 't-turn-guardrails.js')],
   ['doctor cli parsing', join(HERE, 't-doctor.js')],
+  // #44: "a bunch of terminals pop up after agentic-os has started" (Windows).
+  // Static, not runtime — nothing on Linux CI can observe a Windows console
+  // window, so this parses every src/ and electron/ file for a child_process
+  // call missing windowsHide instead.
+  ['windowsHide guard', join(HERE, 't-windows-hide.js')],
   ['court memory + instructions', join(HERE, '..', 'src', 'memory.js')],
   ['concurrency', join(HERE, 't-concurrent.js')],
   ['token pool', join(HERE, 't-tokens.js')],
