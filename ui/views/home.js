@@ -224,6 +224,13 @@ export function mount(state, root, actions = {}) {
   snapshot = homeStateKey(state);
   const off = subscribe(() => {
     const next = homeStateKey(state);
+    // ponytail: diagnostic only, for the CI-only t-electron.js run-lifecycle
+    // timeout — remove once root-caused. If `instance` here ever differs
+    // from the value store.js's notify() logs, this closure's `state` is a
+    // different object than the one notify() mutates — a module-identity
+    // split, not the shared singleton this file assumes it has.
+    console.log('[home] subscribe fired, instance', state.__diagInstance,
+      'bail', next === snapshot, 'run.state', state.run?.state);
     if (next === snapshot) return;
     snapshot = next;
     renderCurrent();

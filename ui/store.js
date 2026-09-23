@@ -69,6 +69,13 @@ export const state = {
   workflowsError: null,
 };
 
+// ponytail: diagnostic only, for the CI-only t-electron.js run-lifecycle
+// timeout — remove once root-caused. A per-module-load marker: if a
+// subscriber logs a different value for this than notify() does, the two
+// are holding separate `state` objects (a module-identity split), not the
+// one shared singleton this file exports.
+state.__diagInstance = Math.random().toString(36).slice(2, 8);
+
 const subs = new Set();
 let frame = 0;
 
@@ -80,7 +87,7 @@ const notify = () => {
   // round checks the next link — does state.run itself hold the new value,
   // and does the DOM actually change after subscribers run.
   const before = globalThis.document?.body?.innerText?.length;
-  console.log('[repaint] notify, subs', subs.size, 'run.state', state.run?.state, 'run.id', state.run?.id);
+  console.log('[repaint] notify, instance', state.__diagInstance, 'subs', subs.size, 'run.state', state.run?.state, 'run.id', state.run?.id);
   for (const fn of subs) {
     try { fn(state); } catch (err) { console.error('store subscriber failed', err); }
   }
