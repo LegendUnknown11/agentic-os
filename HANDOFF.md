@@ -98,6 +98,33 @@ fail before offering "End court and switch…" (issue #42's fail-first
 complaint). **Electron itself and Windows were not exercised** — this
 environment cannot launch Electron; that acceptance work is still owed.
 
+**Review fix, same day: a LIVE attach bypassed the registry.**
+`registerCourt` only ran once, at daemon boot, with whatever repo was known
+then — a repo-less daemon that later got `POST /api/attachRepo` (or the
+saved-repo re-attach at boot) never updated or conflict-checked the registry.
+That let two daemons end up serving the SAME repository with no refusal, and
+left a stale `repo: null` row the switcher could never match. Fixed: the
+attach handler now claims the repo under the registry's lock BEFORE
+`kingdom.attachRepo` does any work, refuses naming the other court's port on
+conflict, and rolls back the claim if the attach itself then fails.
+`test/t-registry-attach.js` (two real daemons) covers it, confirmed to fail
+without the fix.
+
+**Review fix, same day: the test gate itself wrote to the real registry.**
+Suites that spawn a real daemon (`t-assets`, `t-control`, `t-csrf`,
+`t-daemon-boot`, `t-daemon-conversations`, `t-doctor-api`, `t-multi-court`,
+`t-panels`, `t-uploads`, `t-registry-attach`) were registering into the REAL
+`~/.kingdom/courts.json` on whatever machine ran `npm test` — on the
+sovereign's machine, running the gate while the app is open would have
+mutated their live registry. Fixed at the runner: `test/run-all.js` now
+spawns every suite with its own isolated `KINGDOM_COURTS_REGISTRY` (one
+per-suite temp file, so concurrent suites never share or race over one), and
+`test/isolate-registry.js` gives the same isolation to a suite run standalone
+(`node test/t-x.js`). `test/t-registry-isolation.js` is the guard, proving a
+daemon spawned this way never touches the real file. The file that had
+already been created on this machine by earlier, unisolated runs was deleted
+once the fix was verified.
+
 Habitable pilot readiness: `src/pilot-doctor.js` (flutter/dart/adb/SDK/emulator
 detection, doctor-style) and `src/pilot-evidence.js` (`flutter analyze`,
 `flutter test --coverage`, `flutter build apk --debug`, each step recorded
@@ -125,15 +152,21 @@ the contract.
 this count — it lands with PR #71, still open pending manual merge.
 
 On `functional-revamp` (2026-09-23, not yet merged to `main`), the same gate
-printed **82 suites, 4-wide, 36.5s, all suites passed**, stable across two
-consecutive runs (one earlier run flagged `court registry` as flaky under pool
-contention — see `src/courts.js`'s `pingCourt` timeout comment — and did not
-recur after raising its timeout). The runner's array grew by six: `t-courts.js`,
-`t-multi-court.js`, `t-courts-launch.js` (issue #42), `t-pilot-doctor.js`,
-`t-pilot-evidence.js` (Habitable pilot readiness), plus new cases inside
-`t-pages.js` and `t-evidence.js`. This is source and real-subprocess HTTP-level
-evidence only — Electron and Windows are unverified; see "Current state" above
-and `PLAN.md`'s "Functional revamp" section for exactly what is and is not held.
+printed **84 suites, 4-wide, ~37s, all suites passed** after the two review
+fixes above landed (each its own commit, full gate green before and after —
+see the two "Review fix" paragraphs). The runner's array grew by eight over
+`main`: `t-courts.js`, `t-multi-court.js`, `t-courts-launch.js` (issue #42),
+`t-pilot-doctor.js`, `t-pilot-evidence.js` (Habitable pilot readiness),
+`t-registry-attach.js` (the live-attach fix), `t-registry-isolation.js` (the
+test-gate isolation fix), plus new cases inside `t-pages.js` and
+`t-evidence.js`. `court registry` and, separately, `a live attach claims the
+registry` were each flagged flaky-in-pool-passed-alone on one run apiece —
+the same pre-existing pool-contention class `src/courts.js`'s `pingCourt`
+timeout comment documents, not a regression (both suites passed cleanly, alone
+and in the pool, on other runs the same session). This is source and
+real-subprocess HTTP-level evidence only — Electron and Windows are
+unverified; see "Current state" above and `PLAN.md`'s "Functional revamp"
+section for exactly what is and is not held.
 
 Durations on the same machine: 36.8s (2026-09-14), 64.1s earlier still, 105.8s,
 179.6s and 61.2s on 2026-09-21, 68.6-78.7s across the five 2026-09-22
@@ -230,6 +263,7 @@ stateDiagram-v2
 | [ui/views/courts.js](ui/views/courts.js) | The court switcher panel in Settings' Repository tab. Degrades to a plain note outside Electron (`window.kingdomShell` absent). |
 | [src/pilot-doctor.js](src/pilot-doctor.js) | Habitable pilot step two: doctor-style flutter/dart/adb/SDK/emulator detection. `node src/pilot-doctor.js` for a real report; every dependency is injectable for `test/t-pilot-doctor.js`. |
 | [src/pilot-evidence.js](src/pilot-evidence.js) | Habitable pilot steps two and four: the evidence gate — `flutter analyze`, `flutter test --coverage`, a debug APK build, blocked cleanly on missing tooling. Fakes-only in tests; never points at the real Habitable checkout. |
+| [test/isolate-registry.js](test/isolate-registry.js) | Shared test helper: gives a daemon-spawning suite an isolated `KINGDOM_COURTS_REGISTRY` when nothing upstream (`test/run-all.js`) already set one — never touches the real `~/.kingdom/courts.json`. |
 | [src/modes.js](src/modes.js) | The mode table: crew, worktrees, merge, tasks, vault directory. Pure and self-checking. |
 | [src/mcp/tasks.js](src/mcp/tasks.js) | Run-owned task submission and controller-owned closure. |
 | [src/mcp/approvals.js](src/mcp/approvals.js), [src/mcp/comms.js](src/mcp/comms.js) | Run association for approvals and direct messages. |

@@ -330,14 +330,29 @@ unchanged and still correct).
 |---|---|
 | Registry core: register/list/prune/pick-port, lockfile + atomic write | `src/courts.js` |
 | Daemon wiring: auto/pinned port, conflict refusal, register/unregister | `src/daemon.js` |
+| Live-attach registry claim (POST /api/attachRepo, saved-repo re-attach) | `src/daemon.js` |
 | Launch routing (single-instance, focus-vs-start), pure and fakeable | `electron/courts-launch.js` |
 | Electron: single-instance lock, per-port windows, courts IPC | `electron/main.js`, `electron/court-preload.cjs` |
 | Switcher UI, degrades visibly outside Electron | `ui/views/courts.js`, `ui/views/settings.js` |
 
+**Review fix (2026-09-23, post-implementation): live attach bypassed the
+registry.** `registerCourt` ran once, at listen time, with the boot-time repo —
+a repo-less daemon that later got a LIVE attach (`POST /api/attachRepo`, or the
+saved-repo re-attach at boot) never updated or conflict-checked the registry.
+That let two daemons end up serving the SAME repository with no refusal, and
+left the registry showing `repo: null` for a court that had since attached
+one. Fixed: the attach handler now claims the repo in the registry (under its
+lock, via the same `registerCourt`) BEFORE `kingdom.attachRepo` does any real
+work, refuses with the other court's port on conflict, and rolls back the
+claim if the attach itself then fails for an unrelated reason. Covered by
+`test/t-registry-attach.js` (two real daemons, confirmed to fail without the
+fix).
+
 **Acceptance evidence.**
 - Source: `test/t-courts.js` (registry unit behaviour), `test/t-multi-court.js`
   (two real daemon processes, real conflict/port-busy refusals),
-  `test/t-courts-launch.js` (launch-routing decisions, fakes), plus
+  `test/t-courts-launch.js` (launch-routing decisions, fakes),
+  `test/t-registry-attach.js` (live-attach registry claim, above), plus
   `test/t-pages.js` updates pinning the new Settings source. Suite count: see
   `HANDOFF.md`'s Evidence section for the number printed this round.
 - Browser: the Settings > Repository panel was driven in a real Chromium tab
@@ -350,6 +365,13 @@ unchanged and still correct).
   window) was never run — this environment cannot launch Electron. Windows
   behaviour (the platform every real user runs on) is likewise unverified here.
   Both are real acceptance work still owed before this ships to the sovereign.
+- **Test-gate hygiene (2026-09-23, post-implementation)**: several suites that
+  spawn a real daemon were found to register into the REAL
+  `~/.kingdom/courts.json` on whatever machine runs `npm test`, which on the
+  sovereign's machine would mutate their live registry. Fixed at the test
+  runner: every suite now gets its own isolated registry file
+  (`test/run-all.js`, `test/isolate-registry.js`); `test/t-registry-isolation.js`
+  guards it end to end. See `HANDOFF.md` for the mechanism.
 
 ### B. Habitable pilot readiness (source-side only)
 
