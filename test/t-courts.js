@@ -4,7 +4,7 @@
 // instant never trampling each other's write.
 //   node test/t-courts.js
 import { strict as a } from 'node:assert';
-import { mkdtempSync, rmSync, readFileSync, mkdirSync, symlinkSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync, mkdirSync, symlinkSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from 'node:http';
@@ -110,6 +110,30 @@ s1b.close();
   // never corrupted by the race, which the parse succeeding already proves.
   check(Array.isArray(courts), 'the registry file stayed valid JSON after a concurrent write race');
   void before;
+}
+
+// --- the lock is never held across pings ------------------------------------
+// Several live-but-unresponsive courts used to be pinged one after another
+// INSIDE the lock; four at 1.5s each outlast the 5s stale threshold, so a
+// second process could steal a lock that was still in use. The pings now run
+// in parallel before the lock is taken.
+{
+  const hung = [];
+  const rows = [];
+  for (const port of [19401, 19402, 19403, 19404]) {
+    hung.push(await new Promise((r) => { const srv = createServer(() => { /* never answers */ }); srv.listen(port, '127.0.0.1', () => r(srv)); }));
+    rows.push({ repo: `/hung/${port}`, port, pid: process.pid, startedAt: new Date().toISOString() });
+  }
+  writeFileSync(registryPath(), JSON.stringify({ courts: rows }));
+  const started = Date.now();
+  const listing = listCourts();
+  await new Promise((r) => setTimeout(r, 400));
+  check(!existsSync(`${registryPath()}.lock`), 'the registry lock is not held while courts are being pinged');
+  const after = await listing;
+  const elapsed = Date.now() - started;
+  check(elapsed < 4000, `four unresponsive courts are pinged in parallel, not in series (${elapsed}ms)`);
+  check(after.length === 0, 'unresponsive courts are pruned');
+  for (const srv of hung) { srv.closeAllConnections?.(); srv.close(); }
 }
 
 // --- one checkout reached through an alias is still ONE repository ---------

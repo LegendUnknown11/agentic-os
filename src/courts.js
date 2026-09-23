@@ -112,15 +112,6 @@ export function sameRepo(a, b, platform = process.platform) {
   return ka !== '' && ka === repoKey(b, platform);
 }
 
-/** Whichever OS-level facts a caller already has (pid liveness is cheap and
- *  synchronous; a port answering /api/ping is not) — drop everything an
- *  entry needs that the caller could not confirm. Pure: takes the verdicts,
- *  not the means of reaching them, so the self-check needs no real process
- *  or real socket. */
-export function pruneByVerdicts(courts, verdicts) {
-  return courts.filter((c) => verdicts.get(c.port) === true);
-}
-
 /** First free port at or after `start`, skipping every port already
  *  occupied by a live entry. `isFree` is injected so the self-check never
  *  binds a real socket; real callers pass tryBindPort below. */
@@ -190,18 +181,33 @@ export function tryBindPort(port) {
   });
 }
 
+/** Ping every row in parallel, OUTSIDE the registry lock. A lock held across
+ *  network waits can outlive LOCK_STALE_MS (a few unresponsive courts at
+ *  1.5s each) and be stolen mid read-modify-write; the lock now only ever
+ *  covers a file read and write. Keyed by port+pid so a verdict can only
+ *  ever apply to the exact row it was taken for. */
+const rowKey = (c) => `${c.port}:${c.pid}`;
+async function verdictsFor(courts, isOwnRow = () => false) {
+  const verdicts = new Map();
+  await Promise.all(courts.map(async (c) => {
+    verdicts.set(rowKey(c), isOwnRow(c) ? false : isPidAlive(c.pid) && await pingCourt(c.port, c.repo));
+  }));
+  return verdicts;
+}
+/** Rows the snapshot proved dead are dropped; rows written after the
+ *  snapshot (another launch registering meanwhile) have no verdict and are
+ *  kept — a fresh claim is never discarded for not having been pinged yet. */
+const keepLive = (courts, verdicts) => courts.filter((c) => verdicts.get(rowKey(c)) !== false);
+
 /** Read the registry and drop every entry that is no longer a live court:
  *  dead pid, or a port that does not answer /api/ping for that repo. The
  *  pruned list is written back so the file self-heals on every read rather
  *  than accreting corpses. */
 export async function listCourts() {
+  const verdicts = await verdictsFor(readRegistryRaw(registryPath()));
   return withLock(registryPath(), async () => {
     const courts = readRegistryRaw(registryPath());
-    const verdicts = new Map();
-    for (const c of courts) {
-      verdicts.set(c.port, isPidAlive(c.pid) && await pingCourt(c.port, c.repo));
-    }
-    const live = pruneByVerdicts(courts, verdicts);
+    const live = keepLive(courts, verdicts);
     if (live.length !== courts.length) writeRegistryRaw(registryPath(), live);
     return live;
   });
@@ -223,14 +229,10 @@ export class CourtConflictError extends Error {
  * and the loser sees the winner's entry in `existing`.
  */
 export async function registerCourt({ repo, port, pid, startedAt = new Date().toISOString() }) {
+  // never trust our own stale row: it is about to be replaced
+  const verdicts = await verdictsFor(readRegistryRaw(registryPath()), (c) => c.pid === pid && c.port === port);
   return withLock(registryPath(), async () => {
-    const courts = readRegistryRaw(registryPath());
-    const verdicts = new Map();
-    for (const c of courts) {
-      if (c.pid === pid && c.port === port) { verdicts.set(c.port, false); continue; } // never trust our own stale row
-      verdicts.set(c.port, isPidAlive(c.pid) && await pingCourt(c.port, c.repo));
-    }
-    const live = pruneByVerdicts(courts, verdicts);
+    const live = keepLive(readRegistryRaw(registryPath()), verdicts);
     const existing = findCourtForRepo(live, repo);
     if (existing && existing.port !== port) throw new CourtConflictError(existing);
     const next = [...live.filter((c) => c.port !== port), { repo, port, pid, startedAt }];
@@ -268,9 +270,10 @@ if (basename(process.argv[1] ?? '') === 'courts.js') {
   assert(!sameRepo('/Repo/App', '/repo/app', 'linux'), 'Linux paths differing in case are different checkouts');
 
   const courts = [{ repo: '/r1', port: 7777 }, { repo: '/r2', port: 7778 }, { repo: '/r3', port: 7779 }];
-  const verdicts = new Map([[7777, true], [7778, false], [7779, true]]);
-  const pruned = pruneByVerdicts(courts, verdicts);
-  assert(pruned.length === 2 && pruned.every((c) => c.port !== 7778), 'dead entry should be dropped, live ones kept');
+  const verdicts = new Map([['7777:1', true], ['7778:1', false]]);
+  const kept = keepLive([...courts.map((c) => ({ ...c, pid: 1 }))], verdicts);
+  assert(kept.length === 2 && kept.every((c) => c.port !== 7778),
+    'a row proved dead is dropped; a row with no verdict (registered after the snapshot) is kept');
 
   assert(findCourtForRepo(courts, '/r2').port === 7778, 'findCourtForRepo should find an exact match');
   assert(findCourtForRepo(courts, '/nope') === null, 'findCourtForRepo should return null for a miss');
