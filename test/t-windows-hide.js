@@ -19,11 +19,19 @@ import { join } from 'node:path';
 const HERE = import.meta.dirname;
 const ROOT = join(HERE, '..');
 
-const jsFilesIn = (dir) => readdirSync(join(ROOT, dir))
-  .filter((f) => f.endsWith('.js'))
+// Recursive, and every JS module flavour: production code already lives in
+// nested folders (src/mcp/) and electron/ carries .cjs preloads, so a
+// top-level-only *.js scan would let a future spawn there pass unchecked.
+const jsFilesIn = (dir) => readdirSync(join(ROOT, dir), { recursive: true })
+  .map(String)
+  .filter((f) => /\.(c|m)?js$/.test(f) && !f.split(/[\\/]/).includes('node_modules'))
   .map((f) => join(dir, f));
 
 const files = [...jsFilesIn('src'), ...jsFilesIn('electron')];
+a.ok(files.includes(join('src', 'mcp', 'tasks.js')),
+  'the guard must scan nested source folders such as src/mcp/, not only top-level files');
+a.ok(files.some((f) => f.endsWith('.cjs')),
+  'the guard must scan electron/*.cjs preloads too');
 
 /**
  * Blank out comments and string/template contents (keeping their length and
