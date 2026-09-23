@@ -555,6 +555,18 @@ body.sidebar-collapsed .app-identity { display: grid; }
    and .sidebar-conversations names it explicitly. */
 .sidebar-section { display: grid; align-content: start; gap: var(--space-2); min-height: 0; }
 
+/* Measured live 2026-09-23 at 1440x900 and 1280x720 with a populated court
+ * (twelve conversations, More tools open): the rail's mode/workspace/more/
+ * conversations sections could add up to more than the rail's own height,
+ * and #sidebar's overflow: hidden clipped whatever did not fit — the
+ * Settings/Collapse footer half off the bottom of the viewport, and
+ * Conversations squeezed to a single visible row. Wrapping the sections that
+ * can grow in their own scrolling region, with the header and footer as
+ * plain siblings outside it, means the footer is a document flow guarantee
+ * (it is simply not inside the thing that scrolls) rather than a height
+ * budget it has to win. */
+.sidebar-scroll { display: flex; flex-direction: column; flex: 1; min-height: 0; gap: var(--space-3); overflow-y: auto; scrollbar-width: thin; }
+
 .sidebar-nav-list { display: grid; gap: 2px; }
 
 /* The header owns mode switching on wide screens; the drawer keeps it reachable on phones. */
@@ -1255,6 +1267,13 @@ body.sidebar-collapsed .app-identity { display: grid; }
      whole rail is what a phone drawer does; the inner list gives up its own
      scroller below so there is only ever one. */
   body.sidebar-open #sidebar { position: fixed; z-index: 5; inset: 0 auto 0 0; display: flex; width: min(320px, 85vw); overflow-y: auto; box-shadow: var(--shadow-panel); }
+
+  /* The drawer keeps scrolling as ONE column, the whole rail, not the desktop
+   * split of a scrolling middle plus a pinned footer — a phone drawer's
+   * footer (Settings/Collapse) is short enough to just be the last thing you
+   * scroll to. .sidebar-scroll reverts to a plain, non-scrolling flex child
+   * here so #sidebar's own overflow-y: auto above is the only scroller. */
+  body.sidebar-open #sidebar .sidebar-scroll { flex: none; overflow: visible; }
 
   body.sidebar-open #sidebar .sidebar-conversations { flex: none; }
 

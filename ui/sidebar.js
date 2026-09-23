@@ -136,7 +136,12 @@ export function mountSidebar(root, options = {}) {
   collapse.type = 'button';
   collapse.dataset.action = 'collapse';
   footer.append(collapse);
-  root.append(header, mode, workspace, more, conversations, footer);
+  // Everything that can outgrow the rail's own height scrolls together as
+  // one region, so the header and footer are never the thing the browser
+  // clips when they do not fit. See .sidebar-scroll in app.css.
+  const scroll = node('div', 'sidebar-scroll');
+  scroll.append(mode, workspace, more, conversations);
+  root.append(header, scroll, footer);
 
   const updatePreference = (value) => {
     if (typeof options.setPref === 'function') return options.setPref('sidebarCollapsed', value);

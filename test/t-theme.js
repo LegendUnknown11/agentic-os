@@ -328,6 +328,14 @@ a.match(css, /body\.sidebar-open #sidebar \.sidebar-mode\s*\{[^}]*flex-shrink:\s
 a.match(css, /body\.sidebar-open #sidebar\s*\{[^}]*overflow-y:\s*auto;/, 'the drawer ran 122px past the viewport and swallowed the conversation list; it scrolls as one column');
 a.match(css, /body\.sidebar-open #sidebar \.sidebar-conversations\s*\{[^}]*flex:\s*none;/, 'the conversation list must keep its natural height in the drawer, not absorb a deficit');
 a.match(css, /body\.sidebar-open #sidebar \.sidebar-collapse\s*\{[^}]*display:\s*none;/, 'the collapse control is a rail affordance and there is no rail at drawer width');
+// 2026-09-23: with a populated court (twelve conversations, More tools open)
+// the desktop rail's own sections could outgrow #sidebar's height, and its
+// overflow: hidden clipped the footer (Settings/Collapse, half off the
+// bottom of the viewport at 1280x720) and squeezed Conversations to one row.
+// .sidebar-scroll carries the scrolling; header and footer sit outside it so
+// they are never the thing that gets clipped.
+a.match(css, /\.sidebar-scroll\s*\{[^}]*flex:\s*1;[^}]*min-height:\s*0;[^}]*overflow-y:\s*auto;/, 'the rail middle must scroll on its own so the header and footer are never clipped');
+a.match(css, /body\.sidebar-open #sidebar \.sidebar-scroll\s*\{[^}]*flex:\s*none;[^}]*overflow:\s*visible;/, 'the 720px drawer keeps scrolling as one column, not a nested scroller');
 a.match(css, /\.sidebar\.collapsed \.sidebar-collapse::before\s*\{[^}]*content:\s*"[^"}]+";/, 'the collapsed rail must retain a visible expand affordance');
 a.match(css, /\.conversation-row:hover \.conversation-actions, \.conversation-row:focus-within \.conversation-actions/, 'conversation actions must be visible to keyboard users');
 // Measured live 2026-09-21 at 1440x900: with .selected here too, the selected
