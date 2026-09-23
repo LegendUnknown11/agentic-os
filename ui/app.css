@@ -761,17 +761,23 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .view-page h1, .view-page h2, .view-page h3, .view-page h4, .view-page p { margin: 0; }
 
-.view-heading { display: grid; max-width: 720px; gap: var(--space-2); padding-bottom: var(--space-4); border-bottom: 1px solid var(--line); }
+/* 2026-09-23: this used to carry an ::before eyebrow reading the literal
+ * string "AGENTIC OS / WORKSPACE" on all 14 views — no information (it never
+ * changed), read directly against a populated demo court where it ate space
+ * a run panel or a task list needed. A prior session removed it once for the
+ * same reason and it came back; it must not come back a second time (see the
+ * ban pinned in test/t-theme.js). The heading itself also carried the kit's
+ * MARKETING scale (`clamp(32px, 5vw, 48px)`, a display face) although
+ * PLAN.md section 1 is explicit that this app takes the kit's PRODUCT scale
+ * throughout because it is a dense tool, not a landing page — a 16px card
+ * heading under a 48px page title was that rule not applied to the one place
+ * every view shares. Shrunk to a scale nearer the product headings around
+ * it, and the divider's padding tightened to match. */
+.view-heading { display: grid; max-width: 720px; gap: var(--space-1); padding-bottom: var(--space-3); border-bottom: 1px solid var(--line); }
 
-/* Mono, uppercase and tightly tracked, at the kit's own EyebrowLabel size.
- * Its leading 7px accent dot is deliberately not reproduced: in this app a
- * 7px dot means status, and a decorative one beside a page title would be the
- * only place it did not. */
-.view-heading::before { color: var(--muted); content: "AGENTIC OS / WORKSPACE"; font: 500 10px/1.4 var(--mono); letter-spacing: .12em; text-transform: uppercase; }
+.view-heading h1 { margin: 0; color: var(--text); font-family: var(--display); font-size: clamp(20px, 2.4vw, 26px); letter-spacing: -.01em; line-height: 1.2; }
 
-.view-heading h1 { margin: 0; color: var(--text); font-family: var(--display); font-size: clamp(32px, 5vw, 48px); letter-spacing: -.01em; line-height: 1.05; }
-
-.view-description { max-width: 60ch; margin: 0; color: var(--muted); font-size: var(--t-md); }
+.view-description { max-width: 60ch; margin: 0; color: var(--muted); font-size: var(--t-sm); }
 
 .view-section { display: grid; align-content: start; gap: var(--space-3); padding: var(--space-4); border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--surface); box-shadow: var(--shadow-card); }
 

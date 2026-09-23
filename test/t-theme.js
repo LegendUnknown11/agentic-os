@@ -110,7 +110,19 @@ a.match(css, /body \{[^}]*background:\s*var\(--bg\) var\(--grain\);/, 'the page 
 a.doesNotMatch(rules, /linear-gradient/, 'no rule may invent a gradient of its own');
 a.match(css, /\.mode-switcher\s*\{[^}]*border-radius:\s*var\(--radius-pill\)/, 'work modes must read as one segmented control');
 a.match(css, /\.mode-option\.selected\s*\{[^}]*background:\s*var\(--accent\)/, 'the active work mode needs one clear accent state');
-a.match(css, /\.view-heading::before\s*\{[^}]*content:\s*"AGENTIC OS \/ WORKSPACE"/, 'pages need one eyebrow from the shared heading primitive, naming the product correctly');
+// 2026-09-23: reverses the line above. Read against a populated demo court,
+// "AGENTIC OS / WORKSPACE" repeated identically on all 14 views carried no
+// information and cost real space above the fold of a dense tool. A prior
+// session already removed it once for the same reason and it came back —
+// so this is now a ban, not a requirement, to stop a well-meaning future
+// edit from "restoring" it a second time.
+a.doesNotMatch(css, /content:\s*"AGENTIC OS \/ WORKSPACE"/, 'the page eyebrow carried no information and must not be reintroduced');
+// The heading itself was the kit's MARKETING scale (`clamp(32px, 5vw, 48px)`,
+// a display face) although PLAN.md section 1 requires the PRODUCT scale
+// throughout — a 48px page title over 16px cards was that rule skipped for
+// the one heading every view shares. Pinned at the smaller scale so it does
+// not drift back up either.
+a.match(css, /\.view-heading h1\s*\{[^}]*font-size:\s*clamp\(20px, 2\.4vw, 26px\);/, 'the page heading must stay on the product scale, not the marketing one');
 a.match(css, /\.thread-header\s*\{[^}]*background:\s*var\(--surface\)/, 'threads need the same paper panel primitive as dashboard pages');
 a.doesNotMatch(css, /--mono:\s*['"]?(IBM Plex Mono|Playfair Display)/, 'this app runs offline in Electron — no webfont stack for --mono');
 
