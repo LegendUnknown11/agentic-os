@@ -77,6 +77,25 @@ row stood 165px tall with 49px left for its title. `align-content: start` at eac
 shared declaration fixed all six; `fix/live-layout-defects` carries them with
 tests that pin the measured numbers.
 
+**2026-09-23: a glass layer was added on top of the paper palette**, on the
+`ui-revamp` branch (not yet merged to `main`). PLAN.md's new "UI revamp —
+paper with glass (2026-09-23)" section is the contract and its acceptance
+evidence; the summary: `#header`, `#sidebar` (rail and drawer), `#composer`,
+`.hover-tip`, and the drawer scrim gained
+`backdrop-filter: blur(20px) saturate(1.6)` and a translucent background at
+one of two new alphas (`--glass-chrome-alpha: .90`, `--glass-panel-alpha:
+.97`), both computed against a worst-case fully-black wallpaper ground so
+every text pairing still clears 4.5:1 there. `.view-section` (cards) stay
+flat, unchanged. A live audit that started a demo court and drove it with
+Playwright found the interface otherwise already close to this file's own
+"closed 2026-09-21" claim — no free-height grid leak recurred, no other
+visual defect was found across all 14 views at 1440x900 and 720x900 — so the
+session's scope narrowed to that one gap, which was the one the sovereign's
+direction named concretely. `test/t-theme.js` intentionally replaces a
+2026-09-21 guard that pinned `backdrop-filter` absent from the whole
+stylesheet; that guard predates this direction and is superseded by it, not
+weakened.
+
 ## Evidence
 
 The combined source gate passed on merged `main`: `npm.cmd test` completed

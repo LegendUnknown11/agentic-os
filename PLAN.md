@@ -291,6 +291,75 @@ against a hand-rolled fake DOM that resolves those selectors literally.
   recovery, the collapsed rail's controls, the drawer at 720px with its keyboard
   path, and reduced-motion behaviour.
 
+## UI revamp — paper with glass (2026-09-23)
+
+Scope: issue #39 ("Ugly UI," no screenshot — worked from a live audit, not a
+description) and the surviving part of #48 (Hiveory). #48 itself is
+superseded by the paper kit adopted 2026-09-21; the glass/translucent feel it
+asked for is adopted within that paper system rather than swapping the
+palette for Hiveory's dark one.
+
+**Method**: started a demo court (`node src/daemon.js <throwaway-repo>
+--port 7811`), drove it with Playwright/Chromium, screenshotted all 14 views
+at 1440x900 and 720x900 before and after. Findings are in
+`/home/user/wt-ui-shots/AUDIT.md` (outside the repo, per the session's
+instructions) — summarised here because that file lives outside version
+control.
+
+**Finding**: the interface was already close to this section's own prior
+"Status — closed 2026-09-21" claim. No layout defect from the prior
+`align-content: start` free-height-leak class recurred; every `auto-fit`
+card grid sits inside an already-`start`-pinned parent. The one concrete gap,
+read directly rather than assumed: `--shell-alpha`/`--surface-alpha` existed
+but were 1 (opaque) by default and only left their default for the optional
+user-wallpaper feature, so the interface most people see had no
+translucency or blur anywhere the sovereign's direction named.
+
+**What shipped**: a translucent, blurred glass on `#header`, `#sidebar`
+(rail and the 720px drawer), `#composer`, `.hover-tip`, and the drawer scrim.
+Two new tokens, `--glass-chrome-alpha: .90` (for the `--raised`-based header
+and hover-tip) and `--glass-panel-alpha: .97` (for the `--surface`-based
+sidebar and composer, whose opaque `--muted` budget was already the
+system's tightest at 4.87:1), drive `rgb(var(--x-rgb) / alpha)` backgrounds
+plus `backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate))`.
+Both alphas are chosen against the worst ground this app can ever put behind
+glass — a fully black wallpaper image, not the paper default — so every text
+pairing still clears 4.5:1 there (`--muted` 4.72:1 at .90, 4.57:1 at .97;
+the arithmetic is recorded beside the tokens in `ui/app.css`). An
+`@supports not (backdrop-filter: blur(1px))` fallback and a
+`prefers-reduced-transparency: reduce` query both force the pre-glass opaque
+paint. `.view-section` (the card primitive) never receives `backdrop-filter`
+and stays flat and shadowless at rest, per this system's own shadow rule.
+
+**Tests**: `test/t-theme.js` had carried a positive guard since 2026-09-21,
+`a.equal(/backdrop-filter/i.test(css), false, ...)`, dated to when Hiveory's
+dark palette was rejected wholesale. It is replaced, not weakened, with
+positive assertions naming each of the five glass selectors, a negative
+assertion that `.view-section` never gets glass, pins on both alpha values,
+and pins on both fallbacks — recorded as an intentional presentation change
+in its commit, per this repository's own rule against silently changing an
+assertion.
+
+**Acceptance evidence**: `npm test` — 77 suites, 4-wide, 36.3s, all suites
+passed, no flaky retries, run after the change. `test/t-theme-geometry.js`
+ran against real Chromium (not skipped) and confirmed the collapsed rail and
+drawer geometry defects from 2026-09-21 have not recurred. Visual evidence:
+a live Chromium session with a synthetic wallpaper set (`--wall` +
+`body.has-bg`) showed the header and sidebar edge visibly blurring and
+tinting from the wallpaper behind them while every text pairing on top
+stayed legible, and `getComputedStyle(#header).backdropFilter` read back as
+`"blur(20px) saturate(1.6)"` in that same tab — confirming the rule actually
+applied, not just that its source text existed. The no-wallpaper default was
+also captured and reads unchanged (flat paper), since glass has nothing to
+blur without a wallpaper behind it. This is browser evidence, not Electron
+or Windows evidence — neither was exercised this session.
+
+**Not done**: further structural/UX rework of Overview density, Changes/diff
+layout, or Settings scannability. The live audit found the existing
+structure already sound against this file's earlier contract and named no
+new defect there; re-litigating already-closed structural work without a
+found defect would be scope creep, not thoroughness.
+
 ## Carried forward from the previous contract
 
 The run system described in the previous `PLAN.md` is implemented and merged; its
