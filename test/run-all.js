@@ -128,6 +128,10 @@ const suites = [
   // The end-court-and-switch-repo flow (issue #42): a plain function with
   // injected dependencies, so its step ordering runs for real without an
   // Electron process, a daemon, or a native dialog.
+  // A LIVE attach (POST /api/attachRepo, or the saved-repo re-attach at
+  // boot) must claim the repo in the registry exactly like a fresh daemon
+  // does — otherwise two daemons can end up serving the same repository.
+  ['a live attach claims the registry', join(HERE, 't-registry-attach.js')],
   ['end court and switch repository', join(HERE, 't-repo-switch.js')],
   // A repo attached live must survive a daemon restart in the same
   // workspace home it was attached in — see kingdom.js's this.dbPath and

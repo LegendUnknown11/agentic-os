@@ -255,7 +255,33 @@ const ACTIONS = {
   summarizer: (b) => kingdom.setSummarizer(b),
   goal: (b) => kingdom.setGoal(b),
   mode: (b) => kingdom.setMode(b.mode, { why: b.why ?? '', by: b.by ?? 'sovereign' }),
-  attachRepo: (b) => kingdom.attachRepo(b.path),
+  // A LIVE attach (this endpoint, or the saved-repo re-attach at boot below)
+  // changes what repository THIS daemon serves — the registry row written at
+  // boot (with whatever `repo` was known then, including null for a
+  // Chat/Cowork daemon that started with none) goes stale the moment this
+  // runs unless the registry is told. Without this, two daemons could end
+  // up serving the SAME repository with no refusal: a repo-less daemon on
+  // one port simply attaches whatever it is given, since Kingdom#attachRepo
+  // only refuses a repo DIFFERENT from one it already holds — the exact
+  // corruption one-court-per-repo (issue #42) exists to prevent.
+  //
+  // So: claim the repo in the registry under its lock BEFORE
+  // kingdom.attachRepo does any real work (registerCourt's own conflict
+  // check refuses if another live court already holds it, naming that
+  // court's port), then attach for real. If the attach itself fails for an
+  // unrelated reason (bad git repo, no commits), the claim is rolled back to
+  // whatever this daemon actually holds afterward — never left pointing at a
+  // repo this daemon did not actually attach.
+  attachRepo: async (b) => {
+    const target = resolve(String(b.path ?? ''));
+    await registerCourt({ repo: target, port, pid: process.pid });
+    try {
+      return await kingdom.attachRepo(b.path);
+    } catch (e) {
+      try { await registerCourt({ repo: kingdom.repo, port, pid: process.pid }); } catch { /* best effort rollback */ }
+      throw e;
+    }
+  },
   milestone: (b) => kingdom.setMilestone(Number(b.index), Boolean(b.done)),
   wake: (b) => kingdom.wake(b.name),
   summon: (b) => {
@@ -1295,6 +1321,13 @@ server.on('error', (e) => {
         // this whole path exists so the throne room opens without one. Dying
         // here would make a stale config line the reason the app will not boot.
         console.error(`saved repository unusable, starting without one: ${e.message}`);
+        // The registerCourt() call above already claimed `repo` in the
+        // registry, optimistically, before this attach was attempted — a
+        // failed attach must not leave that claim standing (kingdom.repo is
+        // still null here), or the registry would report a repo this daemon
+        // never actually attached, exactly the staleness this whole feature
+        // exists to prevent.
+        try { await registerCourt({ repo: kingdom.repo, port, pid: process.pid }); } catch { /* best effort rollback */ }
       }
     }
     await kingdom.start();
