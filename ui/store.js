@@ -111,9 +111,22 @@ const schedule = () => {
   frame = raf ? raf(notify) : setTimeout(notify, 0);
 };
 
+// ponytail: diagnostic only, for the CI-only t-electron.js run-lifecycle
+// timeout — remove once root-caused. home.js's subscribe callback was shown
+// to stop firing entirely right as the run lifecycle starts on CI, while
+// notify() still reports the same subs.size — implying its subscription is
+// torn down and something else takes the slot. This logs every add/remove
+// with its caller, to see who unsubscribes and who (re)subscribes, and when.
+let subId = 0;
 export function subscribe(fn) {
+  const id = ++subId;
+  const caller = new Error().stack?.split('\n')[2]?.trim();
+  console.log('[subs] add', id, 'size now', subs.size + 1, 'from', caller);
   subs.add(fn);
-  return () => subs.delete(fn);
+  return () => {
+    console.log('[subs] remove', id, 'size now', subs.size - 1, 'from', new Error().stack?.split('\n')[2]?.trim());
+    subs.delete(fn);
+  };
 }
 
 export function setPrefs(patch = {}) {
