@@ -74,6 +74,10 @@ let frame = 0;
 
 const notify = () => {
   frame = 0;
+  // ponytail: diagnostic only, for the CI-only t-electron.js run-lifecycle
+  // timeout — remove once root-caused. Confirms whether notify() keeps
+  // firing after the first paint, and what the rAF gate saw when it fired.
+  console.log('[repaint] notify, subs', subs.size);
   for (const fn of subs) {
     try { fn(state); } catch (err) { console.error('store subscriber failed', err); }
   }
@@ -86,6 +90,12 @@ const schedule = () => {
   // (data still arrives over SSE/fetch, subscribers just never get called).
   // setTimeout still fires (throttled, but not suppressed) when hidden.
   const raf = globalThis.document?.visibilityState !== 'hidden' && globalThis.requestAnimationFrame;
+  // ponytail: diagnostic only, remove once root-caused (see notify() above).
+  console.log(
+    '[repaint] schedule, raf', Boolean(raf),
+    'visibility', globalThis.document?.visibilityState,
+    'hasFocus', globalThis.document?.hasFocus?.(),
+  );
   frame = raf ? raf(notify) : setTimeout(notify, 0);
 };
 
