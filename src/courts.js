@@ -14,9 +14,9 @@
 // global (not per-repo) file — see src/worktree.js's globalTokenStore(). This
 // registry sits right beside it, same directory, same "never inside a
 // tracked repo" rule.
-import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync, renameSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync, renameSync, statSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join, dirname, basename } from 'node:path';
+import { join, dirname, basename, resolve } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { createServer } from 'node:http';
 import { request as httpRequest } from 'node:http';
@@ -88,12 +88,28 @@ function writeRegistryRaw(path, courts) {
 
 // ---- pure helpers (self-checked below, no I/O) -----------------------------
 
-/** Two entries are "the same repo" case-sensitively but path-normalised
- *  enough to survive a trailing slash — the only variance real callers hit,
- *  since both daemon.js and the Electron picker already resolve() first. */
-export function sameRepo(a, b) {
-  const norm = (p) => String(p ?? '').replace(/[\\/]+$/, '');
-  return norm(a) === norm(b) && norm(a) !== '';
+/**
+ * The identity of a checkout, not of the string naming it. One checkout can
+ * be reached as `C:\\Repo`, `c:\\repo`, an 8.3 short name, or through a
+ * junction or symlink — and one-court-per-repo only holds if all of those
+ * compare equal. realpath (native, as src/worktree.js already uses) resolves
+ * links and short names for a path that exists; Windows and macOS file
+ * systems are case-insensitive by default, so their keys are case-folded.
+ * A path that does not exist falls back to resolve(), so a pure caller (the
+ * self-check below, or a court whose repo was deleted) still compares sanely.
+ */
+export function repoKey(p, platform = process.platform) {
+  if (p == null || p === '') return '';
+  let full = resolve(String(p));
+  try { full = realpathSync.native(full); } catch { /* not on disk: keep the resolved path */ }
+  full = full.replace(/[\\/]+$/, '');
+  return platform === 'win32' || platform === 'darwin' ? full.toLowerCase() : full;
+}
+
+/** Two entries are the same repository when their checkout keys match. */
+export function sameRepo(a, b, platform = process.platform) {
+  const ka = repoKey(a, platform);
+  return ka !== '' && ka === repoKey(b, platform);
 }
 
 /** Whichever OS-level facts a caller already has (pid liveness is cheap and
@@ -248,6 +264,8 @@ if (basename(process.argv[1] ?? '') === 'courts.js') {
   assert(sameRepo('/a/b', '/a/b'), 'identical paths should match');
   assert(!sameRepo('/a/b', '/a/c'), 'different paths must not match');
   assert(!sameRepo(null, '/a/b'), 'null repo must not match a real one');
+  assert(sameRepo('C:\\Repo\\App', 'c:\\repo\\app', 'win32'), 'Windows paths differing only in case are one checkout');
+  assert(!sameRepo('/Repo/App', '/repo/app', 'linux'), 'Linux paths differing in case are different checkouts');
 
   const courts = [{ repo: '/r1', port: 7777 }, { repo: '/r2', port: 7778 }, { repo: '/r3', port: 7779 }];
   const verdicts = new Map([[7777, true], [7778, false], [7779, true]]);

@@ -9,6 +9,9 @@
 // 'second-instance' event) — issue #42's "launching again focuses/opens the
 // right court instead of starting a stray daemon".
 
+
+import { sameRepo } from '../src/courts.js';
+
 /**
  * Decide what a launch (first or second) should do, given the repo it named
  * (or null) and the courts already known to be live. Pure: no I/O, so every
@@ -25,9 +28,8 @@
  *   - a repo named with no live court -> start one for it.
  */
 export function decideLaunchAction(repo, liveCourts) {
-  const norm = (p) => String(p ?? '').replace(/[\\/]+$/, '');
   if (repo) {
-    const existing = liveCourts.find((c) => norm(c.repo) === norm(repo) && norm(repo) !== '');
+    const existing = liveCourts.find((c) => sameRepo(c.repo, repo));
     return existing ? { action: 'focus', port: existing.port } : { action: 'start', repo };
   }
   if (liveCourts.length > 0) {

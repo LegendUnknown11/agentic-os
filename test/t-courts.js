@@ -4,7 +4,7 @@
 // instant never trampling each other's write.
 //   node test/t-courts.js
 import { strict as a } from 'node:assert';
-import { mkdtempSync, rmSync, readFileSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync, mkdirSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from 'node:http';
@@ -110,6 +110,24 @@ s1b.close();
   // never corrupted by the race, which the parse succeeding already proves.
   check(Array.isArray(courts), 'the registry file stayed valid JSON after a concurrent write race');
   void before;
+}
+
+// --- one checkout reached through an alias is still ONE repository ---------
+// A symlink (or on Windows a junction, 8.3 name or different casing) must not
+// let a second court claim a checkout that already has one.
+{
+  const real = mkdtempSync(join(tmpdir(), 'courts-alias-real-'));
+  const alias = join(dir, 'alias-link');
+  symlinkSync(real, alias, 'junction');
+  const s3 = await stubCourt(19301, real);
+  await registerCourt({ repo: real, port: 19301, pid: process.pid });
+  let refused = null;
+  try { await registerCourt({ repo: alias, port: 19302, pid: process.pid }); } catch (e) { refused = e; }
+  check(refused instanceof CourtConflictError, 'a symlinked path to an already-served checkout is refused as the same repository');
+  check(findCourtForRepo(await listCourts(), alias)?.port === 19301, 'looking a court up through an alias finds the court serving the real path');
+  await unregisterCourt({ port: 19301, pid: process.pid });
+  s3.close();
+  rmSync(real, { recursive: true, force: true });
 }
 
 s2.close();
