@@ -24,7 +24,10 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 // ~/.kingdom/courts.json — the whole point of this test — the same trick
 // t-multi-court.js and t-daemon-boot.js use.
 const fakeHome = mkdtempSync(join(tmpdir(), 'kingdom-ra-home-'));
-const childEnv = { ...process.env, USERPROFILE: fakeHome, HOME: fakeHome };
+// Its own port range: parallel suites each have an isolated registry, so two
+// suites auto-picking from 7777 would otherwise answer each other's pings.
+const BASE = 17877;
+const childEnv = { ...process.env, USERPROFILE: fakeHome, HOME: fakeHome, KINGDOM_BASE_PORT: String(BASE) };
 
 function makeRepo(name) {
   const repo = mkdtempSync(join(tmpdir(), `kingdom-ra-${name}-`));
@@ -67,51 +70,51 @@ let A, B;
 try {
   // A: a real court already serving repoA, on the base auto-picked port.
   A = spawn(process.execPath, [DAEMON, repoA], { env: childEnv, stdio: 'ignore' });
-  const readyA = await pingReady(7777);
+  const readyA = await pingReady(BASE);
   a.equal(readyA.repo, repoA, 'sanity: court A really is serving repoA');
 
   // B: a repo-less court, e.g. Chat/Cowork with nothing attached yet, on the
   // next auto-picked port.
   B = spawn(process.execPath, [DAEMON], { env: childEnv, stdio: 'ignore' });
-  const readyB = await pingReady(7778);
+  const readyB = await pingReady(BASE + 1);
   a.equal(readyB.repo, null, 'sanity: court B really did start with no repository');
 
   // --- attaching a repo ALREADY served elsewhere must be refused, and must
   // NOT touch B's registry row --------------------------------------------
   const before = await registryRows();
-  const rowBBefore = before.find((c) => c.port === 7778);
+  const rowBBefore = before.find((c) => c.port === BASE + 1);
   a.equal(rowBBefore?.repo ?? null, null, 'sanity: B\'s registry row starts with repo: null');
 
-  const conflictResult = await fetch('http://127.0.0.1:7778/api/attachRepo', {
+  const conflictResult = await fetch(`http://127.0.0.1:${BASE + 1}/api/attachRepo`, {
     method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ path: repoA }),
   }).then((r) => r.json());
   a.equal(conflictResult.ok, false, 'attaching a repo another live court already serves must be refused');
-  a.match(conflictResult.error, /already has a live court on port 7777/,
+  a.match(conflictResult.error, new RegExp(`already has a live court on port ${BASE}`),
     'the refusal must name the port the OTHER court is already on');
 
-  const stillRepoless = await fetch('http://127.0.0.1:7778/api/ping').then((r) => r.json());
+  const stillRepoless = await fetch(`http://127.0.0.1:${BASE + 1}/api/ping`).then((r) => r.json());
   a.equal(stillRepoless.repo, null, 'a refused attach must leave the daemon itself repo-less — kingdom.attachRepo must never have been called');
 
   const afterConflict = await registryRows();
-  const rowBAfterConflict = afterConflict.find((c) => c.port === 7778);
+  const rowBAfterConflict = afterConflict.find((c) => c.port === BASE + 1);
   a.equal(rowBAfterConflict?.repo ?? null, null,
     'a refused attach must leave B\'s registry row exactly as it was — no phantom claim on repoA');
-  const rowAUnaffected = afterConflict.find((c) => c.port === 7777);
+  const rowAUnaffected = afterConflict.find((c) => c.port === BASE);
   a.equal(rowAUnaffected?.repo, repoA, 'court A\'s own row must be completely unaffected by the refused attempt on B');
 
   // --- attaching a genuinely free repo must succeed AND update the row ---
-  const okResult = await fetch('http://127.0.0.1:7778/api/attachRepo', {
+  const okResult = await fetch(`http://127.0.0.1:${BASE + 1}/api/attachRepo`, {
     method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ path: repoC }),
   }).then((r) => r.json());
   a.equal(okResult.ok, true, 'attaching a repo nobody else holds must succeed');
 
-  const nowAttached = await fetch('http://127.0.0.1:7778/api/ping').then((r) => r.json());
+  const nowAttached = await fetch(`http://127.0.0.1:${BASE + 1}/api/ping`).then((r) => r.json());
   a.equal(nowAttached.repo, repoC, 'the daemon itself must now report the newly attached repo');
 
   const afterOk = await registryRows();
-  const rowBAfterOk = afterOk.find((c) => c.port === 7778);
+  const rowBAfterOk = afterOk.find((c) => c.port === BASE + 1);
   a.equal(rowBAfterOk?.repo, repoC, 'a successful live attach must update the registry row for that port to the new repo');
 
   // --- and NOW a third daemon for repoA is still refused (A's own row
@@ -121,13 +124,13 @@ try {
   let dupeAErr = '';
   dupeA.stderr.on('data', (d) => { dupeAErr += d; });
   await new Promise((resolvePromise) => dupeA.on('close', resolvePromise));
-  a.match(dupeAErr, /already has a live court on port 7777/, 'repoA is still exclusively A\'s after all the attach traffic on B');
+  a.match(dupeAErr, new RegExp(`already has a live court on port ${BASE}`), 'repoA is still exclusively A\'s after all the attach traffic on B');
 
   const dupeC = spawn(process.execPath, [DAEMON, repoC], { env: childEnv, stdio: ['ignore', 'ignore', 'pipe'] });
   let dupeCErr = '';
   dupeC.stderr.on('data', (d) => { dupeCErr += d; });
   await new Promise((resolvePromise) => dupeC.on('close', resolvePromise));
-  a.match(dupeCErr, /already has a live court on port 7778/, 'repoC, now live-attached on B, refuses a second daemon too');
+  a.match(dupeCErr, new RegExp(`already has a live court on port ${BASE + 1}`), 'repoC, now live-attached on B, refuses a second daemon too');
 
   console.log('t-registry-attach.js OK — a live attach claims the repo in the registry, refuses when another court already holds it, and rolls back on failure');
 } finally {

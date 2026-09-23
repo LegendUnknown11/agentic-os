@@ -34,7 +34,8 @@ const isolatedRegistry = join(isolatedDir, 'courts.json');
 try {
   daemon = spawn(process.execPath, [DAEMON], {
     stdio: 'ignore',
-    env: { ...process.env, KINGDOM_COURTS_REGISTRY: isolatedRegistry },
+    // Its own port range, clear of the other daemon-spawning suites.
+    env: { ...process.env, KINGDOM_COURTS_REGISTRY: isolatedRegistry, KINGDOM_BASE_PORT: '17977' },
   });
 
   const deadline = Date.now() + 20_000;

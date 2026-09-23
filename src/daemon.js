@@ -60,7 +60,12 @@ const repo = repoArg ? resolve(repoArg) : savedRepo();
 // value before anything binds; see the trap comment there.
 const explicitPort = argv.includes('--port') ? Number(flag('--port'))
   : (process.env.KINGDOM_PORT ? Number(process.env.KINGDOM_PORT) : null);
-let port = explicitPort ?? 7777;
+// Where auto-picking starts. 7777 unless KINGDOM_BASE_PORT moves it — the
+// test suites give each daemon-spawning suite its own range so suites that
+// run in parallel (each with its own isolated registry) never race for the
+// same ports.
+const basePort = Number(process.env.KINGDOM_BASE_PORT) || 7777;
+let port = explicitPort ?? basePort;
 // A repo named explicitly on the command line gets its own repo-relative
 // home (.kingdom/<repoName>/, today's original per-repo layout). A repo
 // found via savedRepo() was instead attached LIVE in a previous session —
@@ -1271,7 +1276,7 @@ server.on('error', (e) => {
 (async () => {
   if (explicitPort == null) {
     try {
-      port = await firstFreePort(7777, await listCourts());
+      port = await firstFreePort(basePort, await listCourts());
     } catch (e) {
       console.error(`daemon: ${e.message}`);
       process.exitCode = 1;
