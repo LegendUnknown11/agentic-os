@@ -625,7 +625,26 @@ a.deepEqual(assets.state().queue, ['after-reload.mp3'], 'refresh must seed the m
   a.match(sidebarSource, /dataset\.action = 'raise-turn-budget'/, 'a turn-budget pause must offer a one-click raise-and-resume action');
   a.match(sidebarSource, /raiseButton\.hidden = !isTurnBudget/,
     'the raise action must only show for a turn-budget pause, not every manual pause');
-  console.log('  the sidebar shows a live turn count beside spend and a visible pause banner with a raise action');
+  // #41 follow-up: the raise must be relative to what actually happened THIS
+  // session (state.spend.turns, fed by kingdom.js's turnsThisSession()), not
+  // to a cached cap value — "100 more turns from right now."
+  a.match(sidebarSource, /currentState\.spend\?\.turns/,
+    'raising the turn budget must read the current SESSION turn count, not the cap, to add "100 more from right now"');
+  a.doesNotMatch(sidebarSource, /currentState\.spend\?\.turnBudget\) \|\| 0;\s*\n\s*raiseButton\.disabled/,
+    'the raise action must not add 100 to the stale cap value — that reopens the lifetime-vs-session regression '
+    + 'in a new form if the displayed cap ever drifts from the server\'s');
+
+  // The daemon must offer the UI SESSION turns (what the budget and the raise
+  // button both use), not the lifetime count, in the same snapshot it already
+  // seeds spend from — a reconnect must show session progress, not a court's
+  // whole-life turn history.
+  const daemonSource = readFileSync(new URL('../src/daemon.js', import.meta.url), 'utf8');
+  a.match(daemonSource, /turns: kingdom\.turnsThisSession\(\)/,
+    'the snapshot must expose SESSION turns under spend.turns, not the lifetime count');
+  a.match(daemonSource, /lifetimeTurns: kingdom\.turnsLifetime\(\)/,
+    'the lifetime count must still be offered alongside it, per #41\'s "lifetime turns available if needed"');
+  console.log('  the sidebar shows a live SESSION turn count beside spend, raises relative to session usage, '
+    + 'and the snapshot seeds both session and lifetime turns');
 }
 
 console.log('t-pages.js OK — changes expose review, request, success, and failure stages');

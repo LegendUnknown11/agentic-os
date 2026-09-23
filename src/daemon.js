@@ -954,9 +954,13 @@ const handle = async (req, res) => {
       goal: kingdom.goal(),
       // #41: the header's turn counter otherwise reads blank until this
       // session's first 'spend' event, even though the count itself is
-      // durable (kingdom.bus.get('turns') survives a restart) — a reconnect
-      // or a fresh tab must show what has already happened, not zero.
-      spend: { turns: Number(kingdom.bus.get('turns') ?? 0), turnBudget: kingdom.turnBudget() },
+      // durable (kingdom.turnsThisSession()/turnsLifetime() both survive a
+      // restart) — a reconnect or a fresh tab must show what has already
+      // happened this session, not zero.
+      spend: {
+        turns: kingdom.turnsThisSession(), lifetimeTurns: kingdom.turnsLifetime(),
+        turnBudget: kingdom.turnBudget(),
+      },
       paused: kingdom.paused ?? false,
       pausedWhy: kingdom.paused ? (kingdom.bus.get('pausedWhy') ?? '') : '',
       mode: kingdom.mode(),

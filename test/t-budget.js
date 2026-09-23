@@ -388,11 +388,100 @@ a.equal(k6.paused, false, 'a third turn under the newly-raised cap of 10 must no
 
 await k6.stop();
 
+// --- issue #41 follow-up: SESSION-scoped budget, not lifetime ------------
+//
+// #countTurns() feeds a LIFETIME, restart-safe counter (bus 'turns'), same
+// discipline as spentUsd. Comparing turnBudget directly against THAT meant
+// any existing court that had already taken turnBudget-or-more turns in its
+// life paused on the very first turn after upgrading to this feature, and
+// "add 100 turns" only ever bought 100 against a number that never resets.
+// turnsThisSession() fixes it by measuring from a baseline latched once —
+// the first time start() ever runs for this bus — and left alone on every
+// later restart: recomputing it on every restart would let a crash-restart
+// loop silently hand itself a fresh budget on every bounce, which is
+// precisely the failure mode a per-session cap exists to prevent.
+const repo7 = mkdtempSync(join(tmpdir(), 'kingdom-turnbudget-session-'));
+const git7 = (...x) => execFileSync('git', x, { cwd: repo7, stdio: 'pipe' });
+git7('init', '-q');
+git7('config', 'user.email', 'k@kingdom');
+git7('config', 'user.name', 'kingdom');
+writeFileSync(join(repo7, 'README.md'), '# t\n');
+git7('add', '-A');
+git7('commit', '-qm', 'init');
+
+const cfg7 = join(repo7, 'kingdom.config.json');
+writeFileSync(cfg7, JSON.stringify({
+  turnBudget: 3,
+  orchestrator: { name: 'orchestrator', cli: 'codex' },
+  briefer: { name: 'briefer', cli: 'codex' },
+  peasants: [{ name: 'coder', cli: 'codex' }],
+}));
+
+// Simulate an existing, heavily-used court from before this feature existed:
+// 1000 lifetime turns already on the bus, no baseline recorded yet — exactly
+// what an upgrade finds on disk.
+const k7 = new Kingdom(repo7, cfg7);
+k7.bus.set('turns', '1000');
+await k7.start();
+
+a.equal(k7.turnsLifetime(), 1000, 'sanity: the pre-existing lifetime count is read back exactly');
+a.equal(k7.turnsThisSession(), 0,
+  'a fresh session must start at 0 regardless of lifetime history — the whole point of the baseline');
+a.equal(k7.paused, false,
+  'an existing court with 1000 lifetime turns must NOT pause on boot just because 1000 exceeds turnBudget — '
+  + 'that is the exact regression this fix closes');
+
+neuter(k7.agents.get('orchestrator'));
+neuter(k7.agents.get('briefer'));
+await k7.wake('coder');
+const sessionCoder = neuter(k7.agents.get('coder'));
+
+sessionCoder.emit('turn_end', { usage: { input_tokens: 10 }, costUsd: 0 });
+await wait(150);
+a.equal(k7.paused, false, 'one session turn under a budget of 3 must not pause anything, however large the lifetime count is');
+a.equal(k7.turnsLifetime(), 1001, 'the lifetime counter keeps counting normally');
+a.equal(k7.turnsThisSession(), 1, 'the session counter is relative to the baseline, not to zero or to the lifetime total');
+
+sessionCoder.emit('turn_end', { usage: { input_tokens: 10 }, costUsd: 0 });
+sessionCoder.emit('turn_end', { usage: { input_tokens: 10 }, costUsd: 0 });
+await wait(150);
+a.equal(k7.paused, true, 'the budget must still fire after exactly `cap` SESSION turns, counted from the baseline');
+a.equal(k7.turnsThisSession(), 3);
+a.equal(k7.turnsLifetime(), 1003);
+
+// Raise-and-resume, relative to session usage (the sidebar computes exactly
+// this: turnsThisSession() + 100 — see ui/sidebar.js's raise-turn-budget
+// handler) rather than to a stale cached cap.
+const raised7 = k7.raiseTurnBudget(k7.turnsThisSession() + 3);
+a.equal(raised7.cap, 6);
+a.equal(k7.paused, false, 'raiseTurnBudget must resume the court');
+sessionCoder.emit('turn_end', { usage: { input_tokens: 10 }, costUsd: 0 });
+sessionCoder.emit('turn_end', { usage: { input_tokens: 10 }, costUsd: 0 });
+await wait(150);
+a.equal(k7.paused, false, 'two more turns under the newly-raised cap of 6 (session turns now 5) must not immediately re-pause');
+sessionCoder.emit('turn_end', { usage: { input_tokens: 10 }, costUsd: 0 });
+await wait(150);
+a.equal(k7.paused, true, 'and the turn that REACHES the raised cap must still fire — the raise is not a permanent exemption');
+
+await k7.stop();
+
+// Restart-safety: a second start() against the SAME bus must not move the
+// baseline, or a crash-restart loop would grant itself a fresh session
+// budget on every bounce.
+const k7b = new Kingdom(repo7, cfg7);
+await k7b.start();
+a.equal(k7b.bus.get('turnBudgetBaseline'), '1000',
+  'the baseline must be left exactly where it was — a restart must not silently grant a fresh budget');
+a.equal(k7b.turnsThisSession(), 6, 'session turns must read as a continuation across the restart, not reset to 0');
+a.equal(k7b.paused, true, 'a restart must not clear a pause the sovereign has not resolved — same discipline as `this.paused` itself');
+await k7b.stop();
+
 for (const d of [
   repo, kingdomDir(repo), repo3, kingdomDir(repo3), repo4, kingdomDir(repo4),
-  repo5, kingdomDir(repo5), repo6, kingdomDir(repo6),
+  repo5, kingdomDir(repo5), repo6, kingdomDir(repo6), repo7, kingdomDir(repo7),
 ]) {
   try { rmSync(d, { recursive: true, force: true }); } catch {}
 }
 console.log('t-budget.js OK — cumulative ceiling survives restarts, codex courts can be capped, any member recycles, '
-  + 'and a per-session turn budget pauses the court visibly and raises back in one call');
+  + 'a per-session turn budget pauses the court visibly and raises back in one call, and an existing court\'s '
+  + 'lifetime turn history cannot pause a fresh session or be reset by a restart');

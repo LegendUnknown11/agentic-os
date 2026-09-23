@@ -333,9 +333,13 @@ export function mountSidebar(root, options = {}) {
         if (!result?.ok) options.toast?.(result?.error ?? 'Could not resume the court.', true);
       });
     } else if (action === 'raise-turn-budget') {
-      const current = Number(currentState.spend?.turnBudget) || 0;
+      // Relative to what has actually happened THIS session (state.spend.turns
+      // — see kingdom.js's turnsThisSession()), not to the last cap value this
+      // tab happened to have cached: "100 more turns from right now," always,
+      // regardless of any drift between the two.
+      const sessionTurns = Number(currentState.spend?.turns) || 0;
       raiseButton.disabled = true;
-      send(post, 'raiseTurnBudget', { cap: current + 100 }).then((result) => {
+      send(post, 'raiseTurnBudget', { cap: sessionTurns + 100 }).then((result) => {
         raiseButton.disabled = false;
         if (!result?.ok) options.toast?.(result?.error ?? 'Could not raise the turn budget.', true);
       });
