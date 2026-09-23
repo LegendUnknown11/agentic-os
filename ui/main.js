@@ -62,6 +62,11 @@ let currentCleanup = () => {};
 let booted = false;
 let bootFailed = false;
 let modeNotice = '';
+// Counts every applied stream event, so an in-flight async probe (see
+// maybeOpenDoctor) can tell whether the moment it started in still holds by
+// the time it resolves, the same staleness check connectionAttempt already
+// gives a reconnect.
+let eventsApplied = 0;
 let modeRequest = 0;
 let mountSequence = 0;
 let doctorProbe = false;
@@ -175,6 +180,7 @@ function connect() {
         toast(modeNotice);
       }
       apply(event);
+      eventsApplied += 1;
       Notify.onEvent(event);
       state.modeDef = modeOf(state.mode);
       void maybeOpenDoctor(firstSnapshot);
@@ -225,13 +231,16 @@ async function refreshLists() {
 async function maybeOpenDoctor(firstSnapshot) {
   if (!firstSnapshot || doctorProbe || location.hash.slice(1)) return;
   doctorProbe = true;
+  const bootEventCount = eventsApplied;
   const report = await get('/api/doctor');
-  // The probe is async and can resolve well after boot. A run started in the
-  // meantime means the sovereign is already mid-task — grabbing the screen
-  // for a first-run health check at that point isn't a greeting, it's an
-  // interruption. Re-check state.run, not just the hash, right before acting
-  // on what may now be a stale readiness result.
-  if (report?.ready === false && !location.hash.slice(1) && !state.run) navigate('doctor');
+  // The probe is async and can resolve well after boot. Anything that
+  // happened while it was in flight — a run created, an event streamed in —
+  // means the sovereign is already mid-task, and grabbing the screen for a
+  // first-run health check at that point isn't a greeting, it's an
+  // interruption. eventsApplied mirrors the connectionAttempt staleness
+  // check above: if it moved since the probe started, the probe's result no
+  // longer describes "nothing has happened yet" and must not act.
+  if (report?.ready === false && !location.hash.slice(1) && eventsApplied === bootEventCount) navigate('doctor');
 }
 
 function renderShell() {
