@@ -42,12 +42,14 @@ export const PRICES = {
   // ("opus", "sonnet"), so both the alias and the full id are listed. An
   // alias is priced as the model the CLI resolves it to today: `opus` is
   // Opus 5.5 (confirmed by the sovereign on #75), not Opus 5.
-  'claude/fable':         [10.00, 1.00, 50.00],
+  // Fable 5.1 kept Fable 5's $10 / $50 but cut cache reads to $0.25/MTok
+  // (0.025x input, not the usual 0.1x). The bare alias resolves to 5.1.
+  'claude/fable':         [10.00, 0.25, 50.00],
   'claude/opus':          [4.00, 0.20, 20.00],
   'claude/sonnet':        [2.00, 0.20, 10.00],
   'claude/haiku':         [1.00, 0.10,  5.00],
   'claude/claude-fable-5':      [10.00, 1.00, 50.00],
-  'claude/claude-fable-5-1':    [10.00, 1.00, 50.00],
+  'claude/claude-fable-5-1':    [10.00, 0.25, 50.00],
   // Opus 5.5: $4.00/$0.20/$20.00 per platform.claude.com/docs pricing at
   // launch (verified via the claude-api skill, 2026-09-23) — cheaper than
   // Opus 5, same 1M context/128K output/tokenizer.
@@ -133,6 +135,17 @@ if (process.argv[1]?.endsWith('price.js')) {
   // current Fable generation must be priced under its real id, not just its
   // predecessor's — an unpriced current model would silently stop billing.
   a.ok(rateOf('claude', 'claude-fable-5-1'), 'claude-fable-5-1 (the current Fable generation) must have a published price');
+  // Fable 5.1 reads cache at $0.25/MTok, a quarter of Fable 5's $1.00 — a
+  // cache-heavy Fable 5.1 session was being billed at four times its real
+  // cache-read cost. Fable 5 itself keeps $1.00.
+  a.deepEqual(rateOf('claude', 'claude-fable-5-1'), [10.00, 0.25, 50.00],
+    'claude-fable-5-1 cache reads are $0.25/MTok, not Fable 5\'s $1.00');
+  a.deepEqual(rateOf('claude', 'fable'), rateOf('claude', 'claude-fable-5-1'),
+    'the fable alias resolves to Fable 5.1 and must bill at its rate');
+  a.deepEqual(rateOf('claude', 'claude-fable-5'), [10.00, 1.00, 50.00],
+    'claude-fable-5 keeps its own $1.00 cache-read rate');
+  near(costOf({ in: 0, cached: 1e6, written: 0, out: 0 }, 'claude', 'claude-fable-5-1'), 0.25,
+    'a million cached Fable 5.1 tokens cost $0.25');
 
   // #45: the catalogue grew Opus 5.5 (kingdom.js models(), kingdom.config.json)
   // without a price, which would have silently stopped billing for it exactly
