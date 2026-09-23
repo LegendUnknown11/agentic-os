@@ -8,6 +8,9 @@
 // leaving the goal/roster/vault the sovereign actually set behind in the
 // workspace home nobody was reading from anymore.
 //   node test/t-daemon-boot.js
+// Never let a daemon this suite spawns touch the real ~/.kingdom/courts.json
+// on the machine running the tests — see test/t-registry-isolation.js.
+import './isolate-registry.js';
 import { strict as a } from 'node:assert';
 import { execFileSync, spawn } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, rmSync } from 'node:fs';

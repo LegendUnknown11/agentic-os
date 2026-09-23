@@ -77,23 +77,152 @@ row stood 165px tall with 49px left for its title. `align-content: start` at eac
 shared declaration fixed all six; `fix/live-layout-defects` carries them with
 tests that pin the measured numbers.
 
+**2026-09-23: a glass layer was added on top of the paper palette**, on the
+`ui-revamp` branch. PLAN.md's new "UI revamp —
+paper with glass (2026-09-23)" section is the contract and its acceptance
+evidence; the summary: `#header`, `#sidebar` (rail and drawer), `#composer`,
+`.hover-tip`, and the drawer scrim gained
+`backdrop-filter: blur(20px) saturate(1.6)` and a translucent background at
+one of two new alphas (`--glass-chrome-alpha: .90`, `--glass-panel-alpha:
+.97`), both computed against a worst-case fully-black wallpaper ground so
+every text pairing still clears 4.5:1 there. `.view-section` (cards) stay
+flat, unchanged. `test/t-theme.js` intentionally replaces a 2026-09-21 guard
+that pinned `backdrop-filter` absent from the whole stylesheet; that guard
+predates this direction and is superseded by it, not weakened.
+
+**That first pass audited an empty demo court, and it hid real defects.**
+Corrected the same session, in a second round recorded in PLAN.md's "UI
+revamp round 2": seeded the demo court with a real objective, a run that
+travelled through `blocked` with recovery history plus a second completed
+run in history, tasks in every state, three approvals, twelve conversations,
+a thread with a real code block and a deliberately long URL, and a real
+three-file diff from a summoned peasant's worktree
+(`/home/user/wt-ui-shots/seed.mjs`), then re-audited at 1440x900, 1280x720,
+and 720x900. Found and fixed five more defects invisible against an empty
+state: the rail's footer and conversation list clipped under real height
+pressure at 1280x720 (`.sidebar-scroll`); the page heading carried an
+identical, information-free eyebrow and the marketing type scale on all 14
+views (PLAN.md section 1 requires the product scale); the glass from the
+first round was invisible with no wallpaper set, because blurring a flat
+colour is indistinguishable from not blurring it (`--wash` gives the paper
+itself real tonal variation); Settings' Models & efficiency and Notifications
+tabs drew a card nested inside a panel (an outer `.view-section` flush
+against its own `.settings-group` fieldsets); and the header's mode switcher
+visibly dominated the header with a permission blurb `test/t-theme.js`
+already banned once under a different tag name. Also traced and fixed: a
+fenced code block in a thread message had no styling at all (bare browser
+`<pre><code>` defaults) — `ui/markdown.js` already rendered it correctly, the
+gap was purely that `ui/app.css` never styled the result. Checked and left
+alone, with reasons recorded in PLAN.md: Settings' tab row (already scrolls,
+does not wrap), the Changes diff view (reads well against a real diff), and
+Overview's "Verified deliverables" card (measured 173px in real Chromium
+against "Current work"'s 350px — a screenshot misreading, not a stretched
+card; `align-items: start` was already correct).
+
+## Current state (functional-revamp, 2026-09-23)
+
+On `functional-revamp`, two pieces of the 2026-09-23 "functional revamp" have
+landed: multiple courts at once (closes GitHub issue #42) and Habitable pilot
+readiness (tooling detection plus an evidence gate, source-side only). Full
+contract and acceptance evidence: `PLAN.md`'s "Functional revamp" section.
+
+**Multiple courts reverses the 2026-09-22 decision below** ("Running several
+courts... the sovereign declined it for this round") — the sovereign asked for
+it explicitly the next day. One daemon process per repository, each on its own
+port, tracked in `~/.kingdom/courts.json` (`src/courts.js`); a daemon refuses a
+second live court for the same repo and names the port it is on; a busy pinned
+port is a clean, visible error; an unpinned port is picked automatically from
+7777 up. Electron gets `app.requestSingleInstanceLock()` and per-port windows
+(`electron/courts-launch.js`, `electron/main.js`); Settings' Repository panel
+gets a switcher (`ui/views/courts.js`) that opens or starts another repo's
+court without ending the current one, and no longer waits for attachRepo to
+fail before offering "End court and switch…" (issue #42's fail-first
+complaint). **Electron itself and Windows were not exercised** — this
+environment cannot launch Electron; that acceptance work is still owed.
+
+**Review fix, same day: a LIVE attach bypassed the registry.**
+`registerCourt` only ran once, at daemon boot, with whatever repo was known
+then — a repo-less daemon that later got `POST /api/attachRepo` (or the
+saved-repo re-attach at boot) never updated or conflict-checked the registry.
+That let two daemons end up serving the SAME repository with no refusal, and
+left a stale `repo: null` row the switcher could never match. Fixed: the
+attach handler now claims the repo under the registry's lock BEFORE
+`kingdom.attachRepo` does any work, refuses naming the other court's port on
+conflict, and rolls back the claim if the attach itself then fails.
+`test/t-registry-attach.js` (two real daemons) covers it, confirmed to fail
+without the fix.
+
+**Review fix, same day: the test gate itself wrote to the real registry.**
+Suites that spawn a real daemon (`t-assets`, `t-control`, `t-csrf`,
+`t-daemon-boot`, `t-daemon-conversations`, `t-doctor-api`, `t-multi-court`,
+`t-panels`, `t-uploads`, `t-registry-attach`) were registering into the REAL
+`~/.kingdom/courts.json` on whatever machine ran `npm test` — on the
+sovereign's machine, running the gate while the app is open would have
+mutated their live registry. Fixed at the runner: `test/run-all.js` now
+spawns every suite with its own isolated `KINGDOM_COURTS_REGISTRY` (one
+per-suite temp file, so concurrent suites never share or race over one), and
+`test/isolate-registry.js` gives the same isolation to a suite run standalone
+(`node test/t-x.js`). `test/t-registry-isolation.js` is the guard, proving a
+daemon spawned this way never touches the real file. The file that had
+already been created on this machine by earlier, unisolated runs was deleted
+once the fix was verified.
+
+Habitable pilot readiness: `src/pilot-doctor.js` (flutter/dart/adb/SDK/emulator
+detection, doctor-style) and `src/pilot-evidence.js` (`flutter analyze`,
+`flutter test --coverage`, `flutter build apk --debug`, each step recorded
+independently), wired into `src/evidence.js` as an optional section. Built and
+tested entirely with fakes — no Flutter is installed in this environment, and
+neither module reads, runs against, or references the real Habitable checkout
+by path. This is steps 2 and 4's machinery only; steps 3-4's actual
+demonstration/audit/backlog/review work against Habitable itself is untouched
+and still gated on backlog approval, per the section below.
+
 ## Evidence
 
-The combined source gate passed on `main`: `npm.cmd test` completed **76
-suites, 4-wide, 199.2s, all passed** on 2026-09-22, after `test/t-electron.js`
-was recovered from an uncommitted local session and registered (`#70` had
-already grown the count from 73 to 75 with `t-repo-switch.js` and
-`t-theme-geometry.js`). 76 is the count the run itself printed. The suite
-count is the contract.
+The combined source gate passed on merged `main`: `npm.cmd test` completed
+**77 suites, 4-wide, 71.6s, all passed** on 2026-09-22, after four backlog
+items landed one at a time with the full gate re-run between each: target-repo
+snapshot/restore (`src/snapshot.js`), a per-run spend ceiling plus a projected
+total measured from the campaign boundary (`src/kingdom.js`, `src/forecast.js`),
+bearer-token auth for a non-loopback daemon bind (`src/daemon.js`), and a
+self-contained evidence folder per completed run (`src/evidence.js`). Earlier
+handoffs recorded 73 suites; the runner's array has grown by two
+(`t-snapshot.js`, `t-evidence.js` — new suites) plus new cases inside two
+already-registered suites (`t-efficiency.js`, `t-csrf.js`). #44's fix
+(`fix/issue-44-hidden-windows`) adds a third new suite, `test/t-windows-hide.js`
+— a static parser guard that every `src/`/`electron/` child_process call
+passes `windowsHide: true`. #41's fix (`fix/issue-41-turn-guardrails`) adds a
+fourth, `test/t-turn-guardrails.js` (every AWARENESS-styled post is a notice,
+the hadRealTurn wiring holds, workflows cannot loop unboundedly), plus new
+turn-budget cases inside the already-registered `t-budget.js` — bringing
+`npm test` to **79 suites, 4-wide, 40.2s, all passed** with both merged. The
+suite count is the contract.
+`test/t-electron.js` (the recovered Electron acceptance harness) is not yet in
+this count — it lands with PR #71, still open pending manual merge.
+
+On `functional-revamp` (2026-09-23, not yet merged to `main`), the same gate
+printed **84 suites, 4-wide, ~37s, all suites passed** after the two review
+fixes above landed (each its own commit, full gate green before and after —
+see the two "Review fix" paragraphs). The runner's array grew by eight over
+`main`: `t-courts.js`, `t-multi-court.js`, `t-courts-launch.js` (issue #42),
+`t-pilot-doctor.js`, `t-pilot-evidence.js` (Habitable pilot readiness),
+`t-registry-attach.js` (the live-attach fix), `t-registry-isolation.js` (the
+test-gate isolation fix), plus new cases inside `t-pages.js` and
+`t-evidence.js`. `court registry` and, separately, `a live attach claims the
+registry` were each flagged flaky-in-pool-passed-alone on one run apiece —
+the same pre-existing pool-contention class `src/courts.js`'s `pingCourt`
+timeout comment documents, not a regression (both suites passed cleanly, alone
+and in the pool, on other runs the same session). This is source and
+real-subprocess HTTP-level evidence only — Electron and Windows are
+unverified; see "Current state" above and `PLAN.md`'s "Functional revamp"
+section for exactly what is and is not held.
 
 Durations on the same machine: 36.8s (2026-09-14), 64.1s earlier still, 105.8s,
-179.6s and 61.2s on 2026-09-21, 90.9s at 75 suites and 199.2s at 76 on
-2026-09-22 — the jump between those last two is `t-electron.js` itself: 92.3s
-under 4-wide contention for a suite that measures 21s solo, because a cold
-Electron start competes with three other suites for the machine. That spread
-is machine load under 4-wide contention, not regression — `test/run-all.js`
-documents the same effect and measures it. Do not treat a slower run as a
-failure on its own.
+179.6s and 61.2s on 2026-09-21, 68.6-78.7s across the five 2026-09-22
+integration runs (four merges plus the final suite-registration run). That
+spread is machine load under 4-wide contention, not
+regression — `test/run-all.js` documents the same effect and measures it. Do
+not treat a slower run as a failure on its own.
 
 `court self-control` failed inside the pool and passed when retried alone on
 the 2026-09-21 run. The runner reports that as `flaky`, and it is the one suite
@@ -183,7 +312,15 @@ stateDiagram-v2
 | [src/bus.js](src/bus.js) | SQLite schema, migrations, run lifecycle, task and approval associations. |
 | [src/kingdom.js](src/kingdom.js) | Worker lifecycle, recovery, verification, run worktrees, and guarded application. |
 | [src/worktree.js](src/worktree.js) | Worktree creation, revision-bound tests, conflict-safe integration, and run-branch application. |
-| [src/daemon.js](src/daemon.js) | HTTP actions, run reads, snapshots, and SSE run events. |
+| [src/daemon.js](src/daemon.js) | HTTP actions, run reads, snapshots, SSE run events, and bearer-token auth for a non-loopback bind. |
+| [src/snapshot.js](src/snapshot.js) | Target-repo snapshot/restore before a worker touches it (Habitable pilot step one). Read-only against the repo it snapshots. |
+| [src/evidence.js](src/evidence.js) | Exports one self-contained folder per completed run: objective, diff, tests, reviews, cost, timeline, and an optional pilot section. |
+| [src/courts.js](src/courts.js) | Multiple courts at once (issue #42): the `~/.kingdom/courts.json` registry — register/list/prune, port picking, lockfile + atomic write. Pure core is self-checking (`node src/courts.js`). |
+| [electron/courts-launch.js](electron/courts-launch.js) | The pure decision behind a relaunch or `app.requestSingleInstanceLock`'s second-instance event: focus a live court or start a fresh one. Self-checking (`node electron/courts-launch.js`); see `test/t-courts-launch.js`. |
+| [ui/views/courts.js](ui/views/courts.js) | The court switcher panel in Settings' Repository tab. Degrades to a plain note outside Electron (`window.kingdomShell` absent). |
+| [src/pilot-doctor.js](src/pilot-doctor.js) | Habitable pilot step two: doctor-style flutter/dart/adb/SDK/emulator detection. `node src/pilot-doctor.js` for a real report; every dependency is injectable for `test/t-pilot-doctor.js`. |
+| [src/pilot-evidence.js](src/pilot-evidence.js) | Habitable pilot steps two and four: the evidence gate — `flutter analyze`, `flutter test --coverage`, a debug APK build, blocked cleanly on missing tooling. Fakes-only in tests; never points at the real Habitable checkout. |
+| [test/isolate-registry.js](test/isolate-registry.js) | Shared test helper: gives a daemon-spawning suite an isolated `KINGDOM_COURTS_REGISTRY` when nothing upstream (`test/run-all.js`) already set one — never touches the real `~/.kingdom/courts.json`. |
 | [src/modes.js](src/modes.js) | The mode table: crew, worktrees, merge, tasks, vault directory. Pure and self-checking. |
 | [src/mcp/tasks.js](src/mcp/tasks.js) | Run-owned task submission and controller-owned closure. |
 | [src/mcp/approvals.js](src/mcp/approvals.js), [src/mcp/comms.js](src/mcp/comms.js) | Run association for approvals and direct messages. |
@@ -267,9 +404,14 @@ boundaries and generated-code ownership.
 
 Before a worker changes Habitable:
 
-1. Create a snapshot that includes tracked dirty work and relevant untracked
+1. ~~Create a snapshot that includes tracked dirty work and relevant untracked
    source files, but excludes credentials, build output, caches, and identity.
-   Record its manifest and leave the original checkout unchanged.
+   Record its manifest and leave the original checkout unchanged.~~ Implemented
+   2026-09-22: `src/snapshot.js`'s `snapshotRepo`/`restoreSnapshot`, proven
+   against the acceptance scenario verbatim in `test/t-snapshot.js` — tracked
+   edit, tracked deletion, untracked source (flat and nested), a secret, and a
+   build directory. Source evidence only; never run against the real Habitable
+   checkout.
 2. Read its specification, capture fresh `flutter analyze`, `flutter test`,
    handwritten coverage, debug APK, and emulator readiness evidence.
 3. Demonstrate existing flows, audit observed defects, and prepare a finite
@@ -338,3 +480,15 @@ current proof; refresh them before the snapshot.
   separate from the pilot unless explicitly added.
 - Validate live subscription-model pool behavior without paid API fallback when
   a real approved run is started.
+- Multiple courts at once (issue #42, `functional-revamp`, 2026-09-23) needs
+  Electron and Windows acceptance: the single-instance lock, per-port windows,
+  the native "End court?" confirmations, and media-permission scoping per
+  court window were never run — this environment cannot launch Electron. A
+  developer machine must exercise: two repositories open at once, a relaunch
+  focusing the right court instead of starting a stray daemon, and the
+  switcher's open/end actions in a real window.
+- The Habitable pilot's tooling doctor and evidence gate (steps two and four,
+  `functional-revamp`, 2026-09-23) are built and tested with fakes only. They
+  have never run against real Flutter/Android tooling or the real Habitable
+  checkout, and must not until HANDOFF.md step 3 (demonstrate, audit, get a
+  finite backlog approved) has actually happened.

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Runs the kingdom and serves the throne room over HTTP + SSE.
 //
-//   node src/daemon.js [repo] [--port 7777] [--config path]
+//   node src/daemon.js [repo] [--port 7777] [--config path] [--bind 127.0.0.1]
 //
 // repo is optional: Chat and Cowork run with none attached, and Code
 // mode is refused (see Kingdom#setMode) until one is picked in the app —
@@ -13,7 +13,8 @@
 // does not kill the court.
 import { createServer } from 'node:http';
 import { readFile, mkdir, writeFile, readdir, unlink } from 'node:fs/promises';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, mkdirSync, writeFileSync, unlinkSync } from 'node:fs';
+import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { join, dirname, resolve, extname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Kingdom, defaultConfigPath } from './kingdom.js';
@@ -25,6 +26,7 @@ import { costClassOf, costOf, tableFrom } from './price.js';
 import { readApproval } from './approval.js';
 import { listWorkflows, saveWorkflow, deleteWorkflow, runWorkflow, tickScheduler, logRun, runHistory, validWorkflowId } from './workflows.js';
 import { runDoctor } from './doctor.js';
+import { registerCourt, unregisterCourt, listCourts, CourtConflictError, firstFreePort } from './courts.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PUBLIC = join(HERE, '..', 'ui');
@@ -49,7 +51,21 @@ function savedRepo() {
 }
 
 const repo = repoArg ? resolve(repoArg) : savedRepo();
-const port = Number(flag('--port', 7777));
+// A port named explicitly (--port, or KINGDOM_PORT the way Electron's main
+// process pins one) is PINNED: a busy pinned port is a clean, visible error,
+// never a silent fallback to something else. With neither given, the port is
+// chosen automatically — see the courts.firstFreePort() call beside the real
+// .listen() below, once the registry (src/courts.js) can be asked what is
+// already taken. `port` starts as a placeholder and is resolved to its real
+// value before anything binds; see the trap comment there.
+const explicitPort = argv.includes('--port') ? Number(flag('--port'))
+  : (process.env.KINGDOM_PORT ? Number(process.env.KINGDOM_PORT) : null);
+// Where auto-picking starts. 7777 unless KINGDOM_BASE_PORT moves it — the
+// test suites give each daemon-spawning suite its own range so suites that
+// run in parallel (each with its own isolated registry) never race for the
+// same ports.
+const basePort = Number(process.env.KINGDOM_BASE_PORT) || 7777;
+let port = explicitPort ?? basePort;
 // A repo named explicitly on the command line gets its own repo-relative
 // home (.kingdom/<repoName>/, today's original per-repo layout). A repo
 // found via savedRepo() was instead attached LIVE in a previous session —
@@ -60,6 +76,55 @@ const port = Number(flag('--port', 7777));
 // "kingdom" on every repo-less restart).
 const homeRepo = repoArg ? repo : null;
 const configPath = flag('--config', defaultConfigPath(homeRepo));
+
+// ---- Approve from a phone: bearer-token auth for a non-loopback bind ------
+// Loopback (the default) needs nothing beyond originAllowed() below — this
+// is purely additive. A bind address reachable from off-machine changes the
+// threat model: anyone on that network can open a TCP connection here, so a
+// connection that did not arrive over loopback must present a bearer token,
+// and even then reaches only reads plus approve/reject/answerQuestion (see
+// remoteGate below). Ordering is the whole point: the token exists and the
+// refusal below is checked before bindAddr is ever passed to .listen().
+const bindAddr = flag('--bind', process.env.KINGDOM_BIND ?? '127.0.0.1');
+const LOOPBACK_BINDS = new Set(['127.0.0.1', 'localhost', '::1']);
+const bindIsLoopback = LOOPBACK_BINDS.has(bindAddr);
+
+// KINGDOM_TEST_DISABLE_TOKEN and KINGDOM_TEST_FORCE_REMOTE (used in
+// remoteConnection() below) exist only for test/t-csrf.js — the same way
+// KINGDOM_CODEX_BIN, KINGDOM_SETTLE_MS etc. stub real dependencies elsewhere
+// in this repo's test suites. Neither is read by electron/main.js or
+// documented for real use; a real deploy always generates a real token.
+const authToken = process.env.KINGDOM_TEST_DISABLE_TOKEN === '1'
+  ? null
+  : randomBytes(32).toString('hex');
+
+if (!bindIsLoopback && !authToken) {
+  console.error(`daemon: refusing to bind ${bindAddr} with no bearer token generated — `
+    + 'a non-loopback bind must be authenticated. This should never happen outside a test.');
+  process.exit(1);
+}
+
+// The token is generated, never configured: never read from or written to
+// kingdom.config.json, and never printed to stdout/stderr — Electron pipes
+// both straight into daemon.log (electron/main.js's startDaemon()), so a
+// console.log here would put a working phone credential on disk on every
+// boot. Instead it goes to its own untracked file beside this repo's
+// existing out-of-tree secret (src/set-token.js's tokens.json is the same
+// convention: kingdomDir is already gitignored), overwritten fresh on every
+// start so a stale token never outlives the process that issued it. A
+// QR-code-style pairing flow reads this file; that flow is not part of this
+// change.
+const PHONE_TOKEN_FILE = join(kingdomDir(homeRepo), 'phone-token.txt');
+if (!bindIsLoopback) {
+  try {
+    mkdirSync(dirname(PHONE_TOKEN_FILE), { recursive: true });
+    writeFileSync(PHONE_TOKEN_FILE, `${authToken}\n`, { mode: 0o600 });
+  } catch (e) {
+    console.error(`daemon: could not write the phone approval token to disk: ${e.message}`);
+  }
+} else {
+  try { unlinkSync(PHONE_TOKEN_FILE); } catch { /* nothing to clean up */ }
+}
 
 const kingdom = new Kingdom(homeRepo, configPath);
 const speech = new Speech(process.env.KINGDOM_SPEECHBIRD ?? kingdom.config.speechbird);
@@ -195,7 +260,33 @@ const ACTIONS = {
   summarizer: (b) => kingdom.setSummarizer(b),
   goal: (b) => kingdom.setGoal(b),
   mode: (b) => kingdom.setMode(b.mode, { why: b.why ?? '', by: b.by ?? 'sovereign' }),
-  attachRepo: (b) => kingdom.attachRepo(b.path),
+  // A LIVE attach (this endpoint, or the saved-repo re-attach at boot below)
+  // changes what repository THIS daemon serves — the registry row written at
+  // boot (with whatever `repo` was known then, including null for a
+  // Chat/Cowork daemon that started with none) goes stale the moment this
+  // runs unless the registry is told. Without this, two daemons could end
+  // up serving the SAME repository with no refusal: a repo-less daemon on
+  // one port simply attaches whatever it is given, since Kingdom#attachRepo
+  // only refuses a repo DIFFERENT from one it already holds — the exact
+  // corruption one-court-per-repo (issue #42) exists to prevent.
+  //
+  // So: claim the repo in the registry under its lock BEFORE
+  // kingdom.attachRepo does any real work (registerCourt's own conflict
+  // check refuses if another live court already holds it, naming that
+  // court's port), then attach for real. If the attach itself fails for an
+  // unrelated reason (bad git repo, no commits), the claim is rolled back to
+  // whatever this daemon actually holds afterward — never left pointing at a
+  // repo this daemon did not actually attach.
+  attachRepo: async (b) => {
+    const target = resolve(String(b.path ?? ''));
+    await registerCourt({ repo: target, port, pid: process.pid });
+    try {
+      return await kingdom.attachRepo(b.path);
+    } catch (e) {
+      try { await registerCourt({ repo: kingdom.repo, port, pid: process.pid }); } catch { /* best effort rollback */ }
+      throw e;
+    }
+  },
   milestone: (b) => kingdom.setMilestone(Number(b.index), Boolean(b.done)),
   wake: (b) => kingdom.wake(b.name),
   summon: (b) => {
@@ -207,6 +298,8 @@ const ACTIONS = {
   pause: (b) => kingdom.pause(b.why ?? ''),
   resume: () => kingdom.resume(),
   setBudget: (b) => kingdom.setBudget(b.capUsd),
+  setTurnBudget: (b) => kingdom.setTurnBudget(b.cap),
+  raiseTurnBudget: (b) => kingdom.raiseTurnBudget(b.by ?? 100),
   requestPush: (b) => kingdom.requestPush(b.reason ?? ''),
   approve: (b) => kingdom.approve(Number(b.id)),
   reject: (b) => kingdom.reject(Number(b.id), b.why ?? ''),
@@ -476,6 +569,10 @@ function metrics() {
 async function shutdown(code = 0) {
   speech.stop();
   await kingdom.stop();
+  // Best-effort: a clean exit should not leave a corpse for the next
+  // listCourts() to have to detect and prune itself, but shutdown must never
+  // hang on this — the registry file could be locked by another launch.
+  try { await unregisterCourt({ port, pid: process.pid }); } catch { /* next prune catches it */ }
   process.exit(code);
 }
 
@@ -497,6 +594,53 @@ function originAllowed(req) {
   return origin === `http://127.0.0.1:${port}` || origin === `http://localhost:${port}`;
 }
 
+// Loopback classification is by CONNECTION, not by the configured bind —
+// binding 0.0.0.0 still accepts connections that arrive via 127.0.0.1, and
+// those must keep working exactly as they do today (rule 7's whole point).
+// Only a connection that actually arrived over a non-loopback interface is
+// gated below.
+function remoteConnection(req) {
+  if (process.env.KINGDOM_TEST_FORCE_REMOTE === '1') return true; // test seam only, see above
+  const ip = req.socket.remoteAddress ?? '';
+  return ip !== '127.0.0.1' && ip !== '::1' && ip !== '::ffff:127.0.0.1';
+}
+
+function bearerAuthorized(req) {
+  if (!authToken) return false;
+  const [scheme, value] = (req.headers.authorization ?? '').split(' ');
+  if (scheme !== 'Bearer' || !value) return false;
+  // Fixed-length compare: a phone token is worth guarding against timing.
+  const presented = Buffer.from(value);
+  const expected = Buffer.from(authToken);
+  return presented.length === expected.length && timingSafeEqual(presented, expected);
+}
+
+// The one surface a bearer-authenticated, non-loopback request may reach:
+// the approval queue, and the three actions it can act on. Run controls,
+// repo switching, asset uploads and the UI itself stay loopback-only no
+// matter what token is presented — "the write surface stays limited to
+// approvals" is explicit in the backlog's acceptance clause.
+const REMOTE_READS = new Set(['/api/ping', '/api/approvals']);
+const REMOTE_ACTIONS = new Set(['approve', 'reject', 'answerQuestion']);
+
+/**
+ * null: not a remote connection — the existing loopback/origin path below
+ *   applies completely unchanged.
+ * 'authorized': a valid token AND an allowed route — proceed, and skip the
+ *   origin/CSRF check for this one request (the bearer token already is
+ *   one: a cross-site page can neither read nor attach it).
+ * otherwise: {status, error} — refuse verbatim, before any route runs.
+ */
+function remoteGate(req, url) {
+  if (!remoteConnection(req)) return null;
+  if (!bearerAuthorized(req)) return { status: 401, error: 'missing or invalid bearer token' };
+  const allowedRead = req.method === 'GET' && REMOTE_READS.has(url.pathname);
+  const allowedAction = req.method === 'POST' && url.pathname.startsWith('/api/')
+    && REMOTE_ACTIONS.has(url.pathname.slice(5));
+  return allowedRead || allowedAction ? 'authorized'
+    : { status: 403, error: 'this route is not available for remote approval' };
+}
+
 // Every GET that answers with JSON, keyed by path.
 //
 // This mirrors ACTIONS above. The POST side has had a dispatch table since it
@@ -513,7 +657,12 @@ const READS = {
   // How a launching window discovers whether a court is already up, and which
   // repo it is serving — attaching to the wrong repo would be silent and bad.
   '/api/ping': async (url, req) => {
-    return [ready ? 200 : 503, { ok: ready, starting: !ready, repo: kingdom.repo, base: kingdom.base, pid: process.pid }];
+    // `port` lets a launcher that started this daemon WITHOUT a pinned port
+    // (courts.firstFreePort() picked one) discover which one it actually
+    // got — the multi-court switcher polls the registry for this same fact,
+    // but a page/window that already knows its own origin still wants the
+    // number for display.
+    return [ready ? 200 : 503, { ok: ready, starting: !ready, repo: kingdom.repo, base: kingdom.base, pid: process.pid, port }];
   },
 
   // The same probes `npm run doctor` prints, structured — this is what a
@@ -557,6 +706,9 @@ const READS = {
       const row = { id: m.id, ts: m.ts, from: m.sender, runId: m.runId ?? p.runId ?? null, ...p, resolved };
       if (p.kind === 'push') {
         try { row.push = JSON.parse(kingdom.bus.get(`push:${m.id}`) ?? 'null'); } catch { /* card still renders */ }
+      }
+      if (p.kind === 'merge') {
+        try { row.merge = JSON.parse(kingdom.bus.get(`merge:${m.id}`) ?? 'null'); } catch { /* card still renders */ }
       }
       // The cost of the crew being proposed, and ONLY while it is still
       // being proposed. A forecast is a trimming aid and there is nothing
@@ -784,8 +936,15 @@ const READS = {
 const handle = async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
 
+  const remote = remoteGate(req, url);
+  if (remote && remote !== 'authorized') {
+    return res.writeHead(remote.status, { 'content-type': 'application/json' })
+      .end(JSON.stringify({ ok: false, error: remote.error }));
+  }
+  const bearerAuthed = remote === 'authorized';
+
   if (req.method === 'POST' && url.pathname.startsWith('/api/')) {
-    if (!originAllowed(req)) return res.writeHead(403, { 'content-type': 'application/json' })
+    if (!bearerAuthed && !originAllowed(req)) return res.writeHead(403, { 'content-type': 'application/json' })
       .end(JSON.stringify({ ok: false, error: 'origin not allowed' }));
     // /api/transcribe and /api/assets (upload, not /delete) post a raw file
     // as the body with its own mime type, by design (ui/assets.js's own
@@ -854,6 +1013,17 @@ const handle = async (req, res) => {
       skills: kingdom.skills(),
       summarizer: kingdom.summarizer(),
       goal: kingdom.goal(),
+      // #41: the header's turn counter otherwise reads blank until this
+      // session's first 'spend' event, even though the count itself is
+      // durable (kingdom.turnsThisSession()/turnsLifetime() both survive a
+      // restart) — a reconnect or a fresh tab must show what has already
+      // happened this session, not zero.
+      spend: {
+        turns: kingdom.turnsThisSession(), lifetimeTurns: kingdom.turnsLifetime(),
+        turnBudget: kingdom.sessionTurnCap(),
+      },
+      paused: kingdom.paused ?? false,
+      pausedWhy: kingdom.paused ? (kingdom.bus.get('pausedWhy') ?? '') : '',
       mode: kingdom.mode(),
       run: kingdom.bus.currentRun(),
       events: since
@@ -1102,12 +1272,65 @@ const handle = async (req, res) => {
   }
 };
 
-createServer((req, res) => handle(req, res).catch((e) => {
+const server = createServer((req, res) => handle(req, res).catch((e) => {
   console.error(e?.stack ?? e);
   if (!res.headersSent) res.writeHead(e?.status ?? 500, { 'content-type': 'application/json' });
   res.end(JSON.stringify({ ok: false, error: String(e?.message ?? e) }));
-})).listen(port, '127.0.0.1', async () => {
+}));
+
+// A clean, visible error either way: a PINNED port that is busy names itself
+// and refuses rather than binding somewhere the launcher never asked for; an
+// auto-picked port racing another process for the exact same one (the one
+// window between courts.firstFreePort()'s probe and this real bind) gets the
+// same message instead of a raw Node stack trace nobody watching a detached,
+// unref'd child process would ever see (see startDaemon()'s comment in
+// electron/main.js for why nothing else is watching).
+server.on('error', (e) => {
+  if (e.code === 'EADDRINUSE') {
+    console.error(`daemon: port ${port} is already in use.`
+      + (explicitPort ? ' Pass a different --port (or unset KINGDOM_PORT) to use another one.'
+        : ' Another process claimed it between the free-port check and this bind — try again.'));
+  } else {
+    console.error(e?.stack ?? e);
+  }
+  process.exitCode = 1;
+  process.exit();
+});
+
+(async () => {
+  if (explicitPort == null) {
+    try {
+      port = await firstFreePort(basePort, await listCourts());
+    } catch (e) {
+      console.error(`daemon: ${e.message}`);
+      process.exitCode = 1;
+      process.exit();
+      return;
+    }
+  }
+  server.listen(port, bindAddr, async () => {
   try {
+    // One daemon PROCESS per repository (issue #42): a repo that already has
+    // a live court elsewhere is refused here, after the bind (so the busy-
+    // port case above still wins first) but before any real work — kingdom
+    // .start() below is what actually spawns the court's members, and this
+    // must come first or a refused daemon would spawn a whole court just to
+    // throw it away. A repo-less daemon (Chat/Cowork with nothing attached
+    // yet) still registers, keyed by its port — see courts.js's sameRepo()
+    // doc comment for why two repo-less entries never conflict with each
+    // other; that is an accepted gap, not a promise this checks.
+    try {
+      await registerCourt({ repo, port, pid: process.pid });
+    } catch (e) {
+      if (e instanceof CourtConflictError) {
+        console.error(`daemon: refusing to start — ${e.message}`);
+        process.exitCode = 1;
+        process.exit();
+        return;
+      }
+      throw e;
+    }
+
     // A saved repo (found via savedRepo(), not named on the CLI) boots from
     // the workspace home above — re-attach it now, live, exactly as the UI's
     // POST /api/attachRepo would, so kingdom.repo/base and Code mode come up
@@ -1127,11 +1350,18 @@ createServer((req, res) => handle(req, res).catch((e) => {
         // this whole path exists so the throne room opens without one. Dying
         // here would make a stale config line the reason the app will not boot.
         console.error(`saved repository unusable, starting without one: ${e.message}`);
+        // The registerCourt() call above already claimed `repo` in the
+        // registry, optimistically, before this attach was attempted — a
+        // failed attach must not leave that claim standing (kingdom.repo is
+        // still null here), or the registry would report a repo this daemon
+        // never actually attached, exactly the staleness this whole feature
+        // exists to prevent.
+        try { await registerCourt({ repo: kingdom.repo, port, pid: process.pid }); } catch { /* best effort rollback */ }
       }
     }
     await kingdom.start();
     ready = true;
-    console.log(`throne room: http://127.0.0.1:${port}  (repo: ${kingdom.repo})`);
+    console.log(`throne room: http://${bindAddr}:${port}  (repo: ${kingdom.repo})`);
     // Interval-triggered workflows. 5s resolution, not per-workflow timers —
     // same tradeoff bus.js's own poll makes: fewer moving parts, and a newly
     // saved or edited workflow is picked up on the very next tick for free.
@@ -1146,7 +1376,8 @@ createServer((req, res) => handle(req, res).catch((e) => {
     process.exitCode = 1;
     process.exit();
   }
-});
+  });
+})();
 
 for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => shutdown(0));
 

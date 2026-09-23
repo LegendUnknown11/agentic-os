@@ -291,9 +291,275 @@ against a hand-rolled fake DOM that resolves those selectors literally.
   recovery, the collapsed rail's controls, the drawer at 720px with its keyboard
   path, and reduced-motion behaviour.
 
+## UI revamp — paper with glass (2026-09-23)
+
+Scope: issue #39 ("Ugly UI," no screenshot — worked from a live audit, not a
+description) and the surviving part of #48 (Hiveory). #48 itself is
+superseded by the paper kit adopted 2026-09-21; the glass/translucent feel it
+asked for is adopted within that paper system rather than swapping the
+palette for Hiveory's dark one.
+
+**Method**: started a demo court (`node src/daemon.js <throwaway-repo>
+--port 7811`), drove it with Playwright/Chromium, screenshotted all 14 views
+at 1440x900 and 720x900 before and after. Findings are in
+`/home/user/wt-ui-shots/AUDIT.md` (outside the repo, per the session's
+instructions) — summarised here because that file lives outside version
+control.
+
+**Finding**: the interface was already close to this section's own prior
+"Status — closed 2026-09-21" claim. No layout defect from the prior
+`align-content: start` free-height-leak class recurred; every `auto-fit`
+card grid sits inside an already-`start`-pinned parent. The one concrete gap,
+read directly rather than assumed: `--shell-alpha`/`--surface-alpha` existed
+but were 1 (opaque) by default and only left their default for the optional
+user-wallpaper feature, so the interface most people see had no
+translucency or blur anywhere the sovereign's direction named.
+
+**What shipped**: a translucent, blurred glass on `#header`, `#sidebar`
+(rail and the 720px drawer), `#composer`, `.hover-tip`, and the drawer scrim.
+Two new tokens, `--glass-chrome-alpha: .90` (for the `--raised`-based header
+and hover-tip) and `--glass-panel-alpha: .97` (for the `--surface`-based
+sidebar and composer, whose opaque `--muted` budget was already the
+system's tightest at 4.87:1), drive `rgb(var(--x-rgb) / alpha)` backgrounds
+plus `backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate))`.
+Both alphas are chosen against the worst ground this app can ever put behind
+glass — a fully black wallpaper image, not the paper default — so every text
+pairing still clears 4.5:1 there (`--muted` 4.72:1 at .90, 4.57:1 at .97;
+the arithmetic is recorded beside the tokens in `ui/app.css`). An
+`@supports not (backdrop-filter: blur(1px))` fallback and a
+`prefers-reduced-transparency: reduce` query both force the pre-glass opaque
+paint. `.view-section` (the card primitive) never receives `backdrop-filter`
+and stays flat and shadowless at rest, per this system's own shadow rule.
+
+**Tests**: `test/t-theme.js` had carried a positive guard since 2026-09-21,
+`a.equal(/backdrop-filter/i.test(css), false, ...)`, dated to when Hiveory's
+dark palette was rejected wholesale. It is replaced, not weakened, with
+positive assertions naming each of the five glass selectors, a negative
+assertion that `.view-section` never gets glass, pins on both alpha values,
+and pins on both fallbacks — recorded as an intentional presentation change
+in its commit, per this repository's own rule against silently changing an
+assertion.
+
+**Acceptance evidence**: `npm test` — 77 suites, 4-wide, 36.3s, all suites
+passed, no flaky retries, run after the change. `test/t-theme-geometry.js`
+ran against real Chromium (not skipped) and confirmed the collapsed rail and
+drawer geometry defects from 2026-09-21 have not recurred. Visual evidence:
+a live Chromium session with a synthetic wallpaper set (`--wall` +
+`body.has-bg`) showed the header and sidebar edge visibly blurring and
+tinting from the wallpaper behind them while every text pairing on top
+stayed legible, and `getComputedStyle(#header).backdropFilter` read back as
+`"blur(20px) saturate(1.6)"` in that same tab — confirming the rule actually
+applied, not just that its source text existed. The no-wallpaper default was
+also captured and reads unchanged (flat paper), since glass has nothing to
+blur without a wallpaper behind it. This is browser evidence, not Electron
+or Windows evidence — neither was exercised this session.
+
+**Superseded below**: the "Not done" conclusion above — that an empty demo
+court's audit found nothing further to fix — was wrong, and is corrected in
+the next section rather than edited in place, so the mistake and the
+correction both stay on the record.
+
+## UI revamp round 2 — populated-court audit and defect sweep (2026-09-23)
+
+The round above audited an **empty** demo court: no objective, no run, no
+tasks, no approvals, one conversation, no diff. That hid real defects the
+same way the 2026-09-21 session's 73 green suites hid the `align-content`
+grid-leak class — an empty state cannot show a rail that overflows once it
+has content, a heading block whose weight only matters against a real page
+below it, or a code block with nothing in it to render badly. Corrected by
+seeding the same demo court with real state — an objective, a run that
+travelled planning → running → blocked with recovery history plus a second,
+completed run in history, five tasks across pending/claimed/done/blocked-on-
+deps, three approvals (push, summon, question), twelve conversations, a
+multi-turn thread with a fenced code block and a deliberately long unbroken
+URL, and a real git diff (three files) from a summoned peasant's worktree —
+via `/home/user/wt-ui-shots/seed.mjs`, which writes directly through
+`src/bus.js` (and, for the worktree, the daemon's own `summon`/`approve` HTTP
+actions) rather than approximating the app's own state shapes by hand.
+Re-audited at 1440x900, 1280x720, and 720x900;
+`/home/user/wt-ui-shots/populated-before/` and `populated-after/` hold the
+screenshots, `/home/user/wt-ui-shots/AUDIT.md` the updated findings.
+
+Five real defects found this way, each fixed with its own commit and a
+failing-before assertion:
+
+1. **The rail clipped under real height pressure.** At 1280x720 (and the
+   enforced 900px minimum) with a populated rail (twelve conversations, More
+   tools open), `#sidebar`'s sections could ask for more height than the rail
+   had, and its `overflow: hidden` clipped whatever did not fit — the
+   Settings/Collapse footer ran off the bottom of the viewport, Conversations
+   squeezed toward one row. Fixed with a `.sidebar-scroll` region (the parts
+   that can grow) wrapped by a non-scrolling header and footer, so the footer
+   is a document-flow guarantee rather than a height budget it can lose.
+   `test/t-theme-geometry.js` gained a real-Chromium case at 1280x720 with a
+   populated fixture, confirmed failing before the fix.
+2. **The page heading carried no information and the marketing scale.**
+   "AGENTIC OS / WORKSPACE" repeated identically on all 14 views (a prior
+   session already removed it once for the same reason and it came back), a
+   48px display-face H1 (`clamp(32px, 5vw, 48px)`) although this file's own
+   section 1 requires the product scale throughout. Both cost real space
+   above the fold of a dense tool. Eyebrow dropped and banned a second time;
+   H1 shrunk to `clamp(20px, 2.4vw, 26px)`.
+3. **Glass was invisible in the state most people see.** Round 1's glass
+   rules were correct but blurring a flat colour is indistinguishable from
+   not blurring it, and with no wallpaper set `#bg` sits at opacity 0 and the
+   paper grain beneath it is a .05-alpha dot pattern too faint to register.
+   Added `--wash`, two soft radial gradients (teal- and paper-tinted, from
+   existing channel colours) painted under the grain on `body` itself, so the
+   chrome has real tonal variation to blur regardless of wallpaper state.
+4. **A card nested inside a panel.** Models & efficiency and Notifications
+   build their `section()` out of one or more bordered `.settings-group`
+   fieldsets, with the outer `.view-section`'s own border sitting flush
+   against the inner one and nothing of its own between them. Un-cards the
+   outer wrapper only when it actually contains a `.settings-group`
+   (`.settings-shell .view-section:has(> .settings-group)`), so a tab with no
+   groups (Repository) is unaffected.
+5. **The header's mode switcher visibly dominated the header.** Three
+   two-line pills (label plus a permission blurb) pushed "Connected" out to
+   the far edge looking detached — and this is the *same* defect
+   `test/t-theme.js` already banned under a `.mode-option small` selector; it
+   came back under `<span>` instead, which the existing test could not see.
+   Each button's own `dataset.tip`/`aria-label` and the app's established
+   `.hover-tip` convention already carry the description, so hiding the
+   always-visible copy loses no information. The ban is widened to cover
+   both tag names.
+
+Also fixed, found on the *first*, empty-court pass but not reported then
+because it was misdiagnosed mid-session as a UI bug before being traced to a
+seeding mistake and correctly attributed: **fenced/inline code in thread
+messages had no styling** (`<pre><code>`/`<code>` on bare browser defaults, no
+wrap handling, so a long line pushed the message bubble past the thread
+column). `ui/markdown.js` already emitted real `<pre><code>`; the gap was
+purely that `ui/app.css` never styled it. Fixed with `.markdown pre`/`.markdown
+pre code`/`.markdown code`, all token-sourced.
+
+**Evaluated and left alone, with reasons**: Settings' tab row already scrolls
+horizontally (`overflow-x: auto; flex-wrap: nowrap`) rather than wrapping at
+720px — read directly, this was not a defect. Changes' diff view, checked
+against a real three-file diff, already reads well (monospace, coloured
+`+`/`-` lines, no overflow). Overview's "Verified deliverables" card, which
+looked disproportionately tall beside "Current work" in a screenshot, measured
+173px against "Current work"'s 350px in real Chromium — `align-items: start`
+is doing its job; the appearance of equal height was a misreading of the
+screenshot, corrected before acting on it. Further list-density work
+(Work/Team/Activity/Decisions rows) and a deeper Overview/thread-composer
+redesign were not undertaken in the time available; nothing in the populated
+audit surfaced a concrete defect there beyond what is already fixed above.
+
+**Acceptance evidence**: `npm test` — 77 suites, 4-wide, ~37-40s across these
+commits' individual runs, all suites passed, no flaky retries, run before
+every commit in this round. `test/t-theme-geometry.js` ran against real
+Chromium throughout (never skipped). Visual evidence: the populated-court
+screenshots above, plus a live Chromium read-back of
+`getComputedStyle(#header).backdropFilter` confirming the boosted `--wash`
+still renders. This is browser evidence, not Electron or Windows evidence —
+neither was exercised in this round either.
+
 ## Carried forward from the previous contract
 
 The run system described in the previous `PLAN.md` is implemented and merged; its
 text remains in Git history. Two of its obligations are still open and are
 restated in `HANDOFF.md`: the Habitable pilot has not begun, and live
 subscription-pool behaviour without paid API fallback is unproven.
+
+## Functional revamp — multiple courts and pilot readiness (2026-09-23)
+
+Two independent pieces of work, landed on `functional-revamp`. Neither touches
+the interface contract in sections 1-5 above.
+
+### A. Multiple courts at once (closes GitHub issue #42)
+
+**Contract.** One daemon process per repository, each on its own port, tracked
+in a shared registry at `~/.kingdom/courts.json` (`src/courts.js`) alongside the
+existing `tokens.json` convention. A daemon refuses to start for a repository
+that already has a live court and names the port it is on; a busy pinned port
+(`--port` or `KINGDOM_PORT`) is a clean, visible error, never a silent
+rebind. With neither given, the port is picked automatically starting at 7777.
+`app.requestSingleInstanceLock()` means a second launch focuses or opens the
+right court instead of starting a stray daemon. Settings' Repository panel
+gains a switcher — list running courts, open one, start a court for another
+repository, end one with confirmation — reachable without ending the current
+court, and "End court and switch…" is no longer gated behind attachRepo's
+failure (the fail-first dance issue #42 complained about is gone; attachRepo's
+own refusal to move a live court onto a different repo, `src/kingdom.js`, is
+unchanged and still correct).
+
+**This reverses the 2026-09-22 decision** recorded in the previous revision of
+`HANDOFF.md`, where the sovereign declined multiple courts for that round
+("Not even using it"). The sovereign asked for it explicitly on 2026-09-23.
+
+**What closed it.**
+
+| Piece | File |
+|---|---|
+| Registry core: register/list/prune/pick-port, lockfile + atomic write | `src/courts.js` |
+| Daemon wiring: auto/pinned port, conflict refusal, register/unregister | `src/daemon.js` |
+| Live-attach registry claim (POST /api/attachRepo, saved-repo re-attach) | `src/daemon.js` |
+| Launch routing (single-instance, focus-vs-start), pure and fakeable | `electron/courts-launch.js` |
+| Electron: single-instance lock, per-port windows, courts IPC | `electron/main.js`, `electron/court-preload.cjs` |
+| Switcher UI, degrades visibly outside Electron | `ui/views/courts.js`, `ui/views/settings.js` |
+
+**Review fix (2026-09-23, post-implementation): live attach bypassed the
+registry.** `registerCourt` ran once, at listen time, with the boot-time repo —
+a repo-less daemon that later got a LIVE attach (`POST /api/attachRepo`, or the
+saved-repo re-attach at boot) never updated or conflict-checked the registry.
+That let two daemons end up serving the SAME repository with no refusal, and
+left the registry showing `repo: null` for a court that had since attached
+one. Fixed: the attach handler now claims the repo in the registry (under its
+lock, via the same `registerCourt`) BEFORE `kingdom.attachRepo` does any real
+work, refuses with the other court's port on conflict, and rolls back the
+claim if the attach itself then fails for an unrelated reason. Covered by
+`test/t-registry-attach.js` (two real daemons, confirmed to fail without the
+fix).
+
+**Acceptance evidence.**
+- Source: `test/t-courts.js` (registry unit behaviour), `test/t-multi-court.js`
+  (two real daemon processes, real conflict/port-busy refusals),
+  `test/t-courts-launch.js` (launch-routing decisions, fakes),
+  `test/t-registry-attach.js` (live-attach registry claim, above), plus
+  `test/t-pages.js` updates pinning the new Settings source. Suite count: see
+  `HANDOFF.md`'s Evidence section for the number printed this round.
+- Browser: the Settings > Repository panel was driven in a real Chromium tab
+  (Playwright, throwaway repo on port 7823) and confirmed to render the courts
+  switcher with no fail-first gating, and to degrade to a plain note (no
+  destructive controls) when `window.kingdomShell` is absent — i.e. a plain
+  browser tab, not Electron.
+- **Not held**: Electron itself (the single-instance lock, multi-window
+  behaviour, the native confirmation dialogs, media-permission scoping per
+  window) was never run — this environment cannot launch Electron. Windows
+  behaviour (the platform every real user runs on) is likewise unverified here.
+  Both are real acceptance work still owed before this ships to the sovereign.
+- **Test-gate hygiene (2026-09-23, post-implementation)**: several suites that
+  spawn a real daemon were found to register into the REAL
+  `~/.kingdom/courts.json` on whatever machine runs `npm test`, which on the
+  sovereign's machine would mutate their live registry. Fixed at the test
+  runner: every suite now gets its own isolated registry file
+  (`test/run-all.js`, `test/isolate-registry.js`); `test/t-registry-isolation.js`
+  guards it end to end. See `HANDOFF.md` for the mechanism.
+
+### B. Habitable pilot readiness (source-side only)
+
+Machinery for HANDOFF.md's "Habitable pilot" steps 2 and 4, built and tested
+without the real Habitable checkout and without Flutter installed anywhere in
+this environment — by design; `src/pilot-doctor.js` and `src/pilot-evidence.js`
+never read, run against, or reference `E:\AI\Mobile Apps\Habitable` by path.
+
+- `src/pilot-doctor.js`: doctor-style detection of flutter/dart/adb, the
+  Android SDK path, and configured emulator AVDs, same `{checks, failures,
+  ready}` shape as `src/doctor.js`. flutter/dart/adb are hard blockers; the SDK
+  path and an AVD are visible warnings, since a debug build needs neither.
+- `src/pilot-evidence.js`: `runPilotEvidenceGate(dir)` runs `flutter analyze`,
+  `flutter test --coverage`, and `flutter build apk --debug`, each step's
+  result recorded independently so one failing step never hides or stops the
+  others. Missing tooling is a single visible blocker raised before any step
+  runs. A non-Flutter target is reported as nothing-to-gate, not a failure.
+- `src/evidence.js` gained an optional `pilot.json` section, written only when
+  a caller passes a `pilotEvidence` result — `src/evidence.js` itself stays
+  decoupled from Flutter entirely.
+
+**Acceptance evidence.** Source only: `test/t-pilot-doctor.js` and
+`test/t-pilot-evidence.js`, both fakes-only, plus `test/t-evidence.js`'s new
+pilot-section cases. **Not held**: any run against real Flutter tooling or the
+real Habitable checkout — that is explicitly out of scope for this round and
+remains gated on HANDOFF.md's step 3 (demonstrate, audit, get a backlog
+approved) before implementation on Habitable itself can start.

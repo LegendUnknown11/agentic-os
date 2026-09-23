@@ -120,6 +120,22 @@
    * putting a literal colour outside this block. */
   --grain: radial-gradient(rgb(var(--text-rgb) / .05) .65px, transparent .65px);
 
+  /* Depth wash — added 2026-09-23 alongside the glass tokens above, and for
+   * the same reason: without it, backdrop-filter has nothing but a flat
+   * colour to blur, and blurring a flat colour is indistinguishable from not
+   * blurring it at all. A live session confirmed exactly that — with no
+   * wallpaper set (the state most people see), the header and rail read as
+   * plain opaque paper even with the glass rules correctly applied, because
+   * #bg's own fill sits at opacity 0 by default and the grain dots beneath it
+   * are too faint (.05 alpha) for a 20px blur to register. Two soft radial
+   * washes, teal- and paper-tinted at low alpha, painted under the grain on
+   * `body` itself — so they exist regardless of whether a user wallpaper is
+   * ever set — give the chrome something with real tonal variation to show
+   * through. Both stay light enough that no text pairing measured against
+   * --bg elsewhere in this file changes: the wash sits under content, never
+   * behind it, and reads as depth in the paper, not a colour shift. */
+  --wash: radial-gradient(1400px 420px at 28% 0%, rgb(var(--accent-rgb) / .09), transparent 70%), radial-gradient(1200px 460px at 100% 0%, rgb(var(--surface-rgb) / .95), transparent 65%);
+
   /* Shape — the product scale, kept deliberately apart from the marketing one:
    * 16px card, 12px control, and no pill buttons. Pills survive only where the
    * kit pills — the status badge and the segmented control. The retired
@@ -174,6 +190,37 @@
   --shadow-small: none;
   --shadow-panel: 0 24px 64px -38px rgb(8 74 74 / .62);
   --shadow-button: 0 14px 28px -20px rgb(13 102 99 / .7);
+
+  /* Glass — a translucent, blurred chrome, added 2026-09-23 at the sovereign's
+   * direction (Hiveory-inspired feel, adopted within this paper system rather
+   * than swapping the palette for it — issue #48 is superseded by the paper
+   * kit; this is the part of it that survives). Scoped to what actually
+   * floats over content — #header, #sidebar (rail and 720px drawer),
+   * #composer, .hover-tip, the drawer scrim — never the flat cards this
+   * system already keeps hairline-bordered and shadowless at rest.
+   *
+   * Two alphas, not one, because the two grounds behind them carry different
+   * contrast budgets. Every text pairing must clear 4.5:1 against the worst
+   * ground this app can ever put behind glass: not the paper default, but a
+   * fully black wallpaper image (#bg supports an optional user wallpaper;
+   * black is the true floor, unbounded above). Computed 2026-09-23 (WCAG
+   * relative luminance), blending each surface's colour at its alpha over
+   * rgb(0 0 0):
+   * --raised blended at .90 over black: --text 10.14:1, --muted 4.72:1,
+   * --accent 5.08:1 — comfortable margin, so header and hover-tip read
+   * clearly glass.
+   * --surface already clears --muted at only 4.87:1 opaque (the same
+   * departure recorded above), so its blend budget is thinner: .97 is the
+   * highest alpha that still clears 4.5:1 there (4.57:1 measured) — the
+   * sidebar rail and composer are glass, but only just, and that is the
+   * honest number, not a rounder one that would fail black.
+   * The 720px drawer and its scrim reuse --glass-panel-alpha and a lighter
+   * blur; nothing pins text against the scrim itself, so it carries no
+   * contrast obligation of its own. */
+  --glass-blur: 20px;
+  --glass-saturate: 160%;
+  --glass-chrome-alpha: .90;
+  --glass-panel-alpha: .97;
 }
 
 * { box-sizing: border-box; }
@@ -187,9 +234,11 @@ body {
   /* The grain is what makes paper read as paper rather than as flat beige.
    * Dance Class generates it in CSS instead of tiling a photograph, which is
    * the technique this app takes: no binary in the bundle, and the colour
-   * stays a token. */
-  background: var(--bg) var(--grain);
-  background-size: 4px 4px;
+   * stays a token. --wash sits above it: see the token comment for why —
+   * without it, the glass chrome above has nothing but a flat colour to
+   * blur. */
+  background: var(--wash), var(--bg) var(--grain);
+  background-size: auto, 4px 4px;
   color: var(--text);
   font: 400 var(--t-md)/1.45 var(--ui);
 }
@@ -235,7 +284,8 @@ a:focus-visible, summary:focus-visible, button:focus-visible, input:focus-visibl
   gap: var(--space-3);
   padding: var(--space-3) var(--space-3);
   border-right: 1px solid var(--line);
-  background: rgb(var(--surface-rgb) / var(--surface-alpha));
+  background: rgb(var(--surface-rgb) / min(var(--surface-alpha), var(--glass-panel-alpha)));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   overflow: hidden;
 }
 
@@ -259,7 +309,8 @@ a:focus-visible, summary:focus-visible, button:focus-visible, input:focus-visibl
   min-height: 72px;
   padding: var(--space-3) var(--space-5);
   border-bottom: 1px solid var(--line);
-  background: var(--raised);
+  background: rgb(var(--raised-rgb) / var(--glass-chrome-alpha));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
 }
 
 #view {
@@ -279,7 +330,8 @@ a:focus-visible, summary:focus-visible, button:focus-visible, input:focus-visibl
   min-width: 0;
   padding: var(--space-3) var(--space-5) var(--space-3);
   border-top: 1px solid var(--line);
-  background: rgb(var(--surface-rgb) / var(--surface-alpha));
+  background: rgb(var(--surface-rgb) / min(var(--surface-alpha), var(--glass-panel-alpha)));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
 }
 
 #composer:empty { display: none; }
@@ -325,11 +377,20 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .mode-switcher { display: flex; flex: none; gap: var(--space-1); min-width: 0; padding: var(--space-1); border: 1px solid var(--line); border-radius: var(--radius-pill); background: var(--surface); }
 
-.mode-option { display: grid; min-width: 92px; min-height: var(--tap-target-min); padding: var(--space-2) var(--space-3); border: 1px solid transparent; border-radius: var(--radius-pill); background: transparent; color: var(--muted); text-align: left; transition: border-color var(--fast) var(--ease), background-color var(--fast) var(--ease), color var(--fast) var(--ease); }
+.mode-option { display: flex; align-items: center; min-width: 64px; min-height: var(--tap-target-min); padding: var(--space-2) var(--space-3); border: 1px solid transparent; border-radius: var(--radius-pill); background: transparent; color: var(--muted); text-align: left; transition: border-color var(--fast) var(--ease), background-color var(--fast) var(--ease), color var(--fast) var(--ease); }
 
-.mode-option strong { color: var(--text); font-size: var(--t-sm); }
+.mode-option strong { color: var(--text); font-size: var(--t-sm); font-weight: 600; }
 
-.mode-option span { overflow: hidden; color: var(--faint); font-size: var(--t-xs); text-overflow: ellipsis; white-space: nowrap; }
+/* 2026-09-23: this is the same defect test/t-theme.js already banned under
+ * a "small" tag selector — the mode switcher visibly dominating the header
+ * with explainer copy every button's own dataset.tip and aria-label already
+ * carry — read directly on a populated demo court, where three pills each
+ * two lines tall pushed "Connected" to the far end of the header looking
+ * detached from everything beside it. It came back under `span` instead of
+ * `small`; the button keeps rendering it (so nothing about its accessible
+ * name changes) but it takes no visible space. attachHoverTips(document.body)
+ * (ui/main.js) already surfaces the same text on hover. */
+.mode-option span { display: none; }
 
 .mode-option:hover { border-color: rgb(var(--accent-rgb) / .45); background: rgb(var(--accent-rgb) / .12); }
 
@@ -384,6 +445,16 @@ body.sidebar-collapsed .app-identity { display: grid; }
 .sidebar-repo { display: flex; width: 100%; min-height: var(--tap-target-min); align-items: center; overflow: hidden; padding: var(--space-1) var(--space-2); border: 0; background: transparent; color: var(--muted); font-size: var(--t-sm); text-align: left; text-overflow: ellipsis; white-space: nowrap; }
 
 .sidebar-repo:hover { color: var(--text); }
+
+/* #41: the court-wide pause banner — degrades visibly instead of the court
+   just going quiet with no reason on screen. Attention tone, the same token
+   the rest of the app uses for a blocked/failed state; no new colour. */
+.sidebar-pause-banner { display: grid; gap: var(--space-2); padding: var(--space-2); border: 1px solid rgb(var(--tone-attention-rgb) / .4); border-radius: var(--radius-ctl); background: rgb(var(--tone-attention-rgb) / .1); }
+.sidebar-pause-text { margin: 0; color: var(--tone-attention); font-size: var(--t-xs); }
+.sidebar-pause-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.sidebar-pause-resume, .sidebar-pause-raise { display: inline-flex; min-height: var(--tap-target-min); align-items: center; padding: var(--space-1) var(--space-2); border: 1px solid rgb(var(--tone-attention-rgb) / .6); border-radius: var(--radius-ctl); background: transparent; color: var(--tone-attention); font-size: var(--t-xs); font-weight: 600; }
+.sidebar-pause-resume:hover, .sidebar-pause-raise:hover { background: rgb(var(--tone-attention-rgb) / .16); }
+.sidebar-pause-resume:disabled, .sidebar-pause-raise:disabled { cursor: not-allowed; opacity: .5; }
 
 .button, .icon-button {
   display: inline-flex;
@@ -521,6 +592,18 @@ body.sidebar-collapsed .app-identity { display: grid; }
    and .sidebar-conversations names it explicitly. */
 .sidebar-section { display: grid; align-content: start; gap: var(--space-2); min-height: 0; }
 
+/* Measured live 2026-09-23 at 1440x900 and 1280x720 with a populated court
+ * (twelve conversations, More tools open): the rail's mode/workspace/more/
+ * conversations sections could add up to more than the rail's own height,
+ * and #sidebar's overflow: hidden clipped whatever did not fit — the
+ * Settings/Collapse footer half off the bottom of the viewport, and
+ * Conversations squeezed to a single visible row. Wrapping the sections that
+ * can grow in their own scrolling region, with the header and footer as
+ * plain siblings outside it, means the footer is a document flow guarantee
+ * (it is simply not inside the thing that scrolls) rather than a height
+ * budget it has to win. */
+.sidebar-scroll { display: flex; flex-direction: column; flex: 1; min-height: 0; gap: var(--space-3); overflow-y: auto; scrollbar-width: thin; }
+
 .sidebar-nav-list { display: grid; gap: 2px; }
 
 /* The header owns mode switching on wide screens; the drawer keeps it reachable on phones. */
@@ -566,7 +649,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .sidebar-nav-button.selected .icon { color: var(--accent); }
 
-.hover-tip { position: fixed; z-index: 50; max-width: 260px; padding: var(--space-2) var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-ctl); background: var(--raised); color: var(--text); font-size: var(--t-xs); line-height: 1.4; white-space: pre-line; pointer-events: none; box-shadow: var(--shadow-panel); }
+.hover-tip { position: fixed; z-index: 50; max-width: 260px; padding: var(--space-2) var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-ctl); background: rgb(var(--raised-rgb) / var(--glass-chrome-alpha)); backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate)); color: var(--text); font-size: var(--t-xs); line-height: 1.4; white-space: pre-line; pointer-events: none; box-shadow: var(--shadow-panel); }
 
 .sidebar-conversations { flex: 1; grid-template-rows: auto minmax(0, 1fr); min-height: 0; }
 
@@ -715,17 +798,23 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .view-page h1, .view-page h2, .view-page h3, .view-page h4, .view-page p { margin: 0; }
 
-.view-heading { display: grid; max-width: 720px; gap: var(--space-2); padding-bottom: var(--space-4); border-bottom: 1px solid var(--line); }
+/* 2026-09-23: this used to carry an ::before eyebrow reading the literal
+ * string "AGENTIC OS / WORKSPACE" on all 14 views — no information (it never
+ * changed), read directly against a populated demo court where it ate space
+ * a run panel or a task list needed. A prior session removed it once for the
+ * same reason and it came back; it must not come back a second time (see the
+ * ban pinned in test/t-theme.js). The heading itself also carried the kit's
+ * MARKETING scale (`clamp(32px, 5vw, 48px)`, a display face) although
+ * PLAN.md section 1 is explicit that this app takes the kit's PRODUCT scale
+ * throughout because it is a dense tool, not a landing page — a 16px card
+ * heading under a 48px page title was that rule not applied to the one place
+ * every view shares. Shrunk to a scale nearer the product headings around
+ * it, and the divider's padding tightened to match. */
+.view-heading { display: grid; max-width: 720px; gap: var(--space-1); padding-bottom: var(--space-3); border-bottom: 1px solid var(--line); }
 
-/* Mono, uppercase and tightly tracked, at the kit's own EyebrowLabel size.
- * Its leading 7px accent dot is deliberately not reproduced: in this app a
- * 7px dot means status, and a decorative one beside a page title would be the
- * only place it did not. */
-.view-heading::before { color: var(--muted); content: "AGENTIC OS / WORKSPACE"; font: 500 10px/1.4 var(--mono); letter-spacing: .12em; text-transform: uppercase; }
+.view-heading h1 { margin: 0; color: var(--text); font-family: var(--display); font-size: clamp(20px, 2.4vw, 26px); letter-spacing: -.01em; line-height: 1.2; }
 
-.view-heading h1 { margin: 0; color: var(--text); font-family: var(--display); font-size: clamp(32px, 5vw, 48px); letter-spacing: -.01em; line-height: 1.05; }
-
-.view-description { max-width: 60ch; margin: 0; color: var(--muted); font-size: var(--t-md); }
+.view-description { max-width: 60ch; margin: 0; color: var(--muted); font-size: var(--t-sm); }
 
 .view-section { display: grid; align-content: start; gap: var(--space-3); padding: var(--space-4); border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--surface); box-shadow: var(--shadow-card); }
 
@@ -1045,6 +1134,17 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .markdown a { color: var(--accent); }
 
+/* A fenced block had no rule of its own: `<pre><code>` rendered on whatever
+ * browser default the UA shipped, with no wrap handling, so a long line
+ * pushed the message bubble wider than the thread column instead of
+ * scrolling inside it. Read directly from a populated demo court's Chat
+ * page, 2026-09-23. */
+.markdown pre { margin: 0; padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-ctl); background: var(--surface); overflow-x: auto; font-family: var(--mono); font-size: var(--t-xs); line-height: 1.6; }
+
+.markdown pre code { padding: 0; border: 0; background: none; }
+
+.markdown code { padding: 1px 5px; border: 1px solid var(--line); border-radius: var(--radius-ctl); background: var(--surface); font-family: var(--mono); font-size: .9em; }
+
 .vault-link { display: grid; gap: var(--space-1); padding: var(--space-2) 0; border-bottom: 1px solid var(--line); color: var(--text); text-decoration: none; }
 
 .vault-link:hover { color: var(--accent); }
@@ -1057,7 +1157,29 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .settings-group { display: grid; min-width: 0; gap: var(--space-3); margin: 0; padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-ctl); }
 
+/* The multiple-courts switcher (issue #42), Settings > Repository. New
+ * selectors only — colour still comes only from the :root tokens above. */
+.courts-switcher { display: grid; gap: var(--space-2); }
+
+.courts-list { display: grid; gap: var(--space-2); }
+
+.court-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); padding: var(--space-2) var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-ctl); background: var(--raised); }
+
+.court-row-id { display: grid; min-width: 0; gap: 2px; }
+
+.court-repo { overflow: hidden; color: var(--text); font-size: var(--t-sm); text-overflow: ellipsis; white-space: nowrap; }
+
+.court-port { color: var(--muted); font-family: var(--mono); font-size: var(--t-xs); letter-spacing: .04em; text-transform: uppercase; }
+
 .settings-group legend { padding-inline: var(--space-1); color: var(--text); font-weight: 650; }
+
+/* A card nested inside a panel: read directly on the Models & efficiency and
+ * Notifications tabs, whose section() wraps one or more of the bordered
+ * .settings-group fieldsets above with nothing of its own between the two
+ * borders. Un-cards the outer .view-section only when it actually has a
+ * .settings-group inside it, so a tab with none (Repository) keeps reading
+ * as one plain card exactly as it did before. */
+.settings-shell .view-section:has(> .settings-group) { padding: 0; border: 0; background: none; box-shadow: none; }
 
 .settings-model-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
 
@@ -1211,6 +1333,13 @@ body.sidebar-collapsed .app-identity { display: grid; }
      scroller below so there is only ever one. */
   body.sidebar-open #sidebar { position: fixed; z-index: 5; inset: 0 auto 0 0; display: flex; width: min(320px, 85vw); overflow-y: auto; box-shadow: var(--shadow-panel); }
 
+  /* The drawer keeps scrolling as ONE column, the whole rail, not the desktop
+   * split of a scrolling middle plus a pinned footer — a phone drawer's
+   * footer (Settings/Collapse) is short enough to just be the last thing you
+   * scroll to. .sidebar-scroll reverts to a plain, non-scrolling flex child
+   * here so #sidebar's own overflow-y: auto above is the only scroller. */
+  body.sidebar-open #sidebar .sidebar-scroll { flex: none; overflow: visible; }
+
   body.sidebar-open #sidebar .sidebar-conversations { flex: none; }
 
   body.sidebar-open #sidebar .conversation-list { overflow: visible; }
@@ -1219,7 +1348,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
      collapsed layout lives behind a min-width: 901px query. The control was
      taking 50px of a drawer that had none to spare and doing nothing. */
   body.sidebar-open #sidebar .sidebar-collapse { display: none; }
-  body.sidebar-open #sidebar-scrim { position: fixed; z-index: 4; inset: 0; display: block; width: 100%; height: 100%; border: 0; border-radius: 0; background: rgb(var(--text-rgb) / .38); cursor: default; }
+  body.sidebar-open #sidebar-scrim { position: fixed; z-index: 4; inset: 0; display: block; width: 100%; height: 100%; border: 0; border-radius: 0; background: rgb(var(--text-rgb) / .38); backdrop-filter: blur(6px); cursor: default; }
   /* flex-shrink: 0 alongside display, not as an afterthought. Measured live
      in the 720px drawer 2026-09-21: the section reported 287x0 while its own
      mode pills painted at y 105-155, straight through the Overview row. The
@@ -1255,6 +1384,24 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition-duration: 1ms !important; }
+}
+
+/* Glass falls back to the flat surface it blends with. A browser that cannot
+ * blur must not silently render the thinner alpha on its own — that would
+ * leave --surface's already-thin .97 budget uncomposited against whatever
+ * happens to sit behind it, which is exactly the contrast obligation the
+ * blur was measured against. Both fallbacks force the pre-glass opaque
+ * paint instead. */
+@supports not (backdrop-filter: blur(1px)) {
+  #header, .hover-tip { background: var(--raised); }
+  #sidebar, #composer { background: var(--surface); }
+  body.sidebar-open #sidebar-scrim { backdrop-filter: none; }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  #header, .hover-tip { background: var(--raised); backdrop-filter: none; }
+  #sidebar, #composer { background: var(--surface); backdrop-filter: none; }
+  body.sidebar-open #sidebar-scrim { backdrop-filter: none; }
 }
 
 @media (forced-colors: active) {

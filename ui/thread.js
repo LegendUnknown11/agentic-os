@@ -2,7 +2,7 @@ import { state as storeState, subscribe, post as storePost, sameId } from './sto
 import { mdToHtml } from './markdown.js';
 import { pick as pickFiles, upload as uploadAsset } from './assets.js';
 import { displayName } from './names.js';
-import { date } from './views/util.js';
+import { date, modelLabel } from './views/util.js';
 import { renderRunThreadContext } from './run.js';
 
 const AUTO = '__auto__';
@@ -174,12 +174,12 @@ function fillModel(select, state, member) {
   const models = modelOptions(state.models);
   const current = member.auto ? AUTO : `${member.cli ?? 'claude'}:${member.model ?? ''}`;
   for (const { cli, model } of models) {
-    const option = node('option', '', `${cli ? `${cli} · ` : ''}${model || '(default)'}`);
+    const option = node('option', '', `${cli ? `${cli} · ` : ''}${modelLabel(model) || '(default)'}`);
     option.value = cli ? `${cli}:${model ?? ''}` : String(model ?? '');
     select.append(option);
   }
   if (current !== AUTO && ![...select.options].some((o) => o.value === current)) {
-    const option = node('option', '', `${member.cli ?? 'claude'} · ${member.model ?? '(default)'}`);
+    const option = node('option', '', `${member.cli ?? 'claude'} · ${modelLabel(member.model) || '(default)'}`);
     option.value = current;
     select.insertBefore(option, select.options[1] ?? null);
   }

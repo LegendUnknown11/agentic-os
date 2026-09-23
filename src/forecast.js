@@ -7,11 +7,14 @@
 // the roster as the biggest lever there is and says to trim it right there.
 // This is the number that was missing from that card.
 //
-// A RATE, NOT A TOTAL. This reports dollars per turn, never dollars for the
-// job. A total needs turns-per-summon, and nothing in the bus marks where one
-// order begins and ends, so any total would be a guess wearing a
-// measurement's clothes — the exact thing AGENTS.md rule 2 exists to stop.
-// ponytail: upgrade to a projected total once a campaign boundary exists.
+// A RATE, AND NOW ALSO A TOTAL WHEN THE DATA SUPPORTS ONE. This used to report
+// dollars per turn only, because nothing in the bus marked where one order
+// began and ended — any total would have been a guess wearing a
+// measurement's clothes, the exact thing HANDOFF.md rule 2 exists to stop.
+// `campaigns` now marks that boundary (src/bus.js beginCampaign/campaigns),
+// so the projected total is the measured per-turn rate times the MEASURED
+// mean turns-per-closed-campaign — never an invented multiplier. Zero closed
+// campaigns still reports the rate alone, honestly, with a `why`.
 //
 // MEAN, NOT MEDIAN, and that is a correctness choice rather than a lazy one.
 // The crew line has to be the sum of the member lines — one round in which
@@ -81,12 +84,37 @@ export function rates(rows, { specOf, table = PRICES, quotaClis = [] } = {}) {
 }
 
 /**
- * The card. One line per proposed member, plus the crew's per-turn burn.
+ * Turns actually spent inside each CLOSED campaign, counted from the real
+ * event-id bracket `bus.campaigns()` hands back — never a guessed multiplier.
+ * The open campaign (the one still accruing) is excluded: it has not
+ * finished yet, so counting it would undercount every campaign that happens
+ * to still be running at the moment this is read.
+ *
+ * @param campaigns   bus.campaigns() rows — {eventStart, eventEnd, current}
+ * @param turnEndRows the same rows forecast() takes, each carrying the real
+ *                    `id` bus.events() returns them with
+ * @returns one integer per closed campaign, oldest first
+ */
+export function turnsPerClosedCampaign(campaigns, turnEndRows) {
+  const rows = turnEndRows ?? [];
+  return (campaigns ?? [])
+    .filter((c) => !c.current)
+    .map((c) => rows.filter((e) => e.id > c.eventStart && e.id <= c.eventEnd).length);
+}
+
+/**
+ * The card. One line per proposed member, plus the crew's per-turn burn and,
+ * when history supports it, a projected total for the whole order.
  *
  * Three states a member can be in, and they are deliberately different:
  *   turns === 0     never run in this court — no history, no number
  *   metered false   subscription or unpriced — tokens per turn, no dollars
  *   otherwise       dollars and tokens per turn
+ *
+ * The projected total needs BOTH a priced crew rate and at least one closed
+ * campaign to measure turns-per-order from; either missing degrades to
+ * `crew.projectedTotalUsd === null` plus a `crew.projectedWhy`, never a
+ * fabricated number standing in for one.
  */
 export function forecast(rows, names, opts = {}) {
   const seen = rates(rows, opts);
@@ -118,17 +146,39 @@ export function forecast(rows, names, opts = {}) {
   });
 
   const priced = members.filter((m) => m.perTurnUsd !== null);
+  const perTurnUsd = priced.length ? priced.reduce((t, m) => t + m.perTurnUsd, 0) : null;
+
+  // The mean, not the median — same reason the crew rate above is a mean:
+  // this multiplies against a sum, so it has to be an arithmetic quantity.
+  const samples = turnsPerClosedCampaign(opts.campaigns, rows);
+  const turnsPerCampaign = samples.length
+    ? samples.reduce((t, n) => t + n, 0) / samples.length
+    : null;
+  const projectedTotalUsd = perTurnUsd !== null && turnsPerCampaign !== null
+    ? perTurnUsd * turnsPerCampaign
+    : null;
+  const projectedWhy = projectedTotalUsd !== null ? null
+    : perTurnUsd === null ? 'crew has no priced rate'
+    : 'no closed campaign yet';
+
   return {
     members,
     crew: {
       // Null, not zero, when NOTHING is priced. Zero would read as "this crew
       // is free", which is the one thing it certainly is not.
-      perTurnUsd: priced.length ? priced.reduce((t, m) => t + m.perTurnUsd, 0) : null,
+      perTurnUsd,
       perTurnTokens: members.reduce((t, m) => t + m.perTurnTokens, 0),
       // Named, not just counted: the sovereign is deciding whom to cut, and
       // "one member is unpriced" does not tell them which one.
       unpriced: members.filter((m) => m.turns && !m.metered).map((m) => m.name),
       unknown: members.filter((m) => !m.turns).map((m) => m.name),
+      // The measurement, kept beside the value it produced: how many closed
+      // campaigns the mean rests on, so a projection from one thin sample
+      // reads as exactly that thin, not as false confidence.
+      campaignsSampled: samples.length,
+      turnsPerCampaign,
+      projectedTotalUsd,
+      projectedWhy,
     },
   };
 }
@@ -235,5 +285,39 @@ if (process.argv[1]?.endsWith('forecast.js')) {
     'the card prints a per-turn rate and the sample size it rests on');
   a.match(fmt(fresh), /coder\s+no history/, 'and prints "no history" rather than a number');
 
-  console.log('forecast.js self-check OK — deltas not sums, no invented rates, crew = sum of members');
+  // --- a projected total is the crew rate times a MEASURED mean, never a
+  // guessed multiplier. Event ids, not array position, are what bracket a
+  // campaign — exactly what bus.campaigns()/events() hand back for real.
+  const evId = (id, agent, usage) => ({ id, agent, payload: { usage } });
+  const camRows = [1, 2, 3, 4, 5].map((id) => evId(id, 'coder', { input_tokens: 1000, output_tokens: 100 }));
+  const closedTwo = [
+    { eventStart: 0, eventEnd: 2, current: false },   // 2 turns: ids 1,2
+    { eventStart: 2, eventEnd: 4, current: false },   // 2 turns: ids 3,4
+    { eventStart: 4, eventEnd: null, current: true }, // open — must not count
+  ];
+  a.deepEqual(turnsPerClosedCampaign(closedTwo, camRows), [2, 2],
+    'turn counts come from the real event-id bracket, and the open campaign is excluded');
+
+  const projectedForecast = forecast(camRows, ['coder'], { specOf, campaigns: closedTwo });
+  a.equal(projectedForecast.crew.campaignsSampled, 2, 'the sample size travels beside the value');
+  a.equal(projectedForecast.crew.turnsPerCampaign, 2, 'mean turns per CLOSED campaign');
+  near(projectedForecast.crew.projectedTotalUsd, projectedForecast.crew.perTurnUsd * 2,
+    'the projected total is the measured rate times the measured mean, nothing invented');
+  a.equal(projectedForecast.crew.projectedWhy, null);
+
+  // --- no closed campaign yet: the rate still shows, the total honestly does not.
+  const noCampaigns = forecast(camRows, ['coder'],
+    { specOf, campaigns: [{ eventStart: 4, eventEnd: null, current: true }] });
+  a.equal(noCampaigns.crew.projectedTotalUsd, null, 'one open campaign is not a measurement');
+  a.equal(noCampaigns.crew.projectedWhy, 'no closed campaign yet');
+  a.ok(noCampaigns.crew.perTurnUsd > 0, 'the per-turn rate must still show even with no total');
+
+  // --- an unpriced crew never gets a projected total, for the same reason it
+  // never gets a per-turn dollar figure.
+  const unpricedProjected = forecast(ghostRows, ['ghost'], { specOf, campaigns: closedTwo });
+  a.equal(unpricedProjected.crew.projectedTotalUsd, null);
+  a.equal(unpricedProjected.crew.projectedWhy, 'crew has no priced rate');
+
+  console.log('forecast.js self-check OK — deltas not sums, no invented rates, crew = sum of members, '
+    + 'projected total = measured rate x measured mean turns-per-campaign');
 }

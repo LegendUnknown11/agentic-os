@@ -311,7 +311,218 @@ a.equal(liveCoder.stopped, true, 'crossing the live ceiling must still stop the 
 
 await k5.stop();
 
-for (const d of [repo, kingdomDir(repo), repo3, kingdomDir(repo3), repo4, kingdomDir(repo4), repo5, kingdomDir(repo5)]) {
+// --- issue #41: a per-session TURN budget, beside the dollar ceilings ----
+//
+// maxBudgetUsd/maxKingdomUsd only ever fire once a model IS priced — a court
+// running an unpriced or misconfigured model had NO ceiling of any kind.
+// setTurnBudget()/turnBudget() mirror setBudget()/#kingdomBudget() exactly
+// (a live override in the bus, config as the fallback), but #enforceTurnBudget
+// PAUSES the court (the sovereign's own pause/resume machinery) rather than
+// sleeping members, because a turn budget is a session-wide brake, not a
+// per-member spend cap.
+const repo6 = mkdtempSync(join(tmpdir(), 'kingdom-turnbudget-'));
+const git6 = (...x) => execFileSync('git', x, { cwd: repo6, stdio: 'pipe' });
+git6('init', '-q');
+git6('config', 'user.email', 'k@kingdom');
+git6('config', 'user.name', 'kingdom');
+writeFileSync(join(repo6, 'README.md'), '# t\n');
+git6('add', '-A');
+git6('commit', '-qm', 'init');
+
+const cfg6 = join(repo6, 'kingdom.config.json');
+writeFileSync(cfg6, JSON.stringify({
+  turnBudget: 2,   // low and explicit, so the DEFAULT_TURN_BUDGET fallback never matters here
+  orchestrator: { name: 'orchestrator', cli: 'codex' },
+  briefer: { name: 'briefer', cli: 'codex' },
+  peasants: [{ name: 'coder', cli: 'codex' }],
+}));
+
+const k6 = new Kingdom(repo6, cfg6);
+await k6.start();
+neuter(k6.agents.get('orchestrator'));
+neuter(k6.agents.get('briefer'));
+await k6.wake('coder');
+const turnBudgetCoder = neuter(k6.agents.get('coder'));
+const turnBudgetEvents = [];
+k6.on('budget', (e) => { if (e.scope === 'turns') turnBudgetEvents.push(e); });
+const pausedEvents = [];
+k6.on('paused', (e) => pausedEvents.push(e));
+
+a.throws(() => k6.setTurnBudget(-1), /must be a number/, 'a negative turn budget must be refused');
+a.equal(k6.turnBudget(), 2, 'the configured turnBudget must be read back exactly');
+a.equal(k6.paused, false, 'sanity: the court is not paused yet');
+
+turnBudgetCoder.emit('turn_end', { usage: { input_tokens: 10 }, costUsd: 0 });
+await wait(200);
+a.equal(k6.paused, false, 'one turn under a budget of two must not pause anything');
+
+turnBudgetCoder.emit('turn_end', { usage: { input_tokens: 10 }, costUsd: 0 });
+await wait(200);
+a.equal(k6.paused, true, 'reaching the turn budget must pause the court — the same mechanism as a manual pause');
+a.equal(turnBudgetEvents.length, 1, 'the trip must announce itself on the shared "budget" event, same as the dollar ceilings');
+a.equal(turnBudgetEvents[0].cap, 2);
+a.equal(turnBudgetEvents[0].turns, 2);
+a.ok(pausedEvents.some((e) => e.paused && /turn budget/i.test(e.why ?? '')),
+  'the pause reason must name the turn budget, or the sidebar cannot tell it apart from a manual pause '
+  + 'to decide whether to offer "raise and resume"');
+
+// A resumed court whose cap is still unmet must not spend a second full turn
+// pausing itself again immediately — no new turn can even be granted while
+// paused (#deliver's own `if (this.paused) return`), so this only proves the
+// mechanism does not double-fire on the SAME already-counted turn.
+const turnsBeforeResume = turnBudgetEvents.length;
+k6.resume();
+await wait(50);
+a.equal(turnBudgetEvents.length, turnsBeforeResume, 'resuming alone must not re-announce a trip that already happened');
+
+// The one-click raise-and-resume action: both effects from one call, so a
+// still-too-low cap cannot leave the button looking like it did nothing.
+const raised = k6.raiseTurnBudget(8);
+a.equal(raised.cap, 10, 'raising by 8 from 2 session turns makes the session cap 10');
+a.equal(k6.sessionTurnCap(), 10, 'the raised cap must be the one #enforceTurnBudget now checks');
+a.equal(k6.turnBudget(), 2, 'a raise extends THIS session only — the configured budget is not overwritten');
+a.throws(() => k6.raiseTurnBudget(0), /positive number/, 'a raise must be a positive number of turns');
+a.equal(k6.paused, false, 'raiseTurnBudget must also resume — a raise with no resume leaves the court looking stuck');
+
+turnBudgetCoder.emit('turn_end', { usage: { input_tokens: 10 }, costUsd: 0 });
+await wait(200);
+a.equal(k6.paused, false, 'a third turn under the newly-raised cap of 10 must not re-pause the court');
+
+// Lowering the cap below what this session already took must pause NOW, not
+// after one more turn_end has spent another turn.
+k6.setTurnBudget(1);
+a.equal(k6.paused, true, 'setTurnBudget below the current session count must pause the court immediately');
+k6.resume();
+k6.setTurnBudget(0);
+a.equal(k6.paused, false, 'a budget of 0 turns the guard off and must not pause');
+k6.bus.db.prepare("delete from state where k = 'turnBudget'").run(); // back to the config value
+
+// A malformed config value must not switch the runaway guard off: NaN is
+// falsy, which sessionTurnCap() would read as "off". A numeric string must
+// become a number, not be concatenated with the session extension.
+const savedCfgBudget = k6.config.turnBudget;
+const budgetWarnings = [];
+k6.on('error', (e) => budgetWarnings.push(e.message));
+k6.config.turnBudget = 'abc';
+a.equal(k6.turnBudget(), 500, 'a malformed turnBudget must fall back to the default, never disable the guard');
+a.ok(k6.sessionTurnCap() > 0, 'the guard must stay on under a malformed config value');
+a.ok(budgetWarnings.some((m) => /turnBudget "abc"/.test(m)), 'a malformed turnBudget must be reported, not silently replaced');
+k6.config.turnBudget = '7';
+a.equal(k6.turnBudget(), 7, 'a numeric string must be read as a number');
+a.equal(typeof k6.sessionTurnCap(), 'number', 'the session cap must be numeric, never a concatenated string');
+k6.config.turnBudget = savedCfgBudget;
+
+await k6.stop();
+
+// --- issue #41 follow-up: SESSION-scoped budget, not lifetime ------------
+//
+// #countTurns() feeds a LIFETIME, restart-safe counter (bus 'turns'), same
+// discipline as spentUsd. Comparing turnBudget directly against THAT meant
+// any existing court that had already taken turnBudget-or-more turns in its
+// life paused on the very first turn after upgrading to this feature, and
+// "add 100 turns" only ever bought 100 against a number that never resets.
+// turnsThisSession() fixes it by measuring from a baseline latched once —
+// the first time start() ever runs for this bus — and left alone on every
+// later restart: recomputing it on every restart would let a crash-restart
+// loop silently hand itself a fresh budget on every bounce, which is
+// precisely the failure mode a per-session cap exists to prevent.
+const repo7 = mkdtempSync(join(tmpdir(), 'kingdom-turnbudget-session-'));
+const git7 = (...x) => execFileSync('git', x, { cwd: repo7, stdio: 'pipe' });
+git7('init', '-q');
+git7('config', 'user.email', 'k@kingdom');
+git7('config', 'user.name', 'kingdom');
+writeFileSync(join(repo7, 'README.md'), '# t\n');
+git7('add', '-A');
+git7('commit', '-qm', 'init');
+
+const cfg7 = join(repo7, 'kingdom.config.json');
+writeFileSync(cfg7, JSON.stringify({
+  turnBudget: 3,
+  orchestrator: { name: 'orchestrator', cli: 'codex' },
+  briefer: { name: 'briefer', cli: 'codex' },
+  peasants: [{ name: 'coder', cli: 'codex' }],
+}));
+
+// Simulate an existing, heavily-used court from before this feature existed:
+// 1000 lifetime turns already on the bus, no baseline recorded yet — exactly
+// what an upgrade finds on disk.
+const k7 = new Kingdom(repo7, cfg7);
+k7.bus.set('turns', '1000');
+await k7.start();
+
+a.equal(k7.turnsLifetime(), 1000, 'sanity: the pre-existing lifetime count is read back exactly');
+a.equal(k7.turnsThisSession(), 0,
+  'a fresh session must start at 0 regardless of lifetime history — the whole point of the baseline');
+a.equal(k7.paused, false,
+  'an existing court with 1000 lifetime turns must NOT pause on boot just because 1000 exceeds turnBudget — '
+  + 'that is the exact regression this fix closes');
+
+neuter(k7.agents.get('orchestrator'));
+neuter(k7.agents.get('briefer'));
+await k7.wake('coder');
+const sessionCoder = neuter(k7.agents.get('coder'));
+
+sessionCoder.emit('turn_end', { usage: { input_tokens: 10 }, costUsd: 0 });
+await wait(150);
+a.equal(k7.paused, false, 'one session turn under a budget of 3 must not pause anything, however large the lifetime count is');
+a.equal(k7.turnsLifetime(), 1001, 'the lifetime counter keeps counting normally');
+a.equal(k7.turnsThisSession(), 1, 'the session counter is relative to the baseline, not to zero or to the lifetime total');
+
+sessionCoder.emit('turn_end', { usage: { input_tokens: 10 }, costUsd: 0 });
+sessionCoder.emit('turn_end', { usage: { input_tokens: 10 }, costUsd: 0 });
+await wait(150);
+a.equal(k7.paused, true, 'the budget must still fire after exactly `cap` SESSION turns, counted from the baseline');
+a.equal(k7.turnsThisSession(), 3);
+a.equal(k7.turnsLifetime(), 1003);
+
+// Raise-and-resume, relative to session usage (the sidebar computes exactly
+// this: turnsThisSession() + 100 — see ui/sidebar.js's raise-turn-budget
+// handler) rather than to a stale cached cap.
+const raised7 = k7.raiseTurnBudget(3);
+a.equal(raised7.cap, 6);
+a.equal(k7.paused, false, 'raiseTurnBudget must resume the court');
+sessionCoder.emit('turn_end', { usage: { input_tokens: 10 }, costUsd: 0 });
+sessionCoder.emit('turn_end', { usage: { input_tokens: 10 }, costUsd: 0 });
+await wait(150);
+a.equal(k7.paused, false, 'two more turns under the newly-raised cap of 6 (session turns now 5) must not immediately re-pause');
+sessionCoder.emit('turn_end', { usage: { input_tokens: 10 }, costUsd: 0 });
+await wait(150);
+a.equal(k7.paused, true, 'and the turn that REACHES the raised cap must still fire — the raise is not a permanent exemption');
+
+await k7.stop();
+
+// Restart-safety: a second start() against the SAME bus must not move the
+// baseline, or a crash-restart loop would grant itself a fresh session
+// budget on every bounce.
+const k7b = new Kingdom(repo7, cfg7);
+await k7b.start();
+a.equal(k7b.bus.get('turnBudgetBaseline'), '1000',
+  'the baseline must be left exactly where it was — a restart must not silently grant a fresh budget');
+a.equal(k7b.turnsThisSession(), 6, 'session turns must read as a continuation across the restart, not reset to 0');
+a.equal(k7b.paused, true, 'a restart must not clear a pause the sovereign has not resolved — same discipline as `this.paused` itself');
+a.equal(k7b.sessionTurnCap(), 6, 'a court still paused for its budget keeps its raised cap across the restart');
+
+// Once the sovereign resumes, the next daemon run is a NEW session: the
+// baseline re-latches and the raise extension is dropped, so the court gets
+// its full configured budget back instead of a lifetime cap that keeps
+// pausing it every few turns forever.
+k7b.resume();
+await k7b.stop();
+const k7c = new Kingdom(repo7, cfg7);
+await k7c.start();
+a.equal(k7c.bus.get('turnBudgetBaseline'), '1006', 'a new daemon run re-latches the baseline to the lifetime count');
+a.equal(k7c.turnsThisSession(), 0, 'a new session starts at 0 turns');
+a.equal(k7c.sessionTurnCap(), 3, 'a new session gets the full configured budget, not the previous session\'s raise');
+a.equal(k7c.turnBudget(), 3, 'the configured budget was never overwritten by the raise');
+a.equal(k7c.paused, false);
+await k7c.stop();
+
+for (const d of [
+  repo, kingdomDir(repo), repo3, kingdomDir(repo3), repo4, kingdomDir(repo4),
+  repo5, kingdomDir(repo5), repo6, kingdomDir(repo6), repo7, kingdomDir(repo7),
+]) {
   try { rmSync(d, { recursive: true, force: true }); } catch {}
 }
-console.log('t-budget.js OK — cumulative ceiling survives restarts, codex courts can be capped, any member recycles');
+console.log('t-budget.js OK — cumulative ceiling survives restarts, codex courts can be capped, any member recycles, '
+  + 'a per-session turn budget pauses the court visibly and raises back in one call, and an existing court\'s '
+  + 'lifetime turn history cannot pause a fresh session or be reset by a restart');

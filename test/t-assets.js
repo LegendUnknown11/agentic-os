@@ -4,6 +4,9 @@
 // upload, by fetch, or by delete.
 //
 //   node test/t-assets.js
+// Never let a daemon this suite spawns touch the real ~/.kingdom/courts.json
+// on the machine running the tests — see test/t-registry-isolation.js.
+import './isolate-registry.js';
 import { strict as a } from 'node:assert';
 import { execFileSync, spawn } from 'node:child_process';
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync, existsSync, readdirSync, renameSync } from 'node:fs';
