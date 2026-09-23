@@ -182,6 +182,13 @@ const suites = [
   ['flat palette — computed geometry', join(HERE, 't-theme-geometry.js')],
   ['a claude that dies mid-turn', join(HERE, 't-claude-death.js')],
   ['send() guards a claude that never spawned', join(HERE, 't-agent-guard.js')],
+  // The only suite here that is not source evidence: it launches the real
+  // Electron binary against a real daemon and reads what Chromium painted.
+  // Measured solo on this machine: ~21s, well inside SUITE_TIMEOUT_MS even
+  // with a cold Electron start under 4-wide contention. It spends no API
+  // quota (no agent is ever spawned), so it belongs in `npm test` by the same
+  // rule that keeps t-agent.js and t-comms.js out.
+  ['the interface, in a real Electron window', join(HERE, 't-electron.js')],
 ];
 
 // A suite that hangs used to hang `npm test` forever with no output — the exact

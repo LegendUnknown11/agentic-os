@@ -229,10 +229,18 @@ the 2026-09-21 run. The runner reports that as `flaky`, and it is the one suite
 known to do this. Treat a bare pool failure there as unproven until the retry
 result is read.
 
-That gate is source and HTTP-level evidence on its own. Separate from it, the
-2026-09-21 live session supplies visual and Electron evidence for the interface
-contract — see `PLAN.md`. Neither is device, signing, provider, or
-human-acceptance evidence.
+That gate is mostly source and HTTP-level evidence. Two suites in it are not:
+`t-theme-geometry.js` reads real computed layout from a real Chromium tab when
+one is available, skipping itself otherwise; `test/t-electron.js` launches the
+shipped Electron binary against a real daemon and a real temporary repository
+and asserts against what Chromium painted, covering the shell (repository,
+branch, live stream, the next-step surface) and a run driven through
+`planning → running → paused → running → cancelled`. That is automated,
+repeatable coverage for part of the interface contract, not the whole of it:
+separately, the 2026-09-21 live session supplies one-time visual and Electron
+evidence for the full contract, including the three clause items
+`test/t-electron.js` does not yet cover — see `PLAN.md`. None of this is
+device, signing, provider, or human-acceptance evidence.
 
 ## What the application does
 
@@ -325,6 +333,7 @@ stateDiagram-v2
 | [test/t-theme.js](test/t-theme.js) | The stylesheet contract: pinned tokens, selectors, and the literal-colour ban. |
 | [test/t-pages.js](test/t-pages.js) | The view contract. Mostly behavioural guards; treat them as load-bearing. |
 | [test/t-thread.js](test/t-thread.js) | Mounts the thread against a hand-rolled fake DOM with literal selectors. |
+| [test/t-electron.js](test/t-electron.js) | Launches the real Electron binary with `playwright-core` and reads what Chromium painted. Covers the shell and the run lifecycle; recovery, the collapsed rail, the 720px drawer, and reduced motion are not yet sections here. |
 | [test/run-all.js](test/run-all.js) | A hardcoded suite array, not glob discovery. A new suite must be added by hand. |
 
 ## Commands and evidence
@@ -339,6 +348,7 @@ node test/t-tool-surface.js
 node test/t-prompt.js
 node test/t-theme.js
 node test/t-pages.js
+node test/t-electron.js
 node ui/run.js
 git diff --check
 ```
@@ -444,6 +454,18 @@ current proof; refresh them before the snapshot.
   launched with `--remote-debugging-port` is reachable over CDP for the same
   measurements. The Browser pane still cannot supply this, for the reason in the
   trap above.
+- That 2026-09-21 demonstration was a one-time manual session, not a repeatable
+  suite. `test/t-electron.js` (recovered 2026-09-22) turns the shell and the run
+  lifecycle into automated Electron evidence that runs on every `npm test`.
+  Four clause items are still manual-only and each needs a section in that same
+  suite: a blocked run's recovery, the collapsed rail's controls, the drawer at
+  720px with its keyboard path, and reduced-motion behaviour — the last two need
+  `page.setViewportSize` and `page.emulateMedia({ reducedMotion: 'reduce' })`
+  rather than anything new.
+- **Confirm `t-electron.js` runs on the Windows CI runner.** It passes locally
+  and has never run in Actions. A GitHub `windows-latest` runner is expected to
+  launch Electron, but that is unverified here; if it cannot, the suite needs a
+  skip guard rather than a red build.
 - ~~Measure the collapsed rail's tap targets.~~ Done 2026-09-21. The conflict
   between the pinned 64px rail width and the pinned 44px minimum was real and
   resolved without moving either: the rail's own 16px inset drops to 8px when
