@@ -40,12 +40,14 @@ export const PRICES = {
 
   // Anthropic, via the claude CLI. The config names these by alias
   // ("opus", "sonnet"), so both the alias and the full id are listed.
-  'claude/fable':         [10.00, 1.00, 50.00],
+  // Fable 5.1 kept Fable 5's $10 / $50 but cut cache reads to $0.25/MTok
+  // (0.025x input, not the usual 0.1x). The bare alias resolves to 5.1.
+  'claude/fable':         [10.00, 0.25, 50.00],
   'claude/opus':          [5.00, 0.50, 25.00],
   'claude/sonnet':        [2.00, 0.20, 10.00],
   'claude/haiku':         [1.00, 0.10,  5.00],
   'claude/claude-fable-5':      [10.00, 1.00, 50.00],
-  'claude/claude-fable-5-1':    [10.00, 1.00, 50.00],
+  'claude/claude-fable-5-1':    [10.00, 0.25, 50.00],
   'claude/claude-opus-5':       [5.00, 0.50, 25.00],
   'claude/claude-sonnet-5':     [2.00, 0.20, 10.00],
   'claude/claude-haiku-4-5':    [1.00, 0.10,  5.00],
@@ -126,6 +128,17 @@ if (process.argv[1]?.endsWith('price.js')) {
   // current Fable generation must be priced under its real id, not just its
   // predecessor's — an unpriced current model would silently stop billing.
   a.ok(rateOf('claude', 'claude-fable-5-1'), 'claude-fable-5-1 (the current Fable generation) must have a published price');
+  // Fable 5.1 reads cache at $0.25/MTok, a quarter of Fable 5's $1.00 — a
+  // cache-heavy Fable 5.1 session was being billed at four times its real
+  // cache-read cost. Fable 5 itself keeps $1.00.
+  a.deepEqual(rateOf('claude', 'claude-fable-5-1'), [10.00, 0.25, 50.00],
+    'claude-fable-5-1 cache reads are $0.25/MTok, not Fable 5\'s $1.00');
+  a.deepEqual(rateOf('claude', 'fable'), rateOf('claude', 'claude-fable-5-1'),
+    'the fable alias resolves to Fable 5.1 and must bill at its rate');
+  a.deepEqual(rateOf('claude', 'claude-fable-5'), [10.00, 1.00, 50.00],
+    'claude-fable-5 keeps its own $1.00 cache-read rate');
+  near(costOf({ in: 0, cached: 1e6, written: 0, out: 0 }, 'claude', 'claude-fable-5-1'), 0.25,
+    'a million cached Fable 5.1 tokens cost $0.25');
 
   // An unpriced model must refuse to answer rather than invent a number.
   a.equal(costOf({ in: 1e6 }, 'codex', 'gpt-9-unreleased'), null,
