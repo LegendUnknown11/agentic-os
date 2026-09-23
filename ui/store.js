@@ -235,6 +235,13 @@ function snapshot(d) {
   if (d.goal !== undefined) state.goal = d.goal;
   if (d.run !== undefined) state.run = d.run;
   if (d.mode) state.mode = d.mode;
+  // #41: seed the durable turn count and its budget before the first live
+  // 'spend' event of this browser session — otherwise a reconnect or a
+  // fresh tab shows an empty header even though the court has already taken
+  // turns this session.
+  if (d.spend) state.spend = { ...state.spend, ...d.spend };
+  if (d.paused !== undefined) state.paused = d.paused;
+  if (d.pausedWhy !== undefined) state.pausedWhy = d.pausedWhy;
   applyRoster(d.roster ?? []);
 
   // A reconnect snapshot is a cursor catch-up. A fresh boot repaints the
@@ -289,7 +296,18 @@ export function reduce(_state, d = {}) {
     case 'runEvidence': state.run = { ...state.run, evidence: d.evidence ?? d.data ?? d }; break;
     case 'mode': state.mode = d.mode ?? state.mode; break;
     case 'spend': state.spend = { ...state.spend, ...d }; break;
-    case 'budget': state.spend = { ...state.spend, budget: d }; break;
+    case 'budget':
+      state.spend = {
+        ...state.spend,
+        budget: d,
+        // The turn-budget flavour of this event also carries the current
+        // cap (and, when it fired from an actual turn, the count that
+        // tripped it) — kept on their own fields so the header can read
+        // them the same way it reads state.spend.turns from every 'spend'
+        // event, without reaching into the last budget event's shape.
+        ...(d.scope === 'turns' ? { turnBudget: d.cap, ...(d.turns != null ? { turns: d.turns } : {}) } : {}),
+      };
+      break;
     case 'summarizer': state.summarizer = { ...state.summarizer, ...d }; break;
     case 'advisor': state.advisor = { ...state.advisor, ...d }; break;
     case 'tasksLoading': state.tasksLoading = Boolean(d.loading); break;
@@ -312,7 +330,13 @@ export function reduce(_state, d = {}) {
     case 'failure': status(d.name, 'failed'); break;
     case 'limited': status(d.name, 'limited'); break;
     case 'advising': status('orchestrator', d.stage === 'start' ? 'briefing' : 'awake'); break;
-    case 'paused': state.paused = d.paused ?? true; break;
+    case 'paused':
+      state.paused = d.paused ?? true;
+      // Only kept while actually paused — a resume's own 'paused' event
+      // carries no `why`, and a stale reason from the LAST pause must not
+      // linger and mislabel the next one.
+      state.pausedWhy = state.paused ? (d.why ?? '') : '';
+      break;
     default:
       state.lastEvent = d;
       state.notices.push(d);

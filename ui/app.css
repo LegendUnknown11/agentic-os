@@ -385,6 +385,16 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .sidebar-repo:hover { color: var(--text); }
 
+/* #41: the court-wide pause banner — degrades visibly instead of the court
+   just going quiet with no reason on screen. Attention tone, the same token
+   the rest of the app uses for a blocked/failed state; no new colour. */
+.sidebar-pause-banner { display: grid; gap: var(--space-2); padding: var(--space-2); border: 1px solid rgb(var(--tone-attention-rgb) / .4); border-radius: var(--radius-ctl); background: rgb(var(--tone-attention-rgb) / .1); }
+.sidebar-pause-text { margin: 0; color: var(--tone-attention); font-size: var(--t-xs); }
+.sidebar-pause-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.sidebar-pause-resume, .sidebar-pause-raise { display: inline-flex; min-height: var(--tap-target-min); align-items: center; padding: var(--space-1) var(--space-2); border: 1px solid rgb(var(--tone-attention-rgb) / .6); border-radius: var(--radius-ctl); background: transparent; color: var(--tone-attention); font-size: var(--t-xs); font-weight: 600; }
+.sidebar-pause-resume:hover, .sidebar-pause-raise:hover { background: rgb(var(--tone-attention-rgb) / .16); }
+.sidebar-pause-resume:disabled, .sidebar-pause-raise:disabled { cursor: not-allowed; opacity: .5; }
+
 .button, .icon-button {
   display: inline-flex;
   min-height: var(--tap-target-min);

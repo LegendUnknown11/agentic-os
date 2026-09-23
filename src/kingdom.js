@@ -129,6 +129,17 @@ const NO_EFFORT_MODELS = ['haiku'];
 // Sleeping is free and revival is transparent, so sleep early.
 const IDLE_SLEEP_MS = Number(process.env.KINGDOM_IDLE_SLEEP_MS ?? 300_000); // 0 disables
 const DIGEST_DIFF_LIMIT = 12_000; // the briefer is cheap, but this is per-done
+// #41: "the orchestrator is draining my usage like crazy" / "it kept going" —
+// the existing dollar ceilings (maxKingdomUsd, maxBudgetUsd) ship OFF by
+// default and only fire once a model IS priced, so an unpriced or
+// misconfigured court had no ceiling of any kind until real money had
+// already gone. A turn budget counts turns directly, needs no price table,
+// and — unlike the dollar caps above — ships ON by default: 500 real turns
+// is deliberately generous (a normal working session is a small fraction of
+// that) so it interrupts a genuine runaway before it interrupts real work,
+// not the other way round. `turnBudget: 0` in kingdom.config.json turns it
+// off, the same convention as every cap above it.
+const DEFAULT_TURN_BUDGET = 500;
 // Recycle thresholds now come from #recycleThreshold (per member, configurable).
 
 /**
@@ -1092,8 +1103,10 @@ export class Kingdom extends EventEmitter {
 
       const ctx = u.ctx ?? this.#contextTokens(u.usage);
       this.bus.set(`ctx:${name}:${agent.conversationId ?? 'default'}`, String(ctx));
+      const turnsTaken = this.#countTurns();
       this.emit('spend',
-        { total: spent, tokens, turns: this.#countTurns(), name, ctx, spentByAgent: mine });
+        { total: spent, tokens, turns: turnsTaken, name, ctx, spentByAgent: mine });
+      this.#enforceTurnBudget(turnsTaken);
 
       if (this.#enforceQuota(name)) return;
 
@@ -1248,10 +1261,19 @@ export class Kingdom extends EventEmitter {
     if (perMember && spentByAgent >= perMember) {
       this.emit('budget', { scope: 'member', name, spent: spentByAgent, cap: perMember });
       this.sleep(name);
+      // #41 audit: every other "the crown noticed something, here is FYI"
+      // post to the orchestrator in this file is tagged 'notice' — this one
+      // was not, so it was eligible to buy the orchestrator a full unprompted
+      // turn on its own (default kind 'message' is real traffic to
+      // ripeness.js, not gated behind hadRealTurn/noticeHoldMs the way a
+      // notice is) purely because a MEMBER's own spend crossed a threshold,
+      // with nothing the sovereign said and nothing the orchestrator itself
+      // did. It still reaches the orchestrator promptly by riding along with
+      // real traffic once there is any, same as every other AWARENESS post.
       this.bus.post(CROWN, this.config.orchestrator.name,
-        `"${name}" reached its spend ceiling ($${spentByAgent.toFixed(2)} of ` +
+        `AWARENESS ONLY — TAKE NO ACTION. "${name}" reached its spend ceiling ($${spentByAgent.toFixed(2)} of ` +
         `$${perMember}) and has been stopped. Do not wait on it. The sovereign ` +
-        `must raise its budget or reassign the work.`);
+        `must raise its budget or reassign the work.`, 'notice');
     }
     this.#enforceRunBudget(spentTotal);
   }
@@ -3052,6 +3074,10 @@ export class Kingdom extends EventEmitter {
     if (this.paused) return { changed: false };
     this.paused = true;
     this.bus.set('paused', '1');
+    // Durable, not just an in-memory emit: a browser that reconnects (or a
+    // fresh tab) while the court is paused must see WHY, not just that it
+    // is — see the sidebar's pause banner and its raise-turn-budget action.
+    this.bus.set('pausedWhy', why ?? '');
     const run = this.#activeRun();
     if (run && ['planning', 'running', 'verifying'].includes(run.state)) {
       this.#saveRun({ ...run, state: 'paused', pausedAt: Date.now(), pauseReason: why });
@@ -3092,6 +3118,66 @@ export class Kingdom extends EventEmitter {
   #kingdomBudget() {
     const live = this.bus.get('maxKingdomUsd');
     return live != null ? Number(live) : (this.config.maxKingdomUsd ?? 0);
+  }
+
+  /**
+   * A per-session turn budget, counting every real turn across the whole
+   * court (the same durable counter #countTurns() already keeps in
+   * `bus.get('turns')` for the spend display) — issue #41: the orchestrator
+   * "drained usage like crazy" with no ceiling on turns at all, only on
+   * dollars, and a court running an unpriced or misconfigured model has no
+   * dollar signal until long after the damage. 0 clears the ceiling, the
+   * same convention as setBudget()/maxKingdomUsd above.
+   */
+  setTurnBudget(cap) {
+    const n = Number(cap);
+    if (!Number.isFinite(n) || n < 0) throw new Error('The turn budget must be a number, 0 or more.');
+    this.bus.set('turnBudget', String(n));
+    this.emit('budget', { scope: 'turns', cap: n, turns: this.#countedTurns(), changed: true });
+    return { cap: n };
+  }
+
+  /** The live turn-budget override if one has ever been set here, else the config default. */
+  turnBudget() {
+    const live = this.bus.get('turnBudget');
+    return live != null ? Number(live) : (this.config.turnBudget ?? DEFAULT_TURN_BUDGET);
+  }
+
+  /** Read-only: the durable count #countTurns() maintains, without incrementing it. */
+  #countedTurns() {
+    return Number(this.bus.get('turns') ?? 0);
+  }
+
+  /**
+   * One raise-and-resume action for the sovereign's "extend it" button: a
+   * paused-for-budget court stays paused until BOTH the ceiling is actually
+   * raised and delivery is told to continue — two separate calls would leave
+   * a window where a still-too-low cap immediately re-pauses on the very next
+   * turn with no visible change, which reads as the button doing nothing.
+   */
+  raiseTurnBudget(cap) {
+    const result = this.setTurnBudget(cap);
+    this.resume();
+    return result;
+  }
+
+  /**
+   * Checked right after #countTurns() on every completed real turn, court-
+   * wide. Pausing (not stopping anyone) matches how maxKingdomUsd degrades —
+   * visible, reversible, nothing lost — and reuses the exact mechanism the
+   * sovereign already has for a hand-pause: the same `paused` flag, the same
+   * notice to the orchestrator, the same resume() to lift it. Idempotent: once
+   * paused, #deliver() grants no further turns, so this cannot fire again
+   * until the sovereign explicitly resumes (raiseTurnBudget, or resume()
+   * without raising the cap, which buys exactly one more turn before this
+   * fires again).
+   */
+  #enforceTurnBudget(turns) {
+    const cap = this.turnBudget();
+    if (!cap || turns < cap || this.paused) return;
+    this.emit('budget', { scope: 'turns', turns, cap });
+    this.pause(`the ${cap}-turn budget for this session was reached (${turns} taken) — `
+      + 'raise it or the court stays paused');
   }
 
   /**

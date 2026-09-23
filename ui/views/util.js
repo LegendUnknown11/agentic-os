@@ -194,6 +194,16 @@ export function spendText(spend) {
   if (!Number.isFinite(amount)) return String(spend.text ?? '');
   return money(amount);
 }
+// #41: turns are counted court-wide and shown beside the existing spend
+// total (state.spend already carries `turns` from every 'spend' event, and
+// `turnBudget` from the session's cap) — nothing to show before the first
+// real turn, and no "/0" once a budget exists but nothing has run yet.
+export function turnsText(spend) {
+  const turns = Number(spend?.turns ?? 0);
+  if (!turns) return '';
+  const cap = Number(spend?.turnBudget ?? 0);
+  return cap ? `${turns}/${cap} turns` : `${turns} turns`;
+}
 /** What a mode permits, in its own flags — the header/drawer mode control's subtitle. */
 export const modePermissionText = (mode) => !mode ? '' : [
   mode.crew === 'all' ? 'full crew' : mode.crew?.length ? `${mode.crew.length}-person crew` : 'no crew',

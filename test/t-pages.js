@@ -1,6 +1,7 @@
 import { strict as a } from 'node:assert';
 import { readFileSync } from 'node:fs';
 import { changeStage, pushState } from '../ui/views/pages.js';
+import { turnsText } from '../ui/views/util.js';
 import { lastMessageIdFor } from '../ui/sidebar.js';
 import { taskMeta, visibleQueueRows } from '../ui/views/home.js';
 import { cancelMetrics, loadMetrics, metricsView, recommendationFor, warningFor } from '../ui/views/usage.js';
@@ -286,7 +287,8 @@ a.match(sidebarSource, /NAV_ICONS/, 'navigation icons must have one explicit vie
 a.match(sidebarSource, /button\.dataset\.tip = label/, 'collapsed navigation icons must retain a visible custom hover label');
 a.match(sidebarSource, /moreTitle\.dataset\.tip = 'More tools'/, 'collapsed More tools must retain a visible custom hover label');
 a.match(sidebarSource, /collapse\.dataset\.tip = collapsed \? 'Expand sidebar' : 'Collapse sidebar'/, 'the collapsed rail control must describe its current action');
-a.match(sidebarSource, /import \{ spendText \} from '\.\/views\/util\.js'/, 'Sidebar spend must use the shared money formatter');
+a.match(sidebarSource, /import \{ spendText, turnsText \} from '\.\/views\/util\.js'/,
+  'Sidebar spend must use the shared money formatter, and now the shared turn-count formatter beside it (#41)');
 a.doesNotMatch(sidebarSource, /data-member|memberOfView|attachHoverTips/, 'Team moved out of the rail — the sidebar must not keep member-click wiring for a list it no longer renders');
 a.match(pagesSource, /actionMessage\.textContent = error\?\.message/, 'failed Team actions must leave visible retryable feedback');
 a.match(pagesSource, /power\.disabled = false/, 'failed Team actions must re-enable their control');
@@ -609,5 +611,21 @@ globalThis.fetch = async () => ({ ok: true, json: async () => ({ assets: [{ kind
 await assets.refresh();
 globalThis.fetch = realFetch;
 a.deepEqual(assets.state().queue, ['after-reload.mp3'], 'refresh must seed the music queue for the Play control');
+
+// #41: a per-session turn budget shown live beside spend, and a visible,
+// reversible pause when it is reached.
+{
+  a.equal(turnsText({}), '', 'no turns yet must render nothing, not "0 turns"');
+  a.equal(turnsText({ turns: 0 }), '', 'a zero count is the same as no turns');
+  a.equal(turnsText({ turns: 12 }), '12 turns', 'a plain count with no budget set');
+  a.equal(turnsText({ turns: 12, turnBudget: 500 }), '12/500 turns', 'a count against its budget');
+
+  a.match(sidebarSource, /sidebar-pause-banner/, 'the sidebar must render a pause banner, not rely on the chat notice alone');
+  a.match(sidebarSource, /dataset\.action = 'resume'/, 'the pause banner must offer a direct Resume action');
+  a.match(sidebarSource, /dataset\.action = 'raise-turn-budget'/, 'a turn-budget pause must offer a one-click raise-and-resume action');
+  a.match(sidebarSource, /raiseButton\.hidden = !isTurnBudget/,
+    'the raise action must only show for a turn-budget pause, not every manual pause');
+  console.log('  the sidebar shows a live turn count beside spend and a visible pause banner with a raise action');
+}
 
 console.log('t-pages.js OK — changes expose review, request, success, and failure stages');

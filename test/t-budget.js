@@ -311,7 +311,88 @@ a.equal(liveCoder.stopped, true, 'crossing the live ceiling must still stop the 
 
 await k5.stop();
 
-for (const d of [repo, kingdomDir(repo), repo3, kingdomDir(repo3), repo4, kingdomDir(repo4), repo5, kingdomDir(repo5)]) {
+// --- issue #41: a per-session TURN budget, beside the dollar ceilings ----
+//
+// maxBudgetUsd/maxKingdomUsd only ever fire once a model IS priced — a court
+// running an unpriced or misconfigured model had NO ceiling of any kind.
+// setTurnBudget()/turnBudget() mirror setBudget()/#kingdomBudget() exactly
+// (a live override in the bus, config as the fallback), but #enforceTurnBudget
+// PAUSES the court (the sovereign's own pause/resume machinery) rather than
+// sleeping members, because a turn budget is a session-wide brake, not a
+// per-member spend cap.
+const repo6 = mkdtempSync(join(tmpdir(), 'kingdom-turnbudget-'));
+const git6 = (...x) => execFileSync('git', x, { cwd: repo6, stdio: 'pipe' });
+git6('init', '-q');
+git6('config', 'user.email', 'k@kingdom');
+git6('config', 'user.name', 'kingdom');
+writeFileSync(join(repo6, 'README.md'), '# t\n');
+git6('add', '-A');
+git6('commit', '-qm', 'init');
+
+const cfg6 = join(repo6, 'kingdom.config.json');
+writeFileSync(cfg6, JSON.stringify({
+  turnBudget: 2,   // low and explicit, so the DEFAULT_TURN_BUDGET fallback never matters here
+  orchestrator: { name: 'orchestrator', cli: 'codex' },
+  briefer: { name: 'briefer', cli: 'codex' },
+  peasants: [{ name: 'coder', cli: 'codex' }],
+}));
+
+const k6 = new Kingdom(repo6, cfg6);
+await k6.start();
+neuter(k6.agents.get('orchestrator'));
+neuter(k6.agents.get('briefer'));
+await k6.wake('coder');
+const turnBudgetCoder = neuter(k6.agents.get('coder'));
+const turnBudgetEvents = [];
+k6.on('budget', (e) => { if (e.scope === 'turns') turnBudgetEvents.push(e); });
+const pausedEvents = [];
+k6.on('paused', (e) => pausedEvents.push(e));
+
+a.throws(() => k6.setTurnBudget(-1), /must be a number/, 'a negative turn budget must be refused');
+a.equal(k6.turnBudget(), 2, 'the configured turnBudget must be read back exactly');
+a.equal(k6.paused, false, 'sanity: the court is not paused yet');
+
+turnBudgetCoder.emit('turn_end', { usage: { input_tokens: 10 }, costUsd: 0 });
+await wait(200);
+a.equal(k6.paused, false, 'one turn under a budget of two must not pause anything');
+
+turnBudgetCoder.emit('turn_end', { usage: { input_tokens: 10 }, costUsd: 0 });
+await wait(200);
+a.equal(k6.paused, true, 'reaching the turn budget must pause the court — the same mechanism as a manual pause');
+a.equal(turnBudgetEvents.length, 1, 'the trip must announce itself on the shared "budget" event, same as the dollar ceilings');
+a.equal(turnBudgetEvents[0].cap, 2);
+a.equal(turnBudgetEvents[0].turns, 2);
+a.ok(pausedEvents.some((e) => e.paused && /turn budget/i.test(e.why ?? '')),
+  'the pause reason must name the turn budget, or the sidebar cannot tell it apart from a manual pause '
+  + 'to decide whether to offer "raise and resume"');
+
+// A resumed court whose cap is still unmet must not spend a second full turn
+// pausing itself again immediately — no new turn can even be granted while
+// paused (#deliver's own `if (this.paused) return`), so this only proves the
+// mechanism does not double-fire on the SAME already-counted turn.
+const turnsBeforeResume = turnBudgetEvents.length;
+k6.resume();
+await wait(50);
+a.equal(turnBudgetEvents.length, turnsBeforeResume, 'resuming alone must not re-announce a trip that already happened');
+
+// The one-click raise-and-resume action: both effects from one call, so a
+// still-too-low cap cannot leave the button looking like it did nothing.
+const raised = k6.raiseTurnBudget(10);
+a.equal(raised.cap, 10);
+a.equal(k6.turnBudget(), 10, 'the raised cap must be the one #enforceTurnBudget now checks');
+a.equal(k6.paused, false, 'raiseTurnBudget must also resume — a raise with no resume leaves the court looking stuck');
+
+turnBudgetCoder.emit('turn_end', { usage: { input_tokens: 10 }, costUsd: 0 });
+await wait(200);
+a.equal(k6.paused, false, 'a third turn under the newly-raised cap of 10 must not re-pause the court');
+
+await k6.stop();
+
+for (const d of [
+  repo, kingdomDir(repo), repo3, kingdomDir(repo3), repo4, kingdomDir(repo4),
+  repo5, kingdomDir(repo5), repo6, kingdomDir(repo6),
+]) {
   try { rmSync(d, { recursive: true, force: true }); } catch {}
 }
-console.log('t-budget.js OK — cumulative ceiling survives restarts, codex courts can be capped, any member recycles');
+console.log('t-budget.js OK — cumulative ceiling survives restarts, codex courts can be capped, any member recycles, '
+  + 'and a per-session turn budget pauses the court visibly and raises back in one call');
