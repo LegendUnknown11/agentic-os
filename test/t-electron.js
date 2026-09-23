@@ -102,15 +102,6 @@ try {
   a.ok(page, 'the throne room window must open');
   await page.waitForLoadState('domcontentloaded');
 
-  // Diagnostic only: the run-lifecycle checks below time out on the Windows
-  // CI runner while passing locally, and a silent timeout gives no way to
-  // tell "the UI never got the SSE event" from "a JS exception broke the
-  // handler" from "the daemon never sent it". Forwarding the real browser
-  // console/errors into this suite's own stdout is the cheapest way to find
-  // out which. ponytail: remove once the CI-only failure is root-caused.
-  page.on('console', (msg) => console.log(`[browser:${msg.type()}] ${msg.text()}`));
-  page.on('pageerror', (err) => console.error(`[browser:pageerror] ${err.message}`));
-
   const onScreen = (needle, timeout = 30_000) => page.waitForFunction(
     (t) => document.body.innerText.includes(t), needle, { timeout });
 

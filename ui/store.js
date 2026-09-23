@@ -69,30 +69,14 @@ export const state = {
   workflowsError: null,
 };
 
-// ponytail: diagnostic only, for the CI-only t-electron.js run-lifecycle
-// timeout — remove once root-caused. A per-module-load marker: if a
-// subscriber logs a different value for this than notify() does, the two
-// are holding separate `state` objects (a module-identity split), not the
-// one shared singleton this file exports.
-state.__diagInstance = Math.random().toString(36).slice(2, 8);
-
 const subs = new Set();
 let frame = 0;
 
 const notify = () => {
   frame = 0;
-  // ponytail: diagnostic only, for the CI-only t-electron.js run-lifecycle
-  // timeout — remove once root-caused. schedule()/notify() were already
-  // shown to fire correctly on CI (raf/visibility/focus all healthy); this
-  // round checks the next link — does state.run itself hold the new value,
-  // and does the DOM actually change after subscribers run.
-  const before = globalThis.document?.body?.innerText?.length;
-  console.log('[repaint] notify, instance', state.__diagInstance, 'subs', subs.size, 'run.state', state.run?.state, 'run.id', state.run?.id);
   for (const fn of subs) {
     try { fn(state); } catch (err) { console.error('store subscriber failed', err); }
   }
-  const after = globalThis.document?.body?.innerText?.length;
-  console.log('[repaint] after notify, innerText.length', before, '->', after);
 };
 
 const schedule = () => {
@@ -102,31 +86,12 @@ const schedule = () => {
   // (data still arrives over SSE/fetch, subscribers just never get called).
   // setTimeout still fires (throttled, but not suppressed) when hidden.
   const raf = globalThis.document?.visibilityState !== 'hidden' && globalThis.requestAnimationFrame;
-  // ponytail: diagnostic only, remove once root-caused (see notify() above).
-  console.log(
-    '[repaint] schedule, raf', Boolean(raf),
-    'visibility', globalThis.document?.visibilityState,
-    'hasFocus', globalThis.document?.hasFocus?.(),
-  );
   frame = raf ? raf(notify) : setTimeout(notify, 0);
 };
 
-// ponytail: diagnostic only, for the CI-only t-electron.js run-lifecycle
-// timeout — remove once root-caused. home.js's subscribe callback was shown
-// to stop firing entirely right as the run lifecycle starts on CI, while
-// notify() still reports the same subs.size — implying its subscription is
-// torn down and something else takes the slot. This logs every add/remove
-// with its caller, to see who unsubscribes and who (re)subscribes, and when.
-let subId = 0;
 export function subscribe(fn) {
-  const id = ++subId;
-  const caller = new Error().stack?.split('\n')[2]?.trim();
-  console.log('[subs] add', id, 'size now', subs.size + 1, 'from', caller);
   subs.add(fn);
-  return () => {
-    console.log('[subs] remove', id, 'size now', subs.size - 1, 'from', new Error().stack?.split('\n')[2]?.trim());
-    subs.delete(fn);
-  };
+  return () => subs.delete(fn);
 }
 
 export function setPrefs(patch = {}) {
