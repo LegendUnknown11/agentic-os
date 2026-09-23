@@ -133,6 +133,10 @@ const suites = [
   // live daemon, on which port, pruned as soon as a pid dies or a port stops
   // answering — and safe against two launches racing to register at once.
   ['court registry', join(HERE, 't-courts.js')],
+  // The registry's and launch router's own self-checks: `node src/courts.js`
+  // went red once when the verdict key changed and nothing in the gate ran it.
+  ['court registry self-check', join(HERE, '..', 'src', 'courts.js')],
+  ['launch routing self-check', join(HERE, '..', 'electron', 'courts-launch.js')],
   // Guard: a daemon this suite harness spawns must never touch the real
   // ~/.kingdom/courts.json, whether run through run-all.js or standalone —
   // see test/isolate-registry.js.

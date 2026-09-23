@@ -83,7 +83,9 @@ await unregisterCourt({ port: 19101, pid: process.pid }); // simulate a clean ex
 // listCourts() re-verifies every row by real ping, so the re-registration
 // needs a real listener behind it, same as any other entry in this file.
 const s1b = await stubCourt(19101, '/repo/one');
-await registerCourt({ repo: '/repo/one', port: 19101, pid: process.pid + 1 });
+// A different, provably LIVE pid: pid+1 was alive only when some unrelated
+// process happened to hold it, so this passed or failed by luck of the pool.
+await registerCourt({ repo: '/repo/one', port: 19101, pid: process.ppid });
 check((await listCourts()).length === 2, 'a repo can be re-registered after its old court is gone');
 s1b.close();
 

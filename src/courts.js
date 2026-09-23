@@ -184,7 +184,7 @@ export function tryBindPort(port) {
 /** Ping every row in parallel, OUTSIDE the registry lock. A lock held across
  *  network waits can outlive LOCK_STALE_MS (a few unresponsive courts at
  *  1.5s each) and be stolen mid read-modify-write; the lock now only ever
- *  covers a file read and write. Keyed by port+pid so a verdict can only
+ *  covers a file read and write. Keyed by port+pid+repo so a verdict can only
  *  ever apply to the exact row it was taken for. The repository claim is part
  *  of the key: a live attach (or its rollback) rewrites a row's repo while
  *  keeping its port and pid, and a verdict pinged for the old claim must not
@@ -273,8 +273,9 @@ if (basename(process.argv[1] ?? '') === 'courts.js') {
   assert(!sameRepo('/Repo/App', '/repo/app', 'linux'), 'Linux paths differing in case are different checkouts');
 
   const courts = [{ repo: '/r1', port: 7777 }, { repo: '/r2', port: 7778 }, { repo: '/r3', port: 7779 }];
-  const verdicts = new Map([['7777:1', true], ['7778:1', false]]);
-  const kept = keepLive([...courts.map((c) => ({ ...c, pid: 1 }))], verdicts);
+  const rows = courts.map((c) => ({ ...c, pid: 1 }));
+  const verdicts = new Map([[rowKey(rows[0]), true], [rowKey(rows[1]), false]]);
+  const kept = keepLive(rows, verdicts);
   assert(kept.length === 2 && kept.every((c) => c.port !== 7778),
     'a row proved dead is dropped; a row with no verdict (registered after the snapshot) is kept');
 
