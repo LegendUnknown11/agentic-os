@@ -13,11 +13,27 @@
 // live output from four processes is unreadable, and the point of the printout
 // is to tell you WHICH suite failed.
 import { spawn } from 'node:child_process';
-import { availableParallelism } from 'node:os';
+import { availableParallelism, tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
+import { dirname, join, basename } from 'node:path';
+import { mkdtempSync, rmSync } from 'node:fs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
+
+// Several suites spawn a REAL src/daemon.js process, which registers itself
+// into the courts registry (src/courts.js) on boot — see t-registry-attach.js
+// and t-multi-court.js. Left alone, that registry defaults to the real
+// ~/.kingdom/courts.json on whatever machine runs `npm test`, which on the
+// sovereign's own machine would mutate their LIVE registry (and influence
+// real auto-port selection) just from running the test gate. Every suite
+// this file spawns gets its OWN isolated registry file instead — one per
+// suite, not one shared file, so concurrent suites in the pool below never
+// race each other over it or see each other's ports when picking a free one.
+// test/t-registry-isolation.js is the guard that proves this actually keeps
+// the real file untouched; test/isolate-registry.js covers a suite run
+// standalone (`node test/t-x.js`), where nothing here has run at all.
+const REGISTRY_SESSION_DIR = mkdtempSync(join(tmpdir(), 'kingdom-test-registries-'));
+const isolatedRegistryFor = (file) => join(REGISTRY_SESSION_DIR, `${basename(file, '.js')}.courts.json`);
 const suites = [
   ['bus self-check', join(HERE, '..', 'src', 'bus.js')],
   ['workflow engine', join(HERE, '..', 'src', 'workflows.js')],
@@ -117,6 +133,10 @@ const suites = [
   // live daemon, on which port, pruned as soon as a pid dies or a port stops
   // answering — and safe against two launches racing to register at once.
   ['court registry', join(HERE, 't-courts.js')],
+  // Guard: a daemon this suite harness spawns must never touch the real
+  // ~/.kingdom/courts.json, whether run through run-all.js or standalone —
+  // see test/isolate-registry.js.
+  ['test gate never touches the real court registry', join(HERE, 't-registry-isolation.js')],
   // Real daemon processes, not just the registry in isolation: one repo, one
   // live court, auto ports that never collide, and a busy pinned port that
   // refuses cleanly instead of silently binding elsewhere.
@@ -183,7 +203,10 @@ const run = ([label, file]) => new Promise((resolve) => {
   let out = '';
   let p;
   try {
-    p = spawn(process.execPath, [file], { stdio: ['ignore', 'pipe', 'pipe'] });
+    p = spawn(process.execPath, [file], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: { ...process.env, KINGDOM_COURTS_REGISTRY: isolatedRegistryFor(file) },
+    });
   } catch (e) {
     return done(false, `could not start ${label}: ${e.message}\n`);
   }
@@ -250,4 +273,5 @@ console.log(`\n${suites.length} suites, ${WIDTH}-wide, ${((Date.now() - started)
 
 // t-agent.js and t-comms.js spend real API quota, so they stay opt-in.
 console.log(failed ? `\n\x1b[31m${failed} suite(s) failed\x1b[0m` : '\n\x1b[32mall suites passed\x1b[0m');
+try { rmSync(REGISTRY_SESSION_DIR, { recursive: true, force: true }); } catch { /* /tmp cleanup is not worth failing the run over */ }
 process.exit(failed ? 1 : 0);

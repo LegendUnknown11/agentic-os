@@ -7,6 +7,9 @@
 // including the session restart that makes the counter drop.
 //
 //   node test/t-panels.js
+// Never let a daemon this suite spawns touch the real ~/.kingdom/courts.json
+// on the machine running the tests — see test/t-registry-isolation.js.
+import './isolate-registry.js';
 import { strict as a } from 'node:assert';
 import { execFileSync, spawn } from 'node:child_process';
 import { mkdtempSync, writeFileSync, rmSync, mkdirSync, realpathSync } from 'node:fs';

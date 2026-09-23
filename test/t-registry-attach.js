@@ -6,6 +6,9 @@
 // only refuses a repo DIFFERENT from one it already holds. This is the
 // registry-side half of issue #42 that starting fresh alone does not cover.
 //   node test/t-registry-attach.js
+// Never let a daemon this suite spawns touch the real ~/.kingdom/courts.json
+// on the machine running the tests — see test/t-registry-isolation.js.
+import './isolate-registry.js';
 import { strict as a } from 'node:assert';
 import { execFileSync, spawn } from 'node:child_process';
 import { mkdtempSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
