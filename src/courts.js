@@ -138,7 +138,13 @@ export function isPidAlive(pid) {
  *  entirely (pid reuse) or nothing at all (still booting, or wedged) —
  *  ping is the fact that actually matters, pid liveness is only the cheap
  *  first filter. */
-export function pingCourt(port, repo, { timeoutMs = 800 } = {}) {
+// 1.5s, not the 800ms first tried here: under this repo's own 4-wide test
+// pool (test/run-all.js), a stub HTTP server that answers instantly when run
+// alone was seen timing out at 800ms under real CPU contention from
+// neighbouring suites — the same class of flakiness test/run-all.js already
+// documents for `court self-control`, not a bug in this module. Measured:
+// the retry-alone run that exposed it took under 40ms once the pool drained.
+export function pingCourt(port, repo, { timeoutMs = 1500 } = {}) {
   return new Promise((resolvePromise) => {
     const req = httpRequest({ host: '127.0.0.1', port, path: '/api/ping', method: 'GET', timeout: timeoutMs }, (res) => {
       let body = '';

@@ -624,7 +624,12 @@ const READS = {
   // How a launching window discovers whether a court is already up, and which
   // repo it is serving — attaching to the wrong repo would be silent and bad.
   '/api/ping': async (url, req) => {
-    return [ready ? 200 : 503, { ok: ready, starting: !ready, repo: kingdom.repo, base: kingdom.base, pid: process.pid }];
+    // `port` lets a launcher that started this daemon WITHOUT a pinned port
+    // (courts.firstFreePort() picked one) discover which one it actually
+    // got — the multi-court switcher polls the registry for this same fact,
+    // but a page/window that already knows its own origin still wants the
+    // number for display.
+    return [ready ? 200 : 503, { ok: ready, starting: !ready, repo: kingdom.repo, base: kingdom.base, pid: process.pid, port }];
   },
 
   // The same probes `npm run doctor` prints, structured — this is what a

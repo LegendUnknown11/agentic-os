@@ -12,6 +12,8 @@ import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { assertRepo } from '../src/worktree.js';
 import { switchRepo } from './switch-repo.js';
+import { listCourts } from '../src/courts.js';
+import { routeLaunch } from './courts-launch.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.KINGDOM_PORT ?? 7777);
@@ -27,11 +29,23 @@ async function courtOnPort() {
   }
 }
 
-/** A repo named on the command line (or packaged app arg), if it's a real one. */
-function repoFromArgv() {
-  const fromArgv = process.argv.slice(app.isPackaged ? 1 : 2).find((a) => !a.startsWith('-'));
+/** A repo named on the command line (or packaged app arg), if it's a real one.
+ *  Takes an explicit argv so app.on('second-instance')'s argv can be checked
+ *  the same way the app's own launch argv is — see routeLaunch() below. */
+function repoFromArgv(argv = process.argv) {
+  const fromArgv = argv.slice(app.isPackaged ? 1 : 2).find((a) => !a.startsWith('-'));
   return fromArgv && existsSync(join(fromArgv, '.git')) ? resolve(fromArgv) : null;
 }
+
+/**
+ * One BrowserWindow per live court, keyed by the port it is serving —
+ * multiple courts at once (issue #42). The default launch still opens PORT
+ * (pinned by KINGDOM_PORT or 7777) exactly as before; every OTHER court a
+ * launch or the courts switcher opens gets its own entry here instead of
+ * replacing anything.
+ */
+const courtWindows = new Map(); // port -> { win, origin }
+const originFor = (port) => `http://127.0.0.1:${port}`;
 
 /**
  * The native folder picker, on demand — Code mode asks for this through the
@@ -124,6 +138,50 @@ async function startDaemon(repo, logPath) {
 }
 
 /**
+ * The same idea as startDaemon() above, for a court that is NOT pinned to
+ * PORT — every court opened besides the app's default one (a second repo
+ * from the switcher, or a bare relaunch routed by routeLaunch() below). No
+ * --port is passed, so src/daemon.js picks the next free one itself (see
+ * courts.firstFreePort()); readiness is read off the SAME registry that
+ * choice was written to (src/courts.js), matched by this child's pid, since
+ * the port is not known until the daemon has already picked it.
+ */
+async function startDaemonAuto(repo, logPath) {
+  const node = process.env.KINGDOM_NODE ?? 'node';
+  checkNodeVersion(node);
+  const out = openSync(logPath, 'a');
+  const child = spawn(node, [
+    join(HERE, '..', 'src', 'daemon.js'), ...(repo ? [repo] : []),
+  ], {
+    detached: true,
+    stdio: ['ignore', out, out],
+    windowsHide: true,
+  });
+  let spawnError = null;
+  let childExit = null;
+  child.on('error', (e) => { spawnError = e; });
+  child.on('exit', (code, signal) => { childExit = { code, signal }; });
+  child.unref();
+
+  const deadline = Date.now() + 90_000;
+  while (Date.now() < deadline) {
+    if (spawnError) {
+      throw new Error(`Could not start Node ("${node}"): ${spawnError.message}. `
+        + 'Node 24+ must be on PATH.');
+    }
+    if (childExit) {
+      throw new Error(`The court daemon exited before it became ready `
+        + `(code ${childExit.code ?? 'unknown'}, signal ${childExit.signal ?? 'none'}).\n\n`
+        + logTail(logPath));
+    }
+    const found = (await listCourts()).find((c) => c.pid === child.pid);
+    if (found) return found;
+    await new Promise((r) => setTimeout(r, 400));
+  }
+  throw new Error(`The court did not register itself within 90s.\n\n${logTail(logPath)}`);
+}
+
+/**
  * A court window shows the court, and nothing else.
  *
  * Without this, any link or script-driven navigation in the renderer could take
@@ -134,17 +192,32 @@ async function startDaemon(repo, logPath) {
  * court's clothes". Outside links go to the real browser, where the address bar
  * is visible.
  */
-function lockNavigation(win) {
+function lockNavigation(win, origin = ORIGIN) {
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:/.test(url)) shell.openExternal(url);
     return { action: 'deny' };
   });
   win.webContents.on('will-navigate', (e, url) => {
-    if (!url.startsWith(`${ORIGIN}/`)) e.preventDefault();
+    if (!url.startsWith(`${origin}/`)) e.preventDefault();
   });
 }
 
-function openWindow() {
+/**
+ * Open the court on `port`, or focus it if a window for it is already open —
+ * one call covers both "start a new court's viewer" and "a relaunch/switcher
+ * action for a court already running" (issue #42). The pet window and every
+ * other single-window assumption in this file are untouched: PORT's window
+ * is still the one opened at first launch, exactly as before.
+ */
+function openWindow(port = PORT) {
+  const existing = courtWindows.get(port);
+  if (existing && !existing.win.isDestroyed()) {
+    if (existing.win.isMinimized()) existing.win.restore();
+    existing.win.show();
+    existing.win.focus();
+    return existing.win;
+  }
+  const origin = originFor(port);
   const win = new BrowserWindow({
     width: 1500,
     height: 950,
@@ -157,8 +230,13 @@ function openWindow() {
     },
   });
   win.setMenuBarVisibility(false);
-  lockNavigation(win);
-  win.loadURL(`${ORIGIN}/`);
+  lockNavigation(win, origin);
+  win.loadURL(`${origin}/`);
+  courtWindows.set(port, { win, origin });
+  win.on('closed', () => {
+    if (courtWindows.get(port)?.win === win) courtWindows.delete(port);
+  });
+  return win;
 }
 
 /* ---------- the floating dog ----------
@@ -384,7 +462,74 @@ ipcMain.handle('court:switchRepo', async (event, rawPath) => switchRepo(rawPath,
   logPath: join(app.getPath('userData'), 'daemon.log'),
 }));
 
+// ---- multiple courts at once (issue #42) -----------------------------------
+// The switcher reachable from Settings' Repository panel (ui/views/courts.js)
+// talks to these three. Unlike court:switchRepo above, none of them end the
+// CURRENT court — "open that repo's court" coexists with whatever is already
+// running instead of replacing it.
+ipcMain.handle('courts:list', async () => {
+  const courts = await listCourts();
+  return courts.map((c) => ({ ...c, open: courtWindows.has(c.port) }));
+});
+
+ipcMain.handle('courts:open', async (event, rawPath) => {
+  const repo = rawPath ? resolve(String(rawPath)) : null;
+  return routeLaunch(repo, {
+    listCourts,
+    focusWindow: (port) => openWindow(port),
+    startDaemonFor: (r, logPath) => startDaemonAuto(r, logPath),
+    openWindow: (port) => openWindow(port),
+    logPath: join(app.getPath('userData'), 'daemon.log'),
+  });
+});
+
+ipcMain.handle('courts:end', async (event, rawPath) => {
+  const repo = resolve(String(rawPath));
+  const found = (await listCourts()).find((c) => c.repo && resolve(c.repo) === repo);
+  if (!found) return { ok: false, error: 'That court is not running.' };
+  const { response } = await dialog.showMessageBox({
+    type: 'warning',
+    title: 'End this court?',
+    message: `End the court for:\n\n${found.repo}`,
+    detail: 'Any work in progress in that court will stop. This cannot be undone.',
+    buttons: ['Cancel', 'End court'],
+    defaultId: 0,
+    cancelId: 0,
+  });
+  if (response !== 1) return { canceled: true };
+  await fetch(`${originFor(found.port)}/api/shutdown`, { method: 'POST' }).catch(() => { /* it may already be gone */ });
+  const win = courtWindows.get(found.port)?.win;
+  if (win && !win.isDestroyed()) win.close();
+  courtWindows.delete(found.port);
+  return { ok: true };
+});
+
+// One daemon-launching process per machine: without this, opening the app a
+// second time (double-clicking the icon again, or the OS relaunching it)
+// would start a SECOND, port-colliding daemon rather than reach the court
+// already running. The losing instance quits immediately and hands its argv
+// to the surviving one via 'second-instance', which routes it exactly like a
+// first launch would (routeLaunch, shared with courts:open above) — focusing
+// the right court instead of starting a stray one.
+const singleInstanceLock = app.requestSingleInstanceLock();
+if (!singleInstanceLock) {
+  app.quit();
+} else {
+  app.on('second-instance', async (event, argv2) => {
+    const repo = repoFromArgv(argv2);
+    const result = await routeLaunch(repo, {
+      listCourts,
+      focusWindow: (port) => openWindow(port),
+      startDaemonFor: (r, logPath) => startDaemonAuto(r, logPath),
+      openWindow: (port) => openWindow(port),
+      logPath: join(app.getPath('userData'), 'daemon.log'),
+    });
+    if (!result.ok) dialog.showErrorBox('The kingdom could not rise', result.error);
+  });
+}
+
 app.whenReady().then(async () => {
+  if (!singleInstanceLock) return; // this instance is on its way out — see above
   // No blocking dialog here anymore: Chat/Research/Build don't need a repo at
   // all, and Code mode asks for one live, from inside the throne room, via
   // the repo:choose IPC handler below. A repo named on the command line still
@@ -431,9 +576,13 @@ app.whenReady().then(async () => {
     } catch { /* best-effort: the window still opens either way */ }
   }
 
-  // Dictation needs the microphone. Grant it only to the throne room itself —
-  // Electron denies every media request by default.
-  const mine = (wc) => (wc?.getURL() ?? '').startsWith(ORIGIN);
+  // Dictation needs the microphone. Grant it to any court window — every
+  // court is this same app's own served origin, on its own port, so "mine"
+  // now means "some live court's origin", not just the one at PORT.
+  const mine = (wc) => {
+    const url = wc?.getURL() ?? '';
+    return [...courtWindows.values()].some(({ origin }) => url.startsWith(origin));
+  };
   session.defaultSession.setPermissionRequestHandler((wc, perm, cb) =>
     cb(perm === 'media' && mine(wc)));
   session.defaultSession.setPermissionCheckHandler((wc, perm) => perm === 'media' && mine(wc));
@@ -442,7 +591,7 @@ app.whenReady().then(async () => {
   openPet();
 });
 
-app.on('activate', () => { if (!BrowserWindow.getAllWindows().length) openWindow(); });
+app.on('activate', () => { if (singleInstanceLock && !BrowserWindow.getAllWindows().length) openWindow(); });
 
 // Closing the window closes the VIEWER. The court keeps working; "end court"
 // in the throne room is what stops it.

@@ -86,13 +86,18 @@ a.match(courtPreloadSource, /openPet: \(\) => ipcRenderer\.send\('pet:open'\)/, 
 a.match(electronMainSource, /ipcMain\.on\('pet:open', openPet\)/, 'the native main process must reopen the desk pet');
 a.match(electronMainSource, /spawn\(node, \[[\s\S]*?windowsHide: true/, 'the daemon spawn must not flash a console window on Windows startup');
 
-// Issue #42 (reopened): attachRepo refuses a live repo swap on purpose
+// Issue #42: attachRepo still refuses a live repo swap on purpose
 // (src/kingdom.js, locked in by test/t-control.js's "requires a fresh
-// court" pin) — the real gap was that nothing in the app could actually end
-// the court and start a fresh one. Settings now offers that, gated to the
-// exact wall attachRepo hits, wired through a dedicated shell bridge.
-a.match(settingsSource, /if \(\/fresh court\/\.test\(result\.error \?\? ''\) && window\.kingdomShell\?\.switchRepo\) switchRepo\.hidden = false;/, 'the repository switcher must only appear once attach has actually hit the fresh-court wall');
+// court" pin) — but the app no longer makes the sovereign hit that wall
+// before offering a fix. The fail-first gating that used to hide "End court
+// and switch…" until attachRepo actually failed is gone: it is offered up
+// front, alongside the non-destructive courts switcher (open that repo's OWN
+// court instead of ending this one) — see ui/views/courts.js.
+a.doesNotMatch(settingsSource, /switchRepo\.hidden = false/, 'the repository switcher must no longer be revealed conditionally after a failed attach — it is offered up front');
+a.match(settingsSource, /const switchRepo = window\.kingdomShell\?\.switchRepo \? button\('End court and switch to this repository…', async \(\) => \{/, 'the repository switcher must be offered whenever the shell bridge exists, not gated behind a prior failure');
 a.match(settingsSource, /const result = await window\.kingdomShell\.switchRepo\(path\.value\.trim\(\)\);/, 'switching repositories must go through the dedicated shell bridge, not attachRepo');
+a.match(settingsSource, /import \{ courtsSwitcher, refreshCourts \} from '\.\/courts\.js';/, 'the Repository panel must draw its live court list from the courts switcher module');
+a.match(settingsSource, /courtsSwitcher\(state, rerender\)\);/, 'the Repository panel must render the courts switcher');
 a.match(settingsSource, /if \(result\?\.canceled\)/, 'a cancelled repository switch must leave the control usable again, not stuck disabled');
 a.match(courtPreloadSource, /switchRepo: \(path\) => ipcRenderer\.invoke\('court:switchRepo', path\)/, 'the court preload must expose the repository-switch command');
 a.match(electronMainSource, /ipcMain\.handle\('court:switchRepo', async \(event, rawPath\) => switchRepo\(rawPath, \{/, 'the native main process must own ending and respawning the court');

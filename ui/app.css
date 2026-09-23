@@ -1057,6 +1057,20 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .settings-group { display: grid; min-width: 0; gap: var(--space-3); margin: 0; padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-ctl); }
 
+/* The multiple-courts switcher (issue #42), Settings > Repository. New
+ * selectors only — colour still comes only from the :root tokens above. */
+.courts-switcher { display: grid; gap: var(--space-2); }
+
+.courts-list { display: grid; gap: var(--space-2); }
+
+.court-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); padding: var(--space-2) var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-ctl); background: var(--raised); }
+
+.court-row-id { display: grid; min-width: 0; gap: 2px; }
+
+.court-repo { overflow: hidden; color: var(--text); font-size: var(--t-sm); text-overflow: ellipsis; white-space: nowrap; }
+
+.court-port { color: var(--muted); font-family: var(--mono); font-size: var(--t-xs); letter-spacing: .04em; text-transform: uppercase; }
+
 .settings-group legend { padding-inline: var(--space-1); color: var(--text); font-weight: 650; }
 
 .settings-model-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }

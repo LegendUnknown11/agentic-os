@@ -113,6 +113,10 @@ const suites = [
   // live court, auto ports that never collide, and a busy pinned port that
   // refuses cleanly instead of silently binding elsewhere.
   ['multiple courts at once (issue #42)', join(HERE, 't-multi-court.js')],
+  // A relaunch (or app.requestSingleInstanceLock's second-instance event)
+  // must focus a live court rather than spawn a stray daemon — the pure
+  // decision behind that, tested with fakes exactly like t-repo-switch.js.
+  ['launch routing focuses a live court', join(HERE, 't-courts-launch.js')],
   // The end-court-and-switch-repo flow (issue #42): a plain function with
   // injected dependencies, so its step ordering runs for real without an
   // Electron process, a daemon, or a native dialog.

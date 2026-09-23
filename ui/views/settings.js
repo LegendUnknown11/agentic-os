@@ -1,5 +1,6 @@
 import { h, page, section, empty, note, button, field, input, textarea, select, check, modeDef, post, subscribe, editing } from './util.js';
 import { setPrefs } from '../store.js';
+import { courtsSwitcher, refreshCourts } from './courts.js';
 
 let Assets, Notify, soundOn, setSound, cue;
 let dependencies;
@@ -128,14 +129,13 @@ function rangeField(label, control, format = (value) => value) {
   return wrapper;
 }
 
-function repository(state) {
+function repository(state, root) {
   const path = input(state.repo ?? '', 'C:\\path\\to\\repo');
   const pickerMessage = note('', 'danger');
   pickerMessage.hidden = true;
   const attach = button('Attach repository', async () => {
     const value = path.value.trim();
     pickerMessage.hidden = true;
-    switchRepo.hidden = true;
     if (!value) {
       pickerMessage.textContent = 'Choose a repository first.';
       pickerMessage.hidden = false;
@@ -147,11 +147,12 @@ function repository(state) {
       attach.disabled = false;
       pickerMessage.textContent = result.error ?? 'Could not attach that repository.';
       pickerMessage.hidden = false;
-      // attachRepo refuses this one way on purpose (src/kingdom.js) — a
-      // different repo needs a fresh court, not a live swap. Offer the real
-      // fix only when we actually hit that wall, and only where a shell
-      // bridge exists to end and respawn the daemon (i.e. inside Electron).
-      if (/fresh court/.test(result.error ?? '') && window.kingdomShell?.switchRepo) switchRepo.hidden = false;
+      // attachRepo still refuses to move a LIVE court onto a different repo
+      // (src/kingdom.js) — that message is unchanged. The fix for it no
+      // longer waits for this exact failure to surface: "End court and
+      // switch…" is always available below when the shell bridge exists,
+      // and the courts switcher offers the non-destructive alternative
+      // (open that repo's OWN court instead) without hitting this wall at all.
     } else {
       attach.disabled = false;
       pickerMessage.className = 'note success';
@@ -169,7 +170,12 @@ function repository(state) {
       pickerMessage.hidden = false;
     }
   }) : null;
-  const switchRepo = button('End court and switch to this repository…', async () => {
+  // Ends the CURRENT court. Kept for the case the courts switcher below does
+  // not cover: replacing this window's own repo in place rather than opening
+  // a second court alongside it. window-open removed the fail-first gating
+  // this used to have (issue #42) — it no longer waits for attachRepo to hit
+  // its "fresh court" wall before offering the real fix.
+  const switchRepo = window.kingdomShell?.switchRepo ? button('End court and switch to this repository…', async () => {
     switchRepo.disabled = true;
     try {
       const result = await window.kingdomShell.switchRepo(path.value.trim());
@@ -187,9 +193,22 @@ function repository(state) {
       pickerMessage.hidden = false;
       switchRepo.disabled = false;
     }
-  });
-  switchRepo.hidden = true;
-  return section('Repository', note(state.repo ? `Attached: ${state.repo}` : 'No repository attached. Chat and Cowork can run without one.'), field('Path', path, 'Code mode requires an existing git repository with at least one commit.'), h('div', { class: 'button-row' }, choose, attach, switchRepo), pickerMessage);
+  }) : null;
+
+  if (root && state.courts === undefined) {
+    state.courts = [];
+    refreshCourts(state, () => { if (root.isConnected) renderSettings(state, root); });
+  }
+  const rerender = () => { if (root?.isConnected) renderSettings(state, root); };
+
+  return section('Repository',
+    note(state.repo ? `Attached: ${state.repo}` : 'No repository attached. Chat and Cowork can run without one.'),
+    field('Path', path, 'Code mode requires an existing git repository with at least one commit.'),
+    h('div', { class: 'button-row' }, choose, attach, switchRepo),
+    pickerMessage,
+    h('h3', { text: 'Other courts' }),
+    note('Open or start a court for another repository without ending this one, or end one that is no longer needed.'),
+    courtsSwitcher(state, rerender));
 }
 
 function efficiency(state) {
