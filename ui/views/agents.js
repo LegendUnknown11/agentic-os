@@ -1,6 +1,6 @@
 import {
   h, page, section, empty, note, button, field, select,
-  membersOf, modeAllows, modeDef, displayName, post, setView, subscribe, editing, tone,
+  membersOf, modeAllows, modeDef, displayName, modelLabel, post, setView, subscribe, editing, tone,
 } from './util.js';
 import { statusDot } from '../avatar.js';
 import { displayStatus } from '../sidebar.js';
@@ -11,7 +11,7 @@ function bind(state, root, render) {
 }
 
 function modelControls(state, name, member) {
-  const models = Object.entries(state.models ?? {}).flatMap(([cli, values]) => (values ?? []).map((model) => [`${cli}:${model}`, `${cli} · ${model}`]));
+  const models = Object.entries(state.models ?? {}).flatMap(([cli, values]) => (values ?? []).map((model) => [`${cli}:${model}`, `${cli} · ${modelLabel(model)}`]));
   let previous = member.auto ? '__auto__' : `${member.cli ?? ''}:${member.model ?? ''}`;
   const model = select([['__auto__', 'Advisor chooses'], ...models], previous);
   const feedback = note('', 'danger');
