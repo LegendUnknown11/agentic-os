@@ -124,7 +124,16 @@ function approvalCard(state, approval, root) {
     approve.disabled = no.disabled = !allowed;
     actions.append(approve, no);
     card.append(actions, feedback);
-  } else card.append(resolvedStatus(approval.resolved));
+  } else {
+    // A push or merge approval records what actually happened separately from
+    // the decision (push:${id} / merge:${id}) because approving is not the
+    // same fact as it landing — Git still gets the last word. Surface that
+    // message on the resolved card, or a blocked outcome reads identically to
+    // an approved one that just says "Blocked" with no history of why.
+    const outcome = approval[approval.kind];
+    const extra = outcome?.message ? `: ${outcome.message}` : '';
+    card.append(resolvedStatus(approval.resolved, extra));
+  }
   return card;
 }
 
