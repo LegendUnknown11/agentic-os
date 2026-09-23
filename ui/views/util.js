@@ -182,7 +182,7 @@ export const kb = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${
 // CLI unchanged (agent.js), and an id this table does not know is shown as-is
 // rather than guessed at — an unlabeled model must never be hidden.
 const MODEL_LABELS = {
-  opus: 'Opus 5',
+  opus: 'Opus 5.5', // the CLI's `opus` alias resolves to Opus 5.5 (#75)
   sonnet: 'Sonnet 5',
   haiku: 'Haiku 4.5',
   fable: 'Fable 5.1',

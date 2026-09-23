@@ -39,9 +39,11 @@ export const PRICES = {
   'codex/gpt-5.2':        [2.50, 0.25, 15.00],
 
   // Anthropic, via the claude CLI. The config names these by alias
-  // ("opus", "sonnet"), so both the alias and the full id are listed.
+  // ("opus", "sonnet"), so both the alias and the full id are listed. An
+  // alias is priced as the model the CLI resolves it to today: `opus` is
+  // Opus 5.5 (confirmed by the sovereign on #75), not Opus 5.
   'claude/fable':         [10.00, 1.00, 50.00],
-  'claude/opus':          [5.00, 0.50, 25.00],
+  'claude/opus':          [4.00, 0.20, 20.00],
   'claude/sonnet':        [2.00, 0.20, 10.00],
   'claude/haiku':         [1.00, 0.10,  5.00],
   'claude/claude-fable-5':      [10.00, 1.00, 50.00],
@@ -139,6 +141,11 @@ if (process.argv[1]?.endsWith('price.js')) {
     'claude-opus-5-5 must be priced, or the newest Opus goes unbilled');
   near(costOf({ in: 1e6, cached: 0, written: 1e6, out: 0 }, 'claude', 'claude-opus-5-5'),
     4.00 * 1.25, 'claude-opus-5-5 cache writes cost 1.25x its own input rate, not opus 5\'s');
+
+  // The bare alias follows what the claude CLI resolves it to (#75): opus is
+  // Opus 5.5, so it bills at Opus 5.5's rate, not Opus 5's.
+  a.deepEqual(rateOf('claude', 'opus'), rateOf('claude', 'claude-opus-5-5'),
+    'the opus alias must be priced as Opus 5.5, the model the CLI resolves it to');
 
   // Existing configs and members keep working under every id/alias this
   // catalogue has ever offered — an old kingdom.config.json naming "opus",

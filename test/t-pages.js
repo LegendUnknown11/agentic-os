@@ -625,7 +625,7 @@ a.deepEqual(assets.state().queue, ['after-reload.mp3'], 'refresh must seed the m
   // must also gain a version number rather than showing as a bare family
   // name — this is the exact defect: an existing config using "opus" for a
   // member showed literally "opus" with no number anywhere.
-  a.equal(modelLabel('opus'), 'Opus 5', 'a legacy bare alias must show a version number, not just the family name');
+  a.equal(modelLabel('opus'), 'Opus 5.5', 'the opus alias must show the version the CLI resolves it to (Opus 5.5), not just the family name');
   a.equal(modelLabel('sonnet'), 'Sonnet 5');
   a.equal(modelLabel('haiku'), 'Haiku 4.5');
   a.equal(modelLabel('fable'), 'Fable 5.1');
