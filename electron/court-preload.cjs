@@ -15,6 +15,9 @@ contextBridge.exposeInMainWorld('kingdomShell', {
   // start) one for a repository WITHOUT ending the current court, and end
   // one by name. None of these touch the window this call was made from.
   listCourts: () => ipcRenderer.invoke('courts:list'),
+  // Existing courts are addressed by port (a repo-less court has no path);
+  // openCourt(path) starts, or focuses, the court for a repository.
   openCourt: (path) => ipcRenderer.invoke('courts:open', path),
-  endCourt: (path) => ipcRenderer.invoke('courts:end', path),
+  focusCourt: (port) => ipcRenderer.invoke('courts:focus', port),
+  endCourt: (port) => ipcRenderer.invoke('courts:end', port),
 });

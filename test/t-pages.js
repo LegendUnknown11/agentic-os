@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { changeStage, pushState } from '../ui/views/pages.js';
 import { lastMessageIdFor } from '../ui/sidebar.js';
 import { taskMeta, visibleQueueRows } from '../ui/views/home.js';
+import { courtActionError } from '../ui/views/courts.js';
 import { cancelMetrics, loadMetrics, metricsView, recommendationFor, warningFor } from '../ui/views/usage.js';
 
 const settingsSource = readFileSync(new URL('../ui/views/settings.js', import.meta.url), 'utf8');
@@ -99,6 +100,21 @@ a.match(settingsSource, /const result = await window\.kingdomShell\.switchRepo\(
 a.match(settingsSource, /import \{ courtsSwitcher, refreshCourts \} from '\.\/courts\.js';/, 'the Repository panel must draw its live court list from the courts switcher module');
 a.match(settingsSource, /courtsSwitcher\(state, rerender\)\);/, 'the Repository panel must render the courts switcher');
 a.match(settingsSource, /if \(result\?\.canceled\)/, 'a cancelled repository switch must leave the control usable again, not stuck disabled');
+// Court switcher rows are addressed by PORT: a repo-less court has no path,
+// several can run at once, and passing null used to focus the wrong court.
+const courtsSource = readFileSync(new URL('../ui/views/courts.js', import.meta.url), 'utf8');
+a.match(courtsSource, /focusCourt\(court\.port\)/, 'Open/Focus must target the selected court by its port');
+a.match(courtsSource, /endCourt\(court\.port\)/, 'End must target the selected court by its port');
+a.doesNotMatch(courtsSource, /openCourt\(court\.repo\)|endCourt\(court\.repo\)/, 'no row action may name a court by its (possibly null) repo');
+a.match(courtPreloadSource, /focusCourt: \(port\) => ipcRenderer\.invoke\('courts:focus', port\)/, 'the preload must expose focus-by-port');
+a.match(courtPreloadSource, /endCourt: \(port\) => ipcRenderer\.invoke\('courts:end', port\)/, 'the preload must expose end-by-port');
+a.match(electronMainSource, /ipcMain\.handle\('courts:focus'/, 'Electron must handle focus-by-port');
+// A failed start, open or end must say why instead of just resetting.
+a.equal(courtActionError({ ok: false, error: 'the court refused to end (HTTP 415)' }, 'x'), 'the court refused to end (HTTP 415)');
+a.equal(courtActionError({ ok: false }, 'Could not end that court.'), 'Could not end that court.', 'a failure with no message uses the fallback');
+a.equal(courtActionError({ ok: true }, 'x'), null);
+a.equal(courtActionError({ canceled: true }, 'x'), null, 'a cancelled confirmation is not an error');
+a.match(courtsSource, /state\.courtsError \? \[note\(state\.courtsError, 'danger'\)\]/, 'a switcher failure must render as a visible danger note');
 a.match(courtPreloadSource, /switchRepo: \(path\) => ipcRenderer\.invoke\('court:switchRepo', path\)/, 'the court preload must expose the repository-switch command');
 a.match(electronMainSource, /ipcMain\.handle\('court:switchRepo', async \(event, rawPath\) => switchRepo\(rawPath, \{/, 'the native main process must own ending and respawning the court');
 // The step sequence itself (validate before confirm, confirm before

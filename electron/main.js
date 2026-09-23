@@ -483,14 +483,22 @@ ipcMain.handle('courts:open', async (event, rawPath) => {
   });
 });
 
-ipcMain.handle('courts:end', async (event, rawPath) => {
-  const repo = resolve(String(rawPath));
-  const found = (await listCourts()).find((c) => c.repo && resolve(c.repo) === repo);
-  if (!found) return { ok: false, error: 'That court is not running.' };
+// A court row is identified by its PORT, not its repository: repo-less courts
+// are real and several can run at once, so a null repo cannot name one.
+ipcMain.handle('courts:focus', async (event, port) => {
+  const found = (await listCourts()).find((c) => c.port === Number(port));
+  if (!found) return { ok: false, error: 'That court is no longer running.' };
+  openWindow(found.port);
+  return { ok: true, port: found.port };
+});
+
+ipcMain.handle('courts:end', async (event, port) => {
+  const found = (await listCourts()).find((c) => c.port === Number(port));
+  if (!found) return { ok: false, error: 'That court is no longer running.' };
   const { response } = await dialog.showMessageBox({
     type: 'warning',
     title: 'End this court?',
-    message: `End the court for:\n\n${found.repo}`,
+    message: `End the court for:\n\n${found.repo ?? `the court on port ${found.port} (no repository attached)`}`,
     detail: 'Any work in progress in that court will stop. This cannot be undone.',
     buttons: ['Cancel', 'End court'],
     defaultId: 0,

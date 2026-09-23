@@ -24,28 +24,41 @@ export function refreshCourts(state, onDone) {
     .finally(() => onDone?.());
 }
 
+/** What went wrong with a switcher action, or null when nothing did. A
+ *  cancelled confirmation or picker is not an error. */
+export const courtActionError = (result, fallback) => (result?.ok === false ? (result.error ?? fallback) : null);
+
+/** Run one switcher action and keep its failure visible until the next one:
+ *  a failed start, open or end used to reset the button and say nothing. */
+async function runAction(state, rerender, fn, fallback) {
+  try {
+    state.courtsError = courtActionError(await fn(), fallback);
+  } catch (e) {
+    state.courtsError = e?.message ?? fallback;
+  } finally {
+    refreshCourts(state, rerender);
+  }
+}
+
 function courtRow(state, court, rerender) {
   const label = court.repo ?? '(no repository attached)';
   const busy = { current: false };
-  const withBusy = (fn) => async () => {
+  const withBusy = (fn, fallback) => async () => {
     if (busy.current) return;
     busy.current = true;
-    try { await fn(); } finally { busy.current = false; refreshCourts(state, rerender); }
+    try { await runAction(state, rerender, fn, fallback); } finally { busy.current = false; }
   };
-  const openBtn = button(court.open ? 'Focus' : 'Open', withBusy(async () => {
-    await window.kingdomShell.openCourt(court.repo);
-  }), 'primary');
-  const buttons = [openBtn];
-  if (court.repo) {
-    buttons.push(button('End…', withBusy(async () => {
-      await window.kingdomShell.endCourt(court.repo);
-    })));
-  }
+  // Rows are addressed by PORT: a repo-less court has no path to name it, and
+  // several repo-less courts can run at once.
+  const openBtn = button(court.open ? 'Focus' : 'Open',
+    withBusy(() => window.kingdomShell.focusCourt(court.port), 'Could not open that court.'), 'primary');
+  const endBtn = button('End…',
+    withBusy(() => window.kingdomShell.endCourt(court.port), 'Could not end that court.'));
   return h('div', { class: 'court-row' },
     h('div', { class: 'court-row-id' },
       h('span', { class: 'court-repo', text: label }),
       h('span', { class: 'court-port', text: `port ${court.port}` })),
-    h('div', { class: 'button-row' }, ...buttons));
+    h('div', { class: 'button-row' }, openBtn, endBtn));
 }
 
 /**
@@ -63,15 +76,17 @@ export function courtsSwitcher(state, rerender) {
   const startBtn = button('Start a court for another repository…', async () => {
     startBtn.disabled = true;
     try {
-      const picked = await window.kingdomShell.chooseRepo();
-      if (picked?.path) await window.kingdomShell.openCourt(picked.path);
+      await runAction(state, rerender, async () => {
+        const picked = await window.kingdomShell.chooseRepo();
+        return picked?.path ? window.kingdomShell.openCourt(picked.path) : null;
+      }, 'Could not start a court for that repository.');
     } finally {
       startBtn.disabled = false;
-      refreshCourts(state, rerender);
     }
   });
 
   return h('div', { class: 'courts-switcher' },
+    ...(state.courtsError ? [note(state.courtsError, 'danger')] : []),
     h('div', { class: 'courts-list' }, ...(Array.isArray(rows) ? rows : [rows])),
     h('div', { class: 'button-row' }, startBtn));
 }
