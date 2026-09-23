@@ -388,6 +388,30 @@ turnBudgetCoder.emit('turn_end', { usage: { input_tokens: 10 }, costUsd: 0 });
 await wait(200);
 a.equal(k6.paused, false, 'a third turn under the newly-raised cap of 10 must not re-pause the court');
 
+// Lowering the cap below what this session already took must pause NOW, not
+// after one more turn_end has spent another turn.
+k6.setTurnBudget(1);
+a.equal(k6.paused, true, 'setTurnBudget below the current session count must pause the court immediately');
+k6.resume();
+k6.setTurnBudget(0);
+a.equal(k6.paused, false, 'a budget of 0 turns the guard off and must not pause');
+k6.bus.db.prepare("delete from state where k = 'turnBudget'").run(); // back to the config value
+
+// A malformed config value must not switch the runaway guard off: NaN is
+// falsy, which sessionTurnCap() would read as "off". A numeric string must
+// become a number, not be concatenated with the session extension.
+const savedCfgBudget = k6.config.turnBudget;
+const budgetWarnings = [];
+k6.on('error', (e) => budgetWarnings.push(e.message));
+k6.config.turnBudget = 'abc';
+a.equal(k6.turnBudget(), 500, 'a malformed turnBudget must fall back to the default, never disable the guard');
+a.ok(k6.sessionTurnCap() > 0, 'the guard must stay on under a malformed config value');
+a.ok(budgetWarnings.some((m) => /turnBudget "abc"/.test(m)), 'a malformed turnBudget must be reported, not silently replaced');
+k6.config.turnBudget = '7';
+a.equal(k6.turnBudget(), 7, 'a numeric string must be read as a number');
+a.equal(typeof k6.sessionTurnCap(), 'number', 'the session cap must be numeric, never a concatenated string');
+k6.config.turnBudget = savedCfgBudget;
+
 await k6.stop();
 
 // --- issue #41 follow-up: SESSION-scoped budget, not lifetime ------------

@@ -3166,14 +3166,34 @@ export class Kingdom extends EventEmitter {
     const n = Number(cap);
     if (!Number.isFinite(n) || n < 0) throw new Error('The turn budget must be a number, 0 or more.');
     this.bus.set('turnBudget', String(n));
+    // An explicitly set budget replaces any "add N turns" extension granted
+    // earlier in this session; the sovereign asked for exactly this cap.
+    this.bus.set('turnBudgetExtra', '0');
     this.emit('budget', { scope: 'turns', cap: this.sessionTurnCap(), turns: this.turnsThisSession(), changed: true });
+    // A cap lowered (or switched on) below what this session has already
+    // taken must bite now, not after the next turn_end — another turn, or
+    // several concurrent ones, would otherwise overshoot it.
+    this.#enforceTurnBudget();
     return { cap: n };
   }
 
   /** The live turn-budget override if one has ever been set here, else the config default. */
   turnBudget() {
     const live = this.bus.get('turnBudget');
-    return live != null ? Number(live) : (this.config.turnBudget ?? DEFAULT_TURN_BUDGET);
+    const raw = live != null ? live : (this.config.turnBudget ?? DEFAULT_TURN_BUDGET);
+    const n = Number(raw);
+    if (Number.isFinite(n) && n >= 0) return n;
+    // A malformed value must not switch the runaway guard off (NaN is falsy,
+    // which sessionTurnCap() reads as "off"). Fall back to the default and
+    // say so once, rather than throwing from the per-turn path.
+    if (!this.warnedTurnBudget) {
+      this.warnedTurnBudget = true;
+      if (this.listenerCount('error')) {
+        this.emit('error', new Error(`turnBudget ${JSON.stringify(raw)} is not a number 0 or more; `
+          + `using the default of ${DEFAULT_TURN_BUDGET} turns.`));
+      }
+    }
+    return DEFAULT_TURN_BUDGET;
   }
 
   /**
