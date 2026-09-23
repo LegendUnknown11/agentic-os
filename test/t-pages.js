@@ -1,6 +1,7 @@
 import { strict as a } from 'node:assert';
 import { readFileSync } from 'node:fs';
 import { changeStage, pushState } from '../ui/views/pages.js';
+import { modelLabel } from '../ui/views/util.js';
 import { lastMessageIdFor } from '../ui/sidebar.js';
 import { taskMeta, visibleQueueRows } from '../ui/views/home.js';
 import { cancelMetrics, loadMetrics, metricsView, recommendationFor, warningFor } from '../ui/views/usage.js';
@@ -609,5 +610,37 @@ globalThis.fetch = async () => ({ ok: true, json: async () => ({ assets: [{ kind
 await assets.refresh();
 globalThis.fetch = realFetch;
 a.deepEqual(assets.state().queue, ['after-reload.mp3'], 'refresh must seed the music queue for the Play control');
+
+// #45: "it just says Opus Sonnet, not the model number at all" — every model
+// selector rendered the raw config value verbatim, so a member configured
+// with a short alias ("opus") or an older full id showed with no version.
+{
+  a.equal(modelLabel('claude-opus-5-5'), 'Opus 5.5', 'the current Opus must show its version number');
+  a.equal(modelLabel('claude-opus-5'), 'Opus 5', 'the previous Opus must still be distinguishable from the current one');
+  a.equal(modelLabel('claude-sonnet-5'), 'Sonnet 5');
+  a.equal(modelLabel('claude-haiku-4-5'), 'Haiku 4.5');
+  a.equal(modelLabel('claude-haiku-4-5-20251001'), 'Haiku 4.5', 'a dated id must resolve to the same readable name as its bare id');
+  a.equal(modelLabel('claude-fable-5-1'), 'Fable 5.1');
+  // The CLI's own short aliases (still valid, still accepted by agent.js)
+  // must also gain a version number rather than showing as a bare family
+  // name — this is the exact defect: an existing config using "opus" for a
+  // member showed literally "opus" with no number anywhere.
+  a.equal(modelLabel('opus'), 'Opus 5', 'a legacy bare alias must show a version number, not just the family name');
+  a.equal(modelLabel('sonnet'), 'Sonnet 5');
+  a.equal(modelLabel('haiku'), 'Haiku 4.5');
+  a.equal(modelLabel('fable'), 'Fable 5.1');
+  // An id this table does not know must degrade to showing the raw id, not
+  // to hiding the model or throwing — a model must never disappear from a
+  // selector just because it is unrecognised (a codex/agy/opencode id, or a
+  // future claude id this table has not caught up to yet).
+  a.equal(modelLabel('gpt-5.6-sol'), 'gpt-5.6-sol', 'an unmapped id must fall back to itself, not vanish');
+  a.equal(modelLabel(''), '', 'an empty model must not become a truthy label');
+  a.equal(modelLabel(null), null, 'a null model (an unset field) must pass through unchanged');
+
+  for (const [name, source] of [['agents', viewSources.agents], ['settings', settingsSource], ['thread', threadSource]]) {
+    a.match(source, /modelLabel\(/, `${name}'s model selector must render through modelLabel(), not the raw config id`);
+  }
+  console.log('  every model selector shows a readable, versioned name — a bare alias never renders unlabeled');
+}
 
 console.log('t-pages.js OK — changes expose review, request, success, and failure stages');

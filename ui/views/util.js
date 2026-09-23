@@ -173,6 +173,27 @@ export const meter = (value, label = '') => {
       h('i', { style: { width: `${current}%` } })));
 };
 export const kb = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(n ?? 0));
+
+// #45: "it just says Opus Sonnet, not the model number at all" — a member
+// configured with the claude CLI's own short aliases ("opus", "sonnet",
+// "haiku", "fable") or a bare model id showed up in every selector with no
+// version number, so two generations of the same family were indistinguishable
+// on screen. This is presentation only: the alias/id keeps being sent to the
+// CLI unchanged (agent.js), and an id this table does not know is shown as-is
+// rather than guessed at — an unlabeled model must never be hidden.
+const MODEL_LABELS = {
+  opus: 'Opus 5',
+  sonnet: 'Sonnet 5',
+  haiku: 'Haiku 4.5',
+  fable: 'Fable 5.1',
+  'claude-opus-5-5': 'Opus 5.5',
+  'claude-opus-5': 'Opus 5',
+  'claude-sonnet-5': 'Sonnet 5',
+  'claude-haiku-4-5': 'Haiku 4.5',
+  'claude-haiku-4-5-20251001': 'Haiku 4.5',
+  'claude-fable-5-1': 'Fable 5.1',
+};
+export const modelLabel = (model) => (model ? MODEL_LABELS[model] ?? model : model);
 export const date = (ts) => ts ? new Date(ts).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
 
 export const membersOf = (state) => state.members instanceof Map ? [...state.members.entries()] : Object.entries(state.members ?? {}).map(([name, member]) => [name, member]);
