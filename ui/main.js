@@ -226,7 +226,12 @@ async function maybeOpenDoctor(firstSnapshot) {
   if (!firstSnapshot || doctorProbe || location.hash.slice(1)) return;
   doctorProbe = true;
   const report = await get('/api/doctor');
-  if (report?.ready === false && !location.hash.slice(1)) navigate('doctor');
+  // The probe is async and can resolve well after boot. A run started in the
+  // meantime means the sovereign is already mid-task — grabbing the screen
+  // for a first-run health check at that point isn't a greeting, it's an
+  // interruption. Re-check state.run, not just the hash, right before acting
+  // on what may now be a stale readiness result.
+  if (report?.ready === false && !location.hash.slice(1) && !state.run) navigate('doctor');
 }
 
 function renderShell() {
