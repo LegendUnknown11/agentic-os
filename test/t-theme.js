@@ -106,11 +106,30 @@ a.doesNotMatch(css, /--dark-|--ed-/, 'neither the retired --dark- convention nor
 // this shell takes the CSS-generated one, so the gradient is expected — but
 // only as the tokenised grain, and nowhere else.
 a.match(css, /--grain:\s*radial-gradient\(rgb\(var\(--text-rgb\) \/ \.05\)/, 'the paper grain must be a token, so its colour stays inside :root');
-a.match(css, /body \{[^}]*background:\s*var\(--bg\) var\(--grain\);/, 'the page ground must carry the grain');
+// 2026-09-23: added alongside the glass tokens, for the same defect a live
+// session found — with no wallpaper set (the default state), the header and
+// rail read as fully opaque even with backdrop-filter correctly applied,
+// because blurring a flat colour is indistinguishable from not blurring it.
+// --wash gives the paper itself real tonal variation, tokenised so its
+// colours stay inside :root like every other value here.
+a.match(css, /--wash:\s*radial-gradient\(.*rgb\(var\(--accent-rgb\) \/ \.09\).*radial-gradient\(.*rgb\(var\(--surface-rgb\) \/ \.95\)/, 'the depth wash must be a token built from channel colours, not a literal');
+a.match(css, /body \{[^}]*background:\s*var\(--wash\), var\(--bg\) var\(--grain\);/, 'the page ground must carry both the depth wash and the grain');
 a.doesNotMatch(rules, /linear-gradient/, 'no rule may invent a gradient of its own');
 a.match(css, /\.mode-switcher\s*\{[^}]*border-radius:\s*var\(--radius-pill\)/, 'work modes must read as one segmented control');
 a.match(css, /\.mode-option\.selected\s*\{[^}]*background:\s*var\(--accent\)/, 'the active work mode needs one clear accent state');
-a.match(css, /\.view-heading::before\s*\{[^}]*content:\s*"AGENTIC OS \/ WORKSPACE"/, 'pages need one eyebrow from the shared heading primitive, naming the product correctly');
+// 2026-09-23: reverses the line above. Read against a populated demo court,
+// "AGENTIC OS / WORKSPACE" repeated identically on all 14 views carried no
+// information and cost real space above the fold of a dense tool. A prior
+// session already removed it once for the same reason and it came back —
+// so this is now a ban, not a requirement, to stop a well-meaning future
+// edit from "restoring" it a second time.
+a.doesNotMatch(css, /content:\s*"AGENTIC OS \/ WORKSPACE"/, 'the page eyebrow carried no information and must not be reintroduced');
+// The heading itself was the kit's MARKETING scale (`clamp(32px, 5vw, 48px)`,
+// a display face) although PLAN.md section 1 requires the PRODUCT scale
+// throughout — a 48px page title over 16px cards was that rule skipped for
+// the one heading every view shares. Pinned at the smaller scale so it does
+// not drift back up either.
+a.match(css, /\.view-heading h1\s*\{[^}]*font-size:\s*clamp\(20px, 2\.4vw, 26px\);/, 'the page heading must stay on the product scale, not the marketing one');
 a.match(css, /\.thread-header\s*\{[^}]*background:\s*var\(--surface\)/, 'threads need the same paper panel primitive as dashboard pages');
 a.doesNotMatch(css, /--mono:\s*['"]?(IBM Plex Mono|Playfair Display)/, 'this app runs offline in Electron — no webfont stack for --mono');
 
@@ -139,7 +158,31 @@ a.match(css, /grid-template:\s*"sidebar main" 1fr \/ 260px/);
 a.match(css, /#bg\s*\{[\s\S]*?z-index:\s*0;/, 'wallpaper must sit between the body and shell');
 a.match(css, /body\.has-bg\s*\{[\s\S]*?--shell-alpha:\s*\.82;/, 'wallpaper selection must open the shell surfaces');
 a.match(css, /--surface-alpha\s*:\s*1;/, 'shell opacity must be tokenised with an opaque default');
-a.equal(/backdrop-filter/i.test(css), false, 'flat surfaces must not reintroduce glass');
+// 2026-09-23: reverses the 2026-09-21 "flat surfaces must not reintroduce
+// glass" guard this line used to hold. The sovereign asked for a Hiveory-
+// inspired translucent/glass feel adopted *within* the paper system (#48 is
+// superseded by the paper kit; the glass feel is the part that survives).
+// Glass is scoped to chrome and floating surfaces only — never the flat,
+// hairline-bordered cards (`.view-section`) this system already keeps
+// shadowless at rest, so that rule is pinned as a negative here rather than
+// dropped.
+for (const sel of ['#header', '#sidebar', '#composer', '\\.hover-tip']) {
+  a.match(css, new RegExp(`${sel}\\s*\\{[^}]*backdrop-filter:\\s*blur\\(var\\(--glass-blur\\)\\)\\s*saturate\\(var\\(--glass-saturate\\)\\)`),
+    `${sel.replace(/\\\\/g, '')} is chrome or floating and must carry the glass blur`);
+}
+a.match(css, /body\.sidebar-open #sidebar-scrim\s*\{[^}]*backdrop-filter:\s*blur\(6px\)/, 'the drawer scrim blurs the content it covers');
+a.doesNotMatch(css, /\.view-section\s*\{[^}]*backdrop-filter/, 'cards at rest stay flat — glass is for chrome, not content');
+// Every glass alpha is measured against the worst ground this app can ever
+// put behind it (a fully black wallpaper image), not the paper default —
+// see the :root comment for the blend arithmetic. Pin the two numbers so a
+// future edit cannot "round them up" without redoing that measurement.
+a.equal(token('--glass-chrome-alpha'), '.90', '.90 keeps --muted at 4.72:1 blended over black — the raised-based glass budget');
+a.equal(token('--glass-panel-alpha'), '.97', '.97 is the highest alpha that still clears 4.5:1 for --muted on --surface blended over black');
+// A browser without backdrop-filter, or a person who has asked for less
+// transparency, gets the pre-glass opaque paint back — never the thinner
+// alpha uncomposited against whatever sits behind it.
+a.match(css, /@supports not \(backdrop-filter:\s*blur\(1px\)\)\s*\{[\s\S]*?#header,\s*\.hover-tip\s*\{\s*background:\s*var\(--raised\);/, 'a browser without backdrop-filter must fall back to the opaque paint');
+a.match(css, /@media \(prefers-reduced-transparency:\s*reduce\)\s*\{[\s\S]*?backdrop-filter:\s*none;/, 'reduced transparency must turn glass back into the opaque paint');
 a.match(css, /#composer:empty\s*\{\s*display:\s*none;/, 'non-chat pages must not leave an empty composer bar');
 a.match(css, /#view\.view-changing\s*\{[^}]*opacity:\s*0;[^}]*transform:/, 'view changes need a bounded visual entry state');
 a.match(css, /\.sidebar-nav-button/, 'the primary workspace navigation needs an explicit, testable treatment');
@@ -252,6 +295,10 @@ a.match(css, /\.agent-usage-details\s*\{[^}]*grid-template-columns:/, 'per-agent
 a.match(css, /\.agent-usage-card h3, \.agent-usage-card p\s*\{[^}]*overflow-wrap:\s*anywhere;/, 'long agent and model names must wrap instead of clipping');
 a.match(css, /\.usage-recommendation\s*\{[^}]*border:\s*1px solid var\(--line\);[^}]*border-left:\s*3px solid var\(--danger\)/, 'Usage advice must use the shared attention-row geometry');
 a.match(css, /\.settings-group\s*\{[^}]*border:\s*1px solid var\(--line\)/, 'consolidated Settings jobs must retain one semantic boundary');
+// 2026-09-23: read directly on Models & efficiency and Notifications — a
+// bordered .view-section wrapping bordered .settings-group fieldsets with
+// nothing of its own between the two borders, a card nested in a panel.
+a.match(css, /\.settings-shell \.view-section:has\(> \.settings-group\)\s*\{[^}]*border:\s*0;/, 'a settings tab that only holds groups must not also draw its own outer card');
 a.match(css, /@media \(max-width: 720px\)[\s\S]*?\.agent-usage-details\s*\{[^}]*grid-template-columns:\s*1fr;/, 'agent definition lists must stack on narrow screens');
 a.match(css, /@media \(forced-colors: active\)/, 'forced-colors users must retain metric and status boundaries');
 a.match(css, /\.form-grid > label input/, 'nested workflow form controls must inherit the shell field treatment');
@@ -304,6 +351,14 @@ a.match(css, /body\.sidebar-open #sidebar \.sidebar-mode\s*\{[^}]*flex-shrink:\s
 a.match(css, /body\.sidebar-open #sidebar\s*\{[^}]*overflow-y:\s*auto;/, 'the drawer ran 122px past the viewport and swallowed the conversation list; it scrolls as one column');
 a.match(css, /body\.sidebar-open #sidebar \.sidebar-conversations\s*\{[^}]*flex:\s*none;/, 'the conversation list must keep its natural height in the drawer, not absorb a deficit');
 a.match(css, /body\.sidebar-open #sidebar \.sidebar-collapse\s*\{[^}]*display:\s*none;/, 'the collapse control is a rail affordance and there is no rail at drawer width');
+// 2026-09-23: with a populated court (twelve conversations, More tools open)
+// the desktop rail's own sections could outgrow #sidebar's height, and its
+// overflow: hidden clipped the footer (Settings/Collapse, half off the
+// bottom of the viewport at 1280x720) and squeezed Conversations to one row.
+// .sidebar-scroll carries the scrolling; header and footer sit outside it so
+// they are never the thing that gets clipped.
+a.match(css, /\.sidebar-scroll\s*\{[^}]*flex:\s*1;[^}]*min-height:\s*0;[^}]*overflow-y:\s*auto;/, 'the rail middle must scroll on its own so the header and footer are never clipped');
+a.match(css, /body\.sidebar-open #sidebar \.sidebar-scroll\s*\{[^}]*flex:\s*none;[^}]*overflow:\s*visible;/, 'the 720px drawer keeps scrolling as one column, not a nested scroller');
 a.match(css, /\.sidebar\.collapsed \.sidebar-collapse::before\s*\{[^}]*content:\s*"[^"}]+";/, 'the collapsed rail must retain a visible expand affordance');
 a.match(css, /\.conversation-row:hover \.conversation-actions, \.conversation-row:focus-within \.conversation-actions/, 'conversation actions must be visible to keyboard users');
 // Measured live 2026-09-21 at 1440x900: with .selected here too, the selected
@@ -326,10 +381,27 @@ a.match(css, /\.attachment-chip button\s*\{[^}]*width:\s*var\(--tap-target-min\)
 a.match(css, /@media \(max-width: 720px\)[\s\S]*?\.wfn-x\s*\{\s*opacity:\s*1;/, 'workflow deletion must remain reachable on touch-sized editors');
 a.match(css, /@media \(prefers-reduced-motion: reduce\)[\s\S]*?animation:\s*none\s*!important;/, 'reduced-motion users must not receive a running animation');
 a.doesNotMatch(css, /\.section\s*\{|\.card\s*\{|\.row\s*\{|\.nav\s*\{|\.composer-form\s*\{|\.message\s*\{/, 'deleted window components must not leave a second styling vocabulary');
+
+// 2026-09-23: a populated demo court's Chat page showed a fenced code block
+// rendering on bare browser defaults — no background, no wrap handling, so a
+// long line pushed the message bubble past the thread column. mdToHtml
+// (ui/markdown.js) already emits real <pre><code>/<code>; the gap was purely
+// that ui/app.css never styled them.
+a.match(css, /\.markdown pre\s*\{[^}]*overflow-x:\s*auto;[^}]*font-family:\s*var\(--mono\);/, 'a fenced code block must scroll inside its own box, not stretch the message bubble');
+a.match(css, /\.markdown code\s*\{[^}]*font-family:\s*var\(--mono\);/, 'inline code must read as code, not as prose in a monospace accident');
 a.match(main, /class="mobile-menu"/, 'small screens need a menu control');
 a.match(main, /sidebar-scrim/, 'small screens need a native close target outside the rail');
 a.doesNotMatch(main, /const action = document\.createElement\('small'\)/, 'mode tabs must not repeat the header explainer copy');
 a.doesNotMatch(css, /\.mode-option small/, 'mode tabs must not reserve space for duplicate explainer copy');
+// 2026-09-23: the same defect came back under a different tag. Read directly
+// on a populated demo court: three two-line mode pills dominated the header
+// and pushed "Connected" to the far end looking detached. The button's own
+// dataset.tip/aria-label (ui/main.js) already carry the description, and
+// attachHoverTips(document.body) already surfaces it on hover, so hiding the
+// always-visible copy loses no information — it moves from mandatory to
+// on-demand, which is this app's own established convention for exactly this
+// (see HANDOFF.md's .hover-tip rule).
+a.match(css, /\.mode-option span\s*\{\s*display:\s*none;\s*\}/, 'mode tabs must not reserve space for duplicate explainer copy under any tag name');
 a.match(main, /button\.disabled = modeRequest > 0 \|\| !ready/, 'mode controls must wait for the first workspace snapshot');
 a.match(main, /if \(state\.ready === false \|\| !backend \|\| !choice \|\| modeRequest\)/, 'mode changes must reject requests before the workspace snapshot');
 a.match(sidebar, /button\.disabled = currentState\.ready === false/, 'mobile mode controls must wait for the first workspace snapshot');

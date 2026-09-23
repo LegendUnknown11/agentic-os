@@ -136,7 +136,31 @@ async function main() {
       await page.close();
     }
 
-    console.log('t-theme-geometry.js OK — the three live-session layout defects hold at their real computed geometry, in a real browser');
+    // Defect 4 (t-theme.js: ".sidebar-scroll"): a populated court (twelve
+    // conversations, More tools open — forced here by mounting on 'doctor',
+    // one of its own pages) at a short desktop viewport (1280x720, and the
+    // enforced 900px minimum) could ask the rail for more height than it had.
+    // Before .sidebar-scroll, #sidebar's own overflow: hidden clipped
+    // whatever did not fit — measured live at 1280x720: the footer
+    // (Settings/Collapse) ran off the bottom of the viewport. Measured here
+    // as real rendered geometry: the footer's bottom edge must stay inside
+    // the viewport, and the scroller must actually have overflow to scroll.
+    {
+      const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+      await page.goto(`http://127.0.0.1:${port}/test/fixtures/sidebar-geometry.html`);
+      await mount(page, { ...BASE_STATE, view: { page: 'doctor' }, conversations: CONVERSATIONS }, { modes: MODES }, '');
+      const [footerBox, scroll, viewportHeight] = await page.evaluate(() => [
+        document.querySelector('.sidebar-footer').getBoundingClientRect(),
+        (() => { const el = document.querySelector('.sidebar-scroll'); return { scrollHeight: el.scrollHeight, clientHeight: el.clientHeight, overflowY: getComputedStyle(el).overflowY }; })(),
+        window.innerHeight,
+      ]);
+      a.ok(footerBox.bottom <= viewportHeight + 1, `the rail footer measured its bottom edge at ${footerBox.bottom}px against a ${viewportHeight}px viewport — it must never run past it`);
+      a.equal(scroll.overflowY, 'auto', 'the rail middle must be the thing that scrolls, not the whole rail');
+      a.ok(scroll.scrollHeight > scroll.clientHeight, 'a populated court must actually need to scroll the rail middle — otherwise this proves nothing');
+      await page.close();
+    }
+
+    console.log('t-theme-geometry.js OK — the three 2026-09-21 layout defects and the 2026-09-23 rail-overflow fix hold at their real computed geometry, in a real browser');
   } finally {
     await browser.close();
     server.close();

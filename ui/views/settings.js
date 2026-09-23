@@ -343,6 +343,15 @@ export function renderSettings(state, root) {
   const requested = state.settingsSection ?? 'repo';
   const active = requested === 'summary' || requested === 'advisor' ? 'efficiency' : requested;
   const shell = page('Settings', 'Repository, model behaviour, assets, notifications, and the desk pet.');
+  // Several tabs (Models & efficiency, Notifications, …) build their
+  // section() out of one or more group() fieldsets — a bordered
+  // .view-section directly wrapping bordered .settings-group boxes, so the
+  // outer border sat flush against the inner one with no content between
+  // them, a card nested in a panel with nothing of its own to show. A tab
+  // with no groups (Repository) already reads fine as one plain card, so
+  // app.css's rule for this only fires when a .settings-group is actually
+  // inside — this class just scopes it to the settings page.
+  shell.classList.add('settings-shell');
   const nav = h('nav', { class: 'settings-tabs', 'aria-label': 'Settings sections' });
   for (const [key, label] of TABS) {
     const tab = button(label, () => { state.settingsSection = key; renderSettings(state, root); }, key === active ? 'selected' : '');
