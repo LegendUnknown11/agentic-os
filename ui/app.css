@@ -174,6 +174,37 @@
   --shadow-small: none;
   --shadow-panel: 0 24px 64px -38px rgb(8 74 74 / .62);
   --shadow-button: 0 14px 28px -20px rgb(13 102 99 / .7);
+
+  /* Glass — a translucent, blurred chrome, added 2026-09-23 at the sovereign's
+   * direction (Hiveory-inspired feel, adopted within this paper system rather
+   * than swapping the palette for it — issue #48 is superseded by the paper
+   * kit; this is the part of it that survives). Scoped to what actually
+   * floats over content — #header, #sidebar (rail and 720px drawer),
+   * #composer, .hover-tip, the drawer scrim — never the flat cards this
+   * system already keeps hairline-bordered and shadowless at rest.
+   *
+   * Two alphas, not one, because the two grounds behind them carry different
+   * contrast budgets. Every text pairing must clear 4.5:1 against the worst
+   * ground this app can ever put behind glass: not the paper default, but a
+   * fully black wallpaper image (#bg supports an optional user wallpaper;
+   * black is the true floor, unbounded above). Computed 2026-09-23 (WCAG
+   * relative luminance), blending each surface's colour at its alpha over
+   * rgb(0 0 0):
+   * --raised blended at .90 over black: --text 10.14:1, --muted 4.72:1,
+   * --accent 5.08:1 — comfortable margin, so header and hover-tip read
+   * clearly glass.
+   * --surface already clears --muted at only 4.87:1 opaque (the same
+   * departure recorded above), so its blend budget is thinner: .97 is the
+   * highest alpha that still clears 4.5:1 there (4.57:1 measured) — the
+   * sidebar rail and composer are glass, but only just, and that is the
+   * honest number, not a rounder one that would fail black.
+   * The 720px drawer and its scrim reuse --glass-panel-alpha and a lighter
+   * blur; nothing pins text against the scrim itself, so it carries no
+   * contrast obligation of its own. */
+  --glass-blur: 20px;
+  --glass-saturate: 160%;
+  --glass-chrome-alpha: .90;
+  --glass-panel-alpha: .97;
 }
 
 * { box-sizing: border-box; }
@@ -235,7 +266,8 @@ a:focus-visible, summary:focus-visible, button:focus-visible, input:focus-visibl
   gap: var(--space-3);
   padding: var(--space-3) var(--space-3);
   border-right: 1px solid var(--line);
-  background: rgb(var(--surface-rgb) / var(--surface-alpha));
+  background: rgb(var(--surface-rgb) / min(var(--surface-alpha), var(--glass-panel-alpha)));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   overflow: hidden;
 }
 
@@ -259,7 +291,8 @@ a:focus-visible, summary:focus-visible, button:focus-visible, input:focus-visibl
   min-height: 72px;
   padding: var(--space-3) var(--space-5);
   border-bottom: 1px solid var(--line);
-  background: var(--raised);
+  background: rgb(var(--raised-rgb) / var(--glass-chrome-alpha));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
 }
 
 #view {
@@ -279,7 +312,8 @@ a:focus-visible, summary:focus-visible, button:focus-visible, input:focus-visibl
   min-width: 0;
   padding: var(--space-3) var(--space-5) var(--space-3);
   border-top: 1px solid var(--line);
-  background: rgb(var(--surface-rgb) / var(--surface-alpha));
+  background: rgb(var(--surface-rgb) / min(var(--surface-alpha), var(--glass-panel-alpha)));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
 }
 
 #composer:empty { display: none; }
@@ -566,7 +600,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .sidebar-nav-button.selected .icon { color: var(--accent); }
 
-.hover-tip { position: fixed; z-index: 50; max-width: 260px; padding: var(--space-2) var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-ctl); background: var(--raised); color: var(--text); font-size: var(--t-xs); line-height: 1.4; white-space: pre-line; pointer-events: none; box-shadow: var(--shadow-panel); }
+.hover-tip { position: fixed; z-index: 50; max-width: 260px; padding: var(--space-2) var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-ctl); background: rgb(var(--raised-rgb) / var(--glass-chrome-alpha)); backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate)); color: var(--text); font-size: var(--t-xs); line-height: 1.4; white-space: pre-line; pointer-events: none; box-shadow: var(--shadow-panel); }
 
 .sidebar-conversations { flex: 1; grid-template-rows: auto minmax(0, 1fr); min-height: 0; }
 
@@ -1219,7 +1253,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
      collapsed layout lives behind a min-width: 901px query. The control was
      taking 50px of a drawer that had none to spare and doing nothing. */
   body.sidebar-open #sidebar .sidebar-collapse { display: none; }
-  body.sidebar-open #sidebar-scrim { position: fixed; z-index: 4; inset: 0; display: block; width: 100%; height: 100%; border: 0; border-radius: 0; background: rgb(var(--text-rgb) / .38); cursor: default; }
+  body.sidebar-open #sidebar-scrim { position: fixed; z-index: 4; inset: 0; display: block; width: 100%; height: 100%; border: 0; border-radius: 0; background: rgb(var(--text-rgb) / .38); backdrop-filter: blur(6px); cursor: default; }
   /* flex-shrink: 0 alongside display, not as an afterthought. Measured live
      in the 720px drawer 2026-09-21: the section reported 287x0 while its own
      mode pills painted at y 105-155, straight through the Overview row. The
@@ -1255,6 +1289,24 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition-duration: 1ms !important; }
+}
+
+/* Glass falls back to the flat surface it blends with. A browser that cannot
+ * blur must not silently render the thinner alpha on its own — that would
+ * leave --surface's already-thin .97 budget uncomposited against whatever
+ * happens to sit behind it, which is exactly the contrast obligation the
+ * blur was measured against. Both fallbacks force the pre-glass opaque
+ * paint instead. */
+@supports not (backdrop-filter: blur(1px)) {
+  #header, .hover-tip { background: var(--raised); }
+  #sidebar, #composer { background: var(--surface); }
+  body.sidebar-open #sidebar-scrim { backdrop-filter: none; }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  #header, .hover-tip { background: var(--raised); backdrop-filter: none; }
+  #sidebar, #composer { background: var(--surface); backdrop-filter: none; }
+  body.sidebar-open #sidebar-scrim { backdrop-filter: none; }
 }
 
 @media (forced-colors: active) {

@@ -139,7 +139,31 @@ a.match(css, /grid-template:\s*"sidebar main" 1fr \/ 260px/);
 a.match(css, /#bg\s*\{[\s\S]*?z-index:\s*0;/, 'wallpaper must sit between the body and shell');
 a.match(css, /body\.has-bg\s*\{[\s\S]*?--shell-alpha:\s*\.82;/, 'wallpaper selection must open the shell surfaces');
 a.match(css, /--surface-alpha\s*:\s*1;/, 'shell opacity must be tokenised with an opaque default');
-a.equal(/backdrop-filter/i.test(css), false, 'flat surfaces must not reintroduce glass');
+// 2026-09-23: reverses the 2026-09-21 "flat surfaces must not reintroduce
+// glass" guard this line used to hold. The sovereign asked for a Hiveory-
+// inspired translucent/glass feel adopted *within* the paper system (#48 is
+// superseded by the paper kit; the glass feel is the part that survives).
+// Glass is scoped to chrome and floating surfaces only — never the flat,
+// hairline-bordered cards (`.view-section`) this system already keeps
+// shadowless at rest, so that rule is pinned as a negative here rather than
+// dropped.
+for (const sel of ['#header', '#sidebar', '#composer', '\\.hover-tip']) {
+  a.match(css, new RegExp(`${sel}\\s*\\{[^}]*backdrop-filter:\\s*blur\\(var\\(--glass-blur\\)\\)\\s*saturate\\(var\\(--glass-saturate\\)\\)`),
+    `${sel.replace(/\\\\/g, '')} is chrome or floating and must carry the glass blur`);
+}
+a.match(css, /body\.sidebar-open #sidebar-scrim\s*\{[^}]*backdrop-filter:\s*blur\(6px\)/, 'the drawer scrim blurs the content it covers');
+a.doesNotMatch(css, /\.view-section\s*\{[^}]*backdrop-filter/, 'cards at rest stay flat — glass is for chrome, not content');
+// Every glass alpha is measured against the worst ground this app can ever
+// put behind it (a fully black wallpaper image), not the paper default —
+// see the :root comment for the blend arithmetic. Pin the two numbers so a
+// future edit cannot "round them up" without redoing that measurement.
+a.equal(token('--glass-chrome-alpha'), '.90', '.90 keeps --muted at 4.72:1 blended over black — the raised-based glass budget');
+a.equal(token('--glass-panel-alpha'), '.97', '.97 is the highest alpha that still clears 4.5:1 for --muted on --surface blended over black');
+// A browser without backdrop-filter, or a person who has asked for less
+// transparency, gets the pre-glass opaque paint back — never the thinner
+// alpha uncomposited against whatever sits behind it.
+a.match(css, /@supports not \(backdrop-filter:\s*blur\(1px\)\)\s*\{[\s\S]*?#header,\s*\.hover-tip\s*\{\s*background:\s*var\(--raised\);/, 'a browser without backdrop-filter must fall back to the opaque paint');
+a.match(css, /@media \(prefers-reduced-transparency:\s*reduce\)\s*\{[\s\S]*?backdrop-filter:\s*none;/, 'reduced transparency must turn glass back into the opaque paint');
 a.match(css, /#composer:empty\s*\{\s*display:\s*none;/, 'non-chat pages must not leave an empty composer bar');
 a.match(css, /#view\.view-changing\s*\{[^}]*opacity:\s*0;[^}]*transform:/, 'view changes need a bounded visual entry state');
 a.match(css, /\.sidebar-nav-button/, 'the primary workspace navigation needs an explicit, testable treatment');
