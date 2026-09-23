@@ -4,6 +4,9 @@
 // open. Uploads that are neither (audio, video) must not clutter that list.
 //
 //   node test/t-uploads.js
+// Never let a daemon this suite spawns touch the real ~/.kingdom/courts.json
+// on the machine running the tests — see test/t-registry-isolation.js.
+import './isolate-registry.js';
 import { strict as a } from 'node:assert';
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';

@@ -4,6 +4,7 @@ import { changeStage, pushState } from '../ui/views/pages.js';
 import { modelLabel, turnsText } from '../ui/views/util.js';
 import { lastMessageIdFor } from '../ui/sidebar.js';
 import { taskMeta, visibleQueueRows } from '../ui/views/home.js';
+import { courtActionError } from '../ui/views/courts.js';
 import { resolvedOutcome } from '../ui/views/approvals.js';
 import { cancelMetrics, loadMetrics, metricsView, recommendationFor, warningFor } from '../ui/views/usage.js';
 
@@ -88,16 +89,36 @@ a.match(courtPreloadSource, /openPet: \(\) => ipcRenderer\.send\('pet:open'\)/, 
 a.match(electronMainSource, /ipcMain\.on\('pet:open', openPet\)/, 'the native main process must reopen the desk pet');
 a.match(electronMainSource, /spawn\(node, \[[\s\S]*?windowsHide: true/, 'the daemon spawn must not flash a console window on Windows startup');
 
-// Issue #42 (reopened): attachRepo refuses a live repo swap on purpose
+// Issue #42: attachRepo still refuses a live repo swap on purpose
 // (src/kingdom.js, locked in by test/t-control.js's "requires a fresh
-// court" pin) — the real gap was that nothing in the app could actually end
-// the court and start a fresh one. Settings now offers that, gated to the
-// exact wall attachRepo hits, wired through a dedicated shell bridge.
-a.match(settingsSource, /if \(\/fresh court\/\.test\(result\.error \?\? ''\) && window\.kingdomShell\?\.switchRepo\) switchRepo\.hidden = false;/, 'the repository switcher must only appear once attach has actually hit the fresh-court wall');
+// court" pin) — but the app no longer makes the sovereign hit that wall
+// before offering a fix. The fail-first gating that used to hide "End court
+// and switch…" until attachRepo actually failed is gone: it is offered up
+// front, alongside the non-destructive courts switcher (open that repo's OWN
+// court instead of ending this one) — see ui/views/courts.js.
+a.doesNotMatch(settingsSource, /switchRepo\.hidden = false/, 'the repository switcher must no longer be revealed conditionally after a failed attach — it is offered up front');
+a.match(settingsSource, /const switchRepo = window\.kingdomShell\?\.switchRepo \? button\('End court and switch to this repository…', async \(\) => \{/, 'the repository switcher must be offered whenever the shell bridge exists, not gated behind a prior failure');
 a.match(settingsSource, /const result = await window\.kingdomShell\.switchRepo\(path\.value\.trim\(\)\);/, 'switching repositories must go through the dedicated shell bridge, not attachRepo');
+a.match(settingsSource, /import \{ courtsSwitcher, refreshCourts \} from '\.\/courts\.js';/, 'the Repository panel must draw its live court list from the courts switcher module');
+a.match(settingsSource, /courtsSwitcher\(state, rerender\)\);/, 'the Repository panel must render the courts switcher');
 a.match(settingsSource, /if \(result\?\.canceled\)/, 'a cancelled repository switch must leave the control usable again, not stuck disabled');
+// Court switcher rows are addressed by PORT: a repo-less court has no path,
+// several can run at once, and passing null used to focus the wrong court.
+const courtsSource = readFileSync(new URL('../ui/views/courts.js', import.meta.url), 'utf8');
+a.match(courtsSource, /focusCourt\(court\.port\)/, 'Open/Focus must target the selected court by its port');
+a.match(courtsSource, /endCourt\(court\.port\)/, 'End must target the selected court by its port');
+a.doesNotMatch(courtsSource, /openCourt\(court\.repo\)|endCourt\(court\.repo\)/, 'no row action may name a court by its (possibly null) repo');
+a.match(courtPreloadSource, /focusCourt: \(port\) => ipcRenderer\.invoke\('courts:focus', port\)/, 'the preload must expose focus-by-port');
+a.match(courtPreloadSource, /endCourt: \(port\) => ipcRenderer\.invoke\('courts:end', port\)/, 'the preload must expose end-by-port');
+a.match(electronMainSource, /ipcMain\.handle\('courts:focus'/, 'Electron must handle focus-by-port');
+// A failed start, open or end must say why instead of just resetting.
+a.equal(courtActionError({ ok: false, error: 'the court refused to end (HTTP 415)' }, 'x'), 'the court refused to end (HTTP 415)');
+a.equal(courtActionError({ ok: false }, 'Could not end that court.'), 'Could not end that court.', 'a failure with no message uses the fallback');
+a.equal(courtActionError({ ok: true }, 'x'), null);
+a.equal(courtActionError({ canceled: true }, 'x'), null, 'a cancelled confirmation is not an error');
+a.match(courtsSource, /state\.courtsError \? \[note\(state\.courtsError, 'danger'\)\]/, 'a switcher failure must render as a visible danger note');
 a.match(courtPreloadSource, /switchRepo: \(path\) => ipcRenderer\.invoke\('court:switchRepo', path\)/, 'the court preload must expose the repository-switch command');
-a.match(electronMainSource, /ipcMain\.handle\('court:switchRepo', async \(event, rawPath\) => switchRepo\(rawPath, \{/, 'the native main process must own ending and respawning the court');
+a.match(electronMainSource, /ipcMain\.handle\('court:switchRepo', async \(event, rawPath\) => \{\s*\n\s*const port = courtPortOf\(event\.sender\.getURL\(\), PORT\);\s*\n\s*const origin = originFor\(port\);\s*\n\s*return switchRepo\(rawPath, \{/, 'the native main process must own ending and respawning the court — the one the requesting window shows, not always the default port');
 // The step sequence itself (validate before confirm, confirm before
 // shutdown, shutdown before startDaemon, reload only after it answers) is a
 // plain function in electron/switch-repo.js, exercised end-to-end without
@@ -107,9 +128,16 @@ a.match(electronMainSource, /ipcMain\.handle\('court:switchRepo', async \(event,
 a.match(electronMainSource, /import \{ assertRepo \} from '\.\.\/src\/worktree\.js'/, 'a repository switch must validate the target with a real git check (assertRepo), not an existsSync(.git) peek a corrupt or empty entry would pass');
 a.match(electronMainSource, /assertRepo,\s*\n\s*confirm: async \(repo\) => \{/, 'a repository switch must use the real git validator, not a bespoke check');
 a.match(electronMainSource, /buttons: \['Cancel', 'End court and switch'\][\s\S]*?return response === 1;/, 'ending a court is destructive — it must be confirmed natively before anything is torn down');
-a.match(electronMainSource, /shutdown: \(\) => fetch\(`\$\{ORIGIN\}\/api\/shutdown`, \{ method: 'POST' \}\)/, 'a repository switch must end the running court through its own shutdown endpoint');
-a.match(electronMainSource, /courtOnPort,\s*\n\s*startDaemon,/, 'a repository switch must poll the real port state and start the fresh court through the same path the app itself boots with');
-a.match(electronMainSource, /reload: \(\) => BrowserWindow\.fromWebContents\(event\.sender\)\?\.loadURL\(`\$\{ORIGIN\}\/`\)/, 'a successful repository switch must reload the window instead of resuming a stale event cursor from the old repo');
+a.match(electronMainSource, /firstLaunchPlan\(repo, repo \? await listCourts\(\) : \[\], running\)/,
+  'the first launch must consult the court registry before falling back to the pinned port');
+a.match(electronMainSource, /openWindow\(targetPort\);/, 'the first window must open the court the launch plan chose');
+a.match(electronMainSource, /shutdown: \(\) => requestShutdown\(origin\)/, 'a repository switch must end the requesting window\'s court through its own shutdown endpoint');
+// A bare POST is 415'd by the daemon's JSON gate while fetch() still resolves,
+// so it looked like success and the court kept running.
+a.doesNotMatch(electronMainSource, /fetch\([^)]*\/api\/shutdown`, \{ method: 'POST' \}\)/,
+  'no shutdown POST may omit the JSON content type the daemon requires');
+a.match(electronMainSource, /courtOnPort: \(\) => courtOnPort\(origin\),\s*\n\s*startDaemon: \(repo, logPath\) => startDaemon\(repo, logPath, port\),/, 'a repository switch must poll that court\'s real port and start the fresh court on it through the same path the app itself boots with');
+a.match(electronMainSource, /reload: \(\) => BrowserWindow\.fromWebContents\(event\.sender\)\?\.loadURL\(`\$\{origin\}\/`\)/, 'a successful repository switch must reload the window instead of resuming a stale event cursor from the old repo');
 a.match(automationsSource, /workflow-run-message/, 'a manual workflow run must leave visible feedback');
 a.match(automationsSource, /result\?\.steps/, 'workflow feedback must report the returned run trace');
 a.match(automationsSource, /automationEditor/, 'live updates must not discard an open workflow editor');
