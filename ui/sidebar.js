@@ -1,5 +1,5 @@
 import { state as storeState, subscribe, post as storePost, sameId } from './store.js';
-import { spendText } from './views/util.js';
+import { spendText, turnsText } from './views/util.js';
 import { icon } from './icons.js';
 import { statusLabel } from './status.js';
 
@@ -122,6 +122,23 @@ export function mountSidebar(root, options = {}) {
   const conversationList = node('div', 'conversation-list');
   conversations.append(conversationsTitle, conversationList);
 
+  // #41: pausing the court used to have no visible surface at all beyond a
+  // chat notice addressed to the orchestrator — the sovereign had no reason
+  // to be looking at that conversation, so a court paused for its turn
+  // budget just looked stopped, for no visible reason, with no way back in.
+  const pauseBanner = node('div', 'sidebar-pause-banner');
+  pauseBanner.hidden = true;
+  const pauseText = node('p', 'sidebar-pause-text');
+  const pauseActions = node('div', 'sidebar-pause-actions');
+  const resumeButton = node('button', 'sidebar-pause-resume', 'Resume');
+  resumeButton.type = 'button';
+  resumeButton.dataset.action = 'resume';
+  const raiseButton = node('button', 'sidebar-pause-raise', 'Add 100 turns & resume');
+  raiseButton.type = 'button';
+  raiseButton.dataset.action = 'raise-turn-budget';
+  pauseActions.append(resumeButton, raiseButton);
+  pauseBanner.append(pauseText, pauseActions);
+
   const footer = node('footer', 'sidebar-footer');
   const repo = node('button', 'sidebar-repo');
   repo.type = 'button';
@@ -130,7 +147,7 @@ export function mountSidebar(root, options = {}) {
   const settings = node('button', 'sidebar-settings', 'Settings');
   settings.type = 'button';
   settings.dataset.action = 'settings';
-  footer.append(repo, spend, settings);
+  footer.append(pauseBanner, repo, spend, settings);
 
   const collapse = node('button', 'sidebar-collapse', 'Collapse');
   collapse.type = 'button';
@@ -251,7 +268,25 @@ export function mountSidebar(root, options = {}) {
     const path = currentState.repo ?? currentState.repository;
     repo.textContent = repoName(path);
     repo.dataset.tip = path || 'Attach a repository';
-    spend.textContent = spendText(currentState.spend);
+    const money = spendText(currentState.spend);
+    const turns = turnsText(currentState.spend);
+    spend.textContent = [money, turns].filter(Boolean).join(' · ');
+
+    // Pausing degrades visibly (#41): a court paused for its turn budget (or
+    // by the sovereign's own hand) shows a banner right where the spend
+    // total already lives, instead of only a chat notice nobody may be
+    // reading. Reuses the exact `paused` flag and `pause()`/`resume()` pair
+    // the sovereign's manual pause already relies on — this is not a
+    // second pause mechanism.
+    const paused = Boolean(currentState.paused);
+    pauseBanner.hidden = !paused;
+    if (paused) {
+      const why = currentState.pausedWhy || '';
+      pauseText.textContent = why ? `Paused — ${why}` : 'Paused by the sovereign.';
+      const isTurnBudget = /turn budget/i.test(why);
+      raiseButton.hidden = !isTurnBudget;
+    }
+
     const collapsed = Boolean(currentState.prefs?.sidebarCollapsed);
     root.classList.toggle('collapsed', collapsed);
     document.body.classList.toggle('sidebar-collapsed', collapsed);
@@ -291,6 +326,21 @@ export function mountSidebar(root, options = {}) {
     else if (action === 'mobile-close') options.onMobileClose?.();
     else if (action === 'settings') options.onSettings?.();
     else if (action === 'repo') options.onRepository?.();
+    else if (action === 'resume') {
+      resumeButton.disabled = true;
+      send(post, 'resume', {}).then((result) => {
+        resumeButton.disabled = false;
+        if (!result?.ok) options.toast?.(result?.error ?? 'Could not resume the court.', true);
+      });
+    } else if (action === 'raise-turn-budget') {
+      // "100 more turns from right now": the daemon adds them to this
+      // session's cap (Kingdom#raiseTurnBudget), relative to its own count.
+      raiseButton.disabled = true;
+      send(post, 'raiseTurnBudget', { by: 100 }).then((result) => {
+        raiseButton.disabled = false;
+        if (!result?.ok) options.toast?.(result?.error ?? 'Could not raise the turn budget.', true);
+      });
+    }
     else if (action === 'collapse') updatePreference(!currentState.prefs?.sidebarCollapsed);
     else if (action === 'rename-start') { editing = target.dataset.id; render(); conversationList.querySelector('input')?.focus(); }
     else if (action === 'archive') {

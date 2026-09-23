@@ -257,6 +257,8 @@ const ACTIONS = {
   pause: (b) => kingdom.pause(b.why ?? ''),
   resume: () => kingdom.resume(),
   setBudget: (b) => kingdom.setBudget(b.capUsd),
+  setTurnBudget: (b) => kingdom.setTurnBudget(b.cap),
+  raiseTurnBudget: (b) => kingdom.raiseTurnBudget(b.by ?? 100),
   requestPush: (b) => kingdom.requestPush(b.reason ?? ''),
   approve: (b) => kingdom.approve(Number(b.id)),
   reject: (b) => kingdom.reject(Number(b.id), b.why ?? ''),
@@ -953,6 +955,17 @@ const handle = async (req, res) => {
       skills: kingdom.skills(),
       summarizer: kingdom.summarizer(),
       goal: kingdom.goal(),
+      // #41: the header's turn counter otherwise reads blank until this
+      // session's first 'spend' event, even though the count itself is
+      // durable (kingdom.turnsThisSession()/turnsLifetime() both survive a
+      // restart) — a reconnect or a fresh tab must show what has already
+      // happened this session, not zero.
+      spend: {
+        turns: kingdom.turnsThisSession(), lifetimeTurns: kingdom.turnsLifetime(),
+        turnBudget: kingdom.sessionTurnCap(),
+      },
+      paused: kingdom.paused ?? false,
+      pausedWhy: kingdom.paused ? (kingdom.bus.get('pausedWhy') ?? '') : '',
       mode: kingdom.mode(),
       run: kingdom.bus.currentRun(),
       events: since

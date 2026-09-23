@@ -51,6 +51,11 @@ const suites = [
   // Self-checking, like court.js: the batching decision is pure, and its 14
   // assertions were running only when someone invoked the file by hand.
   ['batch ripeness', join(HERE, '..', 'src', 'ripeness.js')],
+  // #41/#40/#43: the rest of the "never an unprompted turn" audit that
+  // ripeness.js's own self-check does not cover — every AWARENESS-styled
+  // post actually carries 'notice', #deliver still wires hadRealTurn, and a
+  // scheduled workflow cannot loop unboundedly within one firing.
+  ['turn guardrails audit', join(HERE, 't-turn-guardrails.js')],
   ['doctor cli parsing', join(HERE, 't-doctor.js')],
   // #44: "a bunch of terminals pop up after agentic-os has started" (Windows).
   // Static, not runtime — nothing on Linux CI can observe a Windows console
