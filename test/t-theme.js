@@ -393,6 +393,15 @@ a.match(main, /class="mobile-menu"/, 'small screens need a menu control');
 a.match(main, /sidebar-scrim/, 'small screens need a native close target outside the rail');
 a.doesNotMatch(main, /const action = document\.createElement\('small'\)/, 'mode tabs must not repeat the header explainer copy');
 a.doesNotMatch(css, /\.mode-option small/, 'mode tabs must not reserve space for duplicate explainer copy');
+// 2026-09-23: the same defect came back under a different tag. Read directly
+// on a populated demo court: three two-line mode pills dominated the header
+// and pushed "Connected" to the far end looking detached. The button's own
+// dataset.tip/aria-label (ui/main.js) already carry the description, and
+// attachHoverTips(document.body) already surfaces it on hover, so hiding the
+// always-visible copy loses no information — it moves from mandatory to
+// on-demand, which is this app's own established convention for exactly this
+// (see HANDOFF.md's .hover-tip rule).
+a.match(css, /\.mode-option span\s*\{\s*display:\s*none;\s*\}/, 'mode tabs must not reserve space for duplicate explainer copy under any tag name');
 a.match(main, /button\.disabled = modeRequest > 0 \|\| !ready/, 'mode controls must wait for the first workspace snapshot');
 a.match(main, /if \(state\.ready === false \|\| !backend \|\| !choice \|\| modeRequest\)/, 'mode changes must reject requests before the workspace snapshot');
 a.match(sidebar, /button\.disabled = currentState\.ready === false/, 'mobile mode controls must wait for the first workspace snapshot');
