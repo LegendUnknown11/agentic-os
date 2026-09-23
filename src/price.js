@@ -39,18 +39,25 @@ export const PRICES = {
   'codex/gpt-5.2':        [2.50, 0.25, 15.00],
 
   // Anthropic, via the claude CLI. The config names these by alias
-  // ("opus", "sonnet"), so both the alias and the full id are listed.
+  // ("opus", "sonnet"), so both the alias and the full id are listed. An
+  // alias is priced as the model the CLI resolves it to today: `opus` is
+  // Opus 5.5 (confirmed by the sovereign on #75), not Opus 5.
   // Fable 5.1 kept Fable 5's $10 / $50 but cut cache reads to $0.25/MTok
   // (0.025x input, not the usual 0.1x). The bare alias resolves to 5.1.
   'claude/fable':         [10.00, 0.25, 50.00],
-  'claude/opus':          [5.00, 0.50, 25.00],
+  'claude/opus':          [4.00, 0.20, 20.00],
   'claude/sonnet':        [2.00, 0.20, 10.00],
   'claude/haiku':         [1.00, 0.10,  5.00],
   'claude/claude-fable-5':      [10.00, 1.00, 50.00],
   'claude/claude-fable-5-1':    [10.00, 0.25, 50.00],
+  // Opus 5.5: $4.00/$0.20/$20.00 per platform.claude.com/docs pricing at
+  // launch (verified via the claude-api skill, 2026-09-23) — cheaper than
+  // Opus 5, same 1M context/128K output/tokenizer.
+  'claude/claude-opus-5-5':     [4.00, 0.20, 20.00],
   'claude/claude-opus-5':       [5.00, 0.50, 25.00],
   'claude/claude-sonnet-5':     [2.00, 0.20, 10.00],
   'claude/claude-haiku-4-5':    [1.00, 0.10,  5.00],
+  'claude/claude-haiku-4-5-20251001': [1.00, 0.10,  5.00],
 };
 
 const CACHE_WRITE_MULTIPLIER = 1.25;
@@ -139,6 +146,27 @@ if (process.argv[1]?.endsWith('price.js')) {
     'claude-fable-5 keeps its own $1.00 cache-read rate');
   near(costOf({ in: 0, cached: 1e6, written: 0, out: 0 }, 'claude', 'claude-fable-5-1'), 0.25,
     'a million cached Fable 5.1 tokens cost $0.25');
+
+  // #45: the catalogue grew Opus 5.5 (kingdom.js models(), kingdom.config.json)
+  // without a price, which would have silently stopped billing for it exactly
+  // like the Fable case above.
+  a.deepEqual(rateOf('claude', 'claude-opus-5-5'), [4.00, 0.20, 20.00],
+    'claude-opus-5-5 must be priced, or the newest Opus goes unbilled');
+  near(costOf({ in: 1e6, cached: 0, written: 1e6, out: 0 }, 'claude', 'claude-opus-5-5'),
+    4.00 * 1.25, 'claude-opus-5-5 cache writes cost 1.25x its own input rate, not opus 5\'s');
+
+  // The bare alias follows what the claude CLI resolves it to (#75): opus is
+  // Opus 5.5, so it bills at Opus 5.5's rate, not Opus 5's.
+  a.deepEqual(rateOf('claude', 'opus'), rateOf('claude', 'claude-opus-5-5'),
+    'the opus alias must be priced as Opus 5.5, the model the CLI resolves it to');
+
+  // Existing configs and members keep working under every id/alias this
+  // catalogue has ever offered — an old kingdom.config.json naming "opus",
+  // "sonnet", or "claude-opus-5" must not go unpriced just because a newer
+  // model joined the list.
+  for (const legacy of ['opus', 'sonnet', 'haiku', 'claude-opus-5', 'claude-sonnet-5', 'claude-haiku-4-5']) {
+    a.ok(rateOf('claude', legacy), `${legacy} must keep its published price for an existing config`);
+  }
 
   // An unpriced model must refuse to answer rather than invent a number.
   a.equal(costOf({ in: 1e6 }, 'codex', 'gpt-9-unreleased'), null,

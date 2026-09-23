@@ -20,7 +20,7 @@ import { kingdomDir, runBranch } from './worktree.js';
 import { rates } from './forecast.js';
 
 const exec = promisify(execFile);
-const git = (cwd, ...args) => exec('git', args, { cwd, maxBuffer: 64 * 1024 * 1024 });
+const git = (cwd, ...args) => exec('git', args, { cwd, maxBuffer: 64 * 1024 * 1024, windowsHide: true });
 
 export const evidenceDir = (repo, runId) => join(kingdomDir(repo), 'evidence', String(runId));
 

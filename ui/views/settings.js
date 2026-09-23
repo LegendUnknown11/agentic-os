@@ -1,4 +1,4 @@
-import { h, page, section, empty, note, button, field, input, textarea, select, check, modeDef, post, subscribe, editing } from './util.js';
+import { h, page, section, empty, note, button, field, input, textarea, select, check, modeDef, modelLabel, post, subscribe, editing } from './util.js';
 import { setPrefs } from '../store.js';
 
 let Assets, Notify, soundOn, setSound, cue;
@@ -18,7 +18,7 @@ const TABS = [
   ['repo', 'Repository'], ['efficiency', 'Models & efficiency'], ['appearance', 'Appearance'],
   ['music', 'Music'], ['documents', 'Documents'], ['notifications', 'Notifications'], ['sounds', 'Sounds'], ['pet', 'Desk pet'],
 ];
-const models = (state) => Object.entries(state.models ?? {}).flatMap(([cli, list]) => (list ?? []).map((model) => [`${cli}:${model}`, `${cli} · ${model}`]));
+const models = (state) => Object.entries(state.models ?? {}).flatMap(([cli, list]) => (list ?? []).map((model) => [`${cli}:${model}`, `${cli} · ${modelLabel(model)}`]));
 const fileList = (kind) => Assets.list().filter((asset) => asset.kind === kind);
 const assetMessage = (state, kind) => {
   const value = state.assetNotices?.[kind];

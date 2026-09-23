@@ -411,7 +411,7 @@ export class Kingdom extends EventEmitter {
   /** Model choices offered in the UI. Editable in kingdom.config.json. */
   models() {
     return this.config.models
-      ?? { claude: ['claude-opus-5', 'claude-sonnet-5', 'claude-haiku-4-5', 'claude-fable-5-1'], codex: [] };
+      ?? { claude: ['claude-opus-5-5', 'claude-opus-5', 'claude-sonnet-5', 'claude-haiku-4-5', 'claude-fable-5-1'], codex: [] };
   }
 
   /**
@@ -1775,7 +1775,14 @@ export class Kingdom extends EventEmitter {
       // message addressed to it) and releases whatever it still owns back to
       // pending (or the task board keeps reporting stale "active" work that
       // nobody is doing).
-      if (this.agents.has(name)) this.sleep(name, why);
+      //
+      // `this.agents.has(name)` alone missed a worker #maybeIdleSleep already
+      // put to sleep for inactivity: it drops the live agent but deliberately
+      // keeps the name in `summoned` so it can be woken again cheaply. Such a
+      // worker still owns its task claims and is still summoned when its run
+      // is cancelled, so it must still be released — sleep() is a safe no-op
+      // on the live-agent side when there is none.
+      if (this.agents.has(name) || this.summoned.has(name)) this.sleep(name, why);
     }
     const stopped = { ...run, state: 'cancelled', cancelledAt: Date.now(), cancelReason: why };
     this.#saveRun(stopped);
@@ -3378,8 +3385,23 @@ export class Kingdom extends EventEmitter {
       // concurrent reject()/approve() on the same id can still find it while
       // the merge is in flight and race a card whose merge already landed.
       this.approvals.delete(id);
-      await this.merge(p.peasant);
-      this.bus.set(`resolved:${id}`, 'approved');
+      try {
+        await this.merge(p.peasant);
+        this.bus.set(`resolved:${id}`, 'approved');
+      } catch (e) {
+        // this.merge() already posted a notice and emitted 'mergeFailed' for
+        // the Changes view; that is per-peasant, transient state. Without a
+        // `resolved:${id}` of its own, the card itself never gets a decided
+        // outcome — it was already removed from the live map above, so it
+        // silently vanishes from "waiting on you" with no historical row at
+        // all. Mirror the 'push' branch right below: record a blocked
+        // resolution and its message so the card carries a real outcome.
+        const message = e.message;
+        this.bus.set(`resolved:${id}`, 'blocked');
+        this.bus.set(`merge:${id}`, JSON.stringify({ status: 'blocked', message }));
+        this.emit('resolved', { id, approved: false, blocked: true });
+        return;
+      }
     } else if (p.kind === 'push') {
       // A push approval is consumed exactly once. Whether Git succeeds is a
       // separate fact, recorded on the historical card instead of retried.

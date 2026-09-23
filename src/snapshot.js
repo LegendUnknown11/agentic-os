@@ -14,7 +14,7 @@ import { join, dirname } from 'node:path';
 import { assertRepo, revisionOf } from './worktree.js';
 
 const exec = promisify(execFile);
-const git = (cwd, ...args) => exec('git', args, { cwd, maxBuffer: 64 * 1024 * 1024 });
+const git = (cwd, ...args) => exec('git', args, { cwd, maxBuffer: 64 * 1024 * 1024, windowsHide: true });
 
 /*
  * What never enters a snapshot, regardless of the target repo's own
