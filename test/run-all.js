@@ -109,6 +109,10 @@ const suites = [
   // live daemon, on which port, pruned as soon as a pid dies or a port stops
   // answering — and safe against two launches racing to register at once.
   ['court registry', join(HERE, 't-courts.js')],
+  // Real daemon processes, not just the registry in isolation: one repo, one
+  // live court, auto ports that never collide, and a busy pinned port that
+  // refuses cleanly instead of silently binding elsewhere.
+  ['multiple courts at once (issue #42)', join(HERE, 't-multi-court.js')],
   // The end-court-and-switch-repo flow (issue #42): a plain function with
   // injected dependencies, so its step ordering runs for real without an
   // Electron process, a daemon, or a native dialog.
