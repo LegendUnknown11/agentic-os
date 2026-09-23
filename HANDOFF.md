@@ -88,7 +88,11 @@ bearer-token auth for a non-loopback daemon bind (`src/daemon.js`), and a
 self-contained evidence folder per completed run (`src/evidence.js`). Earlier
 handoffs recorded 73 suites; the runner's array has grown by two
 (`t-snapshot.js`, `t-evidence.js` — new suites) plus new cases inside two
-already-registered suites (`t-efficiency.js`, `t-csrf.js`). The suite count is
+already-registered suites (`t-efficiency.js`, `t-csrf.js`). #44's fix
+(`fix/issue-44-hidden-windows`) adds a third new suite, `test/t-windows-hide.js`
+— a static parser guard that every `src/`/`electron/` child_process call
+passes `windowsHide: true` — bringing `npm test` to **78 suites, 4-wide,
+35.9s, all passed** on that branch. The suite count is
 the contract.
 `test/t-electron.js` (the recovered Electron acceptance harness) is not yet in
 this count — it lands with PR #71, still open pending manual merge.
