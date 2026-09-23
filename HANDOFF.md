@@ -77,6 +77,37 @@ row stood 165px tall with 49px left for its title. `align-content: start` at eac
 shared declaration fixed all six; `fix/live-layout-defects` carries them with
 tests that pin the measured numbers.
 
+## Current state (functional-revamp, 2026-09-23)
+
+On `functional-revamp`, two pieces of the 2026-09-23 "functional revamp" have
+landed: multiple courts at once (closes GitHub issue #42) and Habitable pilot
+readiness (tooling detection plus an evidence gate, source-side only). Full
+contract and acceptance evidence: `PLAN.md`'s "Functional revamp" section.
+
+**Multiple courts reverses the 2026-09-22 decision below** ("Running several
+courts... the sovereign declined it for this round") — the sovereign asked for
+it explicitly the next day. One daemon process per repository, each on its own
+port, tracked in `~/.kingdom/courts.json` (`src/courts.js`); a daemon refuses a
+second live court for the same repo and names the port it is on; a busy pinned
+port is a clean, visible error; an unpinned port is picked automatically from
+7777 up. Electron gets `app.requestSingleInstanceLock()` and per-port windows
+(`electron/courts-launch.js`, `electron/main.js`); Settings' Repository panel
+gets a switcher (`ui/views/courts.js`) that opens or starts another repo's
+court without ending the current one, and no longer waits for attachRepo to
+fail before offering "End court and switch…" (issue #42's fail-first
+complaint). **Electron itself and Windows were not exercised** — this
+environment cannot launch Electron; that acceptance work is still owed.
+
+Habitable pilot readiness: `src/pilot-doctor.js` (flutter/dart/adb/SDK/emulator
+detection, doctor-style) and `src/pilot-evidence.js` (`flutter analyze`,
+`flutter test --coverage`, `flutter build apk --debug`, each step recorded
+independently), wired into `src/evidence.js` as an optional section. Built and
+tested entirely with fakes — no Flutter is installed in this environment, and
+neither module reads, runs against, or references the real Habitable checkout
+by path. This is steps 2 and 4's machinery only; steps 3-4's actual
+demonstration/audit/backlog/review work against Habitable itself is untouched
+and still gated on backlog approval, per the section below.
+
 ## Evidence
 
 The combined source gate passed on merged `main`: `npm.cmd test` completed
@@ -92,6 +123,17 @@ already-registered suites (`t-efficiency.js`, `t-csrf.js`). The suite count is
 the contract.
 `test/t-electron.js` (the recovered Electron acceptance harness) is not yet in
 this count — it lands with PR #71, still open pending manual merge.
+
+On `functional-revamp` (2026-09-23, not yet merged to `main`), the same gate
+printed **82 suites, 4-wide, 36.5s, all suites passed**, stable across two
+consecutive runs (one earlier run flagged `court registry` as flaky under pool
+contention — see `src/courts.js`'s `pingCourt` timeout comment — and did not
+recur after raising its timeout). The runner's array grew by six: `t-courts.js`,
+`t-multi-court.js`, `t-courts-launch.js` (issue #42), `t-pilot-doctor.js`,
+`t-pilot-evidence.js` (Habitable pilot readiness), plus new cases inside
+`t-pages.js` and `t-evidence.js`. This is source and real-subprocess HTTP-level
+evidence only — Electron and Windows are unverified; see "Current state" above
+and `PLAN.md`'s "Functional revamp" section for exactly what is and is not held.
 
 Durations on the same machine: 36.8s (2026-09-14), 64.1s earlier still, 105.8s,
 179.6s and 61.2s on 2026-09-21, 68.6-78.7s across the five 2026-09-22
@@ -182,7 +224,12 @@ stateDiagram-v2
 | [src/worktree.js](src/worktree.js) | Worktree creation, revision-bound tests, conflict-safe integration, and run-branch application. |
 | [src/daemon.js](src/daemon.js) | HTTP actions, run reads, snapshots, SSE run events, and bearer-token auth for a non-loopback bind. |
 | [src/snapshot.js](src/snapshot.js) | Target-repo snapshot/restore before a worker touches it (Habitable pilot step one). Read-only against the repo it snapshots. |
-| [src/evidence.js](src/evidence.js) | Exports one self-contained folder per completed run: objective, diff, tests, reviews, cost, timeline. |
+| [src/evidence.js](src/evidence.js) | Exports one self-contained folder per completed run: objective, diff, tests, reviews, cost, timeline, and an optional pilot section. |
+| [src/courts.js](src/courts.js) | Multiple courts at once (issue #42): the `~/.kingdom/courts.json` registry — register/list/prune, port picking, lockfile + atomic write. Pure core is self-checking (`node src/courts.js`). |
+| [electron/courts-launch.js](electron/courts-launch.js) | The pure decision behind a relaunch or `app.requestSingleInstanceLock`'s second-instance event: focus a live court or start a fresh one. Self-checking (`node electron/courts-launch.js`); see `test/t-courts-launch.js`. |
+| [ui/views/courts.js](ui/views/courts.js) | The court switcher panel in Settings' Repository tab. Degrades to a plain note outside Electron (`window.kingdomShell` absent). |
+| [src/pilot-doctor.js](src/pilot-doctor.js) | Habitable pilot step two: doctor-style flutter/dart/adb/SDK/emulator detection. `node src/pilot-doctor.js` for a real report; every dependency is injectable for `test/t-pilot-doctor.js`. |
+| [src/pilot-evidence.js](src/pilot-evidence.js) | Habitable pilot steps two and four: the evidence gate — `flutter analyze`, `flutter test --coverage`, a debug APK build, blocked cleanly on missing tooling. Fakes-only in tests; never points at the real Habitable checkout. |
 | [src/modes.js](src/modes.js) | The mode table: crew, worktrees, merge, tasks, vault directory. Pure and self-checking. |
 | [src/mcp/tasks.js](src/mcp/tasks.js) | Run-owned task submission and controller-owned closure. |
 | [src/mcp/approvals.js](src/mcp/approvals.js), [src/mcp/comms.js](src/mcp/comms.js) | Run association for approvals and direct messages. |
@@ -328,6 +375,15 @@ current proof; refresh them before the snapshot.
   separate from the pilot unless explicitly added.
 - Validate live subscription-model pool behavior without paid API fallback when
   a real approved run is started.
-- Running several courts (kingdoms) at once was proposed as a 2026-09-22
-  backlog item; the sovereign declined it for this round ("Not even using
-  it"). Not started — no code exists for it.
+- Multiple courts at once (issue #42, `functional-revamp`, 2026-09-23) needs
+  Electron and Windows acceptance: the single-instance lock, per-port windows,
+  the native "End court?" confirmations, and media-permission scoping per
+  court window were never run — this environment cannot launch Electron. A
+  developer machine must exercise: two repositories open at once, a relaunch
+  focusing the right court instead of starting a stray daemon, and the
+  switcher's open/end actions in a real window.
+- The Habitable pilot's tooling doctor and evidence gate (steps two and four,
+  `functional-revamp`, 2026-09-23) are built and tested with fakes only. They
+  have never run against real Flutter/Android tooling or the real Habitable
+  checkout, and must not until HANDOFF.md step 3 (demonstrate, audit, get a
+  finite backlog approved) has actually happened.
