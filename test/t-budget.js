@@ -377,9 +377,11 @@ a.equal(turnBudgetEvents.length, turnsBeforeResume, 'resuming alone must not re-
 
 // The one-click raise-and-resume action: both effects from one call, so a
 // still-too-low cap cannot leave the button looking like it did nothing.
-const raised = k6.raiseTurnBudget(10);
-a.equal(raised.cap, 10);
-a.equal(k6.turnBudget(), 10, 'the raised cap must be the one #enforceTurnBudget now checks');
+const raised = k6.raiseTurnBudget(8);
+a.equal(raised.cap, 10, 'raising by 8 from 2 session turns makes the session cap 10');
+a.equal(k6.sessionTurnCap(), 10, 'the raised cap must be the one #enforceTurnBudget now checks');
+a.equal(k6.turnBudget(), 2, 'a raise extends THIS session only — the configured budget is not overwritten');
+a.throws(() => k6.raiseTurnBudget(0), /positive number/, 'a raise must be a positive number of turns');
 a.equal(k6.paused, false, 'raiseTurnBudget must also resume — a raise with no resume leaves the court looking stuck');
 
 turnBudgetCoder.emit('turn_end', { usage: { input_tokens: 10 }, costUsd: 0 });
@@ -452,7 +454,7 @@ a.equal(k7.turnsLifetime(), 1003);
 // Raise-and-resume, relative to session usage (the sidebar computes exactly
 // this: turnsThisSession() + 100 — see ui/sidebar.js's raise-turn-budget
 // handler) rather than to a stale cached cap.
-const raised7 = k7.raiseTurnBudget(k7.turnsThisSession() + 3);
+const raised7 = k7.raiseTurnBudget(3);
 a.equal(raised7.cap, 6);
 a.equal(k7.paused, false, 'raiseTurnBudget must resume the court');
 sessionCoder.emit('turn_end', { usage: { input_tokens: 10 }, costUsd: 0 });
@@ -474,7 +476,22 @@ a.equal(k7b.bus.get('turnBudgetBaseline'), '1000',
   'the baseline must be left exactly where it was — a restart must not silently grant a fresh budget');
 a.equal(k7b.turnsThisSession(), 6, 'session turns must read as a continuation across the restart, not reset to 0');
 a.equal(k7b.paused, true, 'a restart must not clear a pause the sovereign has not resolved — same discipline as `this.paused` itself');
+a.equal(k7b.sessionTurnCap(), 6, 'a court still paused for its budget keeps its raised cap across the restart');
+
+// Once the sovereign resumes, the next daemon run is a NEW session: the
+// baseline re-latches and the raise extension is dropped, so the court gets
+// its full configured budget back instead of a lifetime cap that keeps
+// pausing it every few turns forever.
+k7b.resume();
 await k7b.stop();
+const k7c = new Kingdom(repo7, cfg7);
+await k7c.start();
+a.equal(k7c.bus.get('turnBudgetBaseline'), '1006', 'a new daemon run re-latches the baseline to the lifetime count');
+a.equal(k7c.turnsThisSession(), 0, 'a new session starts at 0 turns');
+a.equal(k7c.sessionTurnCap(), 3, 'a new session gets the full configured budget, not the previous session\'s raise');
+a.equal(k7c.turnBudget(), 3, 'the configured budget was never overwritten by the raise');
+a.equal(k7c.paused, false);
+await k7c.stop();
 
 for (const d of [
   repo, kingdomDir(repo), repo3, kingdomDir(repo3), repo4, kingdomDir(repo4),

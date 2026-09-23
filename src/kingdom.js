@@ -140,6 +140,9 @@ const DIGEST_DIFF_LIMIT = 12_000; // the briefer is cheap, but this is per-done
 // not the other way round. `turnBudget: 0` in kingdom.config.json turns it
 // off, the same convention as every cap above it.
 const DEFAULT_TURN_BUDGET = 500;
+// The pause reason #enforceTurnBudget writes; start() reads it back to tell a
+// budget pause from a manual one.
+const TURN_BUDGET_PAUSE = /-turn budget for this session was reached/;
 // Recycle thresholds now come from #recycleThreshold (per member, configurable).
 
 /**
@@ -694,22 +697,19 @@ export class Kingdom extends EventEmitter {
     // paused on the very first turn after upgrading to this feature, and
     // "add 100 turns" only ever bought 100 against a total that never moves.
     //
-    // "Session" here means: since this baseline was last latched. It is
-    // latched exactly once — the first time this bus has ever recorded one —
-    // to whatever the lifetime count already was, so an existing court's
-    // history is never retroactively counted against it. It is then left
-    // alone on every later start(): the SAME discipline as `this.paused`
-    // above, and for the same reason. Recomputing it on every restart would
-    // let a crash-restart loop — the exact failure mode this guardrail
-    // exists to catch — silently hand itself a fresh budget every time it
-    // bounces, which defeats the whole point. It only ever moves by the
-    // sovereign's own action: raising the cap (which raises the CAP, not
-    // this baseline — session turns keep counting from the same zero point
-    // so the header reads as one continuous count, e.g. 500/600 rather than
-    // resetting to 0/100), or ending this court and switching to a different
-    // repository, which is a different bus entirely and starts at 0 anyway.
-    if (this.bus.get('turnBudgetBaseline') == null) {
+    // "Session" here means one daemon run: the baseline is re-latched to the
+    // lifetime count on every start(), and any "add 100 turns" extension from
+    // the previous run is dropped, so a court opened tomorrow gets its full
+    // budget again. The one exception is a court that is still PAUSED FOR ITS
+    // TURN BUDGET: its baseline and extension are kept, so the pause (restored
+    // above like any other) still reads correctly and a crash-restart loop
+    // cannot hand itself a fresh budget by bouncing while it is over the cap.
+    // An unpaused crash loop can at most spend one budget per run before it
+    // pauses, and that pause then survives every later restart.
+    const pausedForTurns = this.paused && TURN_BUDGET_PAUSE.test(this.bus.get('pausedWhy') ?? '');
+    if (this.bus.get('turnBudgetBaseline') == null || !pausedForTurns) {
       this.bus.set('turnBudgetBaseline', String(this.turnsLifetime()));
+      this.bus.set('turnBudgetExtra', '0');
     }
     // Restored crew is INHERITED, not approved. It costs money the moment
     // anyone messages it — a peasant approved weeks ago woke, took a turn and
@@ -3166,7 +3166,7 @@ export class Kingdom extends EventEmitter {
     const n = Number(cap);
     if (!Number.isFinite(n) || n < 0) throw new Error('The turn budget must be a number, 0 or more.');
     this.bus.set('turnBudget', String(n));
-    this.emit('budget', { scope: 'turns', cap: n, turns: this.turnsThisSession(), changed: true });
+    this.emit('budget', { scope: 'turns', cap: this.sessionTurnCap(), turns: this.turnsThisSession(), changed: true });
     return { cap: n };
   }
 
@@ -3174,6 +3174,17 @@ export class Kingdom extends EventEmitter {
   turnBudget() {
     const live = this.bus.get('turnBudget');
     return live != null ? Number(live) : (this.config.turnBudget ?? DEFAULT_TURN_BUDGET);
+  }
+
+  /**
+   * The cap this session is actually held to: the configured budget plus any
+   * "add N turns" extension the sovereign granted during this session. 0 when
+   * the budget is off. The extension resets with the session (see start()),
+   * so raising it once never shrinks or grows the budget of a later session.
+   */
+  sessionTurnCap() {
+    const base = this.turnBudget();
+    return base ? base + Number(this.bus.get('turnBudgetExtra') ?? 0) : 0;
   }
 
   /**
@@ -3208,18 +3219,21 @@ export class Kingdom extends EventEmitter {
    * a window where a still-too-low cap immediately re-pauses on the very next
    * turn with no visible change, which reads as the button doing nothing.
    *
-   * `cap` is an absolute session-turn count, same unit as setTurnBudget() and
-   * turnsThisSession() — the caller (the sidebar's "Add 100 turns" button)
-   * computes it as turnsThisSession() + 100, i.e. relative to what has
-   * actually happened this session, not to whatever cap value a client last
-   * happened to have cached. This method does not re-derive that itself: a
-   * literal cap keeps this symmetric with setTurnBudget() and testable
-   * without needing a live session's turn count to predict the result.
+   * `by` is how many more turns to allow from the current session count;
+   * the sidebar's button sends 100.
    */
-  raiseTurnBudget(cap) {
-    const result = this.setTurnBudget(cap);
+  raiseTurnBudget(by = 100) {
+    const n = Number(by);
+    if (!Number.isFinite(n) || n <= 0) throw new Error('Raise the turn budget by a positive number of turns.');
+    // "N more turns from right now": the session cap becomes current session
+    // usage + N. Stored as a session-scoped extension, never written over the
+    // configured budget, so the next session starts from the full budget again.
+    const extra = Math.max(0, this.turnsThisSession() + n - this.turnBudget());
+    this.bus.set('turnBudgetExtra', String(extra));
+    const cap = this.sessionTurnCap();
+    this.emit('budget', { scope: 'turns', cap, turns: this.turnsThisSession(), changed: true });
     this.resume();
-    return result;
+    return { cap };
   }
 
   /**
@@ -3234,7 +3248,7 @@ export class Kingdom extends EventEmitter {
    * fires again).
    */
   #enforceTurnBudget() {
-    const cap = this.turnBudget();
+    const cap = this.sessionTurnCap();
     const turns = this.turnsThisSession();
     if (!cap || turns < cap || this.paused) return;
     this.emit('budget', { scope: 'turns', turns, cap });

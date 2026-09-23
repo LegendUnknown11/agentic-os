@@ -258,7 +258,7 @@ const ACTIONS = {
   resume: () => kingdom.resume(),
   setBudget: (b) => kingdom.setBudget(b.capUsd),
   setTurnBudget: (b) => kingdom.setTurnBudget(b.cap),
-  raiseTurnBudget: (b) => kingdom.raiseTurnBudget(b.cap),
+  raiseTurnBudget: (b) => kingdom.raiseTurnBudget(b.by ?? 100),
   requestPush: (b) => kingdom.requestPush(b.reason ?? ''),
   approve: (b) => kingdom.approve(Number(b.id)),
   reject: (b) => kingdom.reject(Number(b.id), b.why ?? ''),
@@ -959,7 +959,7 @@ const handle = async (req, res) => {
       // happened this session, not zero.
       spend: {
         turns: kingdom.turnsThisSession(), lifetimeTurns: kingdom.turnsLifetime(),
-        turnBudget: kingdom.turnBudget(),
+        turnBudget: kingdom.sessionTurnCap(),
       },
       paused: kingdom.paused ?? false,
       pausedWhy: kingdom.paused ? (kingdom.bus.get('pausedWhy') ?? '') : '',

@@ -625,14 +625,14 @@ a.deepEqual(assets.state().queue, ['after-reload.mp3'], 'refresh must seed the m
   a.match(sidebarSource, /dataset\.action = 'raise-turn-budget'/, 'a turn-budget pause must offer a one-click raise-and-resume action');
   a.match(sidebarSource, /raiseButton\.hidden = !isTurnBudget/,
     'the raise action must only show for a turn-budget pause, not every manual pause');
-  // #41 follow-up: the raise must be relative to what actually happened THIS
-  // session (state.spend.turns, fed by kingdom.js's turnsThisSession()), not
-  // to a cached cap value — "100 more turns from right now."
-  a.match(sidebarSource, /currentState\.spend\?\.turns/,
-    'raising the turn budget must read the current SESSION turn count, not the cap, to add "100 more from right now"');
-  a.doesNotMatch(sidebarSource, /currentState\.spend\?\.turnBudget\) \|\| 0;\s*\n\s*raiseButton\.disabled/,
-    'the raise action must not add 100 to the stale cap value — that reopens the lifetime-vs-session regression '
-    + 'in a new form if the displayed cap ever drifts from the server\'s');
+  // #41 follow-up: the raise asks the daemon for "100 more from right now"
+  // (Kingdom#raiseTurnBudget adds them to the session's own count), never a
+  // client-computed absolute cap that would be written over the configured
+  // budget and outlive the session.
+  a.match(sidebarSource, /send\(post, 'raiseTurnBudget', \{ by: 100 \}\)/,
+    'raising the turn budget must send a relative "by: 100", not an absolute cap');
+  a.doesNotMatch(sidebarSource, /'raiseTurnBudget', \{ cap:/,
+    'the raise action must not send an absolute cap — that overwrote the configured budget for every later session');
 
   // The daemon must offer the UI SESSION turns (what the budget and the raise
   // button both use), not the lifetime count, in the same snapshot it already
