@@ -79,7 +79,11 @@ try {
 
   app = await _electron.launch({
     args: [ROOT, repo],
-    env: { ...process.env, KINGDOM_PORT: String(PORT) },
+    // KINGDOM_SKIP_DOCTOR: no agent is ever spawned here (see the file
+    // header), so the first-boot doctor redirect would be reporting on CLIs
+    // this run never intends to authenticate — see src/daemon.js's
+    // /api/doctor handler for why that redirect cannot be raced out safely.
+    env: { ...process.env, KINGDOM_PORT: String(PORT), KINGDOM_SKIP_DOCTOR: '1' },
     // Cold Electron start plus a daemon boot plus git discovery.
     // electron/main.js allows the daemon alone 90s, so anything less here
     // measures the machine rather than the app.

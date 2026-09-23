@@ -521,6 +521,14 @@ const READS = {
   // assume the user will open. Answerable whether or not the court is up:
   // runDoctor() only shells out to CLI binaries, it never touches `kingdom`.
   '/api/doctor': async (url, req) => {
+    // ponytail: runDoctor() spawns each configured CLI for a real auth probe.
+    // On a machine with none installed that fails in well under a second —
+    // fast enough to consistently win the race against the UI's own first
+    // action, no matter how the client times its reaction (see ui/main.js's
+    // maybeOpenDoctor). t-electron.js sets this because it promises never to
+    // spawn a CLI at all; honouring that promise here removes the race
+    // instead of chasing tighter and tighter timing on the client.
+    if (process.env.KINGDOM_SKIP_DOCTOR) return [200, { checks: [], failures: 0, ready: true }];
     const report = await runDoctor({ repo: kingdom.repo ?? undefined });
     return [200, report];
   },
