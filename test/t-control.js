@@ -645,6 +645,41 @@ try {
     console.log('  a merge approval is consumed before the merge is awaited, closing the reject race');
   }
 
+  /* ---- 10b. a failed merge must leave a recorded outcome, not vanish ---- */
+  // approve()'s 'merge' branch deletes the approval before merging (fixed
+  // just above for the reject race), but a merge that then THROWS — conflict,
+  // dirty tree, wrong mode — used to leave no `resolved:${id}` at all: the
+  // card was already gone from the live approvals map, and with no resolution
+  // ever recorded it silently vanished with no historical outcome, unlike the
+  // 'push' branch right below it in source, which always records one.
+  {
+    await k.wake('coder');
+    const wt2 = k.agents.get('coder').cwd;
+    writeFileSync(join(wt2, 'race2.txt'), 'second merge fixture\n');
+    execFileSync('git', ['add', '-A'], { cwd: wt2 });
+    execFileSync('git', ['commit', '-qm', 'second merge commit'], { cwd: wt2 });
+
+    // Dirty the base so mergeWorktree() refuses and merge() throws.
+    writeFileSync(join(repo, 'dirty.txt'), 'uncommitted\n');
+
+    k.bus.post('orchestrator', null, JSON.stringify({ kind: 'merge', peasant: 'coder' }), 'approval');
+    await until(() => [...k.approvals.values()].some((p) => p.kind === 'merge' && p.peasant === 'coder'));
+    const failId = [...k.approvals].find(([, p]) => p.kind === 'merge')[0];
+
+    // Must resolve, not throw — a blocked merge is a recorded outcome, not an
+    // exception the HTTP action layer merely turns into a transient error.
+    await k.approve(failId);
+    a.equal(k.bus.get(`resolved:${failId}`), 'blocked',
+      'a failed merge must record a blocked outcome, mirroring the push branch, or the card vanishes with no history');
+    a.equal(k.approvals.has(failId), false, 'the approval stays consumed even though the merge failed');
+    const recorded = JSON.parse(k.bus.get(`merge:${failId}`) ?? 'null');
+    a.ok(recorded && recorded.status === 'blocked' && /dirty|uncommitted/i.test(recorded.message),
+      'the blocked merge must carry its failure message, the way push:${id} does');
+
+    rmSync(join(repo, 'dirty.txt'));
+    console.log('  a failed merge leaves a recorded blocked outcome instead of silently vanishing');
+  }
+
   /* ---- 11. stopping a run must clean up like any other departure -------- */
   // stopRun killed each run-owned worker's process directly instead of
   // routing through sleep() — skipping exactly the reconciliation sleep()
