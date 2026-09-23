@@ -5,7 +5,7 @@
 // electron/main.js can be a thin wrapper around something this suite
 // actually runs.
 import { strict as a } from 'node:assert';
-import { decideLaunchAction, routeLaunch, requestShutdown } from '../electron/courts-launch.js';
+import { decideLaunchAction, routeLaunch, requestShutdown, firstLaunchPlan } from '../electron/courts-launch.js';
 
 const live = [
   { repo: '/repo/a', port: 7777, startedAt: '2026-01-01T00:00:00Z' },
@@ -78,5 +78,15 @@ a.deepEqual(decideLaunchAction('/repo/c', live), { action: 'start', repo: '/repo
   const gone = await requestShutdown('http://x', async () => { throw new Error('ECONNREFUSED'); });
   a.equal(gone.ok, true, 'a court that no longer answers is already gone');
 }
+
+// --- the app's own first launch consults the registry before its pinned port ---
+a.deepEqual(firstLaunchPlan('/repo/b', live, { repo: '/repo/a' }), { action: 'focus', port: 7778 },
+  'a named repo already served on a non-default port opens THAT court, not a refused duplicate');
+a.deepEqual(firstLaunchPlan('/repo/c', live, { repo: '/repo/a' }), { action: 'start-auto', repo: '/repo/c' },
+  'a default port serving a different repo starts the named repo its own court instead of a dead-end dialog');
+a.deepEqual(firstLaunchPlan('/repo/c', [], null), { action: 'default' }, 'nothing running: the pinned-port flow');
+a.deepEqual(firstLaunchPlan('/repo/c', [], { repo: null }), { action: 'default' },
+  'a repo-less court on the default port keeps the attach-to-it flow');
+a.deepEqual(firstLaunchPlan(null, live, { repo: '/repo/a' }), { action: 'default' }, 'a bare launch keeps the default flow');
 
 console.log('t-courts-launch.js OK — a relaunch focuses a live court by repo (or the most recent one), and only starts a fresh daemon when nothing matches');

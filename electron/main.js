@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { assertRepo } from '../src/worktree.js';
 import { switchRepo } from './switch-repo.js';
 import { listCourts } from '../src/courts.js';
-import { routeLaunch, requestShutdown } from './courts-launch.js';
+import { routeLaunch, requestShutdown, firstLaunchPlan } from './courts-launch.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.KINGDOM_PORT ?? 7777);
@@ -539,22 +539,21 @@ app.whenReady().then(async () => {
 
   const logPath = join(app.getPath('userData'), 'daemon.log');
 
-  // Someone may already be holding the port — usually this court, re-opened.
-  // A conflict only exists when BOTH sides actually name a repo and they
-  // differ: a bare relaunch (no repo) reuses whatever is already running.
+  // The registry first: the named repo may already have a court on another
+  // port, and a default port serving a different repo means the named one
+  // gets a court of its own (issue #42) rather than a two-button dead end.
   let running = await courtOnPort();
-  if (running && repo && running.repo && resolve(running.repo) !== repo) {
-    const { response } = await dialog.showMessageBox({
-      type: 'warning',
-      title: 'A court is already running',
-      message: `Port ${PORT} is serving a different repository:\n\n${running.repo}`,
-      detail: 'Two courts cannot share a port. Open the running one, or end it from '
-        + 'its own window and launch again.',
-      buttons: ['Open the running court', 'Quit'],
-      defaultId: 0,
-      cancelId: 1,
-    });
-    if (response === 1) return app.quit();
+  const plan = firstLaunchPlan(repo, repo ? await listCourts() : [], running);
+  let targetPort = PORT;
+  if (plan.action === 'focus') {
+    targetPort = plan.port;
+  } else if (plan.action === 'start-auto') {
+    try {
+      targetPort = (await startDaemonAuto(plan.repo, logPath)).port;
+    } catch (e) {
+      dialog.showErrorBox('The kingdom could not rise', e.message);
+      return app.quit();
+    }
   } else if (!running) {
     try {
       running = await startDaemon(repo, logPath);
@@ -588,7 +587,7 @@ app.whenReady().then(async () => {
     cb(perm === 'media' && mine(wc)));
   session.defaultSession.setPermissionCheckHandler((wc, perm) => perm === 'media' && mine(wc));
 
-  openWindow();
+  openWindow(targetPort);
   openPet();
 });
 

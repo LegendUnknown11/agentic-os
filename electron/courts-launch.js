@@ -62,6 +62,24 @@ export async function routeLaunch(repo, { listCourts, focusWindow, startDaemonFo
 }
 
 /**
+ * The app's OWN first launch, which also owns the pinned default port. It
+ * must consult the registry before that port: a repo named on the command
+ * line may already have a court on some other port (open that one — starting
+ * another would be refused by the daemon and the app would quit), and a
+ * default port serving a different repository is no longer a dead end now
+ * that courts run side by side (start the named repo its own court). Every
+ * other case keeps the pinned-port flow.
+ */
+export function firstLaunchPlan(repo, liveCourts, onDefaultPort) {
+  if (repo) {
+    const existing = liveCourts.find((c) => sameRepo(c.repo, repo));
+    if (existing) return { action: 'focus', port: existing.port };
+    if (onDefaultPort?.repo && !sameRepo(onDefaultPort.repo, repo)) return { action: 'start-auto', repo };
+  }
+  return { action: 'default' };
+}
+
+/**
  * Ask a court to end itself. The daemon refuses any POST /api/* that is not
  * `content-type: application/json` with a 415 (src/daemon.js's CSRF gate),
  * and fetch() resolves on a 415 just as it does on a 200 — so a bare POST

@@ -110,6 +110,9 @@ a.match(electronMainSource, /ipcMain\.handle\('court:switchRepo', async \(event,
 a.match(electronMainSource, /import \{ assertRepo \} from '\.\.\/src\/worktree\.js'/, 'a repository switch must validate the target with a real git check (assertRepo), not an existsSync(.git) peek a corrupt or empty entry would pass');
 a.match(electronMainSource, /assertRepo,\s*\n\s*confirm: async \(repo\) => \{/, 'a repository switch must use the real git validator, not a bespoke check');
 a.match(electronMainSource, /buttons: \['Cancel', 'End court and switch'\][\s\S]*?return response === 1;/, 'ending a court is destructive — it must be confirmed natively before anything is torn down');
+a.match(electronMainSource, /firstLaunchPlan\(repo, repo \? await listCourts\(\) : \[\], running\)/,
+  'the first launch must consult the court registry before falling back to the pinned port');
+a.match(electronMainSource, /openWindow\(targetPort\);/, 'the first window must open the court the launch plan chose');
 a.match(electronMainSource, /shutdown: \(\) => requestShutdown\(ORIGIN\)/, 'a repository switch must end the running court through its own shutdown endpoint');
 // A bare POST is 415'd by the daemon's JSON gate while fetch() still resolves,
 // so it looked like success and the court kept running.
