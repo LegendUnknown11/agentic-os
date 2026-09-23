@@ -1775,7 +1775,14 @@ export class Kingdom extends EventEmitter {
       // message addressed to it) and releases whatever it still owns back to
       // pending (or the task board keeps reporting stale "active" work that
       // nobody is doing).
-      if (this.agents.has(name)) this.sleep(name, why);
+      //
+      // `this.agents.has(name)` alone missed a worker #maybeIdleSleep already
+      // put to sleep for inactivity: it drops the live agent but deliberately
+      // keeps the name in `summoned` so it can be woken again cheaply. Such a
+      // worker still owns its task claims and is still summoned when its run
+      // is cancelled, so it must still be released — sleep() is a safe no-op
+      // on the live-agent side when there is none.
+      if (this.agents.has(name) || this.summoned.has(name)) this.sleep(name, why);
     }
     const stopped = { ...run, state: 'cancelled', cancelledAt: Date.now(), cancelReason: why };
     this.#saveRun(stopped);

@@ -657,7 +657,9 @@ try {
     // of a completed merge; restore it here rather than reuse a name the
     // court no longer recognises.
     if (!k.specOf('coder')) k.config.peasants.push({ name: 'coder', cli: 'codex', description: 'writes code' });
+    if (!k.specOf('idler')) k.config.peasants.push({ name: 'idler', cli: 'codex', description: 'also writes code' });
     await k.wake('coder');
+    await k.wake('idler');
 
     // §9 above deliberately leaves its run 'blocked' to prove the state
     // sticks — createRun refuses a second run while one is still active, so
@@ -665,25 +667,48 @@ try {
     if (k.bus.currentRun()) await k.stopRun(undefined, 'test cleanup: clear the previous section\'s run');
     const run = await k.createRun({ objective: 'prove stopRun cleans up like any other departure' });
     const task = k.bus.addTask({ title: 'stop-run cleanup fixture', by: 'orchestrator', runId: run.id });
-    k.bus.updateRun(run.id, { taskIds: [task] });
+    const idleTask = k.bus.addTask({ title: 'stop-run idle-worker fixture', by: 'orchestrator', runId: run.id });
+    k.bus.updateRun(run.id, { taskIds: [task, idleTask] });
     a.equal(k.bus.claimTask('coder', task).ok, true, 'sanity: coder holds the run-owned task');
+    a.equal(k.bus.claimTask('idler', idleTask).ok, true, 'sanity: idler holds the other run-owned task');
     a.ok(k.summoned.has('coder'), 'sanity: coder is in service before the run is stopped');
+    a.ok(k.summoned.has('idler'), 'sanity: idler is in service before the run is stopped');
+
+    // #maybeIdleSleep removes a quiet worker from `this.agents` but
+    // deliberately keeps it in `this.summoned` so it can be woken again
+    // cheaply — reproduce exactly that split here rather than waiting out
+    // IDLE_SLEEP_MS, since stopRun's old `this.agents.has(name)` guard is
+    // blind to a worker in precisely this state.
+    k.agents.get('idler')?.stop();
+    k.agents.delete('idler');
+    a.equal(k.agents.has('idler'), false, 'sanity: idler has no live agent, as if idle-slept');
+    a.ok(k.summoned.has('idler'), 'sanity: idler is still summoned, as #maybeIdleSleep leaves it');
 
     const stopped = k.stopRun(run.id, 'prove cleanup');
     a.equal(stopped.state, 'cancelled');
     a.equal(k.agents.has('coder'), false, 'the stopped worker\'s process must be gone');
     a.equal(k.summoned.has('coder'), false,
       'a stopped run must not leave its worker in `summoned` — the delivery loop respawns anyone still there');
+    a.equal(k.summoned.has('idler'), false,
+      'an idle-slept run worker has no live agent but must still be released — it stays summoned and keeps its claim otherwise');
     const after = k.bus.task(task);
     a.equal(after.owner, null,
       'a stopped run must release what its worker still held — nobody may otherwise claim it again');
     a.equal(after.state, 'pending', 'and it must be claimable again, not stuck in active');
+    const idleAfter = k.bus.task(idleTask);
+    a.equal(idleAfter.owner, null,
+      'the idle-slept worker\'s claim must also be released, or the task board keeps reporting it as active');
+    a.equal(idleAfter.state, 'pending', 'and it too must be claimable again');
     a.ok(k.bus.history({ limit: 400 }).some((m) =>
       m.recipient === k.config.orchestrator.name && /left service still holding/.test(m.body)
       && new RegExp(`#${task}`).test(m.body)),
     'the orchestrator must be told, or it goes on reporting the task as in progress');
+    a.ok(k.bus.history({ limit: 400 }).some((m) =>
+      m.recipient === k.config.orchestrator.name && /left service still holding/.test(m.body)
+      && new RegExp(`#${idleTask}`).test(m.body)),
+    'the orchestrator must also be told about the idle-slept worker\'s stranded task');
 
-    console.log('  stopping a run releases its worker\'s claims exactly like any other departure');
+    console.log('  stopping a run releases its worker\'s claims exactly like any other departure, including an idle-slept one');
   }
 
   /* ---- 12. #onDone must not silently clear a run blocked by someone else - */
