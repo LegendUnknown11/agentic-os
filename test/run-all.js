@@ -60,6 +60,14 @@ const suites = [
   // repo's dirty checkout without first being able to put it back exactly
   // as found — see src/snapshot.js.
   ['target-repo snapshot + restore', join(HERE, 't-snapshot.js')],
+  // The Habitable pilot's step two: doctor-style detection of the
+  // Flutter/Android tooling a worker needs before touching a Flutter
+  // target, degrading visibly per missing tool — see src/pilot-doctor.js.
+  ['pilot tooling doctor', join(HERE, 't-pilot-doctor.js')],
+  // The Habitable pilot's steps two and four: the evidence gate itself —
+  // flutter analyze, flutter test with coverage, and a debug APK build,
+  // blocked cleanly on missing tooling — see src/pilot-evidence.js.
+  ['pilot evidence gate', join(HERE, 't-pilot-evidence.js')],
   ['briefer recycle', join(HERE, 't-recycle.js')],
   ['compaction window', join(HERE, '..', 'src', 'compact.js')],
   ['/autocompact', join(HERE, 't-compact.js')],

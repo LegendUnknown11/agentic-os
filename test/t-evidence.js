@@ -91,6 +91,11 @@ for (const key of sectionNames) {
   a.ok(existsSync(join(dir, manifest.sections[key])), `the file the manifest names for "${key}" must exist`);
 }
 
+/* no pilot section unless the caller actually ran the pilot evidence gate
+ * and passed its result in — evidence.js never runs Flutter itself */
+a.equal(manifest.pilotIncluded, false, 'pilotIncluded must be false when no pilotEvidence was passed');
+a.equal(manifest.sections.pilot, undefined, 'no pilot section must be written when nothing was passed');
+
 /* run.json is the run record itself, byte-for-byte reconstructable */
 const runOut = readJson('run.json');
 a.equal(runOut.id, runId);
@@ -134,6 +139,14 @@ const timelineOut = readJson('timeline.json');
 a.deepEqual(timelineOut, timelineOf(bus.run(runId)));
 a.ok(timelineOut.some((e) => e.kind === 'recovery' && e.label.includes('coder')), 'the recovery entry must be in the timeline');
 a.ok(timelineOut.some((e) => e.label === 'completed'), 'the completed transition must be in the timeline');
+
+/* ---------- an optional pilot section, only when handed one ------------- */
+const fakePilotEvidence = { blocked: false, ok: true, steps: { analyze: { ok: true } } };
+const withPilot = await exportEvidence(bus, repo, runId, { specOf, pilotEvidence: fakePilotEvidence });
+a.equal(withPilot.manifest.pilotIncluded, true, 'pilotIncluded must be true once pilotEvidence is passed');
+a.ok(withPilot.manifest.sections.pilot, 'a pilot section must be listed once pilotEvidence is passed');
+a.deepEqual(JSON.parse(readFileSync(join(withPilot.dir, withPilot.manifest.sections.pilot), 'utf8')), fakePilotEvidence,
+  'pilot.json must be exactly what the pilot evidence gate produced, not a summary of it');
 
 /* ---------- guardrails: a non-completed run refuses, visibly ------------ */
 const midRunId = 'run-evidence-mid';
