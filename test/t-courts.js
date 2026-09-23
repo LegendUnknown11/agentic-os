@@ -10,7 +10,7 @@ import { join } from 'node:path';
 import { createServer } from 'node:http';
 import {
   registerCourt, unregisterCourt, listCourts, findCourtForRepo,
-  firstFreePort, CourtConflictError, registryPath,
+  firstFreePort, CourtConflictError, registryPath, rowKey, keepLive,
 } from '../src/courts.js';
 
 const dir = mkdtempSync(join(tmpdir(), 'courts-test-'));
@@ -152,6 +152,20 @@ s1b.close();
   await unregisterCourt({ port: 19301, pid: process.pid });
   s3.close();
   rmSync(real, { recursive: true, force: true });
+}
+
+// --- a verdict applies only to the exact claim it was pinged for ------------
+// A live attach (or its rollback) rewrites a row's repo while its port and
+// pid stay the same. If that lands between the unlocked ping and the locked
+// reread, the old claim's verdict must not decide the new claim's fate.
+{
+  const pinged = { port: 19401, pid: 4242, repo: '/repo/old' };
+  const rewritten = { port: 19401, pid: 4242, repo: '/repo/new' };
+  const dead = new Map([[rowKey(pinged), false]]);
+  check(keepLive([rewritten], dead).length === 1, 'a claim rewritten after the ping is kept, not dropped on the old claim\'s dead verdict');
+  check(keepLive([pinged], dead).length === 0, 'the exact claim that was pinged dead is still dropped');
+  const alive = new Map([[rowKey(pinged), true]]);
+  check(keepLive([rewritten], alive).length === 1 && rowKey(rewritten) !== rowKey(pinged), 'an alive verdict is keyed to the claim it was pinged for, not reused for a rewritten one');
 }
 
 s2.close();

@@ -185,8 +185,11 @@ export function tryBindPort(port) {
  *  network waits can outlive LOCK_STALE_MS (a few unresponsive courts at
  *  1.5s each) and be stolen mid read-modify-write; the lock now only ever
  *  covers a file read and write. Keyed by port+pid so a verdict can only
- *  ever apply to the exact row it was taken for. */
-const rowKey = (c) => `${c.port}:${c.pid}`;
+ *  ever apply to the exact row it was taken for. The repository claim is part
+ *  of the key: a live attach (or its rollback) rewrites a row's repo while
+ *  keeping its port and pid, and a verdict pinged for the old claim must not
+ *  be applied to the new one. */
+export const rowKey = (c) => `${c.port}:${c.pid}:${c.repo ?? ''}`;
 async function verdictsFor(courts, isOwnRow = () => false) {
   const verdicts = new Map();
   await Promise.all(courts.map(async (c) => {
@@ -197,7 +200,7 @@ async function verdictsFor(courts, isOwnRow = () => false) {
 /** Rows the snapshot proved dead are dropped; rows written after the
  *  snapshot (another launch registering meanwhile) have no verdict and are
  *  kept — a fresh claim is never discarded for not having been pinged yet. */
-const keepLive = (courts, verdicts) => courts.filter((c) => verdicts.get(rowKey(c)) !== false);
+export const keepLive = (courts, verdicts) => courts.filter((c) => verdicts.get(rowKey(c)) !== false);
 
 /** Read the registry and drop every entry that is no longer a live court:
  *  dead pid, or a port that does not answer /api/ping for that repo. The
