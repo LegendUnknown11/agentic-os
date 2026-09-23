@@ -295,6 +295,10 @@ a.match(css, /\.agent-usage-details\s*\{[^}]*grid-template-columns:/, 'per-agent
 a.match(css, /\.agent-usage-card h3, \.agent-usage-card p\s*\{[^}]*overflow-wrap:\s*anywhere;/, 'long agent and model names must wrap instead of clipping');
 a.match(css, /\.usage-recommendation\s*\{[^}]*border:\s*1px solid var\(--line\);[^}]*border-left:\s*3px solid var\(--danger\)/, 'Usage advice must use the shared attention-row geometry');
 a.match(css, /\.settings-group\s*\{[^}]*border:\s*1px solid var\(--line\)/, 'consolidated Settings jobs must retain one semantic boundary');
+// 2026-09-23: read directly on Models & efficiency and Notifications — a
+// bordered .view-section wrapping bordered .settings-group fieldsets with
+// nothing of its own between the two borders, a card nested in a panel.
+a.match(css, /\.settings-shell \.view-section:has\(> \.settings-group\)\s*\{[^}]*border:\s*0;/, 'a settings tab that only holds groups must not also draw its own outer card');
 a.match(css, /@media \(max-width: 720px\)[\s\S]*?\.agent-usage-details\s*\{[^}]*grid-template-columns:\s*1fr;/, 'agent definition lists must stack on narrow screens');
 a.match(css, /@media \(forced-colors: active\)/, 'forced-colors users must retain metric and status boundaries');
 a.match(css, /\.form-grid > label input/, 'nested workflow form controls must inherit the shell field treatment');

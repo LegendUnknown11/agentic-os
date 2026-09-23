@@ -1140,6 +1140,14 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .settings-group legend { padding-inline: var(--space-1); color: var(--text); font-weight: 650; }
 
+/* A card nested inside a panel: read directly on the Models & efficiency and
+ * Notifications tabs, whose section() wraps one or more of the bordered
+ * .settings-group fieldsets above with nothing of its own between the two
+ * borders. Un-cards the outer .view-section only when it actually has a
+ * .settings-group inside it, so a tab with none (Repository) keeps reading
+ * as one plain card exactly as it did before. */
+.settings-shell .view-section:has(> .settings-group) { padding: 0; border: 0; background: none; box-shadow: none; }
+
 .settings-model-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
 
 .settings-model-block { display: grid; min-width: 0; gap: var(--space-2); }
