@@ -181,6 +181,13 @@ export const kb = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${
 // on screen. This is presentation only: the alias/id keeps being sent to the
 // CLI unchanged (agent.js), and an id this table does not know is shown as-is
 // rather than guessed at — an unlabeled model must never be hidden.
+//
+// The bare aliases are the one place a version is inferred rather than read:
+// the CLI resolves them itself. Their labels record what each alias resolved
+// to as of 2026-09-23, confirmed by the repository owner for #45 — opus is
+// Opus 5.5, sonnet Sonnet 5, haiku Haiku 4.5, fable Fable 5.1. src/price.js
+// bills each alias at that same model's rate; when the CLI moves an alias,
+// change both tables together (t-pages.js and price.js's self-check pin them).
 const MODEL_LABELS = {
   opus: 'Opus 5.5', // the CLI's `opus` alias resolves to Opus 5.5 (#75)
   sonnet: 'Sonnet 5',
