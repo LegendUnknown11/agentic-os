@@ -71,7 +71,7 @@ function logTail(path, n = 1200) {
 function checkNodeVersion(node) {
   let out;
   try {
-    out = execFileSync(node, ['--version'], { timeout: 5000 }).toString().trim();
+    out = execFileSync(node, ['--version'], { timeout: 5000, windowsHide: true }).toString().trim();
   } catch (e) {
     throw new Error(`Could not run Node ("${node}"): ${e.message}. `
       + 'Node 24+ must be on PATH. Get it at https://nodejs.org.');
