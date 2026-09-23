@@ -350,6 +350,14 @@ a.match(css, /\.attachment-chip button\s*\{[^}]*width:\s*var\(--tap-target-min\)
 a.match(css, /@media \(max-width: 720px\)[\s\S]*?\.wfn-x\s*\{\s*opacity:\s*1;/, 'workflow deletion must remain reachable on touch-sized editors');
 a.match(css, /@media \(prefers-reduced-motion: reduce\)[\s\S]*?animation:\s*none\s*!important;/, 'reduced-motion users must not receive a running animation');
 a.doesNotMatch(css, /\.section\s*\{|\.card\s*\{|\.row\s*\{|\.nav\s*\{|\.composer-form\s*\{|\.message\s*\{/, 'deleted window components must not leave a second styling vocabulary');
+
+// 2026-09-23: a populated demo court's Chat page showed a fenced code block
+// rendering on bare browser defaults — no background, no wrap handling, so a
+// long line pushed the message bubble past the thread column. mdToHtml
+// (ui/markdown.js) already emits real <pre><code>/<code>; the gap was purely
+// that ui/app.css never styled them.
+a.match(css, /\.markdown pre\s*\{[^}]*overflow-x:\s*auto;[^}]*font-family:\s*var\(--mono\);/, 'a fenced code block must scroll inside its own box, not stretch the message bubble');
+a.match(css, /\.markdown code\s*\{[^}]*font-family:\s*var\(--mono\);/, 'inline code must read as code, not as prose in a monospace accident');
 a.match(main, /class="mobile-menu"/, 'small screens need a menu control');
 a.match(main, /sidebar-scrim/, 'small screens need a native close target outside the rail');
 a.doesNotMatch(main, /const action = document\.createElement\('small'\)/, 'mode tabs must not repeat the header explainer copy');

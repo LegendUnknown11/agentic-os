@@ -1079,6 +1079,17 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .markdown a { color: var(--accent); }
 
+/* A fenced block had no rule of its own: `<pre><code>` rendered on whatever
+ * browser default the UA shipped, with no wrap handling, so a long line
+ * pushed the message bubble wider than the thread column instead of
+ * scrolling inside it. Read directly from a populated demo court's Chat
+ * page, 2026-09-23. */
+.markdown pre { margin: 0; padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-ctl); background: var(--surface); overflow-x: auto; font-family: var(--mono); font-size: var(--t-xs); line-height: 1.6; }
+
+.markdown pre code { padding: 0; border: 0; background: none; }
+
+.markdown code { padding: 1px 5px; border: 1px solid var(--line); border-radius: var(--radius-ctl); background: var(--surface); font-family: var(--mono); font-size: .9em; }
+
 .vault-link { display: grid; gap: var(--space-1); padding: var(--space-2) 0; border-bottom: 1px solid var(--line); color: var(--text); text-decoration: none; }
 
 .vault-link:hover { color: var(--accent); }
