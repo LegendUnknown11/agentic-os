@@ -5,6 +5,7 @@
 // blocking behaviour, never real Flutter output.
 //   node test/t-pilot-evidence.js
 import { strict as a } from 'node:assert';
+import { join } from 'node:path';
 import { runPilotEvidenceGate, isFlutterProject } from '../src/pilot-evidence.js';
 
 const readyDoctor = async () => ({ ready: true, failures: 0, checks: [{ level: 'ok', message: 'stub' }] });
@@ -57,7 +58,9 @@ a.equal(isFlutterProject('/x', () => false), false);
     'flutter test --coverage': { stdout: '00:03 +12: All tests passed!', stderr: '' },
     'flutter build apk --debug': { stdout: 'Built build/app/outputs/flutter-apk/app-debug.apk', stderr: '' },
   });
-  const existing = new Set(['/proj/pubspec.yaml', '/proj/coverage/lcov.info']);
+  // Built with the platform's own join(), exactly as the gate builds them —
+  // a literal '/proj/pubspec.yaml' never matches Windows' '\\proj\\pubspec.yaml'.
+  const existing = new Set([join('/proj', 'pubspec.yaml'), join('/proj', 'coverage', 'lcov.info')]);
   const result = await runPilotEvidenceGate('/proj', {
     exec, doctor: readyDoctor, existsFn: (p) => existing.has(p),
   });
