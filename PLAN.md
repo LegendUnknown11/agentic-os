@@ -354,11 +354,106 @@ also captured and reads unchanged (flat paper), since glass has nothing to
 blur without a wallpaper behind it. This is browser evidence, not Electron
 or Windows evidence — neither was exercised this session.
 
-**Not done**: further structural/UX rework of Overview density, Changes/diff
-layout, or Settings scannability. The live audit found the existing
-structure already sound against this file's earlier contract and named no
-new defect there; re-litigating already-closed structural work without a
-found defect would be scope creep, not thoroughness.
+**Superseded below**: the "Not done" conclusion above — that an empty demo
+court's audit found nothing further to fix — was wrong, and is corrected in
+the next section rather than edited in place, so the mistake and the
+correction both stay on the record.
+
+## UI revamp round 2 — populated-court audit and defect sweep (2026-09-23)
+
+The round above audited an **empty** demo court: no objective, no run, no
+tasks, no approvals, one conversation, no diff. That hid real defects the
+same way the 2026-09-21 session's 73 green suites hid the `align-content`
+grid-leak class — an empty state cannot show a rail that overflows once it
+has content, a heading block whose weight only matters against a real page
+below it, or a code block with nothing in it to render badly. Corrected by
+seeding the same demo court with real state — an objective, a run that
+travelled planning → running → blocked with recovery history plus a second,
+completed run in history, five tasks across pending/claimed/done/blocked-on-
+deps, three approvals (push, summon, question), twelve conversations, a
+multi-turn thread with a fenced code block and a deliberately long unbroken
+URL, and a real git diff (three files) from a summoned peasant's worktree —
+via `/home/user/wt-ui-shots/seed.mjs`, which writes directly through
+`src/bus.js` (and, for the worktree, the daemon's own `summon`/`approve` HTTP
+actions) rather than approximating the app's own state shapes by hand.
+Re-audited at 1440x900, 1280x720, and 720x900;
+`/home/user/wt-ui-shots/populated-before/` and `populated-after/` hold the
+screenshots, `/home/user/wt-ui-shots/AUDIT.md` the updated findings.
+
+Five real defects found this way, each fixed with its own commit and a
+failing-before assertion:
+
+1. **The rail clipped under real height pressure.** At 1280x720 (and the
+   enforced 900px minimum) with a populated rail (twelve conversations, More
+   tools open), `#sidebar`'s sections could ask for more height than the rail
+   had, and its `overflow: hidden` clipped whatever did not fit — the
+   Settings/Collapse footer ran off the bottom of the viewport, Conversations
+   squeezed toward one row. Fixed with a `.sidebar-scroll` region (the parts
+   that can grow) wrapped by a non-scrolling header and footer, so the footer
+   is a document-flow guarantee rather than a height budget it can lose.
+   `test/t-theme-geometry.js` gained a real-Chromium case at 1280x720 with a
+   populated fixture, confirmed failing before the fix.
+2. **The page heading carried no information and the marketing scale.**
+   "AGENTIC OS / WORKSPACE" repeated identically on all 14 views (a prior
+   session already removed it once for the same reason and it came back), a
+   48px display-face H1 (`clamp(32px, 5vw, 48px)`) although this file's own
+   section 1 requires the product scale throughout. Both cost real space
+   above the fold of a dense tool. Eyebrow dropped and banned a second time;
+   H1 shrunk to `clamp(20px, 2.4vw, 26px)`.
+3. **Glass was invisible in the state most people see.** Round 1's glass
+   rules were correct but blurring a flat colour is indistinguishable from
+   not blurring it, and with no wallpaper set `#bg` sits at opacity 0 and the
+   paper grain beneath it is a .05-alpha dot pattern too faint to register.
+   Added `--wash`, two soft radial gradients (teal- and paper-tinted, from
+   existing channel colours) painted under the grain on `body` itself, so the
+   chrome has real tonal variation to blur regardless of wallpaper state.
+4. **A card nested inside a panel.** Models & efficiency and Notifications
+   build their `section()` out of one or more bordered `.settings-group`
+   fieldsets, with the outer `.view-section`'s own border sitting flush
+   against the inner one and nothing of its own between them. Un-cards the
+   outer wrapper only when it actually contains a `.settings-group`
+   (`.settings-shell .view-section:has(> .settings-group)`), so a tab with no
+   groups (Repository) is unaffected.
+5. **The header's mode switcher visibly dominated the header.** Three
+   two-line pills (label plus a permission blurb) pushed "Connected" out to
+   the far edge looking detached — and this is the *same* defect
+   `test/t-theme.js` already banned under a `.mode-option small` selector; it
+   came back under `<span>` instead, which the existing test could not see.
+   Each button's own `dataset.tip`/`aria-label` and the app's established
+   `.hover-tip` convention already carry the description, so hiding the
+   always-visible copy loses no information. The ban is widened to cover
+   both tag names.
+
+Also fixed, found on the *first*, empty-court pass but not reported then
+because it was misdiagnosed mid-session as a UI bug before being traced to a
+seeding mistake and correctly attributed: **fenced/inline code in thread
+messages had no styling** (`<pre><code>`/`<code>` on bare browser defaults, no
+wrap handling, so a long line pushed the message bubble past the thread
+column). `ui/markdown.js` already emitted real `<pre><code>`; the gap was
+purely that `ui/app.css` never styled it. Fixed with `.markdown pre`/`.markdown
+pre code`/`.markdown code`, all token-sourced.
+
+**Evaluated and left alone, with reasons**: Settings' tab row already scrolls
+horizontally (`overflow-x: auto; flex-wrap: nowrap`) rather than wrapping at
+720px — read directly, this was not a defect. Changes' diff view, checked
+against a real three-file diff, already reads well (monospace, coloured
+`+`/`-` lines, no overflow). Overview's "Verified deliverables" card, which
+looked disproportionately tall beside "Current work" in a screenshot, measured
+173px against "Current work"'s 350px in real Chromium — `align-items: start`
+is doing its job; the appearance of equal height was a misreading of the
+screenshot, corrected before acting on it. Further list-density work
+(Work/Team/Activity/Decisions rows) and a deeper Overview/thread-composer
+redesign were not undertaken in the time available; nothing in the populated
+audit surfaced a concrete defect there beyond what is already fixed above.
+
+**Acceptance evidence**: `npm test` — 77 suites, 4-wide, ~37-40s across these
+commits' individual runs, all suites passed, no flaky retries, run before
+every commit in this round. `test/t-theme-geometry.js` ran against real
+Chromium throughout (never skipped). Visual evidence: the populated-court
+screenshots above, plus a live Chromium read-back of
+`getComputedStyle(#header).backdropFilter` confirming the boosted `--wash`
+still renders. This is browser evidence, not Electron or Windows evidence —
+neither was exercised in this round either.
 
 ## Carried forward from the previous contract
 

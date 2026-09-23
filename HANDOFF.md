@@ -86,15 +86,38 @@ evidence; the summary: `#header`, `#sidebar` (rail and drawer), `#composer`,
 one of two new alphas (`--glass-chrome-alpha: .90`, `--glass-panel-alpha:
 .97`), both computed against a worst-case fully-black wallpaper ground so
 every text pairing still clears 4.5:1 there. `.view-section` (cards) stay
-flat, unchanged. A live audit that started a demo court and drove it with
-Playwright found the interface otherwise already close to this file's own
-"closed 2026-09-21" claim — no free-height grid leak recurred, no other
-visual defect was found across all 14 views at 1440x900 and 720x900 — so the
-session's scope narrowed to that one gap, which was the one the sovereign's
-direction named concretely. `test/t-theme.js` intentionally replaces a
-2026-09-21 guard that pinned `backdrop-filter` absent from the whole
-stylesheet; that guard predates this direction and is superseded by it, not
-weakened.
+flat, unchanged. `test/t-theme.js` intentionally replaces a 2026-09-21 guard
+that pinned `backdrop-filter` absent from the whole stylesheet; that guard
+predates this direction and is superseded by it, not weakened.
+
+**That first pass audited an empty demo court, and it hid real defects.**
+Corrected the same session, in a second round recorded in PLAN.md's "UI
+revamp round 2": seeded the demo court with a real objective, a run that
+travelled through `blocked` with recovery history plus a second completed
+run in history, tasks in every state, three approvals, twelve conversations,
+a thread with a real code block and a deliberately long URL, and a real
+three-file diff from a summoned peasant's worktree
+(`/home/user/wt-ui-shots/seed.mjs`), then re-audited at 1440x900, 1280x720,
+and 720x900. Found and fixed five more defects invisible against an empty
+state: the rail's footer and conversation list clipped under real height
+pressure at 1280x720 (`.sidebar-scroll`); the page heading carried an
+identical, information-free eyebrow and the marketing type scale on all 14
+views (PLAN.md section 1 requires the product scale); the glass from the
+first round was invisible with no wallpaper set, because blurring a flat
+colour is indistinguishable from not blurring it (`--wash` gives the paper
+itself real tonal variation); Settings' Models & efficiency and Notifications
+tabs drew a card nested inside a panel (an outer `.view-section` flush
+against its own `.settings-group` fieldsets); and the header's mode switcher
+visibly dominated the header with a permission blurb `test/t-theme.js`
+already banned once under a different tag name. Also traced and fixed: a
+fenced code block in a thread message had no styling at all (bare browser
+`<pre><code>` defaults) — `ui/markdown.js` already rendered it correctly, the
+gap was purely that `ui/app.css` never styled the result. Checked and left
+alone, with reasons recorded in PLAN.md: Settings' tab row (already scrolls,
+does not wrap), the Changes diff view (reads well against a real diff), and
+Overview's "Verified deliverables" card (measured 173px in real Chromium
+against "Current work"'s 350px — a screenshot misreading, not a stretched
+card; `align-items: start` was already correct).
 
 ## Evidence
 
