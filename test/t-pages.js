@@ -110,7 +110,11 @@ a.match(electronMainSource, /ipcMain\.handle\('court:switchRepo', async \(event,
 a.match(electronMainSource, /import \{ assertRepo \} from '\.\.\/src\/worktree\.js'/, 'a repository switch must validate the target with a real git check (assertRepo), not an existsSync(.git) peek a corrupt or empty entry would pass');
 a.match(electronMainSource, /assertRepo,\s*\n\s*confirm: async \(repo\) => \{/, 'a repository switch must use the real git validator, not a bespoke check');
 a.match(electronMainSource, /buttons: \['Cancel', 'End court and switch'\][\s\S]*?return response === 1;/, 'ending a court is destructive — it must be confirmed natively before anything is torn down');
-a.match(electronMainSource, /shutdown: \(\) => fetch\(`\$\{ORIGIN\}\/api\/shutdown`, \{ method: 'POST' \}\)/, 'a repository switch must end the running court through its own shutdown endpoint');
+a.match(electronMainSource, /shutdown: \(\) => requestShutdown\(ORIGIN\)/, 'a repository switch must end the running court through its own shutdown endpoint');
+// A bare POST is 415'd by the daemon's JSON gate while fetch() still resolves,
+// so it looked like success and the court kept running.
+a.doesNotMatch(electronMainSource, /fetch\([^)]*\/api\/shutdown`, \{ method: 'POST' \}\)/,
+  'no shutdown POST may omit the JSON content type the daemon requires');
 a.match(electronMainSource, /courtOnPort,\s*\n\s*startDaemon,/, 'a repository switch must poll the real port state and start the fresh court through the same path the app itself boots with');
 a.match(electronMainSource, /reload: \(\) => BrowserWindow\.fromWebContents\(event\.sender\)\?\.loadURL\(`\$\{ORIGIN\}\/`\)/, 'a successful repository switch must reload the window instead of resuming a stale event cursor from the old repo');
 a.match(automationsSource, /workflow-run-message/, 'a manual workflow run must leave visible feedback');

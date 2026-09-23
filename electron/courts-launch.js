@@ -59,6 +59,29 @@ export async function routeLaunch(repo, { listCourts, focusWindow, startDaemonFo
   }
 }
 
+/**
+ * Ask a court to end itself. The daemon refuses any POST /api/* that is not
+ * `content-type: application/json` with a 415 (src/daemon.js's CSRF gate),
+ * and fetch() resolves on a 415 just as it does on a 200 — so a bare POST
+ * looked like success while the daemon kept running. This sends the JSON
+ * header and reports the answer. A refused connection means the court is
+ * already gone, which is what the caller wanted.
+ */
+export async function requestShutdown(origin, fetchFn = fetch) {
+  let res;
+  try {
+    res = await fetchFn(`${origin}/api/shutdown`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}',
+    });
+  } catch {
+    return { ok: true, gone: true };
+  }
+  if (res.ok) return { ok: true };
+  let error = `the court refused to end (HTTP ${res.status})`;
+  try { const j = await res.json(); if (j?.error) error += `: ${j.error}`; } catch { /* keep the status */ }
+  return { ok: false, error };
+}
+
 // ---- self-check -------------------------------------------------------------
 import { basename } from 'node:path';
 if (basename(process.argv[1] ?? '') === 'courts-launch.js') {

@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { assertRepo } from '../src/worktree.js';
 import { switchRepo } from './switch-repo.js';
 import { listCourts } from '../src/courts.js';
-import { routeLaunch } from './courts-launch.js';
+import { routeLaunch, requestShutdown } from './courts-launch.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.KINGDOM_PORT ?? 7777);
@@ -451,7 +451,7 @@ ipcMain.handle('court:switchRepo', async (event, rawPath) => switchRepo(rawPath,
     });
     return response === 1;
   },
-  shutdown: () => fetch(`${ORIGIN}/api/shutdown`, { method: 'POST' }).catch(() => { /* it may already be gone */ }),
+  shutdown: () => requestShutdown(ORIGIN),
   courtOnPort,
   startDaemon,
   // A fresh window load, not the renderer's own SSE reconnect: the new
@@ -497,7 +497,8 @@ ipcMain.handle('courts:end', async (event, rawPath) => {
     cancelId: 0,
   });
   if (response !== 1) return { canceled: true };
-  await fetch(`${originFor(found.port)}/api/shutdown`, { method: 'POST' }).catch(() => { /* it may already be gone */ });
+  const down = await requestShutdown(originFor(found.port));
+  if (!down.ok) return { ok: false, error: down.error };
   const win = courtWindows.get(found.port)?.win;
   if (win && !win.isDestroyed()) win.close();
   courtWindows.delete(found.port);

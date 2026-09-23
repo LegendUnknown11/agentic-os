@@ -13,6 +13,7 @@ import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { requestShutdown } from '../electron/courts-launch.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DAEMON = join(HERE, '..', 'src', 'daemon.js');
@@ -106,7 +107,17 @@ try {
   a.notEqual(pinnedExit, 0, 'a daemon pinned to a busy port must exit non-zero');
   a.match(pinnedStderr, /port 7778 is already in use/, 'a busy pinned port names itself in the error');
 
-  console.log('t-multi-court.js OK — one live court per repo, auto ports avoid collision, a busy pinned port refuses cleanly');
+  // ---- 5. ending a court through the shell's own request must actually end
+  // it. The daemon 415s any POST /api/* without a JSON content type, and a
+  // bare fetch() resolves on that 415 — the old "End court" reported success
+  // while the daemon kept serving. ----
+  const bare = await fetch('http://127.0.0.1:7778/api/shutdown', { method: 'POST' });
+  a.equal(bare.status, 415, 'sanity: a headerless shutdown POST is refused by the daemon');
+  const down = await requestShutdown('http://127.0.0.1:7778');
+  a.equal(down.ok, true, 'requestShutdown must be accepted by a real daemon');
+  a.notEqual(await waitForExit(B.proc, 15_000), null, 'the court must actually exit after requestShutdown');
+
+  console.log('t-multi-court.js OK — one live court per repo, auto ports avoid collision, a busy pinned port refuses cleanly, and ending a court really ends it');
 } finally {
   for (const p of [A?.proc, B?.proc]) { try { p?.kill('SIGKILL'); } catch {} }
   await wait(300);

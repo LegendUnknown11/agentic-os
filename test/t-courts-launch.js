@@ -5,7 +5,7 @@
 // electron/main.js can be a thin wrapper around something this suite
 // actually runs.
 import { strict as a } from 'node:assert';
-import { decideLaunchAction, routeLaunch } from '../electron/courts-launch.js';
+import { decideLaunchAction, routeLaunch, requestShutdown } from '../electron/courts-launch.js';
 
 const live = [
   { repo: '/repo/a', port: 7777, startedAt: '2026-01-01T00:00:00Z' },
@@ -63,6 +63,20 @@ a.deepEqual(decideLaunchAction('/repo/c', live), { action: 'start', repo: '/repo
   });
   a.deepEqual(result, { ok: false, error: 'Node 24+ must be on PATH.' });
   a.deepEqual(calls, [], 'a daemon that fails to start must never open a window');
+}
+
+// --- requestShutdown: JSON header, and a refusal is reported -----------------
+{
+  const seen = [];
+  const ok = await requestShutdown('http://x', async (url, init) => { seen.push([url, init]); return { ok: true, status: 200 }; });
+  a.equal(ok.ok, true);
+  a.equal(seen[0][0], 'http://x/api/shutdown');
+  a.equal(seen[0][1].headers['content-type'], 'application/json', 'shutdown must send the JSON content type the daemon requires');
+  const refused = await requestShutdown('http://x', async () => ({ ok: false, status: 415, json: async () => ({ error: 'expected content-type: application/json' }) }));
+  a.equal(refused.ok, false, 'a refused shutdown must not be reported as success');
+  a.match(refused.error, /415/);
+  const gone = await requestShutdown('http://x', async () => { throw new Error('ECONNREFUSED'); });
+  a.equal(gone.ok, true, 'a court that no longer answers is already gone');
 }
 
 console.log('t-courts-launch.js OK — a relaunch focuses a live court by repo (or the most recent one), and only starts a fresh daemon when nothing matches');

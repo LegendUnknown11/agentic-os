@@ -66,6 +66,17 @@ function fakeDeps(overrides = {}) {
   a.ok(!calls.some((c) => c[0] === 'startDaemon'), 'a court that never frees its port must never reach startDaemon');
 }
 
+// --- a court that refuses to end stops the switch, visibly --------------
+{
+  const { calls, deps } = fakeDeps({
+    shutdown: async () => { calls.push(['shutdown']); return { ok: false, error: 'the court refused to end (HTTP 415)' }; },
+  });
+  const result = await switchRepo('/repo', deps);
+  a.deepEqual(result, { ok: false, error: 'the court refused to end (HTTP 415)' });
+  a.ok(!calls.some((c) => c[0] === 'courtOnPort' || c[0] === 'startDaemon'),
+    'a refused shutdown must stop before waiting on the port or starting a second court');
+}
+
 // --- a daemon that fails to start surfaces its own error -----------------
 {
   const { calls, deps } = fakeDeps({
