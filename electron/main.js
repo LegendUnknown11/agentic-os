@@ -13,16 +13,16 @@ import { fileURLToPath } from 'node:url';
 import { assertRepo } from '../src/worktree.js';
 import { switchRepo } from './switch-repo.js';
 import { listCourts } from '../src/courts.js';
-import { routeLaunch, requestShutdown, firstLaunchPlan } from './courts-launch.js';
+import { routeLaunch, requestShutdown, firstLaunchPlan, courtPortOf } from './courts-launch.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.KINGDOM_PORT ?? 7777);
 const ORIGIN = `http://127.0.0.1:${PORT}`;
 
 /** Who, if anyone, is already holding the port. */
-async function courtOnPort() {
+async function courtOnPort(origin = ORIGIN) {
   try {
-    const r = await fetch(`${ORIGIN}/api/ping`, { signal: AbortSignal.timeout(1200) });
+    const r = await fetch(`${origin}/api/ping`, { signal: AbortSignal.timeout(1200) });
     return r.ok ? await r.json() : null;
   } catch {
     return null;
@@ -102,12 +102,12 @@ function checkNodeVersion(node) {
  * port, not by parsing stdout — a detached child's output belongs in the log,
  * and this works whatever the daemon chooses to print.
  */
-async function startDaemon(repo, logPath) {
+async function startDaemon(repo, logPath, port = PORT) {
   const node = process.env.KINGDOM_NODE ?? 'node';
   checkNodeVersion(node);
   const out = openSync(logPath, 'a');
   const child = spawn(node, [
-    join(HERE, '..', 'src', 'daemon.js'), ...(repo ? [repo] : []), '--port', String(PORT),
+    join(HERE, '..', 'src', 'daemon.js'), ...(repo ? [repo] : []), '--port', String(port),
   ], {
     detached: true,
     stdio: ['ignore', out, out],
@@ -130,11 +130,11 @@ async function startDaemon(repo, logPath) {
         + `(code ${childExit.code ?? 'unknown'}, signal ${childExit.signal ?? 'none'}).\n\n`
         + logTail(logPath));
     }
-    const ping = await courtOnPort();
+    const ping = await courtOnPort(originFor(port));
     if (ping) return ping;
     await new Promise((r) => setTimeout(r, 400));
   }
-  throw new Error(`The court did not answer on ${ORIGIN} within 90s.\n\n${logTail(logPath)}`);
+  throw new Error(`The court did not answer on ${originFor(port)} within 90s.\n\n${logTail(logPath)}`);
 }
 
 /**
@@ -436,31 +436,39 @@ ipcMain.handle('repo:choose', () => chooseRepoDialog());
 // not something a destructive court-ending action should risk triggering.
 // The actual step sequence lives in switch-repo.js, as a plain function
 // tested without Electron, a real daemon, or a real dialog.
-ipcMain.handle('court:switchRepo', async (event, rawPath) => switchRepo(rawPath, {
-  resolve,
-  assertRepo,
-  confirm: async (repo) => {
-    const { response } = await dialog.showMessageBox({
-      type: 'warning',
-      title: 'End this court?',
-      message: `End the current court and start a fresh one for:\n\n${repo}`,
-      detail: 'Any work in progress in the current court will stop. This cannot be undone.',
-      buttons: ['Cancel', 'End court and switch'],
-      defaultId: 0,
-      cancelId: 0,
-    });
-    return response === 1;
-  },
-  shutdown: () => requestShutdown(ORIGIN),
-  courtOnPort,
-  startDaemon,
-  // A fresh window load, not the renderer's own SSE reconnect: the new
-  // daemon's event cursor starts back at zero, and resuming with the old
-  // court's `since` would ask for events that no longer exist in this repo's
-  // fresh store.
-  reload: () => BrowserWindow.fromWebContents(event.sender)?.loadURL(`${ORIGIN}/`),
-  logPath: join(app.getPath('userData'), 'daemon.log'),
-}));
+//
+// Every step targets the court the REQUESTING window shows (issue #42): a
+// window opened on a non-default port must end and replace its own court,
+// not the one on the app's pinned PORT.
+ipcMain.handle('court:switchRepo', async (event, rawPath) => {
+  const port = courtPortOf(event.sender.getURL(), PORT);
+  const origin = originFor(port);
+  return switchRepo(rawPath, {
+    resolve,
+    assertRepo,
+    confirm: async (repo) => {
+      const { response } = await dialog.showMessageBox({
+        type: 'warning',
+        title: 'End this court?',
+        message: `End the current court and start a fresh one for:\n\n${repo}`,
+        detail: 'Any work in progress in the current court will stop. This cannot be undone.',
+        buttons: ['Cancel', 'End court and switch'],
+        defaultId: 0,
+        cancelId: 0,
+      });
+      return response === 1;
+    },
+    shutdown: () => requestShutdown(origin),
+    courtOnPort: () => courtOnPort(origin),
+    startDaemon: (repo, logPath) => startDaemon(repo, logPath, port),
+    // A fresh window load, not the renderer's own SSE reconnect: the new
+    // daemon's event cursor starts back at zero, and resuming with the old
+    // court's `since` would ask for events that no longer exist in this repo's
+    // fresh store.
+    reload: () => BrowserWindow.fromWebContents(event.sender)?.loadURL(`${origin}/`),
+    logPath: join(app.getPath('userData'), 'daemon.log'),
+  });
+});
 
 // ---- multiple courts at once (issue #42) -----------------------------------
 // The switcher reachable from Settings' Repository panel (ui/views/courts.js)

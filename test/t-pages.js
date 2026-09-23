@@ -116,7 +116,7 @@ a.equal(courtActionError({ ok: true }, 'x'), null);
 a.equal(courtActionError({ canceled: true }, 'x'), null, 'a cancelled confirmation is not an error');
 a.match(courtsSource, /state\.courtsError \? \[note\(state\.courtsError, 'danger'\)\]/, 'a switcher failure must render as a visible danger note');
 a.match(courtPreloadSource, /switchRepo: \(path\) => ipcRenderer\.invoke\('court:switchRepo', path\)/, 'the court preload must expose the repository-switch command');
-a.match(electronMainSource, /ipcMain\.handle\('court:switchRepo', async \(event, rawPath\) => switchRepo\(rawPath, \{/, 'the native main process must own ending and respawning the court');
+a.match(electronMainSource, /ipcMain\.handle\('court:switchRepo', async \(event, rawPath\) => \{\s*\n\s*const port = courtPortOf\(event\.sender\.getURL\(\), PORT\);\s*\n\s*const origin = originFor\(port\);\s*\n\s*return switchRepo\(rawPath, \{/, 'the native main process must own ending and respawning the court — the one the requesting window shows, not always the default port');
 // The step sequence itself (validate before confirm, confirm before
 // shutdown, shutdown before startDaemon, reload only after it answers) is a
 // plain function in electron/switch-repo.js, exercised end-to-end without
@@ -129,13 +129,13 @@ a.match(electronMainSource, /buttons: \['Cancel', 'End court and switch'\][\s\S]
 a.match(electronMainSource, /firstLaunchPlan\(repo, repo \? await listCourts\(\) : \[\], running\)/,
   'the first launch must consult the court registry before falling back to the pinned port');
 a.match(electronMainSource, /openWindow\(targetPort\);/, 'the first window must open the court the launch plan chose');
-a.match(electronMainSource, /shutdown: \(\) => requestShutdown\(ORIGIN\)/, 'a repository switch must end the running court through its own shutdown endpoint');
+a.match(electronMainSource, /shutdown: \(\) => requestShutdown\(origin\)/, 'a repository switch must end the requesting window\'s court through its own shutdown endpoint');
 // A bare POST is 415'd by the daemon's JSON gate while fetch() still resolves,
 // so it looked like success and the court kept running.
 a.doesNotMatch(electronMainSource, /fetch\([^)]*\/api\/shutdown`, \{ method: 'POST' \}\)/,
   'no shutdown POST may omit the JSON content type the daemon requires');
-a.match(electronMainSource, /courtOnPort,\s*\n\s*startDaemon,/, 'a repository switch must poll the real port state and start the fresh court through the same path the app itself boots with');
-a.match(electronMainSource, /reload: \(\) => BrowserWindow\.fromWebContents\(event\.sender\)\?\.loadURL\(`\$\{ORIGIN\}\/`\)/, 'a successful repository switch must reload the window instead of resuming a stale event cursor from the old repo');
+a.match(electronMainSource, /courtOnPort: \(\) => courtOnPort\(origin\),\s*\n\s*startDaemon: \(repo, logPath\) => startDaemon\(repo, logPath, port\),/, 'a repository switch must poll that court\'s real port and start the fresh court on it through the same path the app itself boots with');
+a.match(electronMainSource, /reload: \(\) => BrowserWindow\.fromWebContents\(event\.sender\)\?\.loadURL\(`\$\{origin\}\/`\)/, 'a successful repository switch must reload the window instead of resuming a stale event cursor from the old repo');
 a.match(automationsSource, /workflow-run-message/, 'a manual workflow run must leave visible feedback');
 a.match(automationsSource, /result\?\.steps/, 'workflow feedback must report the returned run trace');
 a.match(automationsSource, /automationEditor/, 'live updates must not discard an open workflow editor');

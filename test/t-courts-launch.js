@@ -5,7 +5,7 @@
 // electron/main.js can be a thin wrapper around something this suite
 // actually runs.
 import { strict as a } from 'node:assert';
-import { decideLaunchAction, routeLaunch, requestShutdown, firstLaunchPlan } from '../electron/courts-launch.js';
+import { decideLaunchAction, routeLaunch, requestShutdown, firstLaunchPlan, courtPortOf } from '../electron/courts-launch.js';
 
 const live = [
   { repo: '/repo/a', port: 7777, startedAt: '2026-01-01T00:00:00Z' },
@@ -88,5 +88,12 @@ a.deepEqual(firstLaunchPlan('/repo/c', [], null), { action: 'default' }, 'nothin
 a.deepEqual(firstLaunchPlan('/repo/c', [], { repo: null }), { action: 'default' },
   'a repo-less court on the default port keeps the attach-to-it flow');
 a.deepEqual(firstLaunchPlan(null, live, { repo: '/repo/a' }), { action: 'default' }, 'a bare launch keeps the default flow');
+
+// --- a per-window action targets the court THAT window shows ------------------
+a.equal(courtPortOf('http://127.0.0.1:7779/', 7777), 7779,
+  'a window on a non-default court reports that court\'s port, so a repository switch ends and replaces it — not the default court');
+a.equal(courtPortOf('http://127.0.0.1:7777/#/settings', 7777), 7777, 'the default court window keeps the default port');
+a.equal(courtPortOf('', 7777), 7777, 'a window with nothing loaded yet falls back to the default port');
+a.equal(courtPortOf('https://example.com:8443/', 7777), 7777, 'a non-court URL never names a court port');
 
 console.log('t-courts-launch.js OK — a relaunch focuses a live court by repo (or the most recent one), and only starts a fresh daemon when nothing matches');

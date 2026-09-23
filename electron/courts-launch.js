@@ -80,6 +80,21 @@ export function firstLaunchPlan(repo, liveCourts, onDefaultPort) {
 }
 
 /**
+ * The court port a window is showing, read off its loaded URL. With several
+ * courts open side by side, a per-window action (the repository switch) must
+ * act on THAT window's court, not on the app's pinned default port. Falls
+ * back to `fallback` for anything that is not a loopback court URL.
+ */
+export function courtPortOf(url, fallback) {
+  try {
+    const u = new URL(url);
+    const port = Number(u.port);
+    if (u.hostname === '127.0.0.1' && Number.isInteger(port) && port > 0) return port;
+  } catch { /* not a URL yet (blank window) */ }
+  return fallback;
+}
+
+/**
  * Ask a court to end itself. The daemon refuses any POST /api/* that is not
  * `content-type: application/json` with a 415 (src/daemon.js's CSRF gate),
  * and fetch() resolves on a 415 just as it does on a 200 — so a bare POST
