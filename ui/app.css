@@ -120,6 +120,22 @@
    * putting a literal colour outside this block. */
   --grain: radial-gradient(rgb(var(--text-rgb) / .05) .65px, transparent .65px);
 
+  /* Depth wash — added 2026-09-23 alongside the glass tokens above, and for
+   * the same reason: without it, backdrop-filter has nothing but a flat
+   * colour to blur, and blurring a flat colour is indistinguishable from not
+   * blurring it at all. A live session confirmed exactly that — with no
+   * wallpaper set (the state most people see), the header and rail read as
+   * plain opaque paper even with the glass rules correctly applied, because
+   * #bg's own fill sits at opacity 0 by default and the grain dots beneath it
+   * are too faint (.05 alpha) for a 20px blur to register. Two soft radial
+   * washes, teal- and paper-tinted at low alpha, painted under the grain on
+   * `body` itself — so they exist regardless of whether a user wallpaper is
+   * ever set — give the chrome something with real tonal variation to show
+   * through. Both stay light enough that no text pairing measured against
+   * --bg elsewhere in this file changes: the wash sits under content, never
+   * behind it, and reads as depth in the paper, not a colour shift. */
+  --wash: radial-gradient(1400px 420px at 28% 0%, rgb(var(--accent-rgb) / .09), transparent 70%), radial-gradient(1200px 460px at 100% 0%, rgb(var(--surface-rgb) / .95), transparent 65%);
+
   /* Shape — the product scale, kept deliberately apart from the marketing one:
    * 16px card, 12px control, and no pill buttons. Pills survive only where the
    * kit pills — the status badge and the segmented control. The retired
@@ -218,9 +234,11 @@ body {
   /* The grain is what makes paper read as paper rather than as flat beige.
    * Dance Class generates it in CSS instead of tiling a photograph, which is
    * the technique this app takes: no binary in the bundle, and the colour
-   * stays a token. */
-  background: var(--bg) var(--grain);
-  background-size: 4px 4px;
+   * stays a token. --wash sits above it: see the token comment for why —
+   * without it, the glass chrome above has nothing but a flat colour to
+   * blur. */
+  background: var(--wash), var(--bg) var(--grain);
+  background-size: auto, 4px 4px;
   color: var(--text);
   font: 400 var(--t-md)/1.45 var(--ui);
 }

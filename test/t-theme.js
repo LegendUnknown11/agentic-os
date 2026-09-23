@@ -106,7 +106,14 @@ a.doesNotMatch(css, /--dark-|--ed-/, 'neither the retired --dark- convention nor
 // this shell takes the CSS-generated one, so the gradient is expected — but
 // only as the tokenised grain, and nowhere else.
 a.match(css, /--grain:\s*radial-gradient\(rgb\(var\(--text-rgb\) \/ \.05\)/, 'the paper grain must be a token, so its colour stays inside :root');
-a.match(css, /body \{[^}]*background:\s*var\(--bg\) var\(--grain\);/, 'the page ground must carry the grain');
+// 2026-09-23: added alongside the glass tokens, for the same defect a live
+// session found — with no wallpaper set (the default state), the header and
+// rail read as fully opaque even with backdrop-filter correctly applied,
+// because blurring a flat colour is indistinguishable from not blurring it.
+// --wash gives the paper itself real tonal variation, tokenised so its
+// colours stay inside :root like every other value here.
+a.match(css, /--wash:\s*radial-gradient\(.*rgb\(var\(--accent-rgb\) \/ \.09\).*radial-gradient\(.*rgb\(var\(--surface-rgb\) \/ \.95\)/, 'the depth wash must be a token built from channel colours, not a literal');
+a.match(css, /body \{[^}]*background:\s*var\(--wash\), var\(--bg\) var\(--grain\);/, 'the page ground must carry both the depth wash and the grain');
 a.doesNotMatch(rules, /linear-gradient/, 'no rule may invent a gradient of its own');
 a.match(css, /\.mode-switcher\s*\{[^}]*border-radius:\s*var\(--radius-pill\)/, 'work modes must read as one segmented control');
 a.match(css, /\.mode-option\.selected\s*\{[^}]*background:\s*var\(--accent\)/, 'the active work mode needs one clear accent state');
