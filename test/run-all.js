@@ -105,6 +105,10 @@ const suites = [
   // must run with none attached, and only Code may ever require one.
   ['repo becomes optional', join(HERE, 't-repo-optional.js')],
   ['court self-control', join(HERE, 't-control.js')],
+  // The multi-court registry (issue #42, src/courts.js): which repos have a
+  // live daemon, on which port, pruned as soon as a pid dies or a port stops
+  // answering — and safe against two launches racing to register at once.
+  ['court registry', join(HERE, 't-courts.js')],
   // The end-court-and-switch-repo flow (issue #42): a plain function with
   // injected dependencies, so its step ordering runs for real without an
   // Electron process, a daemon, or a native dialog.
