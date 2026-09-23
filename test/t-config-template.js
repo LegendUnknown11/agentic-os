@@ -45,7 +45,11 @@ const cfg = JSON.parse(readFileSync(join(ROOT, 'kingdom.config.json'), 'utf8'));
     a.match(model, /^claude-/, `"${model}" must be a full model id (e.g. claude-opus-5), not a bare alias — `
       + 'the model selector shows this value verbatim with no separate version label');
   }
-  console.log('  the claude model list names full, versioned model ids');
+  // The catalogue itself must be current, not just versioned-looking: Opus
+  // 5.5 shipped and the template still offered only its predecessor.
+  a.ok(cfg.models.claude.includes('claude-opus-5-5'),
+    'the template must offer the current Opus (claude-opus-5-5), not just claude-opus-5 — the catalogue must stay up to date');
+  console.log('  the claude model list names full, versioned model ids and is current');
 }
 
 /* ---------- package.json ships what src/skills.js and #seedRoles() read -- */
@@ -74,9 +78,9 @@ const cfg = JSON.parse(readFileSync(join(ROOT, 'kingdom.config.json'), 'utf8'));
 {
   const kingdomSource = readFileSync(join(ROOT, 'src', 'kingdom.js'), 'utf8');
   a.match(kingdomSource,
-    /claude: \['claude-opus-5', 'claude-sonnet-5', 'claude-haiku-4-5', 'claude-fable-5-1'\]/,
-    'Kingdom#models()\'s hardcoded fallback must also name full, versioned model ids');
-  console.log('  Kingdom#models()\'s fallback default matches the template\'s versioned ids');
+    /claude: \['claude-opus-5-5', 'claude-opus-5', 'claude-sonnet-5', 'claude-haiku-4-5', 'claude-fable-5-1'\]/,
+    'Kingdom#models()\'s hardcoded fallback must also name full, versioned, CURRENT model ids');
+  console.log('  Kingdom#models()\'s fallback default matches the template\'s versioned, current ids');
 }
 
 console.log('t-config-template.js OK — the shipped template is clean, and the packaged app carries its own skills');

@@ -129,6 +129,20 @@ const NO_EFFORT_MODELS = ['haiku'];
 // Sleeping is free and revival is transparent, so sleep early.
 const IDLE_SLEEP_MS = Number(process.env.KINGDOM_IDLE_SLEEP_MS ?? 300_000); // 0 disables
 const DIGEST_DIFF_LIMIT = 12_000; // the briefer is cheap, but this is per-done
+// #41: "the orchestrator is draining my usage like crazy" / "it kept going" —
+// the existing dollar ceilings (maxKingdomUsd, maxBudgetUsd) ship OFF by
+// default and only fire once a model IS priced, so an unpriced or
+// misconfigured court had no ceiling of any kind until real money had
+// already gone. A turn budget counts turns directly, needs no price table,
+// and — unlike the dollar caps above — ships ON by default: 500 real turns
+// is deliberately generous (a normal working session is a small fraction of
+// that) so it interrupts a genuine runaway before it interrupts real work,
+// not the other way round. `turnBudget: 0` in kingdom.config.json turns it
+// off, the same convention as every cap above it.
+const DEFAULT_TURN_BUDGET = 500;
+// The pause reason #enforceTurnBudget writes; start() reads it back to tell a
+// budget pause from a manual one.
+const TURN_BUDGET_PAUSE = /-turn budget for this session was reached/;
 // Recycle thresholds now come from #recycleThreshold (per member, configurable).
 
 /**
@@ -411,7 +425,7 @@ export class Kingdom extends EventEmitter {
   /** Model choices offered in the UI. Editable in kingdom.config.json. */
   models() {
     return this.config.models
-      ?? { claude: ['claude-opus-5', 'claude-sonnet-5', 'claude-haiku-4-5', 'claude-fable-5-1'], codex: [] };
+      ?? { claude: ['claude-opus-5-5', 'claude-opus-5', 'claude-sonnet-5', 'claude-haiku-4-5', 'claude-fable-5-1'], codex: [] };
   }
 
   /**
@@ -675,6 +689,28 @@ export class Kingdom extends EventEmitter {
     // Survives a restart for the same reason `summoned` does: a pause is a
     // decision, and a crash or a redeploy must not silently undo it.
     this.paused = this.bus.get('paused') === '1';
+    // The turn-budget baseline: `bus.get('turns')` is a LIFETIME count, kept
+    // restart-safe on purpose (same reasoning as spentUsd/maxKingdomUsd — a
+    // crash or a redeploy must not silently reset it). Comparing a
+    // per-SESSION budget straight against that lifetime number meant any
+    // court that had already taken turnBudget-or-more turns in its life
+    // paused on the very first turn after upgrading to this feature, and
+    // "add 100 turns" only ever bought 100 against a total that never moves.
+    //
+    // "Session" here means one daemon run: the baseline is re-latched to the
+    // lifetime count on every start(), and any "add 100 turns" extension from
+    // the previous run is dropped, so a court opened tomorrow gets its full
+    // budget again. The one exception is a court that is still PAUSED FOR ITS
+    // TURN BUDGET: its baseline and extension are kept, so the pause (restored
+    // above like any other) still reads correctly and a crash-restart loop
+    // cannot hand itself a fresh budget by bouncing while it is over the cap.
+    // An unpaused crash loop can at most spend one budget per run before it
+    // pauses, and that pause then survives every later restart.
+    const pausedForTurns = this.paused && TURN_BUDGET_PAUSE.test(this.bus.get('pausedWhy') ?? '');
+    if (this.bus.get('turnBudgetBaseline') == null || !pausedForTurns) {
+      this.bus.set('turnBudgetBaseline', String(this.turnsLifetime()));
+      this.bus.set('turnBudgetExtra', '0');
+    }
     // Restored crew is INHERITED, not approved. It costs money the moment
     // anyone messages it — a peasant approved weeks ago woke, took a turn and
     // was billed this session without an approval card ever appearing. Say who
@@ -1092,8 +1128,17 @@ export class Kingdom extends EventEmitter {
 
       const ctx = u.ctx ?? this.#contextTokens(u.usage);
       this.bus.set(`ctx:${name}:${agent.conversationId ?? 'default'}`, String(ctx));
-      this.emit('spend',
-        { total: spent, tokens, turns: this.#countTurns(), name, ctx, spentByAgent: mine });
+      this.#countTurns();
+      // `turns` here is SESSION-scoped (what the turn budget is measured
+      // against and what the header shows) — `lifetimeTurns` rides along
+      // beside it for anything that wants the restart-safe whole-life count
+      // instead (#41 follow-up: "lifetime turns available if the spend
+      // display needs them").
+      this.emit('spend', {
+        total: spent, tokens, turns: this.turnsThisSession(), lifetimeTurns: this.turnsLifetime(),
+        name, ctx, spentByAgent: mine,
+      });
+      this.#enforceTurnBudget();
 
       if (this.#enforceQuota(name)) return;
 
@@ -1248,10 +1293,19 @@ export class Kingdom extends EventEmitter {
     if (perMember && spentByAgent >= perMember) {
       this.emit('budget', { scope: 'member', name, spent: spentByAgent, cap: perMember });
       this.sleep(name);
+      // #41 audit: every other "the crown noticed something, here is FYI"
+      // post to the orchestrator in this file is tagged 'notice' — this one
+      // was not, so it was eligible to buy the orchestrator a full unprompted
+      // turn on its own (default kind 'message' is real traffic to
+      // ripeness.js, not gated behind hadRealTurn/noticeHoldMs the way a
+      // notice is) purely because a MEMBER's own spend crossed a threshold,
+      // with nothing the sovereign said and nothing the orchestrator itself
+      // did. It still reaches the orchestrator promptly by riding along with
+      // real traffic once there is any, same as every other AWARENESS post.
       this.bus.post(CROWN, this.config.orchestrator.name,
-        `"${name}" reached its spend ceiling ($${spentByAgent.toFixed(2)} of ` +
+        `AWARENESS ONLY — TAKE NO ACTION. "${name}" reached its spend ceiling ($${spentByAgent.toFixed(2)} of ` +
         `$${perMember}) and has been stopped. Do not wait on it. The sovereign ` +
-        `must raise its budget or reassign the work.`);
+        `must raise its budget or reassign the work.`, 'notice');
     }
     this.#enforceRunBudget(spentTotal);
   }
@@ -1775,7 +1829,14 @@ export class Kingdom extends EventEmitter {
       // message addressed to it) and releases whatever it still owns back to
       // pending (or the task board keeps reporting stale "active" work that
       // nobody is doing).
-      if (this.agents.has(name)) this.sleep(name, why);
+      //
+      // `this.agents.has(name)` alone missed a worker #maybeIdleSleep already
+      // put to sleep for inactivity: it drops the live agent but deliberately
+      // keeps the name in `summoned` so it can be woken again cheaply. Such a
+      // worker still owns its task claims and is still summoned when its run
+      // is cancelled, so it must still be released — sleep() is a safe no-op
+      // on the live-agent side when there is none.
+      if (this.agents.has(name) || this.summoned.has(name)) this.sleep(name, why);
     }
     const stopped = { ...run, state: 'cancelled', cancelledAt: Date.now(), cancelReason: why };
     this.#saveRun(stopped);
@@ -3052,6 +3113,10 @@ export class Kingdom extends EventEmitter {
     if (this.paused) return { changed: false };
     this.paused = true;
     this.bus.set('paused', '1');
+    // Durable, not just an in-memory emit: a browser that reconnects (or a
+    // fresh tab) while the court is paused must see WHY, not just that it
+    // is — see the sidebar's pause banner and its raise-turn-budget action.
+    this.bus.set('pausedWhy', why ?? '');
     const run = this.#activeRun();
     if (run && ['planning', 'running', 'verifying'].includes(run.state)) {
       this.#saveRun({ ...run, state: 'paused', pausedAt: Date.now(), pauseReason: why });
@@ -3092,6 +3157,130 @@ export class Kingdom extends EventEmitter {
   #kingdomBudget() {
     const live = this.bus.get('maxKingdomUsd');
     return live != null ? Number(live) : (this.config.maxKingdomUsd ?? 0);
+  }
+
+  /**
+   * A per-session turn budget, counting every real turn across the whole
+   * court — issue #41: the orchestrator "drained usage like crazy" with no
+   * ceiling on turns at all, only on dollars, and a court running an unpriced
+   * or misconfigured model has no dollar signal until long after the damage.
+   * 0 clears the ceiling, the same convention as setBudget()/maxKingdomUsd
+   * above. Checked against turnsThisSession(), NOT the lifetime count — see
+   * the long comment on the baseline in start() for exactly what "session"
+   * means here and why.
+   */
+  setTurnBudget(cap) {
+    const n = Number(cap);
+    if (!Number.isFinite(n) || n < 0) throw new Error('The turn budget must be a number, 0 or more.');
+    this.bus.set('turnBudget', String(n));
+    // An explicitly set budget replaces any "add N turns" extension granted
+    // earlier in this session; the sovereign asked for exactly this cap.
+    this.bus.set('turnBudgetExtra', '0');
+    this.emit('budget', { scope: 'turns', cap: this.sessionTurnCap(), turns: this.turnsThisSession(), changed: true });
+    // A cap lowered (or switched on) below what this session has already
+    // taken must bite now, not after the next turn_end — another turn, or
+    // several concurrent ones, would otherwise overshoot it.
+    this.#enforceTurnBudget();
+    return { cap: n };
+  }
+
+  /** The live turn-budget override if one has ever been set here, else the config default. */
+  turnBudget() {
+    const live = this.bus.get('turnBudget');
+    const raw = live != null ? live : (this.config.turnBudget ?? DEFAULT_TURN_BUDGET);
+    const n = Number(raw);
+    if (Number.isFinite(n) && n >= 0) return n;
+    // A malformed value must not switch the runaway guard off (NaN is falsy,
+    // which sessionTurnCap() reads as "off"). Fall back to the default and
+    // say so once, rather than throwing from the per-turn path.
+    if (!this.warnedTurnBudget) {
+      this.warnedTurnBudget = true;
+      if (this.listenerCount('error')) {
+        this.emit('error', new Error(`turnBudget ${JSON.stringify(raw)} is not a number 0 or more; `
+          + `using the default of ${DEFAULT_TURN_BUDGET} turns.`));
+      }
+    }
+    return DEFAULT_TURN_BUDGET;
+  }
+
+  /**
+   * The cap this session is actually held to: the configured budget plus any
+   * "add N turns" extension the sovereign granted during this session. 0 when
+   * the budget is off. The extension resets with the session (see start()),
+   * so raising it once never shrinks or grows the budget of a later session.
+   */
+  sessionTurnCap() {
+    const base = this.turnBudget();
+    return base ? base + Number(this.bus.get('turnBudgetExtra') ?? 0) : 0;
+  }
+
+  /**
+   * The lifetime, restart-safe count #countTurns() maintains — every real
+   * turn this court has EVER taken, across every restart, same discipline as
+   * spentUsd. This is what a court's whole-life history would be measured
+   * against; the turn BUDGET never compares against this directly (see
+   * turnsThisSession()) — that was the bug this method's sibling exists to
+   * fix. Exposed publicly so daemon.js's snapshot can offer it to the UI
+   * alongside the session count, per #41's "lifetime turns available if the
+   * spend display needs them."
+   */
+  turnsLifetime() {
+    return Number(this.bus.get('turns') ?? 0);
+  }
+
+  /**
+   * Turns taken since the session baseline was latched (see start()) — what
+   * setTurnBudget()'s cap is actually measured against, and what the header
+   * shows beside it. Never negative even if a baseline predates a later
+   * bus.prune() or a hand-edited bus (defensive floor, not an expected path).
+   */
+  turnsThisSession() {
+    const baseline = Number(this.bus.get('turnBudgetBaseline') ?? 0);
+    return Math.max(0, this.turnsLifetime() - baseline);
+  }
+
+  /**
+   * One raise-and-resume action for the sovereign's "extend it" button: a
+   * paused-for-budget court stays paused until BOTH the ceiling is actually
+   * raised and delivery is told to continue — two separate calls would leave
+   * a window where a still-too-low cap immediately re-pauses on the very next
+   * turn with no visible change, which reads as the button doing nothing.
+   *
+   * `by` is how many more turns to allow from the current session count;
+   * the sidebar's button sends 100.
+   */
+  raiseTurnBudget(by = 100) {
+    const n = Number(by);
+    if (!Number.isFinite(n) || n <= 0) throw new Error('Raise the turn budget by a positive number of turns.');
+    // "N more turns from right now": the session cap becomes current session
+    // usage + N. Stored as a session-scoped extension, never written over the
+    // configured budget, so the next session starts from the full budget again.
+    const extra = Math.max(0, this.turnsThisSession() + n - this.turnBudget());
+    this.bus.set('turnBudgetExtra', String(extra));
+    const cap = this.sessionTurnCap();
+    this.emit('budget', { scope: 'turns', cap, turns: this.turnsThisSession(), changed: true });
+    this.resume();
+    return { cap };
+  }
+
+  /**
+   * Checked right after #countTurns() on every completed real turn, court-
+   * wide. Pausing (not stopping anyone) matches how maxKingdomUsd degrades —
+   * visible, reversible, nothing lost — and reuses the exact mechanism the
+   * sovereign already has for a hand-pause: the same `paused` flag, the same
+   * notice to the orchestrator, the same resume() to lift it. Idempotent: once
+   * paused, #deliver() grants no further turns, so this cannot fire again
+   * until the sovereign explicitly resumes (raiseTurnBudget, or resume()
+   * without raising the cap, which buys exactly one more turn before this
+   * fires again).
+   */
+  #enforceTurnBudget() {
+    const cap = this.sessionTurnCap();
+    const turns = this.turnsThisSession();
+    if (!cap || turns < cap || this.paused) return;
+    this.emit('budget', { scope: 'turns', turns, cap });
+    this.pause(`the ${cap}-turn budget for this session was reached (${turns} taken this session) — `
+      + 'raise it or the court stays paused');
   }
 
   /**
@@ -3378,8 +3567,23 @@ export class Kingdom extends EventEmitter {
       // concurrent reject()/approve() on the same id can still find it while
       // the merge is in flight and race a card whose merge already landed.
       this.approvals.delete(id);
-      await this.merge(p.peasant);
-      this.bus.set(`resolved:${id}`, 'approved');
+      try {
+        await this.merge(p.peasant);
+        this.bus.set(`resolved:${id}`, 'approved');
+      } catch (e) {
+        // this.merge() already posted a notice and emitted 'mergeFailed' for
+        // the Changes view; that is per-peasant, transient state. Without a
+        // `resolved:${id}` of its own, the card itself never gets a decided
+        // outcome — it was already removed from the live map above, so it
+        // silently vanishes from "waiting on you" with no historical row at
+        // all. Mirror the 'push' branch right below: record a blocked
+        // resolution and its message so the card carries a real outcome.
+        const message = e.message;
+        this.bus.set(`resolved:${id}`, 'blocked');
+        this.bus.set(`merge:${id}`, JSON.stringify({ status: 'blocked', message }));
+        this.emit('resolved', { id, approved: false, blocked: true });
+        return;
+      }
     } else if (p.kind === 'push') {
       // A push approval is consumed exactly once. Whether Git succeeds is a
       // separate fact, recorded on the historical card instead of retried.

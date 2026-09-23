@@ -20,7 +20,7 @@ import { kingdomDir, runBranch } from './worktree.js';
 import { rates } from './forecast.js';
 
 const exec = promisify(execFile);
-const git = (cwd, ...args) => exec('git', args, { cwd, maxBuffer: 64 * 1024 * 1024 });
+const git = (cwd, ...args) => exec('git', args, { cwd, maxBuffer: 64 * 1024 * 1024, windowsHide: true });
 
 export const evidenceDir = (repo, runId) => join(kingdomDir(repo), 'evidence', String(runId));
 
@@ -143,6 +143,11 @@ export async function exportEvidence(bus, repo, runId, opts = {}) {
     review: write('review.json', reviewOf(bus, run)),
     cost: write('cost.json', costOf(bus, run, opts)),
     timeline: write('timeline.json', timelineOf(run)),
+    // Only present when the caller ran the Habitable pilot's evidence gate
+    // (src/pilot-evidence.js's runPilotEvidenceGate) against this run's
+    // worktree and passed the result in — evidence.js stays decoupled from
+    // Flutter entirely; it only ever writes what it is handed.
+    ...(opts.pilotEvidence ? { pilot: write('pilot.json', opts.pilotEvidence) } : {}),
   };
 
   const manifest = {
@@ -151,6 +156,7 @@ export async function exportEvidence(bus, repo, runId, opts = {}) {
     exportedAt: Date.now(),
     diffAvailable: diff.available,
     ...(diff.available ? {} : { diffUnavailableReason: diff.reason }),
+    pilotIncluded: Boolean(opts.pilotEvidence),
     sections,
   };
   write('manifest.json', manifest);

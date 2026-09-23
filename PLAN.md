@@ -461,3 +461,105 @@ The run system described in the previous `PLAN.md` is implemented and merged; it
 text remains in Git history. Two of its obligations are still open and are
 restated in `HANDOFF.md`: the Habitable pilot has not begun, and live
 subscription-pool behaviour without paid API fallback is unproven.
+
+## Functional revamp — multiple courts and pilot readiness (2026-09-23)
+
+Two independent pieces of work, landed on `functional-revamp`. Neither touches
+the interface contract in sections 1-5 above.
+
+### A. Multiple courts at once (closes GitHub issue #42)
+
+**Contract.** One daemon process per repository, each on its own port, tracked
+in a shared registry at `~/.kingdom/courts.json` (`src/courts.js`) alongside the
+existing `tokens.json` convention. A daemon refuses to start for a repository
+that already has a live court and names the port it is on; a busy pinned port
+(`--port` or `KINGDOM_PORT`) is a clean, visible error, never a silent
+rebind. With neither given, the port is picked automatically starting at 7777.
+`app.requestSingleInstanceLock()` means a second launch focuses or opens the
+right court instead of starting a stray daemon. Settings' Repository panel
+gains a switcher — list running courts, open one, start a court for another
+repository, end one with confirmation — reachable without ending the current
+court, and "End court and switch…" is no longer gated behind attachRepo's
+failure (the fail-first dance issue #42 complained about is gone; attachRepo's
+own refusal to move a live court onto a different repo, `src/kingdom.js`, is
+unchanged and still correct).
+
+**This reverses the 2026-09-22 decision** recorded in the previous revision of
+`HANDOFF.md`, where the sovereign declined multiple courts for that round
+("Not even using it"). The sovereign asked for it explicitly on 2026-09-23.
+
+**What closed it.**
+
+| Piece | File |
+|---|---|
+| Registry core: register/list/prune/pick-port, lockfile + atomic write | `src/courts.js` |
+| Daemon wiring: auto/pinned port, conflict refusal, register/unregister | `src/daemon.js` |
+| Live-attach registry claim (POST /api/attachRepo, saved-repo re-attach) | `src/daemon.js` |
+| Launch routing (single-instance, focus-vs-start), pure and fakeable | `electron/courts-launch.js` |
+| Electron: single-instance lock, per-port windows, courts IPC | `electron/main.js`, `electron/court-preload.cjs` |
+| Switcher UI, degrades visibly outside Electron | `ui/views/courts.js`, `ui/views/settings.js` |
+
+**Review fix (2026-09-23, post-implementation): live attach bypassed the
+registry.** `registerCourt` ran once, at listen time, with the boot-time repo —
+a repo-less daemon that later got a LIVE attach (`POST /api/attachRepo`, or the
+saved-repo re-attach at boot) never updated or conflict-checked the registry.
+That let two daemons end up serving the SAME repository with no refusal, and
+left the registry showing `repo: null` for a court that had since attached
+one. Fixed: the attach handler now claims the repo in the registry (under its
+lock, via the same `registerCourt`) BEFORE `kingdom.attachRepo` does any real
+work, refuses with the other court's port on conflict, and rolls back the
+claim if the attach itself then fails for an unrelated reason. Covered by
+`test/t-registry-attach.js` (two real daemons, confirmed to fail without the
+fix).
+
+**Acceptance evidence.**
+- Source: `test/t-courts.js` (registry unit behaviour), `test/t-multi-court.js`
+  (two real daemon processes, real conflict/port-busy refusals),
+  `test/t-courts-launch.js` (launch-routing decisions, fakes),
+  `test/t-registry-attach.js` (live-attach registry claim, above), plus
+  `test/t-pages.js` updates pinning the new Settings source. Suite count: see
+  `HANDOFF.md`'s Evidence section for the number printed this round.
+- Browser: the Settings > Repository panel was driven in a real Chromium tab
+  (Playwright, throwaway repo on port 7823) and confirmed to render the courts
+  switcher with no fail-first gating, and to degrade to a plain note (no
+  destructive controls) when `window.kingdomShell` is absent — i.e. a plain
+  browser tab, not Electron.
+- **Not held**: Electron itself (the single-instance lock, multi-window
+  behaviour, the native confirmation dialogs, media-permission scoping per
+  window) was never run — this environment cannot launch Electron. Windows
+  behaviour (the platform every real user runs on) is likewise unverified here.
+  Both are real acceptance work still owed before this ships to the sovereign.
+- **Test-gate hygiene (2026-09-23, post-implementation)**: several suites that
+  spawn a real daemon were found to register into the REAL
+  `~/.kingdom/courts.json` on whatever machine runs `npm test`, which on the
+  sovereign's machine would mutate their live registry. Fixed at the test
+  runner: every suite now gets its own isolated registry file
+  (`test/run-all.js`, `test/isolate-registry.js`); `test/t-registry-isolation.js`
+  guards it end to end. See `HANDOFF.md` for the mechanism.
+
+### B. Habitable pilot readiness (source-side only)
+
+Machinery for HANDOFF.md's "Habitable pilot" steps 2 and 4, built and tested
+without the real Habitable checkout and without Flutter installed anywhere in
+this environment — by design; `src/pilot-doctor.js` and `src/pilot-evidence.js`
+never read, run against, or reference `E:\AI\Mobile Apps\Habitable` by path.
+
+- `src/pilot-doctor.js`: doctor-style detection of flutter/dart/adb, the
+  Android SDK path, and configured emulator AVDs, same `{checks, failures,
+  ready}` shape as `src/doctor.js`. flutter/dart/adb are hard blockers; the SDK
+  path and an AVD are visible warnings, since a debug build needs neither.
+- `src/pilot-evidence.js`: `runPilotEvidenceGate(dir)` runs `flutter analyze`,
+  `flutter test --coverage`, and `flutter build apk --debug`, each step's
+  result recorded independently so one failing step never hides or stops the
+  others. Missing tooling is a single visible blocker raised before any step
+  runs. A non-Flutter target is reported as nothing-to-gate, not a failure.
+- `src/evidence.js` gained an optional `pilot.json` section, written only when
+  a caller passes a `pilotEvidence` result — `src/evidence.js` itself stays
+  decoupled from Flutter entirely.
+
+**Acceptance evidence.** Source only: `test/t-pilot-doctor.js` and
+`test/t-pilot-evidence.js`, both fakes-only, plus `test/t-evidence.js`'s new
+pilot-section cases. **Not held**: any run against real Flutter tooling or the
+real Habitable checkout — that is explicitly out of scope for this round and
+remains gated on HANDOFF.md's step 3 (demonstrate, audit, get a backlog
+approved) before implementation on Habitable itself can start.

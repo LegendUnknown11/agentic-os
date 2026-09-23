@@ -17,7 +17,7 @@ export const globalTokenStore = () =>
 
 const exec = promisify(execFile);
 
-const git = (cwd, ...args) => exec('git', args, { cwd, maxBuffer: 64 * 1024 * 1024 });
+const git = (cwd, ...args) => exec('git', args, { cwd, maxBuffer: 64 * 1024 * 1024, windowsHide: true });
 
 // Measured locally on 2026-08-21: five bare-repo pushes took 254.5–312.6ms
 // (285.5ms mean). This is a failure bound, not a latency target: it exists so
@@ -51,6 +51,7 @@ export async function pushBase(repo, base) {
       cwd: repo,
       timeout,
       maxBuffer: 64 * 1024 * 1024,
+      windowsHide: true,
       env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'Never' },
     });
     return { remote, branch, output: `${out.stdout}\n${out.stderr}`.trim() };
@@ -587,6 +588,7 @@ export async function runTests(dir, { revision = null } = {}) {
       shell: process.platform === 'win32', // npm/cargo/pytest are shims on Windows
       maxBuffer: 32 * 1024 * 1024,
       timeout: 15 * 60 * 1000,
+      windowsHide: true,
     });
     const after = await revisionOf(dir).catch(() => checkedRevision);
     const stale = Boolean(revision && after !== revision);

@@ -20,7 +20,10 @@ export async function switchRepo(rawPath, { resolve, assertRepo, confirm, shutdo
   const proceed = await confirm(repo);
   if (!proceed) return { canceled: true };
 
-  await shutdown();
+  // A refused shutdown must stop here: waiting for the port to free would
+  // only time out, and starting a second court beside the old one is wrong.
+  const down = await shutdown();
+  if (down?.ok === false) return { ok: false, error: down.error };
 
   const freeBy = now() + 15_000;
   while (await courtOnPort()) {

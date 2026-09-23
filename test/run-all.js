@@ -13,11 +13,27 @@
 // live output from four processes is unreadable, and the point of the printout
 // is to tell you WHICH suite failed.
 import { spawn } from 'node:child_process';
-import { availableParallelism } from 'node:os';
+import { availableParallelism, tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
+import { dirname, join, basename } from 'node:path';
+import { mkdtempSync, rmSync } from 'node:fs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
+
+// Several suites spawn a REAL src/daemon.js process, which registers itself
+// into the courts registry (src/courts.js) on boot — see t-registry-attach.js
+// and t-multi-court.js. Left alone, that registry defaults to the real
+// ~/.kingdom/courts.json on whatever machine runs `npm test`, which on the
+// sovereign's own machine would mutate their LIVE registry (and influence
+// real auto-port selection) just from running the test gate. Every suite
+// this file spawns gets its OWN isolated registry file instead — one per
+// suite, not one shared file, so concurrent suites in the pool below never
+// race each other over it or see each other's ports when picking a free one.
+// test/t-registry-isolation.js is the guard that proves this actually keeps
+// the real file untouched; test/isolate-registry.js covers a suite run
+// standalone (`node test/t-x.js`), where nothing here has run at all.
+const REGISTRY_SESSION_DIR = mkdtempSync(join(tmpdir(), 'kingdom-test-registries-'));
+const isolatedRegistryFor = (file) => join(REGISTRY_SESSION_DIR, `${basename(file, '.js')}.courts.json`);
 const suites = [
   ['bus self-check', join(HERE, '..', 'src', 'bus.js')],
   ['workflow engine', join(HERE, '..', 'src', 'workflows.js')],
@@ -51,7 +67,17 @@ const suites = [
   // Self-checking, like court.js: the batching decision is pure, and its 14
   // assertions were running only when someone invoked the file by hand.
   ['batch ripeness', join(HERE, '..', 'src', 'ripeness.js')],
+  // #41/#40/#43: the rest of the "never an unprompted turn" audit that
+  // ripeness.js's own self-check does not cover — every AWARENESS-styled
+  // post actually carries 'notice', #deliver still wires hadRealTurn, and a
+  // scheduled workflow cannot loop unboundedly within one firing.
+  ['turn guardrails audit', join(HERE, 't-turn-guardrails.js')],
   ['doctor cli parsing', join(HERE, 't-doctor.js')],
+  // #44: "a bunch of terminals pop up after agentic-os has started" (Windows).
+  // Static, not runtime — nothing on Linux CI can observe a Windows console
+  // window, so this parses every src/ and electron/ file for a child_process
+  // call missing windowsHide instead.
+  ['windowsHide guard', join(HERE, 't-windows-hide.js')],
   ['court memory + instructions', join(HERE, '..', 'src', 'memory.js')],
   ['concurrency', join(HERE, 't-concurrent.js')],
   ['token pool', join(HERE, 't-tokens.js')],
@@ -60,6 +86,14 @@ const suites = [
   // repo's dirty checkout without first being able to put it back exactly
   // as found — see src/snapshot.js.
   ['target-repo snapshot + restore', join(HERE, 't-snapshot.js')],
+  // The Habitable pilot's step two: doctor-style detection of the
+  // Flutter/Android tooling a worker needs before touching a Flutter
+  // target, degrading visibly per missing tool — see src/pilot-doctor.js.
+  ['pilot tooling doctor', join(HERE, 't-pilot-doctor.js')],
+  // The Habitable pilot's steps two and four: the evidence gate itself —
+  // flutter analyze, flutter test with coverage, and a debug APK build,
+  // blocked cleanly on missing tooling — see src/pilot-evidence.js.
+  ['pilot evidence gate', join(HERE, 't-pilot-evidence.js')],
   ['briefer recycle', join(HERE, 't-recycle.js')],
   ['compaction window', join(HERE, '..', 'src', 'compact.js')],
   ['/autocompact', join(HERE, 't-compact.js')],
@@ -105,9 +139,33 @@ const suites = [
   // must run with none attached, and only Code may ever require one.
   ['repo becomes optional', join(HERE, 't-repo-optional.js')],
   ['court self-control', join(HERE, 't-control.js')],
+  // The multi-court registry (issue #42, src/courts.js): which repos have a
+  // live daemon, on which port, pruned as soon as a pid dies or a port stops
+  // answering — and safe against two launches racing to register at once.
+  ['court registry', join(HERE, 't-courts.js')],
+  // The registry's and launch router's own self-checks: `node src/courts.js`
+  // went red once when the verdict key changed and nothing in the gate ran it.
+  ['court registry self-check', join(HERE, '..', 'src', 'courts.js')],
+  ['launch routing self-check', join(HERE, '..', 'electron', 'courts-launch.js')],
+  // Guard: a daemon this suite harness spawns must never touch the real
+  // ~/.kingdom/courts.json, whether run through run-all.js or standalone —
+  // see test/isolate-registry.js.
+  ['test gate never touches the real court registry', join(HERE, 't-registry-isolation.js')],
+  // Real daemon processes, not just the registry in isolation: one repo, one
+  // live court, auto ports that never collide, and a busy pinned port that
+  // refuses cleanly instead of silently binding elsewhere.
+  ['multiple courts at once (issue #42)', join(HERE, 't-multi-court.js')],
+  // A relaunch (or app.requestSingleInstanceLock's second-instance event)
+  // must focus a live court rather than spawn a stray daemon — the pure
+  // decision behind that, tested with fakes exactly like t-repo-switch.js.
+  ['launch routing focuses a live court', join(HERE, 't-courts-launch.js')],
   // The end-court-and-switch-repo flow (issue #42): a plain function with
   // injected dependencies, so its step ordering runs for real without an
   // Electron process, a daemon, or a native dialog.
+  // A LIVE attach (POST /api/attachRepo, or the saved-repo re-attach at
+  // boot) must claim the repo in the registry exactly like a fresh daemon
+  // does — otherwise two daemons can end up serving the same repository.
+  ['a live attach claims the registry', join(HERE, 't-registry-attach.js')],
   ['end court and switch repository', join(HERE, 't-repo-switch.js')],
   // A repo attached live must survive a daemon restart in the same
   // workspace home it was attached in — see kingdom.js's this.dbPath and
@@ -159,7 +217,10 @@ const run = ([label, file]) => new Promise((resolve) => {
   let out = '';
   let p;
   try {
-    p = spawn(process.execPath, [file], { stdio: ['ignore', 'pipe', 'pipe'] });
+    p = spawn(process.execPath, [file], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: { ...process.env, KINGDOM_COURTS_REGISTRY: isolatedRegistryFor(file) },
+    });
   } catch (e) {
     return done(false, `could not start ${label}: ${e.message}\n`);
   }
@@ -226,4 +287,5 @@ console.log(`\n${suites.length} suites, ${WIDTH}-wide, ${((Date.now() - started)
 
 // t-agent.js and t-comms.js spend real API quota, so they stay opt-in.
 console.log(failed ? `\n\x1b[31m${failed} suite(s) failed\x1b[0m` : '\n\x1b[32mall suites passed\x1b[0m');
+try { rmSync(REGISTRY_SESSION_DIR, { recursive: true, force: true }); } catch { /* /tmp cleanup is not worth failing the run over */ }
 process.exit(failed ? 1 : 0);
