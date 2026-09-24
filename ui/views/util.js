@@ -214,6 +214,10 @@ export const modeAllows = (state, capability) => {
   if (capability === 'workflows') return mode.workflows === true;
   return true;
 };
+/** A failed API result's error, or null when it did not fail. */
+export const apiError = (result, fallback) => result?.ok === false ? result.error ?? fallback : null;
+/** Bump and return a view's request token, so a stale response can tell it lost. */
+export const requestToken = (state, key) => { state[key] = (state[key] ?? 0) + 1; return state[key]; };
 export function spendText(spend) {
   if (spend == null) return '';
   if (typeof spend === 'number') return money(spend);

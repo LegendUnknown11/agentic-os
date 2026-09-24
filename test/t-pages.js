@@ -464,7 +464,7 @@ a.match(pagesSource, /state\.notesLoading/, 'Notes must distinguish loading from
 a.match(pagesSource, /renderMessages[\s\S]*state\.ready === false[\s\S]*Loading messages…/, 'Messages must distinguish loading from an empty bus');
 a.match(pagesSource, /state\.notesDetail/, 'an open note must survive live store rerenders');
 a.match(pagesSource, /Loading note…/, 'opening a note must show its own loading state');
-a.match(pagesSource, /requestToken =/, 'search views must have a shared stale-response token');
+a.match(utilSource, /export const requestToken =/, 'search views must have a shared stale-response token');
 a.match(pagesSource, /state\.activityRequest !== token/, 'older activity results must not overwrite newer searches');
 a.match(pagesSource, /state\.memoryRequest !== token/, 'older memory results must not overwrite newer searches');
 a.match(pagesSource, /state\.notesRequest !== token/, 'older note results must not overwrite newer searches');

@@ -1,10 +1,5 @@
-import {
-  h, page, section, empty, note, button, input, select, date, mdToHtml,
-  displayName, get, subscribe, editing, tone,
-} from './util.js';
+import { h, page, section, empty, note, button, input, select, date, mdToHtml, displayName, get, subscribe, editing, tone, apiError, requestToken } from './util.js';
 
-const apiError = (result, fallback) => result?.ok === false ? result.error ?? fallback : null;
-const requestToken = (state, key) => { state[key] = (state[key] ?? 0) + 1; return state[key]; };
 const DEFAULT_KINDS = 'summary,message,done,error';
 function bind(state, root, render) {
   const off = subscribe(() => { if (!editing(root)) render(state, root); });

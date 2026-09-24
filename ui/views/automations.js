@@ -1,8 +1,7 @@
 import * as Graph from '../graph.js';
-import { h, page, section, empty, note, button, field, input, select, textarea, check, modeAllows, get, post, subscribe } from './util.js';
+import { h, page, section, empty, note, button, field, input, select, textarea, check, modeAllows, get, post, subscribe, requestToken } from './util.js';
 
 const editorDisposals = new WeakMap();
-const requestToken = (state) => { state.workflowsRequest = (state.workflowsRequest ?? 0) + 1; return state.workflowsRequest; };
 function disposeEditor(root) {
   editorDisposals.get(root)?.();
   editorDisposals.delete(root);
@@ -226,7 +225,7 @@ function editor(state, root, existing = null) {
 
 export function renderAutomations(state, root) { workflowList(state, root); }
 async function reload(state, root) {
-  const token = requestToken(state);
+  const token = requestToken(state, 'workflowsRequest');
   state.workflowsLoading = true;
   state.workflowsError = null;
   workflowList(state, root);
@@ -245,7 +244,7 @@ async function reload(state, root) {
 export function mountAutomations(state, root) {
   const off = subscribe(() => { if (root.isConnected && root.dataset.automationEditor !== '1') workflowList(state, root); });
   void reload(state, root);
-  return () => { requestToken(state); disposeEditor(root); off?.(); };
+  return () => { requestToken(state, 'workflowsRequest'); disposeEditor(root); off?.(); };
 }
 export const render = renderAutomations;
 export const mount = mountAutomations;

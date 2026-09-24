@@ -1,13 +1,8 @@
-import {
-  h, page, section, empty, note, button, kb, money, date, modeAllows, displayName,
-  get, post, subscribe, editing, tone,
-} from './util.js';
+import { h, page, section, empty, note, button, kb, money, date, modeAllows, displayName, get, post, subscribe, editing, tone, apiError, requestToken } from './util.js';
 import { statusDot } from '../avatar.js';
 
 const rows = (value, key = 'rows') => Array.isArray(value) ? value : value?.[key] ?? [];
 const refresh = async (state, key, url) => { const result = await get(url); if (result?.ok !== false) state[key] = result; return result; };
-const apiError = (result, fallback) => result?.ok === false ? result.error ?? fallback : null;
-const requestToken = (state) => { state.approvalsRequest = (state.approvalsRequest ?? 0) + 1; return state.approvalsRequest; };
 const rerender = (state, root, render) => { if (root.isConnected) render(state, root); };
 const approvalKind = (kind) => ({ summon: 'Team request', role: 'Role request', merge: 'Merge request', push: 'Push request', question: 'Question' }[kind]
   ?? `${String(kind ?? 'request').replace(/[-_]+/g, ' ')} request`);
@@ -155,7 +150,7 @@ export function renderApprovals(state, root) {
   root.append(shell);
 }
 async function loadApprovals(state, root) {
-  const token = requestToken(state);
+  const token = requestToken(state, 'approvalsRequest');
   state.approvalsLoading = true;
   state.approvalsError = null;
   renderApprovals(state, root);
@@ -174,7 +169,7 @@ async function loadApprovals(state, root) {
 export function mountApprovals(state, root) {
   const off = bind(state, root, renderApprovals);
   void loadApprovals(state, root);
-  return () => { requestToken(state); off?.(); };
+  return () => { requestToken(state, 'approvalsRequest'); off?.(); };
 }
 export const render = renderApprovals;
 export const mount = mountApprovals;

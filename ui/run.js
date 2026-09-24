@@ -15,7 +15,7 @@ const text = (value, fallback = '') => {
 };
 
 export const runFor = (state = {}) => {
-  const value = state.run ?? state.activeRun ?? state.executionRun;
+  const value = state.run;
   return value?.run && typeof value.run === 'object' ? value.run : value;
 };
 
@@ -42,7 +42,12 @@ const progressFor = (run) => {
   const progress = array(run, ['progress', 'history', 'events']);
   return run?.lastProgress ?? run?.lastMeaningfulProgress ?? progress.at(-1) ?? null;
 };
-const recoveryFor = (run) => run?.recovery ?? run?.recoveryState ?? run?.recoveryHistory?.at?.(-1) ?? null;
+// recoveryHistory is a record, not a live state: its entries never say they
+// are over. Read as "underway" it flagged every run that had ever retried
+// anything — completed ones included — so it only counts while the run is
+// actually blocked and waiting on a recovery.
+export const recoveryFor = (run) => (runStatus(run) === 'blocked'
+  ? run?.recovery ?? run?.recoveryHistory?.at?.(-1) ?? null : null);
 const listFor = (run, names) => names.flatMap((name) => array(run, [name])).filter(Boolean);
 
 function itemRows(items, emptyText = 'Nothing recorded yet.') {
@@ -225,5 +230,9 @@ if (typeof process !== 'undefined' && process.argv?.[1]?.endsWith('run.js')) {
   assert.equal(runStatus({ status: 'ready for review' }), 'ready_for_review');
   assert.equal(runStatusLabel('verified'), 'Verified');
   assert.equal(objectiveFor({ goal: { text: 'fallback objective' } }, null), 'fallback objective');
+  const retried = { recoveryHistory: [{ operation: 'transport-retry', name: 'coder' }] };
+  assert.equal(recoveryFor({ ...retried, state: 'completed' }), null, 'a finished run is not recovering');
+  assert.equal(recoveryFor({ ...retried, state: 'running' }), null, 'a past retry is history, not a live recovery');
+  assert.equal(recoveryFor({ ...retried, state: 'blocked' })?.operation, 'transport-retry', 'a blocked run shows its latest recovery');
   console.log('run.js OK — run lifecycle labels and objective fallback are stable');
 }
