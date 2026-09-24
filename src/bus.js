@@ -173,23 +173,18 @@ export class Bus {
     } catch {}
     this.db.exec('pragma synchronous = NORMAL');
     this.db.exec(SCHEMA);
-    this.#rebuildTranscriptSearch();
-    this.#migrateConversations();
-    this.#migrateMessageAttachments();
-    this.#migrateRunAssociations();
-    this.#migrateApprovals();
+    this.#migrateAll();
     this.db.exec(CONVERSATION_INDEXES);
     this.db.exec(RUN_INDEXES);
   }
 
-  /** Existing courts get one atomic FTS rebuild; new rows stay current by trigger. */
-  #rebuildTranscriptSearch() {
+  /** Run `fn` once per database, atomically, recorded under `flag`. */
+  #migrate(flag, fn) {
     this.db.exec('begin immediate');
     try {
-      if (this.get('fts:transcript:v1') !== '1') {
-        this.db.exec("insert into messages_fts(messages_fts) values ('rebuild')");
-        this.db.exec("insert into events_fts(events_fts) values ('rebuild')");
-        this.set('fts:transcript:v1', '1');
+      if (this.get(flag) !== '1') {
+        fn();
+        this.set(flag, '1');
       }
       this.db.exec('commit');
     } catch (e) {
@@ -198,80 +193,53 @@ export class Bus {
     }
   }
 
-  /**
-   * A court that existed before conversations did has `messages`/`events`
-   * tables with no `conversation_id` column. `CREATE TABLE IF NOT EXISTS`
-   * (in SCHEMA above) only helps a brand-new db — an existing table needs an
-   * explicit ALTER, and SQLite backfills every existing row with the column's
-   * DEFAULT automatically, which is exactly "everything that happened before
-   * conversations existed is the 'default' conversation."
-   */
-  #migrateConversations() {
-    this.db.exec('begin immediate');
-    try {
-      if (this.get('schema:conversations:v1') !== '1') {
-        const cols = (table) => this.db.prepare(`pragma table_info(${table})`).all().map((c) => c.name);
-        if (!cols('messages').includes('conversation_id')) {
-          this.db.exec("alter table messages add column conversation_id text not null default 'default'");
-        }
-        if (!cols('events').includes('conversation_id')) {
-          this.db.exec("alter table events add column conversation_id text not null default 'default'");
-        }
-        this.set('schema:conversations:v1', '1');
-      }
-      this.db.exec('commit');
-    } catch (e) {
-      this.db.exec('rollback');
-      throw e;
-    }
+  #columns(table) {
+    return this.db.prepare(`pragma table_info(${table})`).all().map((c) => c.name);
   }
 
-  /** Add structured asset references without rewriting the existing transcript. */
-  #migrateMessageAttachments() {
-    this.db.exec('begin immediate');
-    try {
-      if (this.get('schema:messages:attachments:v1') !== '1') {
-        const columns = this.db.prepare('pragma table_info(messages)').all().map((c) => c.name);
-        if (!columns.includes('attachments')) {
-          this.db.exec("alter table messages add column attachments text not null default '[]'");
+  #migrateAll() {
+    // Existing courts get one FTS rebuild; new rows stay current by trigger.
+    this.#migrate('fts:transcript:v1', () => {
+      this.db.exec("insert into messages_fts(messages_fts) values ('rebuild')");
+      this.db.exec("insert into events_fts(events_fts) values ('rebuild')");
+    });
+    // A court that existed before conversations did has `messages`/`events`
+    // tables with no `conversation_id` column. `CREATE TABLE IF NOT EXISTS`
+    // only helps a brand-new db — an existing table needs an explicit ALTER,
+    // and SQLite backfills every existing row with the column's DEFAULT, which
+    // is exactly "everything before conversations is the 'default' one."
+    this.#migrate('schema:conversations:v1', () => {
+      for (const table of ['messages', 'events']) {
+        if (!this.#columns(table).includes('conversation_id')) {
+          this.db.exec(`alter table ${table} add column conversation_id text not null default 'default'`);
         }
-        this.set('schema:messages:attachments:v1', '1');
       }
-      this.db.exec('commit');
-    } catch (e) {
-      this.db.exec('rollback');
-      throw e;
-    }
-  }
-
-  /** Add run storage and nullable foreign-key-like columns without rewriting old rows. */
-  #migrateRunAssociations() {
-    this.db.exec('begin immediate');
-    try {
-      if (this.get('schema:runs:v1') !== '1') {
-        const columns = (table) => this.db.prepare(`pragma table_info(${table})`).all().map((c) => c.name);
-        if (!columns('messages').includes('run_id')) this.db.exec('alter table messages add column run_id text');
-        if (!columns('tasks').includes('run_id')) this.db.exec('alter table tasks add column run_id text');
-        const runColumns = columns('runs');
-        if (!runColumns.includes('final_approved')) this.db.exec('alter table runs add column final_approved integer not null default 0');
-        if (!runColumns.includes('final_approved_ts')) this.db.exec('alter table runs add column final_approved_ts integer');
-        this.set('schema:runs:v1', '1');
+    });
+    // Structured asset references, without rewriting the existing transcript.
+    this.#migrate('schema:messages:attachments:v1', () => {
+      if (!this.#columns('messages').includes('attachments')) {
+        this.db.exec("alter table messages add column attachments text not null default '[]'");
       }
-      this.db.exec('commit');
-    } catch (e) {
-      this.db.exec('rollback');
-      throw e;
-    }
+    });
+    // Run storage and nullable run associations, without rewriting old rows.
+    this.#migrate('schema:runs:v1', () => {
+      if (!this.#columns('messages').includes('run_id')) this.db.exec('alter table messages add column run_id text');
+      if (!this.#columns('tasks').includes('run_id')) this.db.exec('alter table tasks add column run_id text');
+      const runColumns = this.#columns('runs');
+      if (!runColumns.includes('final_approved')) this.db.exec('alter table runs add column final_approved integer not null default 0');
+      if (!runColumns.includes('final_approved_ts')) this.db.exec('alter table runs add column final_approved_ts integer');
+    });
+    // Approval payloads moved out of the message log so they survive pruning;
+    // post() writes new ones there directly.
+    this.#migrate('schema:approvals:v1', () => {
+      for (const row of this.db.prepare("select id, ts, sender, recipient, body, conversation_id, run_id from messages where kind = 'approval'").all()) {
+        if (!this.get(`approval:${row.id}`)) this.set(`approval:${row.id}`, JSON.stringify({ ...row, runId: row.run_id ?? null }));
+      }
+    });
   }
 
   #messageRows(rows) {
     return rows.map((row) => ({ ...row, attachments: readAttachments(row.attachments) }));
-  }
-
-  #migrateApprovals() {
-    for (const row of this.db.prepare("select id, ts, sender, recipient, body, conversation_id, run_id from messages where kind = 'approval'").all()) {
-      if (!this.get(`approval:${row.id}`)) this.set(`approval:${row.id}`, JSON.stringify({ ...row, runId: row.run_id ?? null }));
-    }
   }
 
   // --- messages -------------------------------------------------------
@@ -323,8 +291,7 @@ export class Bus {
    * Everything addressed to `agent` (or broadcast) since its cursor, and it
    * never receives its own messages. Cursor-based so broadcast delivery is
    * exactly-once per agent without a deliveries table.
-   */
-  /**
+   *
    * `limit` because the caller concatenates the whole result into ONE turn.
    *
    * A member asleep across a long stretch of broadcasts woke to every message
@@ -332,8 +299,7 @@ export class Bus {
    * bypass the 4000-char limit mcp.js puts on member messages, so nothing else
    * bounded it. The oldest are taken first, so the remainder simply rides the
    * next tick: 300ms later, and in order.
-   */
-  /**
+   *
    * `conversation`, when given, scopes only `assignment` rows (the sovereign's
    * actual chat turns, posted by kingdom.js#command/#speakTo) to one thread.
    * Everything else — notices, approvals, system, escalation, done, brief,
@@ -417,7 +383,6 @@ export class Bus {
     });
   }
 
-  /** How many messages there are. Counting them by loading every body is not that. */
   /**
    * The newest event id, or 0. An O(1) primary-key probe — this exists so a
    * caller can tell whether the log has moved WITHOUT paying for events(),
@@ -485,6 +450,7 @@ export class Bus {
     return r.changes === 1;
   }
 
+  /** How many messages there are. Counting them by loading every body is not that. */
   countMessages() {
     return this.db.prepare('select count(*) as n from messages').get().n;
   }
@@ -885,13 +851,16 @@ export class Bus {
     // `resolved:<id>`. Each is a one-shot flag guarding work on ONE message, so
     // once that message is pruned the flag can never be read again — but it was
     // never deleted, so `state` grew by several rows per message forever while
-    // the logs above stayed bounded. Drop the ones whose message is gone.
+    // the logs above stayed bounded. Drop the ones whose message is gone —
+    // except an approval's decision, which lives as long as the approval
+    // itself does (below); without it a retained approval reads as pending.
     const oldest = this.db.prepare('select min(id) m from messages').get().m;
     if (oldest != null) {
       this.db.prepare(
         "delete from state where instr(k, ':') > 0"
         + " and substr(k, 1, instr(k, ':') - 1) in ('done','doneretry','retried','resolved')"
         + ' and cast(substr(k, instr(k, \':\') + 1) as integer) < ?'
+        + " and not exists (select 1 from state a where a.k = 'approval:' || substr(state.k, instr(state.k, ':') + 1))"
       ).run(oldest);
     }
     // Approval payloads live outside the message log so pending decisions
@@ -1079,6 +1048,15 @@ if (process.argv[1]?.endsWith('bus.js')) {
     a.equal(p.get(`done:${keep.at(-1)}`), '1', 'but a live message keeps its flag');
     a.equal(p.get('session:coder'), 'not-a-message-key',
       'and a key that is not per-message must be untouched — sessions live across prunes');
+
+    // An approval outlives its message on purpose, so its decision must too:
+    // with the resolved flag gone, a restart re-offered it as pending.
+    const approval = p.post('orchestrator', null, JSON.stringify({ kind: 'push' }), 'approval');
+    p.set(`resolved:${approval}`, 'approved');
+    for (let i = 0; i < 20; i++) p.post('orchestrator', 'coder', `later ${i}`);
+    p.prune({ keepMessages: 10, keepEvents: 10 });
+    a.equal(p.approvals().some((m) => m.id === approval), true, 'sanity: the approval is retained');
+    a.equal(p.get(`resolved:${approval}`), 'approved', 'a retained approval keeps its decision');
     p.close();
   }
 
