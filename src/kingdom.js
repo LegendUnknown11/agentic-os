@@ -1828,7 +1828,8 @@ export class Kingdom extends EventEmitter {
     const run = this.bus.run(runId);
     if (!run) throw new Error('No active run.');
     if (this.paused) this.resume();
-    else this.bus.resumeRun(run.id);
+    // Pausing the court leaves a blocked run blocked; Resume still means go.
+    if (['paused', 'blocked'].includes(this.bus.run(run.id).state)) this.bus.resumeRun(run.id);
     await this.#reconcileRun();
     const current = this.bus.run(run.id);
     this.emit('run', current);

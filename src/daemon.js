@@ -312,36 +312,27 @@ const ACTIONS = {
     cli: b.cli, model: b.model, effort: b.effort, auto: b.auto,
   }),
   clearSpend: (b) => kingdom.clearSpend(b.name ?? null),
-  'run/create': async (b) => publishRun(await kingdom.createRun({
-    ...runFields(b), id: b.runId ?? b.id ?? null, state: b.state ?? 'planning',
-  })),
-  'run/approve': async (b) => publishRun(await kingdom.approveRun(runIdOf(b), runFields(b))),
-  'run/pause': (b) => publishRun(kingdom.pauseRun(runIdOf(b), b.why ?? '')),
-  'run/stop': (b) => publishRun(kingdom.stopRun(runIdOf(b), b.why ?? 'stopped by the sovereign')),
-  'run/resume': async (b) => publishRun(await kingdom.resumeRun(runIdOf(b))),
-  'run/apply': async (b) => publishRun(await kingdom.applyRun(runIdOf(b))),
-  runCreate: async (b) => publishRun(await kingdom.createRun({
-    ...runFields(b), id: b.runId ?? b.id ?? null, state: b.state ?? 'planning',
-  })),
-  runApprove: async (b) => publishRun(await kingdom.approveRun(runIdOf(b), runFields(b))),
-  runPause: (b) => publishRun(kingdom.pauseRun(runIdOf(b), b.why ?? '')),
-  runStop: (b) => publishRun(kingdom.stopRun(runIdOf(b), b.why ?? 'stopped by the sovereign')),
-  runResume: async (b) => publishRun(await kingdom.resumeRun(runIdOf(b))),
-  runApply: async (b) => publishRun(await kingdom.applyRun(runIdOf(b))),
   // Answer first, then go: the caller must not get a dead socket for a
   // shutdown that actually worked.
   shutdown: () => { setTimeout(() => shutdown(0), 150); },
 };
 
-/**
- * What the court has actually cost.
- *
- * The one thing that makes this non-trivial: codex reports `usage` in
- * `turn.completed` CUMULATIVELY PER THREAD, not per turn. It climbs all session
- * and resets when the session restarts. Summing it across turns counts every
- * earlier turn again — measured on a real run, that turned 65M input tokens
- * into an apparent 420M. So take DELTAS, and treat a drop as a new thread.
- */
+// Each run action answers to two spellings: `run/create` (the HTTP-shaped
+// one) and `runCreate` (what ui/run.js posts).
+const RUN_ACTIONS = {
+  create: (b) => kingdom.createRun({ ...runFields(b), id: b.runId ?? b.id ?? null, state: b.state ?? 'planning' }),
+  approve: (b) => kingdom.approveRun(runIdOf(b), runFields(b)),
+  pause: (b) => kingdom.pauseRun(runIdOf(b), b.why ?? ''),
+  stop: (b) => kingdom.stopRun(runIdOf(b), b.why ?? 'stopped by the sovereign'),
+  resume: (b) => kingdom.resumeRun(runIdOf(b)),
+  apply: (b) => kingdom.applyRun(runIdOf(b)),
+};
+for (const [name, act] of Object.entries(RUN_ACTIONS)) {
+  const handler = async (b) => publishRun(await act(b));
+  ACTIONS[`run/${name}`] = handler;
+  ACTIONS[`run${name[0].toUpperCase()}${name.slice(1)}`] = handler;
+}
+
 const finiteNumber = (value) => Number.isFinite(Number(value)) ? Number(value) : 0;
 
 function percentile(values, p) {
@@ -357,7 +348,7 @@ function classOf(classes) {
 function metricCost(p, d, cli, model, table) {
   const reported = p?.costReported === true
     ? finiteNumber(p.costUsd)
-    : p?.costReported == null && finiteNumber(p.costUsd) > 0
+    : p?.costReported == null && finiteNumber(p?.costUsd) > 0
       ? finiteNumber(p.costUsd)
       : null;
   const classification = costClassOf({
@@ -383,6 +374,22 @@ function metricCost(p, d, cli, model, table) {
   };
 }
 
+const blankMember = (ev, setting) => ({
+  name: ev.agent, turns: 0, summons: 0, in: 0, out: 0, cached: 0, written: 0,
+  fresh: 0, ctx: 0, first: ev.ts, ...setting,
+  _cost: { fresh: 0, cached: 0, written: 0, output: 0, total: 0 },
+  _classes: new Set(),
+});
+
+/**
+ * What the court has actually cost.
+ *
+ * The one thing that makes this non-trivial: codex reports `usage` in
+ * `turn.completed` CUMULATIVELY PER THREAD, not per turn. It climbs all session
+ * and resets when the session restarts. Summing it across turns counts every
+ * earlier turn again — measured on a real run, that turned 65M input tokens
+ * into an apparent 420M. So take DELTAS, and treat a drop as a new thread.
+ */
 function buildMetrics() {
   // Filtered in SQL, not after the fact. `events()` JSON.parses every row it
   // returns, so pulling all 20,000 retained events to keep the turn_ends meant
@@ -416,12 +423,7 @@ function buildMetrics() {
     const model = p?.model ?? spec.model ?? def.model ?? null;
     const effort = p?.effort ?? spec.effort ?? def.effort ?? null;
     const priced = metricCost(p, d, cli, model, table);
-    const m = by.get(ev.agent) ?? {
-      name: ev.agent, turns: 0, summons: 0, in: 0, out: 0, cached: 0, written: 0,
-      fresh: 0, ctx: 0, first: ev.ts, cli, model, effort,
-      _cost: { fresh: 0, cached: 0, written: 0, output: 0, total: 0 },
-      _classes: new Set(),
-    };
+    const m = by.get(ev.agent) ?? blankMember(ev, { cli, model, effort });
     m.turns++;
     m.in += d.in;
     m.out += d.out;
@@ -444,12 +446,7 @@ function buildMetrics() {
   }
 
   for (const ev of summonRows) {
-    const m = by.get(ev.agent) ?? {
-      name: ev.agent, turns: 0, summons: 0, in: 0, out: 0, cached: 0, written: 0,
-      fresh: 0, ctx: 0, first: ev.ts, cli: null, model: null, effort: null,
-      _cost: { fresh: 0, cached: 0, written: 0, output: 0, total: 0 },
-      _classes: new Set(),
-    };
+    const m = by.get(ev.agent) ?? blankMember(ev, { cli: null, model: null, effort: null });
     m.summons++;
     m.last = Math.max(m.last ?? 0, ev.ts);
     by.set(ev.agent, m);
@@ -457,10 +454,7 @@ function buildMetrics() {
 
   const members = [...by.values()].map(({ _cost, _classes, ...m }) => ({
     ...m,
-    role: kingdom.roleOf(m.name),
     perTurn: m.turns ? Math.round(m.in / m.turns) : 0,
-    spent: Number(kingdom.bus.get(`spent:${m.name}`) ?? 0),
-    awake: kingdom.agents.has(m.name),
     cacheRate: m.in > 0 ? m.cached / m.in : null,
     cost: { ..._cost, classification: classOf(_classes) },
     costClassification: classOf(_classes),
@@ -526,22 +520,10 @@ function buildMetrics() {
     return { cli, label: q.label ?? cli, used, limit, pct: limit ? Math.min(100, Math.round((used / limit) * 100)) : null };
   });
 
-  return {
-    members,
-    total,
-    spent: Number(kingdom.bus.get('spentUsd') ?? 0),
-    cap: kingdom.config.maxKingdomUsd ?? 0,
-    perMemberCap: kingdom.config.maxBudgetUsd ?? 0,
-    messages: kingdom.bus.countMessages(),   // count(*), not "load every body and take .length"
-    quotas,
-    auxiliary: aux,
-    mcp: {
-      maskedCalls: finiteNumber(kingdom.bus.get('mask:calls')),
-      maskedChars: finiteNumber(kingdom.bus.get('mask:chars')),
-    },
-  };
+  return { members, total, quotas, auxiliary: aux };
 }
 
+/** The cached aggregate plus the fields that move without a new event. */
 function metrics() {
   const mark = `${kingdom.bus.lastEventId()}:${kingdom.lastPrune ?? 0}`;
   if (metricsCache.mark !== mark) metricsCache = { mark, value: buildMetrics() };
@@ -557,7 +539,7 @@ function metrics() {
     spent: Number(kingdom.bus.get('spentUsd') ?? 0),
     cap: kingdom.config.maxKingdomUsd ?? 0,
     perMemberCap: kingdom.config.maxBudgetUsd ?? 0,
-    messages: kingdom.bus.countMessages(),
+    messages: kingdom.bus.countMessages(),   // count(*), not "load every body and take .length"
     mcp: {
       maskedCalls: finiteNumber(kingdom.bus.get('mask:calls')),
       maskedChars: finiteNumber(kingdom.bus.get('mask:chars')),
@@ -646,11 +628,9 @@ function remoteGate(req, url) {
 // This mirrors ACTIONS above. The POST side has had a dispatch table since it
 // was written; the GET side was sixteen sequential `url.pathname ===` compares
 // inside handle(), which is how that one function reached 554 lines. Each
-// handler returns [status, body] and the dispatcher serialises — so the
-// `const send = (code, o) => res.writeHead(...)` that had been copy-pasted into
-// five separate route bodies now exists nowhere.
+// handler returns [status, body] and handle()'s one `send` serialises it.
 //
-// Routes that do NOT answer with JSON stay as explicit blocks in handle():
+// Routes that are not a plain JSON read stay as explicit blocks in handle():
 // /stream (SSE), /api/workflows and /api/assets and /api/transcribe (GET and
 // POST on one path), /assets/* (bytes) and /modes.js (JavaScript).
 const READS = {
@@ -748,7 +728,6 @@ const READS = {
   },
 
   '/api/run': async (url, req) => [200, { ok: true, run: kingdom.bus.currentRun() }],
-  '/api/runs/current': async (url, req) => [200, { ok: true, run: kingdom.bus.currentRun() }],
   '/api/runs': async (url, req) => {
     const state = url.searchParams.get('state');
     return [200, { ok: true, runs: kingdom.bus.runs(state ? { state } : {}) }];
@@ -935,17 +914,15 @@ const READS = {
 // that the next route forgets.
 const handle = async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
+  const send = (code, o) =>
+    res.writeHead(code, { 'content-type': 'application/json' }).end(JSON.stringify(o));
 
   const remote = remoteGate(req, url);
-  if (remote && remote !== 'authorized') {
-    return res.writeHead(remote.status, { 'content-type': 'application/json' })
-      .end(JSON.stringify({ ok: false, error: remote.error }));
-  }
+  if (remote && remote !== 'authorized') return send(remote.status, { ok: false, error: remote.error });
   const bearerAuthed = remote === 'authorized';
 
   if (req.method === 'POST' && url.pathname.startsWith('/api/')) {
-    if (!bearerAuthed && !originAllowed(req)) return res.writeHead(403, { 'content-type': 'application/json' })
-      .end(JSON.stringify({ ok: false, error: 'origin not allowed' }));
+    if (!bearerAuthed && !originAllowed(req)) return send(403, { ok: false, error: 'origin not allowed' });
     // /api/transcribe and /api/assets (upload, not /delete) post a raw file
     // as the body with its own mime type, by design (ui/assets.js's own
     // comment: a multipart boundary parser is a lot of code for one file) —
@@ -955,24 +932,18 @@ const handle = async (req, res) => {
       || (url.pathname === '/api/assets' && url.searchParams.has('name'));
     const ct = (req.headers['content-type'] ?? '').split(';')[0].trim();
     if (!rawBody && ct !== 'application/json') {
-      return res.writeHead(415, { 'content-type': 'application/json' })
-        .end(JSON.stringify({ ok: false, error: 'expected content-type: application/json' }));
+      return send(415, { ok: false, error: 'expected content-type: application/json' });
     }
   }
-
-
 
   const runMatch = req.method === 'GET' && url.pathname.match(/^\/api\/runs\/([^/]+)$/);
   if (runMatch) {
     const run = kingdom.bus.run(decodeURIComponent(runMatch[1]));
-    return res.writeHead(run ? 200 : 404, { 'content-type': 'application/json' })
-      .end(JSON.stringify(run ? { ok: true, run } : { ok: false, error: 'No such run.' }));
+    return send(run ? 200 : 404, run ? { ok: true, run } : { ok: false, error: 'No such run.' });
   }
   const read = READS[url.pathname];
   if (read) {
-    const [status, body] = await read(url, req);
-    return res.writeHead(status, { 'content-type': 'application/json' })
-      .end(JSON.stringify(body));
+    return send(...await read(url, req));
   }
 
   if (url.pathname === '/stream') {
@@ -1038,18 +1009,6 @@ const handle = async (req, res) => {
     return;
   }
 
-
-
-
-
-
-  // ---- what the court cost --------------------------------------------
-  // Turn counts, REAL token totals and context per member.
-
-
-
-
-
   // ---- automation workflows, n8n-style ----------------------------------
   // GET  /api/workflows            list them all
   // GET  /api/workflows/runs?id=x  last 20 run outcomes for one workflow
@@ -1059,9 +1018,6 @@ const handle = async (req, res) => {
   // POST /api/workflows/hook?id=x  fire a trigger:"webhook" workflow now; the
   //                                 request body becomes ctx.input
   if (url.pathname.startsWith('/api/workflows')) {
-    const send = (code, o) =>
-      res.writeHead(code, { 'content-type': 'application/json' }).end(JSON.stringify(o));
-
     if (req.method === 'GET' && url.pathname === '/api/workflows') {
       return send(200, { ok: true, workflows: await listWorkflows(WORKFLOWS_DIR) });
     }
@@ -1123,9 +1079,6 @@ const handle = async (req, res) => {
   // POST /api/assets/delete     remove one  {name}
   // GET  /assets/<file>         serve it
   if (url.pathname === '/api/assets' || url.pathname === '/api/assets/delete') {
-    const send = (code, o) =>
-      res.writeHead(code, { 'content-type': 'application/json' }).end(JSON.stringify(o));
-
     if (req.method === 'GET') {
       try {
         const files = (await readdir(ASSETS)).filter(kindOf);
@@ -1153,17 +1106,13 @@ const handle = async (req, res) => {
 
     const name = safeAsset(url.searchParams.get('name'));
     if (!name) return send(400, { ok: false, error: 'unsupported file type' });
-    const chunks = [];
-    let size = 0;
-    for await (const c of req) {
-      size += c.length;
-      // A wallpaper or a track, not a video library. Refuse rather than fill
-      // the disk silently.
-      if (size > 80 * 1024 * 1024) { req.destroy(); return send(413, { ok: false, error: 'over 80MB' }); }
-      chunks.push(c);
-    }
+    // A wallpaper or a track, not a video library. Refuse rather than fill
+    // the disk silently.
+    let buf;
+    try { buf = await readBody(req, 80 * 1024 * 1024); }
+    catch (e) { return send(e.status ?? 500, { ok: false, error: 'over 80MB' }); }
     await mkdir(ASSETS, { recursive: true });
-    try { await writeFile(join(ASSETS, name), Buffer.concat(chunks), { flag: 'wx' }); }
+    try { await writeFile(join(ASSETS, name), buf, { flag: 'wx' }); }
     catch (e) {
       if (e.code === 'EEXIST') return send(409, { ok: false, error: 'an asset with that name already exists' });
       throw e;
@@ -1189,9 +1138,6 @@ const handle = async (req, res) => {
 
   // Dictation, via SpeechBird's local Whisper. Nothing leaves the machine.
   if (url.pathname === '/api/transcribe') {
-    const send = (code, o) =>
-      res.writeHead(code, { 'content-type': 'application/json' }).end(JSON.stringify(o));
-
     // The UI asks first, so it can fall back to the browser recogniser rather
     // than record a clip nothing can transcribe.
     if (req.method === 'GET') return send(200, { ok: true, available: speech.available() });
@@ -1221,23 +1167,16 @@ const handle = async (req, res) => {
     catch (e) { return res.writeHead(e.status ?? 500).end(); }
     let input;
     try { input = body ? JSON.parse(body) : {}; }
-    catch {
-      return res.writeHead(400, { 'content-type': 'application/json' })
-        .end(JSON.stringify({ ok: false, error: 'invalid JSON' }));
-    }
+    catch { return send(400, { ok: false, error: 'invalid JSON' }); }
     if (!input || typeof input !== 'object' || Array.isArray(input)) {
-      return res.writeHead(400, { 'content-type': 'application/json' })
-        .end(JSON.stringify({ ok: false, error: 'invalid action body' }));
+      return send(400, { ok: false, error: 'invalid action body' });
     }
     try {
       const result = await action(input);
-      res.writeHead(200, { 'content-type': 'application/json' })
-        .end(JSON.stringify({ ok: true, ...(result && typeof result === 'object' ? result : {}) }));
+      return send(200, { ok: true, ...(result && typeof result === 'object' ? result : {}) });
     } catch (e) {
-      res.writeHead(500, { 'content-type': 'application/json' })
-        .end(JSON.stringify({ ok: false, error: e.message }));
+      return send(500, { ok: false, error: e.message });
     }
-    return;
   }
 
   // The mode table is SHARED with the browser, not copied into it. The labels,

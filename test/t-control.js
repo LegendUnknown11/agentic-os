@@ -895,6 +895,11 @@ try {
     a.equal(k.bus.run(run.id).state, 'paused', 'a running run pauses with the court');
     k.resume();
     a.equal(k.bus.run(run.id).state, 'running', 'and resumes with it');
+    k.bus.transitionRun(run.id, 'blocked');
+    k.pause('a beat');
+    await k.resumeRun(run.id);
+    a.equal(k.paused, false, 'Resume lifts the court pause');
+    a.equal(k.bus.run(run.id).state, 'running', 'and the same click moves a blocked run on');
     k.stopRun(run.id, 'test cleanup');
     console.log('  pause and resume cannot carry a planning run past its approval');
   }
