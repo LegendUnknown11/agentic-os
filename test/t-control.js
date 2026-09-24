@@ -918,6 +918,31 @@ try {
     console.log('  an apply refused for source drift blocks the run, as it says it does');
   }
 
+  // With enough peasants awake, #onDone hands the report to the briefer to
+  // digest — through `agents.get(briefer)?.send`. An idle-slept briefer has
+  // no live agent, so the report went nowhere and the orchestrator was never
+  // told the work existed.
+  {
+    const wt = await createWorktree(repo, 'carol', k.base);
+    writeFileSync(join(wt, 'carol.txt'), 'finished\n');
+    const saved = k.config.brieferDigestAbove;
+    k.config.brieferDigestAbove = -1;   // any number of workers takes the digest path
+    const briefer = k.agents.get(k.config.briefer.name);
+    briefer?.stop();
+    k.agents.delete(k.config.briefer.name);
+
+    const id = k.bus.post('carol', k.config.orchestrator.name, 'carol: finished work', 'done');
+    await until(() => Boolean(k.bus.get('tests:carol')));
+    await wait(100);
+    a.ok(k.bus.history({ limit: 400 }).some((m) => m.id > id && m.kind === 'done-report'
+      && m.recipient === k.config.orchestrator.name && /carol/.test(m.body)),
+    'with the briefer asleep the orchestrator must still get the done-report');
+
+    k.config.brieferDigestAbove = saved;
+    await removeWorktree(repo, 'carol');
+    console.log('  a done submission reaches the orchestrator even when the briefer is asleep');
+  }
+
   console.log('t-control.js OK — a live court follows the repo, and the court can steer itself');
 } finally {
   await k?.stop?.();   // closes the bus with it
