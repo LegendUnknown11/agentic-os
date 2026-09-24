@@ -38,7 +38,6 @@ export const objectiveFor = (state, run = runFor(state)) => text(
   'No objective recorded.',
 );
 
-const statusLine = (item) => item?.status ?? item?.state ?? item?.stage ?? '';
 const progressFor = (run) => {
   const progress = array(run, ['progress', 'history', 'events']);
   return run?.lastProgress ?? run?.lastMeaningfulProgress ?? progress.at(-1) ?? null;

@@ -413,4 +413,3 @@ export function mountSidebar(root, options = {}) {
 }
 
 export const mount = mountSidebar;
-export const renderSidebar = (root, state = storeState, options = {}) => mountSidebar(root, { ...options, state });

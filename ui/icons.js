@@ -79,13 +79,3 @@ export function icon(name, size = 16) {
   svg.append(p);
   return svg;
 }
-
-/** Replace an element's contents with an icon, keeping its accessible name. */
-export function setIcon(el, name, label) {
-  el.textContent = '';
-  el.append(icon(name));
-  if (label) {
-    el.setAttribute('aria-label', label);
-    if (!el.dataset.tip) el.dataset.tip = label;
-  }
-}

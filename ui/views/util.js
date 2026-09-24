@@ -204,7 +204,6 @@ export const modelLabel = (model) => (model ? MODEL_LABELS[model] ?? model : mod
 export const date = (ts) => ts ? new Date(ts).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
 
 export const membersOf = (state) => state.members instanceof Map ? [...state.members.entries()] : Object.entries(state.members ?? {}).map(([name, member]) => [name, member]);
-export const memberOf = (state, name) => membersOf(state).find(([key]) => key === name)?.[1];
 export const modeDef = (state) => state.modeDef ?? state.modeInfo ?? state.modes?.[state.mode] ?? { crew: 'all', worktrees: true, merge: true, tasks: true };
 export const modeAllows = (state, capability) => {
   const mode = modeDef(state);
@@ -237,11 +236,6 @@ export const modePermissionText = (mode) => !mode ? '' : [
   mode.crew === 'all' ? 'full crew' : mode.crew?.length ? `${mode.crew.length}-person crew` : 'no crew',
   mode.worktrees && 'worktrees', mode.merge && 'merge', mode.tasks && 'tasks',
 ].filter(Boolean).join(' · ');
-
-export function renderMarkdown(host, value) {
-  host.innerHTML = mdToHtml(String(value ?? ''));
-  return host;
-}
 
 export async function load(state, key, url, render) {
   const result = await get(url);

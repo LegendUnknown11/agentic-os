@@ -147,5 +147,3 @@ export function toggle() {
   applyHidden();
   return state.prefs.pet !== false;
 }
-
-export const aspect = () => ({ CW, CH });

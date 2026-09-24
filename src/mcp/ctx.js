@@ -142,7 +142,6 @@ export const stateArray = (key) => {
   } catch { return null; }
 };
 export const rosterNow = () => stateArray('roster') ?? [];
-export const summonedNow = () => stateArray('summoned') ?? [];
 export const goalNow = () => {
   const raw = bus.get('goal');
   if (!raw) return { goal: null };

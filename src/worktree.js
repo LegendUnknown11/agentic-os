@@ -101,11 +101,6 @@ export async function revisionOf(dir, ref = 'HEAD') {
   return (await git(dir, 'rev-parse', ref)).stdout.trim();
 }
 
-export async function revisionMatches(dir, expected) {
-  if (!expected) return false;
-  try { return (await revisionOf(dir)) === expected; } catch { return false; }
-}
-
 export async function assertRepo(repo) {
   if (!existsSync(join(repo, '.git'))) throw new Error(`${repo} is not a git repository.`);
   try {
