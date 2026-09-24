@@ -13,7 +13,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { resolve } from 'node:path';
 import { dbPath } from './worktree.js';
-import { totalsOf, deltaOf, ZERO, hasUsage } from './usage.js';
+import { totalsOf, deltaOf, hasUsage } from './usage.js';
 import { costOf, tableFrom } from './price.js';
 
 const M = (n) => (n / 1e6).toFixed(2) + 'M';

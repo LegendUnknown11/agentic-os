@@ -1,4 +1,4 @@
-import { h, page, section, empty, note, button, field, input, textarea, select, check, modeDef, modelLabel, post, subscribe, editing } from './util.js';
+import { h, page, section, empty, note, button, field, input, textarea, select, check, modelLabel, post, subscribe, editing } from './util.js';
 import { setPrefs } from '../store.js';
 import { courtsSwitcher, refreshCourts } from './courts.js';
 

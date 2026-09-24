@@ -12,7 +12,7 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
-import { modeName, modeOf, toolAllowed } from './modes.js';
+import { modeOf, toolAllowed } from './modes.js';
 import { bus, ME, ROLE, modeNow } from './mcp/ctx.js';
 import { comms } from './mcp/comms.js';
 import { memory } from './mcp/memory.js';

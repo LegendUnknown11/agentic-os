@@ -25,7 +25,7 @@ import { modeOf, modeName, modeBlock, canSummon } from './modes.js';
 import { buildPrompt } from './prompt.js';
 import {
   assertRepo, ensureRepo, behindBase, commitAll, createWorktree, dbPath, diffOf, statOf, kingdomDir,
-  globalTokenStore, mergeWorktree, removeWorktree, pushBase, runTests, testCommand, worktreePath,
+  globalTokenStore, mergeWorktree, removeWorktree, pushBase, runTests, worktreePath,
   revisionOf, createRunWorktree, mergeIntoRun, mergeRunBranch, runWorktreePath,
 } from './worktree.js';
 import { mirrorToProject, noteWritten } from './vault.js';

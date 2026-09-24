@@ -9,8 +9,8 @@
 //
 // Keep it that way. Anything here that starts depending on when it is called
 // re-couples every tool module to import order.
-import { readFileSync, existsSync } from 'node:fs';
-import { join, dirname, resolve } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { join, dirname } from 'node:path';
 import { Bus } from '../bus.js';
 import { insideVault as vaultInside } from '../vault.js';
 import { modeName } from '../modes.js';

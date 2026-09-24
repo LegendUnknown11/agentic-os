@@ -11,7 +11,7 @@
 //   node test/t-registry-isolation.js
 import { strict as a } from 'node:assert';
 import { execFileSync, spawn } from 'node:child_process';
-import { existsSync, statSync, readFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
