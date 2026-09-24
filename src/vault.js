@@ -446,11 +446,11 @@ export function readNote(root, path, limit = 200_000) {
   if (!abs) return null;
   try {
     // Almost every read follows a search that already pulled this note into
-    // memory, so serve it from there when the corpus is warm. Falls through to
-    // disk for a note outside the walk (a path the caller knew about) or a
-    // cold process.
+    // memory, so serve it from there when the corpus is warm — but only while
+    // its mtime still matches: one stat is cheap, and an edit made outside the
+    // court (the sovereign, in Obsidian) must not be read back as the old text.
     const cached = corpus.get(resolve(root))?.files.get(abs);
-    const body = cached ? cached.text : readFileSync(abs, 'utf8');
+    const body = cached?.mtime === statSync(abs).mtimeMs ? cached.text : readFileSync(abs, 'utf8');
     return body.length > limit ? `${body.slice(0, limit)}\n\n[truncated]` : body;
   } catch {
     return null;
