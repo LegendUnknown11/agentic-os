@@ -1,7 +1,6 @@
 // comms tools. See src/mcp.js for how these reach a member.
 import { badQuestions } from '../approval.js';
 import { approvalBody } from './approvals.js';
-import { join } from 'node:path';
 import {
   ME, bus, tooBig, str, rosterNow, officer, badRecipient, cursorFor, advance, nothingNew,
   boundedLimit,

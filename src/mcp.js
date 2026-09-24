@@ -100,7 +100,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
  * matter. Cleared when a member is recycled: the successor has a new context
  * and has genuinely not seen any of it.
  */
-const MASKABLE = new Set(['vault_read', 'vault_search', 'skill', 'diff', 'stat', 'read_file']);
+const MASKABLE = new Set(['vault_read', 'vault_search', 'skill', 'read_diff']);
 const MASK_MIN = 400;    // below this the placeholder costs about what the payload does
 const MASK_KEEP = 60;
 

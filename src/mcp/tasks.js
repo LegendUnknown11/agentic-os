@@ -1,5 +1,4 @@
 // tasks tools. See src/mcp.js for how these reach a member.
-import { join } from 'node:path';
 import {
   ME, bus, str, stateArray, officer,
 } from './ctx.js';
