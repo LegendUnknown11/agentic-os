@@ -1716,43 +1716,16 @@ export class Kingdom extends EventEmitter {
     });
   }
 
-  /** Read the optional run record without coupling the controller to one bus schema. */
+  /** The run table is the only record of a run; nothing else may stand in for it. */
   #activeRun() {
-    for (const method of ['activeRun', 'runState', 'currentRun']) {
-      if (typeof this.bus[method] !== 'function') continue;
-      try {
-        const run = this.bus[method]();
-        if (run && typeof run === 'object') return run;
-      } catch (e) { this.emit('error', e); }
-    }
-    for (const key of ['run:active', 'activeRun', 'run']) {
-      const raw = this.bus.get(key);
-      if (!raw) continue;
-      try {
-        const run = JSON.parse(raw);
-        if (run && typeof run === 'object' && !Array.isArray(run)) return run;
-      } catch { /* an unrelated legacy value is not an active run */ }
-    }
-    return null;
-  }
-
-  #saveRun(run) {
-    if (!run || typeof run !== 'object') return;
-    if (typeof this.bus.updateRun === 'function' && run.id != null) {
-      try { this.bus.updateRun(run.id, run); } catch (e) { this.emit('error', e); }
-    }
-    // This additive mirror keeps the execution loop restart-safe on older buses
-    // and is harmless when the run table is present.
-    this.bus.set('run', JSON.stringify(run));
-    if (run.id != null) this.bus.set(`run:${run.id}`, JSON.stringify(run));
+    return this.bus.currentRun();
   }
 
   #runBlock(run, operation, next, extra = {}) {
-    if (!run || !['planning', 'running', 'paused', 'verifying'].includes(run.state)) return;
+    if (!run || !['planning', 'running', 'paused', 'verifying', 'ready_for_review'].includes(run.state)) return;
     const blocker = { operation, next, at: Date.now(), ...extra };
-    const nextRun = { ...run, state: 'blocked', blocker,
-      blockers: [...(Array.isArray(run.blockers) ? run.blockers : []), blocker] };
-    this.#saveRun(nextRun);
+    // The blocker itself travels on the event; the run table records the state.
+    const nextRun = { ...this.bus.updateRun(run.id, { state: 'blocked' }), blocker, blockers: [blocker] };
     this.bus.post(CROWN, this.config.orchestrator.name,
       `RUN BLOCKED: ${operation}. Preserved work is available. Next action: ${next}`, 'notice');
     this.emit('run', nextRun);
@@ -1761,10 +1734,8 @@ export class Kingdom extends EventEmitter {
   #recordRecovery(name, operation, message, extra = {}) {
     const run = this.#activeRun();
     if (!run) return null;
-    const history = Array.isArray(run.recoveryHistory) ? run.recoveryHistory : [];
     const entry = { name, operation, message: String(message).slice(0, 600), at: Date.now(), ...extra };
-    const next = { ...run, recoveryHistory: [...history, entry] };
-    this.#saveRun(next);
+    const next = this.bus.updateRun(run.id, { recoveryHistory: [...run.recoveryHistory, entry] });
     this.emit('recovery', entry);
     // Per (name, operation), not the whole run's history: a benign, already-
     // resolved transport-retry on one worker must not count toward another
@@ -1788,8 +1759,7 @@ export class Kingdom extends EventEmitter {
    * automatic integration path; the original repository checkout is untouched.
    */
   async integrateVerified(peasant, { runId = null, revision = null } = {}) {
-    const run = this.#activeRun();
-    const id = runId ?? run?.id ?? run?.runId;
+    const id = runId ?? this.#activeRun()?.id;
     if (!id || !this.repo) throw new Error('No active run or repository is attached.');
     const evidence = this.verification(peasant) ?? {};
     const expected = revision ?? evidence.revision;
@@ -1801,8 +1771,7 @@ export class Kingdom extends EventEmitter {
     if (prior) {
       try { return JSON.parse(prior); } catch { return { runId: id, peasant, revision: expected }; }
     }
-    const path = run?.worktree ?? runWorktreePath(this.repo, id);
-    if (!existsSync(path)) await createRunWorktree(this.repo, id, run?.base ?? this.base);
+    if (!existsSync(runWorktreePath(this.repo, id))) await createRunWorktree(this.repo, id, this.base);
     const result = await mergeIntoRun(this.repo, peasant, id, { expectedRevision: expected });
     const integrated = { runId: id, peasant, sourceRevision: expected,
       revision: result.revision, branch: result.branch, at: Date.now() };
@@ -1815,14 +1784,12 @@ export class Kingdom extends EventEmitter {
   /** Stop only the workers owned by an active run and leave unrelated court members alone. */
   stopRun(runId = null, why = 'stopped by the sovereign') {
     const run = this.#activeRun();
-    const id = runId ?? run?.id ?? run?.runId;
-    if (!run || (runId != null && String(run.id ?? run.runId) !== String(runId))) {
+    if (!run || (runId != null && String(run.id) !== String(runId))) {
       throw new Error('No matching active run.');
     }
-    const names = new Set([...(run.workers ?? run.workerNames ?? [])]);
-    for (const t of this.bus.tasks()) {
-      if ((run.taskIds ?? []).map(Number).includes(Number(t.id)) && t.owner) names.add(t.owner);
-    }
+    const taskIds = new Set(run.taskIds.map(Number));
+    const names = new Set(this.bus.tasks()
+      .filter((t) => t.owner && taskIds.has(Number(t.id))).map((t) => t.owner));
     for (const name of names) {
       // Route through sleep(), not a raw agents.delete: it also drops the
       // name from `summoned` (or the delivery loop respawns it on the next
@@ -1838,8 +1805,7 @@ export class Kingdom extends EventEmitter {
       // on the live-agent side when there is none.
       if (this.agents.has(name) || this.summoned.has(name)) this.sleep(name, why);
     }
-    const stopped = { ...run, state: 'cancelled', cancelledAt: Date.now(), cancelReason: why };
-    this.#saveRun(stopped);
+    const stopped = this.bus.stopRun(run.id);
     this.#publishRoster();
     this.emit('run', stopped);
     return stopped;
@@ -1868,7 +1834,7 @@ export class Kingdom extends EventEmitter {
   }
 
   pauseRun(runId = null, why = '') {
-    const run = this.bus.run(runId ?? this.bus.currentRun()?.id);
+    const run = this.bus.run(runId);
     if (!run) throw new Error('No active run.');
     this.pause(why);
     const current = this.bus.run(run.id);
@@ -1877,7 +1843,7 @@ export class Kingdom extends EventEmitter {
   }
 
   async resumeRun(runId = null) {
-    const run = this.bus.run(runId ?? this.bus.currentRun()?.id);
+    const run = this.bus.run(runId);
     if (!run) throw new Error('No active run.');
     if (this.paused) this.resume();
     else this.bus.resumeRun(run.id);
@@ -1888,7 +1854,7 @@ export class Kingdom extends EventEmitter {
   }
 
   async applyRun(runId = null) {
-    const run = this.bus.run(runId ?? this.bus.currentRun()?.id);
+    const run = this.bus.run(runId);
     if (!run) throw new Error('No active run.');
     if (!this.repo) throw new Error('No repository is attached.');
     if (run.state !== 'ready_for_review' || !run.finalApproval) {
@@ -1910,14 +1876,8 @@ export class Kingdom extends EventEmitter {
   async #reconcileRun() {
     const run = this.#activeRun();
     if (!run || !this.repo || !['planning', 'running', 'paused', 'verifying'].includes(run.state)) return;
-    const id = run.id ?? run.runId;
-    if (!id) return;
     try {
-      const path = await createRunWorktree(this.repo, id, run.base ?? this.base);
-      const current = await revisionOf(path);
-      const next = { ...run, worktree: path, base: run.base ?? this.base, head: current };
-      this.#saveRun(next);
-      this.emit('runReconciled', next);
+      await createRunWorktree(this.repo, run.id, this.base);
     } catch (e) {
       this.#runBlock(run, 'startup reconciliation',
         `repair the run branch/worktree, then resume after refreshing review: ${e.message}`);
@@ -2528,10 +2488,8 @@ export class Kingdom extends EventEmitter {
     this.bus.set(`verification:${peasant}`, JSON.stringify(evidence));
     this.bus.set(`verification:${peasant}:${msg.id}`, JSON.stringify(evidence));
     const activeRun = this.#activeRun();
-    if (activeRun && typeof this.bus.updateRun === 'function') {
-      const evidenceRows = Array.isArray(activeRun.verificationEvidence)
-        ? activeRun.verificationEvidence : [];
-      const verificationEvidence = [...evidenceRows, { peasant, ...evidence }];
+    if (activeRun) {
+      const verificationEvidence = [...activeRun.verificationEvidence, { peasant, ...evidence }];
       // A run already blocked on something else — or in any state this
       // submission cannot legally leave — must not be silently cleared back
       // to verifying by an unrelated, later peasant's success. transitionRun's
@@ -2539,7 +2497,7 @@ export class Kingdom extends EventEmitter {
       // disallowed move still records the evidence, just without forcing
       // state. An invalid submission's own 'blocked' transition is #runBlock's
       // job below, which the caller already guards by run state.
-      if (valid && typeof this.bus.transitionRun === 'function') {
+      if (valid) {
         try { this.bus.transitionRun(activeRun.id, 'verifying', { verificationEvidence }); }
         catch { this.bus.updateRun(activeRun.id, { verificationEvidence }); }
       } else {
@@ -3117,10 +3075,11 @@ export class Kingdom extends EventEmitter {
     // fresh tab) while the court is paused must see WHY, not just that it
     // is — see the sidebar's pause banner and its raise-turn-budget action.
     this.bus.set('pausedWhy', why ?? '');
+    // Only a running run pauses: the state table allows nothing else, and a
+    // planning run moved to paused would resume straight into running with
+    // its plan never approved.
     const run = this.#activeRun();
-    if (run && ['planning', 'running', 'verifying'].includes(run.state)) {
-      this.#saveRun({ ...run, state: 'paused', pausedAt: Date.now(), pauseReason: why });
-    }
+    if (run?.state === 'running') this.bus.pauseRun(run.id);
     this.emit('paused', { paused: true, why });
     this.bus.post(CROWN, this.config.orchestrator.name,
       `The court is paused${why ? `: ${why}` : ''}. Nobody will be given a new turn until resume_court.`,
@@ -3133,7 +3092,7 @@ export class Kingdom extends EventEmitter {
     this.paused = false;
     this.bus.set('paused', '0');
     const run = this.#activeRun();
-    if (run?.state === 'paused') this.#saveRun({ ...run, state: 'running', resumedAt: Date.now() });
+    if (run?.state === 'paused') this.bus.resumeRun(run.id);
     this.emit('paused', { paused: false });
     this.bus.post(CROWN, this.config.orchestrator.name, 'The court has resumed.', 'notice');
     return { changed: true };
