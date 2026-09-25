@@ -560,11 +560,17 @@ export async function runTests(dir, { revision = null } = {}) {
     ran: false, ok: false, stale: false, revision: checkedRevision,
     output: 'No test/build command found in this project.',
   };
+  // npm/cargo/pytest are .cmd shims on Windows and need a shell. Node warns
+  // (DEP0190) when args ride beside shell:true, because it only concatenates
+  // them — so on Windows the command goes as one string. Every part is a fixed
+  // literal from testCommand(), never input, so there is nothing to escape.
+  const win = process.platform === 'win32';
+  const [file, args] = win ? [[cmd[0], ...cmd[1]].join(' '), []] : cmd;
   let passed, output;
   try {
-    const { stdout, stderr } = await exec(cmd[0], cmd[1], {
+    const { stdout, stderr } = await exec(file, args, {
       cwd: dir,
-      shell: process.platform === 'win32', // npm/cargo/pytest are shims on Windows
+      shell: win,
       maxBuffer: 32 * 1024 * 1024,
       timeout: 15 * 60 * 1000,
       windowsHide: true,
