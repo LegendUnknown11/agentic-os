@@ -87,4 +87,16 @@ const take = () => shown.splice(0);
     'a run ceiling stops the run only; it must not read as a member or a court-wide stop');
 }
 
+/* ---------- a digest an automation built ---------- */
+{
+  Notify.onEvent({ type: 'digest', title: 'Your morning brief', body: '2 things need you' });
+  const [brief] = take();
+  a.equal(brief?.title, 'Your morning brief');
+  a.equal(brief.body, '2 things need you');
+  Notify.setPref({ digests: false });
+  Notify.onEvent({ type: 'digest', title: 'Team digest', body: 'x' });
+  a.equal(take().length, 0, 'digests can be turned off');
+  Notify.setPref({ digests: true });
+}
+
 console.log('t-notify.js OK — runs notify on entering blocked, review and (opt-in) completed, once, never from a snapshot');

@@ -24,7 +24,8 @@ import { Speech } from './stt.js';
 import { deltaOf, hasUsage, totalsOf } from './usage.js';
 import { costClassOf, costOf, tableFrom } from './price.js';
 import { readApproval } from './approval.js';
-import { inboxItems } from './inbox.js';
+import { inboxBrief, inboxItems, teamDigest } from './inbox.js';
+import { WORKFLOW_TEMPLATES, instantiateTemplate } from './workflow-templates.js';
 import { listWorkflows, saveWorkflow, deleteWorkflow, runWorkflow, tickScheduler, logRun, runHistory, validWorkflowId } from './workflows.js';
 import { runDoctor } from './doctor.js';
 import { registerCourt, unregisterCourt, listCourts, CourtConflictError, firstFreePort } from './courts.js';
@@ -174,6 +175,30 @@ function inboxNow(now = Date.now()) {
   const messages = bus.history({ agent: 'sovereign', tail: true, limit: 50 }).filter((m) => m.recipient === 'sovereign');
   return inboxItems({ approvals, run: bus.currentRun(), myTasks: bus.myTasks({ includeDone: false }), messages, now });
 }
+
+/**
+ * What a workflow can do that only the daemon can: build a digest from live
+ * state, show it on the sovereign's desktop, put a task on the team queue.
+ * Handed to every runWorkflow call (manual, webhook, scheduler).
+ */
+const WORKFLOW_SERVICES = {
+  digest: (of) => {
+    const now = Date.now();
+    const items = inboxNow(now);
+    if (of !== 'team') return inboxBrief(items, { now });
+    const bus = kingdom.bus;
+    return teamDigest({
+      tasks: bus.tasks(), runs: bus.runs(), runSpendUsd: bus.runSpendSince(now - 86_400_000),
+      waiting: items.filter((item) => item.tone === 'attention').length, now,
+    });
+  },
+  notify: ({ title, body, workflowId }) => push('digest', { title, body, workflowId }),
+  addTask: (task) => {
+    const created = kingdom.manageTask({ op: 'create', ...task });
+    push('tasks', { tasks: kingdom.bus.tasks() });
+    return created;
+  },
+};
 
 const runIdOf = (body) => body.runId ?? body.run_id ?? body.id ?? null;
 const publishRun = (run) => { push('run', { run }); return { run }; };
@@ -1087,6 +1112,9 @@ const handle = async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/api/workflows') {
       return send(200, { ok: true, workflows: await listWorkflows(WORKFLOWS_DIR) });
     }
+    if (req.method === 'GET' && url.pathname === '/api/workflows/templates') {
+      return send(200, { ok: true, templates: WORKFLOW_TEMPLATES.map(({ workflow, ...t }) => ({ ...t, trigger: workflow.trigger })) });
+    }
     if (req.method === 'GET' && url.pathname === '/api/workflows/runs') {
       const id = url.searchParams.get('id');
       if (!id) return send(400, { ok: false, error: 'id required' });
@@ -1105,7 +1133,7 @@ const handle = async (req, res) => {
       if (wf.trigger?.type !== 'webhook') return send(400, { ok: false, error: 'not a webhook-triggered workflow' });
       if (wf.enabled === false) return send(409, { ok: false, error: 'workflow is disabled' });
       let input; try { input = body ? JSON.parse(body) : {}; } catch { input = body; }
-      const result = await runWorkflow(wf, { bus: kingdom.bus, input });
+      const result = await runWorkflow(wf, { bus: kingdom.bus, input, services: WORKFLOW_SERVICES });
       logRun(kingdom.bus, wf, result);
       return send(200, { ok: true, result });
     }
@@ -1122,10 +1150,17 @@ const handle = async (req, res) => {
       await deleteWorkflow(WORKFLOWS_DIR, b.id);
       return send(200, { ok: true });
     }
+    // Install a built-in template as an ordinary, editable, enabled workflow.
+    if (url.pathname === '/api/workflows/install') {
+      const wf = instantiateTemplate(String(b.template ?? ''));
+      if (!wf) return send(404, { ok: false, error: `No template "${b.template}".` });
+      await saveWorkflow(WORKFLOWS_DIR, wf);
+      return send(200, { ok: true, workflow: wf });
+    }
     if (url.pathname === '/api/workflows/run') {
       const wf = (await listWorkflows(WORKFLOWS_DIR)).find((w) => w.id === b.id);
       if (!wf) return send(404, { ok: false, error: 'no such workflow' });
-      const result = await runWorkflow(wf, { bus: kingdom.bus });
+      const result = await runWorkflow(wf, { bus: kingdom.bus, services: WORKFLOW_SERVICES });
       logRun(kingdom.bus, wf, result);
       return send(200, { ok: true, result });
     }
@@ -1373,6 +1408,7 @@ server.on('error', (e) => {
     setInterval(() => {
       tickScheduler(WORKFLOWS_DIR, {
         bus: kingdom.bus,
+        services: WORKFLOW_SERVICES,
         onRun: (wf, result) => push('workflow_run', { id: wf.id, name: wf.name, ok: result.ok }),
       }).catch((e) => console.error('workflow scheduler:', e?.stack ?? e));
     }, 5000);

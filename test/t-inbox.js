@@ -3,7 +3,7 @@
 //
 //   node test/t-inbox.js
 import { strict as a } from 'node:assert';
-import { inboxBrief, inboxItems } from '../src/inbox.js';
+import { inboxBrief, inboxItems, teamDigest } from '../src/inbox.js';
 
 const now = 100 * 86_400_000;
 const H = 3_600_000;
@@ -66,5 +66,33 @@ a.match(brief, /^4 things need you \(/, 'the headline counts what is actually bl
 a.equal(brief.split('\n').length, 5, 'headline, three items, and a pointer to the rest');
 a.match(brief, /…and 4 more in the Inbox\.$/);
 a.match(inboxBrief([{ rank: 5, title: 'From x', detail: 'hi' }], { now }), /^Nothing is blocked on you/);
+
+/* ---------- the team digest ---------- */
+{
+  const digest = teamDigest({
+    now,
+    tasks: [
+      { id: 1, state: 'done', done_ts: now - H, title: 'fix the parser', ts: now - 3 * H },
+      { id: 2, state: 'done', done_ts: now - 3 * 86_400_000, title: 'old work', ts: now - 4 * 86_400_000 },
+      { id: 3, state: 'pending', blockedBy: [4], title: 'test it', ts: now - 2 * H },
+      { id: 4, state: 'active', blockedBy: [], title: 'build it', ts: now - 30 * H },
+      { id: 5, state: 'dropped', title: 'abandoned', ts: now - H },
+    ],
+    runs: [
+      { id: 'r0', state: 'completed', completedTs: now - 2 * H, objective: 'old' },
+      { id: 'r1', state: 'ready_for_review', objective: 'ship the importer' },
+    ],
+    runSpendUsd: 2.1, waiting: 3,
+  });
+  const lines = digest.split('\n');
+  a.match(lines[0], /^Team digest \(\d{4}-\d{2}-\d{2}\)\.$/);
+  a.equal(lines[1], 'Finished: 1 — fix the parser', 'only work finished in the last day');
+  a.equal(lines[2], 'Queue: 2 open (1 waiting on a dependency), 3 added in the last day', 'dropped is not open');
+  a.equal(lines[3], 'Run: ship the importer — ready for review; closed in the last day: 1 completed, 0 cancelled');
+  a.equal(lines[4], 'Run spend in the last day: $2.10');
+  a.equal(lines[5], 'Waiting on you: 3 — open the Inbox.');
+  a.match(teamDigest({ now }), /Finished: 0\nQueue: 0 open, 0 added in the last day\nRun: none in progress\n.*\$0\.00\nNothing is waiting on you\.$/,
+    'an idle day still reads as a full, honest digest');
+}
 
 console.log('t-inbox.js OK — blocked run, decisions, overdue, review, due today, messages; resolved, snoozed, done and stale stay out');

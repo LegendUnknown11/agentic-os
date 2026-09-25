@@ -84,3 +84,29 @@ export function inboxBrief(items, { now = Date.now(), max = 8 } = {}) {
   const more = items.length > max ? [`…and ${items.length - max} more in the Inbox.`] : [];
   return [`${head} (${new Date(now).toISOString().slice(0, 10)}).`, ...lines, ...more].join('\n');
 }
+
+/**
+ * What the team did in the last day, as text: finished tasks, the queue, the
+ * run, run spend, and how much is waiting on you. Pure; the daemon supplies
+ * bus.tasks(), bus.runs(), bus.runSpendSince() and the inbox's waiting count.
+ */
+export function teamDigest({ tasks = [], runs = [], runSpendUsd = 0, waiting = 0, now = Date.now() } = {}) {
+  const since = now - DAY;
+  const finished = tasks.filter((t) => t.state === 'done' && (t.done_ts ?? t.doneTs ?? 0) >= since);
+  const open = tasks.filter((t) => t.state !== 'done' && t.state !== 'dropped');
+  const blocked = open.filter((t) => t.blockedBy?.length).length;
+  const added = tasks.filter((t) => (t.ts ?? 0) >= since).length;
+  const current = runs.find((r) => !['completed', 'cancelled'].includes(r.state));
+  const completed = runs.filter((r) => (r.completedTs ?? 0) >= since).length;
+  const cancelled = runs.filter((r) => (r.cancelledTs ?? 0) >= since).length;
+  const titles = finished.slice(0, 5).map((t) => t.title).join('; ');
+  return [
+    `Team digest (${new Date(now).toISOString().slice(0, 10)}).`,
+    `Finished: ${finished.length}${finished.length ? ` — ${titles}${finished.length > 5 ? '; …' : ''}` : ''}`,
+    `Queue: ${open.length} open${blocked ? ` (${blocked} waiting on a dependency)` : ''}, ${added} added in the last day`,
+    `Run: ${current ? `${current.objective || current.id} — ${current.state.replace(/_/g, ' ')}` : 'none in progress'}`
+      + (completed || cancelled ? `; closed in the last day: ${completed} completed, ${cancelled} cancelled` : ''),
+    `Run spend in the last day: $${Number(runSpendUsd || 0).toFixed(2)}`,
+    waiting ? `Waiting on you: ${waiting} — open the Inbox.` : 'Nothing is waiting on you.',
+  ].join('\n');
+}

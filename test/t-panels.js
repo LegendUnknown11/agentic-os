@@ -568,6 +568,33 @@ try {
     console.log('  inbox: approvals and your overdue tasks, ranked, over HTTP');
   }
 
+  /* ---------- 10. templates install and run end to end ---------- */
+  {
+    const list = await get('/api/workflows/templates');
+    a.deepEqual(list.templates.map((t) => t.id), ['morning-brief', 'team-digest', 'weekly-dependencies', 'calendar-brief', 'github-triage']);
+    a.ok(list.templates.filter((t) => t.needs).every((t) => /say so/.test(t.needs)), 'connector templates say what they need');
+    const brief = await post('/api/workflows/install', { template: 'morning-brief' });
+    a.ok(brief.ok, brief.error);
+    a.equal(brief.workflow.template, 'morning-brief');
+    a.deepEqual(brief.workflow.trigger, { type: 'daily', at: '08:00', days: [1, 2, 3, 4, 5] });
+    const ran = await post('/api/workflows/run', { id: brief.workflow.id });
+    a.equal(ran.result.ok, true, JSON.stringify(ran.result.steps));
+    a.match(ran.result.ctx.brief.text, /things? need(s)? you|Nothing is waiting/, 'the brief is built from live state');
+    const inbox = await get('/api/inbox');
+    a.ok(inbox.items.some((i) => i.kind === 'message' && i.title === `From workflow:${brief.workflow.id}`), 'the brief lands where the sovereign reads it');
+    const digest = await post('/api/workflows/install', { template: 'team-digest' });
+    const digestRun = await post('/api/workflows/run', { id: digest.workflow.id });
+    a.match(digestRun.result.ctx.digest.text, /^Team digest \(/);
+    const weekly = await post('/api/workflows/install', { template: 'weekly-dependencies' });
+    const weeklyRun = await post('/api/workflows/run', { id: weekly.workflow.id });
+    a.equal(weeklyRun.result.ok, true, JSON.stringify(weeklyRun.result.steps));
+    a.ok((await get('/api/tasks')).tasks.some((t) => t.title === 'Check dependencies for updates' && t.by === 'sovereign'),
+      'a scheduled task lands on the team queue');
+    const missing = await post('/api/workflows/install', { template: 'nope' });
+    a.equal(missing.ok, false);
+    console.log('  templates: install, run the brief, the digest and a scheduled team task end to end');
+  }
+
   console.log('t-panels.js OK — metrics take deltas, diffs are real, bad approvals cost one row, the task list is visible');
 } finally {
   daemon.kill();

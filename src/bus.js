@@ -826,6 +826,11 @@ export class Bus {
     };
   }
 
+  /** Run-ledger spend since `ts`, across every run. */
+  runSpendSince(ts) {
+    return this.db.prepare('select coalesce(sum(usd), 0) as usd from run_spend where ts >= ?').get(Number(ts)).usd;
+  }
+
   /** Spend and turn totals for every run that has any, keyed by run id. */
   runSpendTotals() {
     const out = {};

@@ -8,6 +8,7 @@ import { courtActionError } from '../ui/views/courts.js';
 import { resolvedOutcome } from '../ui/views/approvals.js';
 import { assignable, dueState, loadMyTasks, orderTasks } from '../ui/views/tasks.js';
 import { loadInbox, waitingCount } from '../ui/views/inbox.js';
+import { daysText, parseDays, triggerText } from '../ui/views/automations.js';
 import { cancelMetrics, cancelRunSpend, loadMetrics, loadRunSpend, metricsView, recommendationFor, spendGeometry, warningFor } from '../ui/views/usage.js';
 
 const settingsSource = readFileSync(new URL('../ui/views/settings.js', import.meta.url), 'utf8');
@@ -532,6 +533,19 @@ a.equal(waitingCount([{ tone: 'attention' }, { tone: 'live' }, { tone: 'attentio
 a.match(viewSources.inbox, /clearTimeout\(timer\); requestToken\(state, 'inboxRequest'\); off\?\.\(\)/, 'leaving the Inbox stops its refetch and drops a pending load');
 a.match(mainSource, /get\('\/api\/inbox'\)[\s\S]*apply\(\{ type: 'inbox'/, 'the rail count is fed on navigation, not only from the Inbox view');
 a.match(sidebarSource, /\['inbox', /, 'Inbox is reachable from the rail');
+a.deepEqual(parseDays('1-5'), [1, 2, 3, 4, 5]);
+a.deepEqual(parseDays(' 1, 3 ,5 '), [1, 3, 5]);
+a.deepEqual(parseDays('0-1,6,1'), [0, 1, 6], 'ranges and repeats collapse into a sorted set');
+a.equal(parseDays(''), null, 'blank means every day');
+for (const bad of ['7', 'mon', '5-1', '1-', '1,,2']) a.equal(parseDays(bad), false, `"${bad}" is refused, not guessed`);
+a.equal(daysText([1, 2, 3, 4, 5]), 'weekdays');
+a.equal(daysText([1]), 'Mondays');
+a.equal(daysText([1, 3]), 'Mondays, Wednesdays');
+a.equal(daysText(null), 'daily');
+a.equal(triggerText({ type: 'daily', at: '08:00', days: [1, 2, 3, 4, 5] }), 'weekdays at 08:00');
+a.match(automationsSource, /existing\?\.template \? \{ template: existing\.template \}/, 'editing an installed template keeps its template mark');
+a.match(automationsSource, /\.\.\.\(dayList \? \{ days: dayList \} : \{\}\)/, 'editing a weekday automation keeps its days');
+a.match(automationsSource, /post\('workflows\/install', \{ template: template\.id \}\)/, 'templates install through the daemon');
 a.match(viewSources.tasks, /post\('task', body\)/, 'Tasks edits the queue through the daemon task action');
 a.match(viewSources.tasks, /refresh\?\.\(\)/, 'a change made from a focused select must still repaint');
 a.match(viewSources.tasks, /if \(!editing\(root\)\) renderTasks/, 'live updates must not repaint under someone typing a task');
@@ -622,7 +636,7 @@ a.match(settingsSource, /assetUploads/, 'Settings uploads must stay disabled whi
 a.match(settingsSource, /Confirm delete/, 'asset deletion must require a deliberate second click');
 a.match(settingsSource, /async function removeAsset/, 'asset deletion failures must remain visible and retryable');
 a.match(settingsSource, /await Notify\.request\(\)/, 'notification permission changes must refresh Settings');
-a.match(settingsSource, /row\('runBlocked'[\s\S]*row\('runReview'[\s\S]*row\('runCompleted'/, 'Settings must offer the three run notification toggles');
+a.match(settingsSource, /row\('runBlocked'[\s\S]*row\('runReview'[\s\S]*row\('runCompleted'[\s\S]*row\('digests'/, 'Settings must offer the run and digest notification toggles');
 a.match(settingsSource, /unsupported.*Not supported here/, 'unsupported notification environments must say why toggles are unavailable');
 a.match(settingsSource, /function settingWrite/, 'settings writes share retryable feedback');
 a.match(settingsSource, /showSettingFeedback\(state, feedback, 'Saved\.'\)/, 'successful Settings writes must confirm the change');

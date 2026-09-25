@@ -10,7 +10,7 @@ import { setPrefs, state } from './store.js';
 
 const prefs = () => ({
   approvals: true, failures: true, budget: true, done: false,
-  runBlocked: true, runReview: true, runCompleted: false,
+  runBlocked: true, runReview: true, runCompleted: false, digests: true,
   ...(state.prefs.notifications ?? {}),
 });
 export const settings = () => ({ ...prefs(), permission: perm() });
@@ -121,6 +121,10 @@ export function onEvent(d) {
       return enabled.budget && fire(
         d.scope === 'kingdom' ? 'Team spend ceiling reached' : `${d.name} hit its ceiling`,
         `$${(d.spent ?? 0).toFixed(2)} of $${d.cap}. Everyone stopped.`, 'budget');
+
+    // A brief or digest an automation built for you (src/workflows.js digest).
+    case 'digest':
+      return enabled.digests && fire(d.title || 'Your brief', d.body, 'digest');
 
     case 'merged':
       return enabled.done && fire('Merged', `${d.peasant} is in the base branch.`, 'done');
