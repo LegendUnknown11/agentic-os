@@ -97,7 +97,7 @@ a.match(electronMainSource, /spawn\(node, \[[\s\S]*?windowsHide: true/, 'the dae
 // front, alongside the non-destructive courts switcher (open that repo's OWN
 // court instead of ending this one) — see ui/views/courts.js.
 a.doesNotMatch(settingsSource, /switchRepo\.hidden = false/, 'the repository switcher must no longer be revealed conditionally after a failed attach — it is offered up front');
-a.match(settingsSource, /const switchRepo = window\.kingdomShell\?\.switchRepo \? button\('End court and switch to this repository…', async \(\) => \{/, 'the repository switcher must be offered whenever the shell bridge exists, not gated behind a prior failure');
+a.match(settingsSource, /const switchRepo = window\.kingdomShell\?\.switchRepo \? button\('End workspace and switch to this repository…', async \(\) => \{/, 'the repository switcher must be offered whenever the shell bridge exists, not gated behind a prior failure');
 a.match(settingsSource, /const result = await window\.kingdomShell\.switchRepo\(path\.value\.trim\(\)\);/, 'switching repositories must go through the dedicated shell bridge, not attachRepo');
 a.match(settingsSource, /import \{ courtsSwitcher, refreshCourts \} from '\.\/courts\.js';/, 'the Repository panel must draw its live court list from the courts switcher module');
 a.match(settingsSource, /courtsSwitcher\(state, rerender\)\);/, 'the Repository panel must render the courts switcher');
@@ -112,8 +112,8 @@ a.match(courtPreloadSource, /focusCourt: \(port\) => ipcRenderer\.invoke\('court
 a.match(courtPreloadSource, /endCourt: \(port\) => ipcRenderer\.invoke\('courts:end', port\)/, 'the preload must expose end-by-port');
 a.match(electronMainSource, /ipcMain\.handle\('courts:focus'/, 'Electron must handle focus-by-port');
 // A failed start, open or end must say why instead of just resetting.
-a.equal(courtActionError({ ok: false, error: 'the court refused to end (HTTP 415)' }, 'x'), 'the court refused to end (HTTP 415)');
-a.equal(courtActionError({ ok: false }, 'Could not end that court.'), 'Could not end that court.', 'a failure with no message uses the fallback');
+a.equal(courtActionError({ ok: false, error: 'the workspace refused to end (HTTP 415)' }, 'x'), 'the workspace refused to end (HTTP 415)');
+a.equal(courtActionError({ ok: false }, 'Could not end that workspace.'), 'Could not end that workspace.', 'a failure with no message uses the fallback');
 a.equal(courtActionError({ ok: true }, 'x'), null);
 a.equal(courtActionError({ canceled: true }, 'x'), null, 'a cancelled confirmation is not an error');
 a.match(courtsSource, /state\.courtsError \? \[note\(state\.courtsError, 'danger'\)\]/, 'a switcher failure must render as a visible danger note');
@@ -127,7 +127,7 @@ a.match(electronMainSource, /ipcMain\.handle\('court:switchRepo', async \(event,
 // This suite only has to pin that main.js wires REAL dependencies into it.
 a.match(electronMainSource, /import \{ assertRepo \} from '\.\.\/src\/worktree\.js'/, 'a repository switch must validate the target with a real git check (assertRepo), not an existsSync(.git) peek a corrupt or empty entry would pass');
 a.match(electronMainSource, /assertRepo,\s*\n\s*confirm: async \(repo\) => \{/, 'a repository switch must use the real git validator, not a bespoke check');
-a.match(electronMainSource, /buttons: \['Cancel', 'End court and switch'\][\s\S]*?return response === 1;/, 'ending a court is destructive — it must be confirmed natively before anything is torn down');
+a.match(electronMainSource, /buttons: \['Cancel', 'End workspace and switch'\][\s\S]*?return response === 1;/, 'ending a court is destructive — it must be confirmed natively before anything is torn down');
 a.match(electronMainSource, /firstLaunchPlan\(repo, repo \? await listCourts\(\) : \[\], running\)/,
   'the first launch must consult the court registry before falling back to the pinned port');
 a.match(electronMainSource, /openWindow\(targetPort\);/, 'the first window must open the court the launch plan chose');
@@ -516,7 +516,7 @@ a.match(settingsSource, /group\('Prompt rewriting'/, 'Settings must group prompt
 a.match(settingsSource, /group\('Per-turn summaries'/, 'Settings must group per-turn summaries by job');
 a.match(settingsSource, /group\('Model and effort'/, 'Settings must group model and effort by job');
 a.match(settingsSource, /field\('Advisor model'[^]*?field\('Summary effort'/, 'consolidated model controls must keep distinct visible and accessible names');
-a.match(settingsSource, /does not restart a court member session/, 'Settings must explain session restart consequences');
+a.match(settingsSource, /does not restart a team member session/, 'Settings must explain session restart consequences');
 a.match(settingsSource, /function rangeField/, 'range settings must expose their current value');
 a.match(settingsSource, /rangeField\('Dim'/, 'wallpaper dim must show its current value');
 a.match(settingsSource, /rangeField\('Blur'/, 'wallpaper blur must show its current value');

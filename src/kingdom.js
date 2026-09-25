@@ -859,7 +859,7 @@ export class Kingdom extends EventEmitter {
   async #doSpawn(name, seedPrompt = null, conversationId = null) {
     if (this.agents.has(name)) return this.agents.get(name);
     const spec = this.specOf(name);
-    if (!spec) throw new Error(`No such member of the court: ${name}`);
+    if (!spec) throw new Error(`No such team member: ${name}`);
     const role = this.roleOf(name);
 
     // Every member has exactly one live session at a time, bound to whichever
@@ -1583,7 +1583,7 @@ export class Kingdom extends EventEmitter {
   */
   async attachRepo(path) {
     const repo = resolve(path);
-    if (this.repo && this.repo !== repo) throw new Error('A different repository requires a fresh court.');
+    if (this.repo && this.repo !== repo) throw new Error('A different repository requires a fresh workspace.');
     this.base = await assertRepo(repo);
     this.repo = repo;
     if (this.#usesAgy()) this.#excludeAgentsDir();
@@ -2582,7 +2582,7 @@ export class Kingdom extends EventEmitter {
    */
   async switchConversation(name, conversationId, { by = 'sovereign' } = {}) {
     const spec = this.specOf(name);
-    if (!spec) throw new Error(`No such member of the court: ${name}`);
+    if (!spec) throw new Error(`No such team member: ${name}`);
     this.bus.createConversation(name, { id: conversationId }); // idempotent
     const from = this.#activeConv(name);
     if (from === conversationId) return { interrupted: false, changed: false, from, conversationId };
@@ -2862,7 +2862,7 @@ export class Kingdom extends EventEmitter {
   /** Persisted, so the window survives the restart it was set to avoid. */
   setCompactWindow(name, tokens) {
     const target = name ? this.specOf(name) : this.config;
-    if (!target) throw new Error(`No such member of the court: ${name}`);
+    if (!target) throw new Error(`No such team member: ${name}`);
     target.recycleAtTokens = tokens;
     this.#persistConfig();
     return tokens;
@@ -2889,7 +2889,7 @@ export class Kingdom extends EventEmitter {
    */
   async setModel(name, { cli, model, effort, auto, byAdvisor }) {
     const spec = this.specOf(name);
-    if (!spec) throw new Error(`No such member of the court: ${name}`);
+    if (!spec) throw new Error(`No such team member: ${name}`);
 
     // "Auto" hands this member's model AND effort to the advisor, which picks
     // them together for each task — the sovereign's own Model Guidance couples
@@ -3514,7 +3514,7 @@ export class Kingdom extends EventEmitter {
         return;
       }
     } else if (p.kind === 'memory') {
-      if (!this.config.vault) throw new Error('Cannot approve a memory: this kingdom has no vault.');
+      if (!this.config.vault) throw new Error('Cannot approve a memory: this workspace has no vault.');
       if (typeof p.title !== 'string' || !p.title.trim() || typeof p.body !== 'string' || !p.body.trim()) {
         throw new Error('Cannot approve a memory without a title and body.');
       }

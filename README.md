@@ -1,13 +1,13 @@
-# Kingdom — an agentic OS
+# Agentic OS
 
 [![test](https://github.com/legendunknown11/agentic-os/actions/workflows/test.yml/badge.svg)](https://github.com/legendunknown11/agentic-os/actions/workflows/test.yml)
 
-A court of AI agents that work a git repository together. The difference from
-ordinary subagent setups: **the peasants talk to each other directly**, not
+A team of AI agents that work a git repository together. The difference from
+ordinary subagent setups: **the agents talk to each other directly**, not
 through the orchestrator.
 
 ```
-        you (the sovereign)
+              you
                │
              orchestrator            ← decides, assigns, reviews. Reads almost nothing raw.
                ↑
@@ -19,7 +19,7 @@ architect coder reviewer tester   ← each in its own git worktree, messaging ea
 
 ## Why the briefer exists
 
-The orchestrator's context is the scarcest thing in the kingdom. If every peasant
+The orchestrator's context is the scarcest thing in the team. If every agent
 message reached it, the orchestrator would be incoherent within an hour. So a cheap
 model (Haiku) watches *everything* — every message, every tool call — and
 briefs the orchestrator on what actually matters. The orchestrator keeps a `read_bus` escape
@@ -75,9 +75,9 @@ the difference).
 **Never put a token in `kingdom.config.json`.** That file is written back to
 disk whenever you change a model or approve a role, and it is not gitignored.
 
-### Several tokens, so the court doesn't share one rate limit
+### Several tokens, so the team doesn't share one rate limit
 
-Five agents on one token exhaust it fast. Give the kingdom a pool and each
+Five agents on one token exhaust it fast. Give the team a pool and each
 member gets assigned one, stably (the same member keeps the same token across
 restarts, so resumed sessions stay valid):
 
@@ -133,16 +133,16 @@ Nothing important happens without you:
 
 | The orchestrator proposes | You see |
 |---|---|
-| `summon` — which peasants to wake, and why | a card with the crew and its reasoning |
-| `propose_role` — a brand-new kind of peasant | the name, prompt, CLI, and rationale; approving writes it into `kingdom.config.json` permanently |
+| `summon` — which agents to wake, and why | a card with the crew and its reasoning |
+| `propose_role` — a brand-new kind of agent | the name, prompt, CLI, and rationale; approving writes it into `kingdom.config.json` permanently |
 | `request_merge` — work it has reviewed and approves of | its verdict, plus a Merge button |
 
 ## The vault
 
-Point the kingdom at an Obsidian vault and the whole court can use it:
+Point Agentic OS at an Obsidian vault and the whole team can use it:
 
 ```json
-{ "vault": "E:\\AGIOS Kingdom\\Obsidian Vault", "vaultWriteDir": "Kingdom" }
+{ "vault": "E:\\Notes\\Obsidian Vault", "vaultWriteDir": "Kingdom" }
 ```
 
 - `vault_search` / `vault_read` — **the whole vault, read-only.** Members are
@@ -173,14 +173,14 @@ session cost. Three tools, all read-only and safe to run mid-session:
 | `node src/replay.js <repo> [settle] [backstop]` | What a different delivery window would have cost, replayed through the real ripeness rule. |
 | `node src/recycle.js <repo>` | What `recycleAtTokens` should be, and whether it is ever reached at all. |
 
-The kingdom is built around that fact:
+Agentic OS is built around that fact:
 
 | Lever | Effect |
 |---|---|
 | **Batched delivery** | Messages arriving together become **one** turn, not one each. |
 | **Busy agents aren't interrupted** | Delivery waits for idle (up to 90s), so no replay is spent on a half-finished thought. |
 | **Notices ride along** | Pure FYI never buys its own turn; it waits for real traffic (or 3 min). |
-| **4000-char message cap** | Pasting a file through the bus replays it into someone's context. Write a file, send the path — peasants can read each other's worktrees. |
+| **4000-char message cap** | Pasting a file through the bus replays it into someone's context. Write a file, send the path — agents can read each other's worktrees. |
 | **Idle sleep** | Untouched members stop after 15 min (`KINGDOM_IDLE_SLEEP_MS`, 0 disables) and revive with memory on the next message. |
 | **`effort` per role** | `"effort": "low"` for mechanical roles. |
 | **Live spend** | The header shows `$0.000 · N turns` as it happens. |
@@ -194,28 +194,28 @@ crew there.
 ## Safety and limits
 
 **Merging never damages your repo.** Conflicts are computed in memory with
-`git merge-tree` *before* anything is checked out. If a peasant conflicts, or
+`git merge-tree` *before* anything is checked out. If an agent's work conflicts, or
 your base branch has uncommitted changes, the merge is refused and nothing is
 touched — the orchestrator is told so it can send the work back. Any surprise
 mid-merge is rolled back with `merge --abort`.
 
-**Peasants are confined, to different degrees.** Codex peasants run under a
+**Agents are confined, to different degrees.** Codex agents run under a
 real OS sandbox (`--sandbox workspace-write`) that physically cannot write
 outside their worktree. Claude Code has no OS sandbox on Windows, so those
-peasants are *mitigated*, not confined: `git push`, `remote`, `worktree`,
+agents are *mitigated*, not confined: `git push`, `remote`, `worktree`,
 `reset --hard`, `rebase` and branch deletion are denied outright. Treat a
-Claude peasant as trusted-but-fenced, not jailed. Add more denials per member
+Claude agent as trusted-but-fenced, not jailed. Add more denials per member
 with `"deny": ["Bash(curl:*)"]`.
 
 **Spend can be capped — it is not capped by default.** Set `maxBudgetUsd`
-(per member, overridable per member) or `maxKingdomUsd` (whole court) in
+(per member, overridable per member) or `maxKingdomUsd` (whole team) in
 `kingdom.config.json` and a looping member stops costing money by itself.
 Leave them unset, as shipped, and nothing stops it but you.
 
-Until recently a cap would not have worked anyway on a codex or agy court:
+Until recently a cap would not have worked anyway on a codex or agy team:
 those CLIs report no cost at all, so the check compared $0 against the ceiling
 on every turn and could never fire. Turns are now priced from a rate card
-(`src/price.js`) when the CLI will not say, so caps apply to the whole court —
+(`src/price.js`) when the CLI will not say, so caps apply to the whole team —
 except models with no published price, which spend nothing rather than be
 enforced against a guess. `node src/ctx.js <repo>` shows the real bill either
 way.
@@ -230,7 +230,7 @@ member mid-task.
 ## The merge path
 
 ```
-peasant → declare_done
+agent → declare_done
    → orchestrator runs the project's real tests in that worktree
    → briefer digests the diff + results
    → orchestrator reviews the digest (raw diff only if suspicious)
@@ -275,7 +275,7 @@ additions. Each member picks its own CLI and model:
 { "name": "reviewer", "cli": "claude", "model": "sonnet", "prompt": "..." }
 ```
 
-Configuring a role does not put it in the court — it makes it **available**.
+Configuring a role does not put it on the team — it makes it **available**.
 The rail on the left holds the members actually serving; everyone else lives
 behind **Summon** (Alt+E), which searches names, titles and descriptions, so
 you can find the person who does Kubernetes without knowing they are filed
@@ -305,7 +305,7 @@ claude.
 | `src/kingdom.js` | the orchestrator: roster, delivery loop, approvals, briefer recycling |
 | `src/daemon.js` | HTTP + SSE server |
 | `src/cli.js` | terminal interface |
-| `ui/` | the throne room (no framework) |
+| `ui/` | the app interface (no framework) |
 | `ui/court.js` | who belongs in the rail vs. the summoning screen — pure, and tested |
 | `ui/feel.js` | the weight: arrival/departure motion, and the horn cues on a summon or a ruling |
 | `electron/main.js` | thin shell; spawns the daemon and shows the UI |
@@ -317,12 +317,12 @@ worktrees, the database, everything. Your repo stays clean.
 
 Electron bundles an older Node without `node:sqlite`. Running the orchestrator
 as its own Node 24 process avoids that entirely, and means closing the window
-doesn't kill the court.
+doesn't stop the team.
 
 ## Build an installer
 
 ```bash
-npm run dist       # -> dist/Kingdom Setup <version>.exe (NSIS, Start-menu shortcut)
+npm run dist       # -> dist/Agentic OS Setup <version>.exe (NSIS, Start-menu shortcut)
 ```
 
 Packaged with `asar: false` on purpose: the orchestrator runs as an external
@@ -336,10 +336,10 @@ which Electron's bundled Node does not have.
 npm test                   # everything that costs no API quota
 node src/bus.js            # bus self-check
 node test/t-agent.js       # codex agent: two turns, one session, memory survives
-node test/t-comms.js       # THE test: peasant messages peasant, unaided
+node test/t-comms.js       # THE test: agent messages agent, unaided
 node test/t-tokens.js      # token pool loads, assigns stably, reaches child env
 node test/t-concurrent.js  # 8 processes hammering the bus, no "database is locked"
-node test/dump.js <repo>   # peek at a kingdom's bus
+node test/dump.js <repo>   # peek at a workspace's bus
 ```
 
 `t-agent.js` and `t-comms.js` spend real quota, so `npm test` leaves them out.

@@ -139,7 +139,7 @@ try {
   await k.attachRepo(repo);
   a.equal(k.agents.get(who), settled,
     'a member already standing in the repo must be left alone on a re-attach');
-  await a.rejects(k.attachRepo(otherRepo), /requires a fresh court/,
+  await a.rejects(k.attachRepo(otherRepo), /requires a fresh workspace/,
     'changing repositories mid-court must be refused before old worktrees can survive');
   a.equal(k.repo, repo, 'a refused repository switch must leave the attached repository unchanged');
   a.equal(k.agents.get(who), settled, 'a refused repository switch must not restart the settled court');

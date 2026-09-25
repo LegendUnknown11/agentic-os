@@ -27,7 +27,7 @@ export async function switchRepo(rawPath, { resolve, assertRepo, confirm, shutdo
 
   const freeBy = now() + 15_000;
   while (await courtOnPort()) {
-    if (now() > freeBy) return { ok: false, error: 'The previous court did not end in time. Try again in a moment.' };
+    if (now() > freeBy) return { ok: false, error: 'The previous workspace did not end in time. Try again in a moment.' };
     await wait(300);
   }
 

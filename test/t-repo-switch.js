@@ -61,7 +61,7 @@ function fakeDeps(overrides = {}) {
     now: (() => { let t = 0; return () => (t += 20_000); })(), // jumps straight past the 15s deadline
   });
   const result = await switchRepo('/repo', deps);
-  a.deepEqual(result, { ok: false, error: 'The previous court did not end in time. Try again in a moment.' });
+  a.deepEqual(result, { ok: false, error: 'The previous workspace did not end in time. Try again in a moment.' });
   a.ok(calls.some((c) => c[0] === 'shutdown'), 'shutdown must still be attempted before the wait loop');
   a.ok(!calls.some((c) => c[0] === 'startDaemon'), 'a court that never frees its port must never reach startDaemon');
 }
@@ -69,10 +69,10 @@ function fakeDeps(overrides = {}) {
 // --- a court that refuses to end stops the switch, visibly --------------
 {
   const { calls, deps } = fakeDeps({
-    shutdown: async () => { calls.push(['shutdown']); return { ok: false, error: 'the court refused to end (HTTP 415)' }; },
+    shutdown: async () => { calls.push(['shutdown']); return { ok: false, error: 'the workspace refused to end (HTTP 415)' }; },
   });
   const result = await switchRepo('/repo', deps);
-  a.deepEqual(result, { ok: false, error: 'the court refused to end (HTTP 415)' });
+  a.deepEqual(result, { ok: false, error: 'the workspace refused to end (HTTP 415)' });
   a.ok(!calls.some((c) => c[0] === 'courtOnPort' || c[0] === 'startDaemon'),
     'a refused shutdown must stop before waiting on the port or starting a second court');
 }

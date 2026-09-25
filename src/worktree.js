@@ -32,7 +32,7 @@ const pushTimeout = () => {
  * upstream. It accepts no remote, refspec or force option from the court.
  */
 export async function pushBase(repo, base) {
-  if (!repo || !base) throw new Error('This court has no base repository to push.');
+  if (!repo || !base) throw new Error('This workspace has no base repository to push.');
   const branch = (await git(repo, 'branch', '--show-current')).stdout.trim();
   if (branch !== base) throw new Error(`Base branch changed from ${base} to ${branch || '(detached)'}; nothing was pushed.`);
 
@@ -108,7 +108,7 @@ export async function assertRepo(repo) {
     return stdout.trim(); // the base branch the kingdom works against
   } catch (e) {
     if (/ambiguous argument ['"]?HEAD|unknown revision ['"]?HEAD/i.test(e.stderr ?? '')) {
-      throw new Error(`${repo} has no commit yet. Create an initial commit before launching the kingdom.`);
+      throw new Error(`${repo} has no commit yet. Create an initial commit before starting Agentic OS.`);
     }
     throw e;
   }

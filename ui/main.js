@@ -169,7 +169,7 @@ function connect() {
         const label = USER_MODE_BY_ID.get(userModeOf(target))?.label ?? target;
         const reason = event.why ? ` — ${event.why}` : '';
         modeNotice = event.pending
-          ? `Agentic OS will switch to ${label} mode once the court is idle${reason}.`
+          ? `Agentic OS will switch to ${label} mode once the team is idle${reason}.`
           : `Agentic OS switched to ${label} mode${reason}.`;
         toast(modeNotice);
       }

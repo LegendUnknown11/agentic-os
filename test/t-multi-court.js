@@ -97,7 +97,7 @@ try {
   const dupe = spawnAuto(repoA);
   const dupeExit = await waitForExit(dupe.proc, 15_000);
   a.notEqual(dupeExit, 0, 'a second daemon for an already-live repo must exit non-zero');
-  a.match(dupe.stderrOf(), new RegExp(`already has a live court on port ${BASE}`),
+  a.match(dupe.stderrOf(), new RegExp(`already has a live workspace on port ${BASE}`),
     'the refusal must name the port the repo is already served on');
 
   // ---- 4. a daemon PINNED (--port) to a port already in use must fail

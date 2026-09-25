@@ -175,7 +175,7 @@ function repository(state, root) {
   // a second court alongside it. window-open removed the fail-first gating
   // this used to have (issue #42) — it no longer waits for attachRepo to hit
   // its "fresh court" wall before offering the real fix.
-  const switchRepo = window.kingdomShell?.switchRepo ? button('End court and switch to this repository…', async () => {
+  const switchRepo = window.kingdomShell?.switchRepo ? button('End workspace and switch to this repository…', async () => {
     switchRepo.disabled = true;
     try {
       const result = await window.kingdomShell.switchRepo(path.value.trim());
@@ -206,8 +206,8 @@ function repository(state, root) {
     field('Path', path, 'Code mode requires an existing git repository with at least one commit.'),
     h('div', { class: 'button-row' }, choose, attach, switchRepo),
     pickerMessage,
-    h('h3', { text: 'Other courts' }),
-    note('Open or start a court for another repository without ending this one, or end one that is no longer needed.'),
+    h('h3', { text: 'Other workspaces' }),
+    note('Open or start a workspace for another repository without ending this one, or end one that is no longer needed.'),
     courtsSwitcher(state, rerender));
 }
 
@@ -242,7 +242,7 @@ function efficiency(state) {
 
   const group = (title, ...children) => h('fieldset', { class: 'settings-group' }, h('legend', { text: title }), ...children);
   return section('Models & efficiency',
-    note('These helpers are single-shot model calls. Changing their model or effort does not restart a court member session.'),
+    note('These helpers are single-shot model calls. Changing their model or effort does not restart a team member session.'),
     group('Automatic routing', field('Automatic model selector', automatic, "Creates an auxiliary advisor call only when a member is set to Auto, and may change that member's model and effort before it next wakes.")),
     group('Prompt rewriting', field('Prompt engineer', prompt, 'Creates one auxiliary call before delivery. If it fails, the original instruction is sent unchanged.')),
     group('Per-turn summaries',

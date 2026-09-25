@@ -46,7 +46,7 @@ export const memory = {
       required: ['query'],
     },
     run: ({ query }) => {
-      if (!VAULT) return 'No vault is configured for this kingdom.';
+      if (!VAULT) return 'No vault is configured for this workspace.';
       // Was a second, uncached copy of searchVault: it re-read all 1,409 notes
       // (9.4MB) on EVERY call — measured 1,250ms and ~1,300 tokens a search,
       // with nothing shared between calls in the same process. Going through
@@ -93,7 +93,7 @@ export const memory = {
       required: ['path'],
     },
     run: ({ path, section }) => {
-      if (!VAULT) return 'No vault is configured for this kingdom.';
+      if (!VAULT) return 'No vault is configured for this workspace.';
       const abs = insideVault(path);
       if (!abs || !existsSync(abs)) return `No such note: ${path}`;
       const body = readFileSync(abs, 'utf8');
@@ -148,7 +148,7 @@ export const memory = {
       required: ['title', 'body'],
     },
     run: ({ title, body, links = [], append = false }) => {
-      if (!VAULT) return 'No vault is configured for this kingdom.';
+      if (!VAULT) return 'No vault is configured for this workspace.';
       // The FOLDER is the mode's, not a slug the model has to spell right.
       // modeBlock() tells the model its note "goes under Research/" — that was
       // a promise the tool had no way to keep, so a real research turn wrote
