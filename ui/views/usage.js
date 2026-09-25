@@ -1,8 +1,5 @@
-import {
-  h, page, section, empty, note, button, meter, kb, money, displayName, get,
-} from './util.js';
+import { h, page, section, empty, note, button, meter, kb, money, displayName, get, apiError, requestToken } from './util.js';
 
-const apiError = (result, fallback) => result?.ok === false ? result.error ?? fallback : null;
 const number = (value) => value !== null && value !== '' && Number.isFinite(Number(value)) ? Number(value) : null;
 const percent = (value) => number(value) == null ? null : Math.max(0, Math.min(100, number(value)));
 const cachePercent = (value) => number(value) == null ? null : percent(number(value) <= 1 ? number(value) * 100 : number(value));
@@ -11,7 +8,6 @@ const knownClass = (value) => {
   if (normalized === 'cli-reported') return 'reported';
   return ['reported', 'estimated', 'mixed', 'unpriced', 'unavailable'].includes(normalized) ? normalized : null;
 };
-const requestToken = (state) => { state.metricsRequest = (state.metricsRequest ?? 0) + 1; return state.metricsRequest; };
 const tokenText = (value) => value == null ? 'Unavailable' : kb(value);
 const costText = (value) => value == null ? 'Unavailable' : money(value);
 const rateText = (value) => value == null ? 'Unavailable' : `${Math.round(value)}%`;
@@ -94,7 +90,7 @@ export function warningFor(metrics) {
 
 export function loadMetrics(state, render, force = false) {
   if (!force && state.metricsPending) return state.metricsPending;
-  const token = requestToken(state);
+  const token = requestToken(state, 'metricsRequest');
   state.metricsLoading = true;
   state.metricsError = null;
   state.metricsNotice = state.metrics && state.metrics.ok !== false ? 'Refreshing. Showing the last valid metrics.' : 'Loading usage metrics.';
@@ -121,7 +117,7 @@ export function loadMetrics(state, render, force = false) {
 }
 
 export function cancelMetrics(state) {
-  requestToken(state);
+  requestToken(state, 'metricsRequest');
   state.metricsLoading = false;
   state.metricsPending = null;
 }

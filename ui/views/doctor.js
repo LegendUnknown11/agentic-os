@@ -1,8 +1,6 @@
-import { h, page, section, empty, note, button, get, subscribe, editing, tone } from './util.js';
+import { h, page, section, empty, note, button, get, subscribe, editing, tone, apiError, requestToken } from './util.js';
 import { statusDot } from '../avatar.js';
 
-const apiError = (result, fallback) => result?.ok === false ? result.error ?? fallback : null;
-const requestToken = (state) => { state.doctorRequest = (state.doctorRequest ?? 0) + 1; return state.doctorRequest; };
 function bind(state, root, render) {
   const off = subscribe(() => { if (!editing(root)) render(state, root); });
   return () => off?.();
@@ -28,7 +26,7 @@ export function renderDoctor(state, root) {
     if (state.doctor) body.append(note(state.doctor.ready ? 'Ready.' : 'Fix the failed checks, then run Doctor again.'));
   }
   const run = button(state.doctorLoading ? 'Checking…' : 'Run checks', async () => {
-    const token = requestToken(state);
+    const token = requestToken(state, 'doctorRequest');
     state.doctorLoading = true;
     renderDoctor(state, root);
     const result = await get('/api/doctor');
@@ -46,7 +44,7 @@ export function renderDoctor(state, root) {
 }
 
 export function mountDoctor(state, root) {
-  const token = requestToken(state);
+  const token = requestToken(state, 'doctorRequest');
   state.doctorLoading = true;
   renderDoctor(state, root);
   const off = bind(state, root, renderDoctor);
@@ -59,7 +57,7 @@ export function mountDoctor(state, root) {
     state.doctor = result;
     renderDoctor(state, root);
   });
-  return () => { requestToken(state); off?.(); };
+  return () => { requestToken(state, 'doctorRequest'); off?.(); };
 }
 export const render = renderDoctor;
 export const mount = mountDoctor;

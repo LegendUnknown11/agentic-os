@@ -14,12 +14,11 @@
 // global (not per-repo) file — see src/worktree.js's globalTokenStore(). This
 // registry sits right beside it, same directory, same "never inside a
 // tracked repo" rule.
-import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync, renameSync, statSync, realpathSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync, rmSync, renameSync, statSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, dirname, basename, resolve } from 'node:path';
 import { randomBytes } from 'node:crypto';
-import { createServer } from 'node:http';
-import { request as httpRequest } from 'node:http';
+import { createServer, request as httpRequest } from 'node:http';
 
 /** Overridable for tests, the same way KINGDOM_TOKEN_STORE overrides the
  *  token file — never read by real callers, only by test/t-courts.js. */
@@ -159,7 +158,7 @@ export function pingCourt(port, repo, { timeoutMs = 1500 } = {}) {
       res.on('end', () => {
         try {
           const j = JSON.parse(body);
-          resolvePromise(repo ? sameRepo(j.repo, repo) || (!j.repo && !repo) : true);
+          resolvePromise(repo ? sameRepo(j.repo, repo) : true);
         } catch { resolvePromise(false); }
       });
     });

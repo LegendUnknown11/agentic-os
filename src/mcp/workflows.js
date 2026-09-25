@@ -1,6 +1,5 @@
 // workflows tools. See src/mcp.js for how these reach a member.
 import { listWorkflows, saveWorkflow, deleteWorkflow, runWorkflow, logRun } from '../workflows.js';
-import { join } from 'node:path';
 import {
   bus, WORKFLOWS_DIR, str,
 } from './ctx.js';

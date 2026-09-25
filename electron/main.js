@@ -103,11 +103,20 @@ function checkNodeVersion(node) {
  * and this works whatever the daemon chooses to print.
  */
 async function startDaemon(repo, logPath, port = PORT) {
+  return spawnDaemon(repo, logPath, ['--port', String(port)],
+    () => courtOnPort(originFor(port)), `answer on ${originFor(port)}`);
+}
+
+/**
+ * Spawn a detached daemon and poll `ready()` until it returns something, the
+ * child dies, or 90s pass. `what` names the readiness for the timeout error.
+ */
+async function spawnDaemon(repo, logPath, extraArgs, ready, what) {
   const node = process.env.KINGDOM_NODE ?? 'node';
   checkNodeVersion(node);
   const out = openSync(logPath, 'a');
   const child = spawn(node, [
-    join(HERE, '..', 'src', 'daemon.js'), ...(repo ? [repo] : []), '--port', String(port),
+    join(HERE, '..', 'src', 'daemon.js'), ...(repo ? [repo] : []), ...extraArgs,
   ], {
     detached: true,
     stdio: ['ignore', out, out],
@@ -130,11 +139,11 @@ async function startDaemon(repo, logPath, port = PORT) {
         + `(code ${childExit.code ?? 'unknown'}, signal ${childExit.signal ?? 'none'}).\n\n`
         + logTail(logPath));
     }
-    const ping = await courtOnPort(originFor(port));
-    if (ping) return ping;
+    const found = await ready(child);
+    if (found) return found;
     await new Promise((r) => setTimeout(r, 400));
   }
-  throw new Error(`The court did not answer on ${originFor(port)} within 90s.\n\n${logTail(logPath)}`);
+  throw new Error(`The court did not ${what} within 90s.\n\n${logTail(logPath)}`);
 }
 
 /**
@@ -147,38 +156,8 @@ async function startDaemon(repo, logPath, port = PORT) {
  * the port is not known until the daemon has already picked it.
  */
 async function startDaemonAuto(repo, logPath) {
-  const node = process.env.KINGDOM_NODE ?? 'node';
-  checkNodeVersion(node);
-  const out = openSync(logPath, 'a');
-  const child = spawn(node, [
-    join(HERE, '..', 'src', 'daemon.js'), ...(repo ? [repo] : []),
-  ], {
-    detached: true,
-    stdio: ['ignore', out, out],
-    windowsHide: true,
-  });
-  let spawnError = null;
-  let childExit = null;
-  child.on('error', (e) => { spawnError = e; });
-  child.on('exit', (code, signal) => { childExit = { code, signal }; });
-  child.unref();
-
-  const deadline = Date.now() + 90_000;
-  while (Date.now() < deadline) {
-    if (spawnError) {
-      throw new Error(`Could not start Node ("${node}"): ${spawnError.message}. `
-        + 'Node 24+ must be on PATH.');
-    }
-    if (childExit) {
-      throw new Error(`The court daemon exited before it became ready `
-        + `(code ${childExit.code ?? 'unknown'}, signal ${childExit.signal ?? 'none'}).\n\n`
-        + logTail(logPath));
-    }
-    const found = (await listCourts()).find((c) => c.pid === child.pid);
-    if (found) return found;
-    await new Promise((r) => setTimeout(r, 400));
-  }
-  throw new Error(`The court did not register itself within 90s.\n\n${logTail(logPath)}`);
+  return spawnDaemon(repo, logPath, [],
+    async (child) => (await listCourts()).find((c) => c.pid === child.pid), 'register itself');
 }
 
 /**
@@ -235,6 +214,10 @@ function openWindow(port = PORT) {
   courtWindows.set(port, { win, origin });
   win.on('closed', () => {
     if (courtWindows.get(port)?.win === win) courtWindows.delete(port);
+    // The dog does not count as a window worth staying alive for: he has no
+    // menu and no way to reopen the throne room, so an app that lived on as
+    // nothing but a floating dog would be unclosable except from Task Manager.
+    if (BrowserWindow.getAllWindows().every((w) => w === petWin || w.isDestroyed())) app.quit();
   });
   return win;
 }
@@ -480,16 +463,17 @@ ipcMain.handle('courts:list', async () => {
   return courts.map((c) => ({ ...c, open: courtWindows.has(c.port) }));
 });
 
-ipcMain.handle('courts:open', async (event, rawPath) => {
-  const repo = rawPath ? resolve(String(rawPath)) : null;
-  return routeLaunch(repo, {
-    listCourts,
-    focusWindow: (port) => openWindow(port),
-    startDaemonFor: (r, logPath) => startDaemonAuto(r, logPath),
-    openWindow: (port) => openWindow(port),
-    logPath: join(app.getPath('userData'), 'daemon.log'),
-  });
+// What routeLaunch needs, shared by the switcher and a second launch.
+const launchDeps = () => ({
+  listCourts,
+  focusWindow: (port) => openWindow(port),
+  startDaemonFor: (r, logPath) => startDaemonAuto(r, logPath),
+  openWindow: (port) => openWindow(port),
+  logPath: join(app.getPath('userData'), 'daemon.log'),
 });
+
+ipcMain.handle('courts:open', async (event, rawPath) =>
+  routeLaunch(rawPath ? resolve(String(rawPath)) : null, launchDeps()));
 
 // A court row is identified by its PORT, not its repository: repo-less courts
 // are real and several can run at once, so a null repo cannot name one.
@@ -533,14 +517,7 @@ if (!singleInstanceLock) {
   app.quit();
 } else {
   app.on('second-instance', async (event, argv2) => {
-    const repo = repoFromArgv(argv2);
-    const result = await routeLaunch(repo, {
-      listCourts,
-      focusWindow: (port) => openWindow(port),
-      startDaemonFor: (r, logPath) => startDaemonAuto(r, logPath),
-      openWindow: (port) => openWindow(port),
-      logPath: join(app.getPath('userData'), 'daemon.log'),
-    });
+    const result = await routeLaunch(repoFromArgv(argv2), launchDeps());
     if (!result.ok) dialog.showErrorBox('The kingdom could not rise', result.error);
   });
 }
@@ -610,13 +587,6 @@ app.whenReady().then(async () => {
 app.on('activate', () => { if (singleInstanceLock && !BrowserWindow.getAllWindows().length) openWindow(); });
 
 // Closing the window closes the VIEWER. The court keeps working; "end court"
-// in the throne room is what stops it.
-//
-// The dog does not count as a window worth staying alive for: he has no menu
-// and no way to reopen the throne room, so an app that lived on as nothing but
-// a floating dog would be unclosable except from Task Manager.
+// in the throne room is what stops it. (A court window left alone with the
+// dog quits too — see openWindow's 'closed' handler.)
 app.on('window-all-closed', () => app.quit());
-app.on('browser-window-closed', (_e, closed) => {
-  if (closed === petWin) return;
-  if (BrowserWindow.getAllWindows().every((w) => w === petWin)) app.quit();
-});

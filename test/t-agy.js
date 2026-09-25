@@ -294,6 +294,21 @@ const turn = (ag) => new Promise((res) => ag.once('turn_end', res));
   try { rmSync(elsewhere, { recursive: true, force: true, maxRetries: 5 }); } catch {}
 }
 
+/* ---------- the advisor on agy passes its prompt the same way ---------- */
+// advisor.js built agy's argv in the pre-1.1.11 shape — `--print` bare and the
+// prompt trailing — so agy read `--output-format` as the prompt and the
+// advisor and summariser silently gave no answer.
+{
+  const { ask } = await import('../src/advisor.js');
+  rmSync(ARGV, { force: true });
+  await ask({ cli: 'agy', model: 'gemini-3.6-flash-low' }, 'rewrite this brief', { cwd: dir });
+  const argv = JSON.parse(readFileSync(ARGV, 'utf8'));
+  a.equal(argv[argv.indexOf('--print') + 1], 'rewrite this brief', 'the advisor prompt is the value of --print');
+  a.ok(!argv.some((x, i) => i > argv.indexOf('--print') + 1 && !x.startsWith('-')
+    && !argv[i - 1].startsWith('-')), 'nothing may trail as a bare positional');
+  console.log('  the advisor hands agy its prompt as --print\'s value');
+}
+
 // Cleanup only — never wrap assertions in this, a swallowed assertion is
 // worse than no test at all.
 try { rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 150 }); } catch {}

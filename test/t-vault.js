@@ -4,7 +4,7 @@
 //   node test/t-vault.js
 import { strict as a } from 'node:assert';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, rmSync, realpathSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, rmSync, realpathSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -117,6 +117,14 @@ a.equal(existsSync(join(vault, '..', 'escaped.md')), false, 'title must not trav
   invalidateVault(vault);
   a.equal(searchVault(vault, 'grue-token-9902').length, 1, 'an edited note must re-read');
   a.match(readNote(vault, 'cache-probe.md'), /grue-token-9902/, 'and read back the new text');
+
+  // An edit nobody announced — the sovereign typing in Obsidian — must not be
+  // served from the cached text on a direct read. mtime is bumped explicitly so
+  // a coarse filesystem clock cannot make the two writes look identical.
+  writeFileSync(probe, 'grue-token-9902 was replaced by quux-token-3141\n');
+  utimesSync(probe, new Date(), new Date(Date.now() + 5000));
+  a.match(readNote(vault, 'cache-probe.md'), /quux-token-3141/,
+    'a direct read must not return a note\'s old text once the file has changed');
 
   rmSync(probe, { force: true });
   invalidateVault(vault);

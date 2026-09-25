@@ -101,11 +101,6 @@ export async function revisionOf(dir, ref = 'HEAD') {
   return (await git(dir, 'rev-parse', ref)).stdout.trim();
 }
 
-export async function revisionMatches(dir, expected) {
-  if (!expected) return false;
-  try { return (await revisionOf(dir)) === expected; } catch { return false; }
-}
-
 export async function assertRepo(repo) {
   if (!existsSync(join(repo, '.git'))) throw new Error(`${repo} is not a git repository.`);
   try {
@@ -195,6 +190,31 @@ export async function ensureRepo(repo, { onInit } = {}) {
 }
 
 /**
+ * Reuse a live worktree at `path`, caught up to base where that is safe.
+ * Returns false when there is none to reuse.
+ *
+ * A directory git does not recognise is MOVED ASIDE, never deleted. The real
+ * `wt/tester` found in the wild held three documents the tester had written —
+ * stranded, because the folder was not a worktree so nothing could ever
+ * commit them. Deleting to repair the state would have destroyed exactly the
+ * work the repair exists to rescue.
+ */
+async function reuseWorktree(repo, path, branch, base) {
+  if (!existsSync(path)) return false;
+  try {
+    await git(path, 'rev-parse', '--git-dir');
+    await catchUp(repo, path, branch, base);
+    return true;
+  } catch {
+    let aside = `${path}.orphan`;
+    for (let n = 2; existsSync(aside); n++) aside = `${path}.orphan-${n}`;
+    renameSync(path, aside);
+    await git(repo, 'worktree', 'prune').catch(() => {});
+    return false;
+  }
+}
+
+/**
  * Idempotent: reuses the worktree if this peasant already has one.
  *
  * "Has one" means a LIVE worktree, not merely a directory. A leftover folder —
@@ -206,23 +226,7 @@ export async function ensureRepo(repo, { onInit } = {}) {
 export async function createWorktree(repo, peasant, base) {
   const path = worktreePath(repo, peasant);
   const branch = branchOf(peasant);
-  if (existsSync(path)) {
-    try {
-      await git(path, 'rev-parse', '--git-dir');
-      await catchUp(repo, path, branch, base);
-      return path;
-    } catch {
-      // MOVED ASIDE, never deleted. The real `wt/tester` found in the wild held
-      // three documents the tester had written — stranded, because the folder
-      // was not a worktree so nothing could ever commit them. Deleting to
-      // repair the state would have destroyed exactly the work the repair
-      // exists to rescue.
-      let aside = `${path}.orphan`;
-      for (let n = 2; existsSync(aside); n++) aside = `${path}.orphan-${n}`;
-      renameSync(path, aside);
-      await git(repo, 'worktree', 'prune').catch(() => {});
-    }
-  }
+  if (await reuseWorktree(repo, path, branch, base)) return path;
 
   const { stdout } = await git(repo, 'branch', '--list', branch);
   try {
@@ -265,18 +269,7 @@ export async function createRunWorktree(repo, runId, base) {
   const path = runWorktreePath(repo, runId);
   const branch = runBranch(runId);
   mkdirSync(dirname(path), { recursive: true });
-  if (existsSync(path)) {
-    try {
-      await git(path, 'rev-parse', '--git-dir');
-      await catchUp(repo, path, branch, base);
-      return path;
-    } catch {
-      let aside = `${path}.orphan`;
-      for (let n = 2; existsSync(aside); n++) aside = `${path}.orphan-${n}`;
-      renameSync(path, aside);
-      await git(repo, 'worktree', 'prune').catch(() => {});
-    }
-  }
+  if (await reuseWorktree(repo, path, branch, base)) return path;
   const { stdout } = await git(repo, 'branch', '--list', branch);
   try {
     if (stdout.trim()) await git(repo, 'worktree', 'add', path, branch);
@@ -384,9 +377,12 @@ export async function statOf(repo, peasant, base) {
  * tree — `merge-tree --write-tree` computes the merge in memory (git 2.38+).
  * Returns the conflicted paths, empty when clean.
  */
-export async function conflictsWith(repo, peasant, base) {
+export const conflictsWith = (repo, peasant, base) => conflictsBetween(repo, base, branchOf(peasant));
+
+/** The same in-memory check for two arbitrary refs. */
+export async function conflictsBetween(repo, left, right) {
   try {
-    await git(repo, 'merge-tree', '--write-tree', '--name-only', base, branchOf(peasant));
+    await git(repo, 'merge-tree', '--write-tree', '--name-only', left, right);
     return []; // exit 0 = merges cleanly
   } catch (e) {
     // exit 1 = conflicts. stdout is: <tree-oid>\n<conflicted paths>\n\n<messages>
@@ -396,21 +392,6 @@ export async function conflictsWith(repo, peasant, base) {
     if (paths.length) return paths;
     if (e.code === 1) return ['(conflict, paths unavailable)'];
     throw e; // a real git failure, not a conflict
-  }
-}
-
-/** Same in-memory conflict check for two arbitrary refs, used by run integration. */
-export async function conflictsBetween(repo, left, right) {
-  try {
-    await git(repo, 'merge-tree', '--write-tree', '--name-only', left, right);
-    return [];
-  } catch (e) {
-    const lines = String(e.stdout ?? '').split('\n').slice(1);
-    const end = lines.indexOf('');
-    const paths = (end === -1 ? lines : lines.slice(0, end)).map((s) => s.trim()).filter(Boolean);
-    if (paths.length) return paths;
-    if (e.code === 1) return ['(conflict, paths unavailable)'];
-    throw e;
   }
 }
 
@@ -472,18 +453,24 @@ export async function mergeWorktree(repo, peasant, base) {
     );
   }
 
+  return mergeOntoBase(repo, base, branchOf(peasant), `kingdom: merge work of ${peasant}`, 'Merge');
+}
+
+/**
+ * Check out base and merge `branch` into it, or change nothing: any failure
+ * mid-merge is aborted and the original branch restored.
+ */
+async function mergeOntoBase(repo, base, branch, message, what) {
   const { stdout: was } = await git(repo, 'rev-parse', '--abbrev-ref', 'HEAD');
   const original = was.trim();
   await git(repo, 'checkout', base);
   try {
-    const { stdout } = await git(repo, 'merge', '--no-ff', branchOf(peasant), '-m',
-      `kingdom: merge work of ${peasant}`);
-    return stdout;
+    return (await git(repo, 'merge', '--no-ff', branch, '-m', message)).stdout;
   } catch (e) {
     // Never leave the repo mid-merge.
     await git(repo, 'merge', '--abort').catch(() => {});
     if (original && original !== base) await git(repo, 'checkout', original).catch(() => {});
-    throw new Error(`Merge failed and was rolled back cleanly: ${e.message}`);
+    throw new Error(`${what} failed and was rolled back cleanly: ${e.message}`);
   }
 }
 
@@ -497,17 +484,8 @@ export async function mergeRunBranch(repo, runId, base) {
   // Merge into base explicitly, the same way mergeWorktree does — the only
   // safety check above this compares commit hashes, which stays unchanged if
   // something merely checks out a different branch at the same commit.
-  const { stdout: was } = await git(repo, 'rev-parse', '--abbrev-ref', 'HEAD');
-  const original = was.trim();
-  await git(repo, 'checkout', base);
-  try {
-    const { stdout } = await git(repo, 'merge', '--no-ff', branch, '-m', `kingdom: apply reviewed run ${runId}`);
-    return { output: stdout, revision: await revisionOf(repo) };
-  } catch (e) {
-    await git(repo, 'merge', '--abort').catch(() => {});
-    if (original && original !== base) await git(repo, 'checkout', original).catch(() => {});
-    throw new Error(`Applying run ${runId} failed and was rolled back cleanly: ${e.message}`);
-  }
+  const output = await mergeOntoBase(repo, base, branch, `kingdom: apply reviewed run ${runId}`, `Applying run ${runId}`);
+  return { output, revision: await revisionOf(repo) };
 }
 
 /**
@@ -582,6 +560,7 @@ export async function runTests(dir, { revision = null } = {}) {
     ran: false, ok: false, stale: false, revision: checkedRevision,
     output: 'No test/build command found in this project.',
   };
+  let passed, output;
   try {
     const { stdout, stderr } = await exec(cmd[0], cmd[1], {
       cwd: dir,
@@ -590,22 +569,18 @@ export async function runTests(dir, { revision = null } = {}) {
       timeout: 15 * 60 * 1000,
       windowsHide: true,
     });
-    const after = await revisionOf(dir).catch(() => checkedRevision);
-    const stale = Boolean(revision && after !== revision);
-    return {
-      ran: true, ok: !stale, stale, revision: after,
-      output: (stdout + stderr).slice(-8000) + (stale
-        ? `\nVerification invalidated: HEAD changed from ${revision} to ${after}.`
-        : ''),
-    };
+    passed = true;
+    output = stdout + stderr;
   } catch (e) {
-    const after = await revisionOf(dir).catch(() => checkedRevision);
-    const stale = Boolean(revision && after !== revision);
-    return {
-      ran: true, ok: false, stale, revision: after,
-      output: ((e.stdout ?? '') + (e.stderr ?? e.message)).slice(-8000) + (stale
-        ? `\nVerification invalidated: HEAD changed from ${revision} to ${after}.`
-        : ''),
-    };
+    passed = false;
+    output = (e.stdout ?? '') + (e.stderr ?? e.message);
   }
+  const after = await revisionOf(dir).catch(() => checkedRevision);
+  const stale = Boolean(revision && after !== revision);
+  return {
+    ran: true, ok: passed && !stale, stale, revision: after,
+    output: output.slice(-8000) + (stale
+      ? `\nVerification invalidated: HEAD changed from ${revision} to ${after}.`
+      : ''),
+  };
 }

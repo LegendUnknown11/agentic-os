@@ -1,6 +1,5 @@
 // control tools. See src/mcp.js for how these reach a member.
 import { modeName, modeOf, MODE_NAMES } from '../modes.js';
-import { join } from 'node:path';
 import {
   ME, bus, str, rosterNow, goalNow, modeNow,
 } from './ctx.js';

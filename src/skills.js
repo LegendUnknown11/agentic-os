@@ -18,7 +18,7 @@
 //   <vault>/Kingdom/Skills/*.md       — what the sovereign writes in Obsidian
 // The vault wins on a name collision, so a sovereign can override a shipped
 // skill without editing the repo.
-import { readFileSync, readdirSync, existsSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 

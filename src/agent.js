@@ -31,8 +31,7 @@ const NPM_NATIVE_ENTRY = {
 export const AGY_EFFORTS = new Set(['low', 'medium', 'high']);
 // Windows caps a command line at 32,767 chars; leave room for the exe path,
 // the flags, and the model name. Above this an agy or opencode brief goes to a file.
-const AGY_ARGV_BUDGET = 24_000;
-const OPENCODE_ARGV_BUDGET = 24_000;
+const BRIEF_ARGV_BUDGET = 24_000;
 // A claude member's system prompt is fixed at spawn and grows with the roster
 // (every peasant's name and description) and the court's own state. Above
 // this it goes to a file instead of the command line — claude reads it via
@@ -176,12 +175,16 @@ function spawnGuarded(agent, cli, command, args, opts) {
   try {
     return spawn(command, args, opts);
   } catch (e) {
-    agent.busy = false;
-    agent.proc = null;
-    agent.emit('error', `${cli} could not be started: ${e.message}`);
-    agent.emit('turn_end', { usage: null, costUsd: 0, ctx: agent.ctxTokens() });
-    return null;
+    return failedStart(agent, cli, e);
   }
+}
+
+function failedStart(agent, cli, e) {
+  agent.busy = false;
+  agent.proc = null;
+  agent.emit('error', `${cli} could not be started: ${e.message}`);
+  agent.emit('turn_end', { usage: null, costUsd: 0, ctx: agent.ctxTokens() });
+  return null;
 }
 
 /**
@@ -197,11 +200,7 @@ function resolveCliGuarded(agent, cli) {
   try {
     return resolveCli(cli);
   } catch (e) {
-    agent.busy = false;
-    agent.proc = null;
-    agent.emit('error', `${cli} could not be started: ${e.message}`);
-    agent.emit('turn_end', { usage: null, costUsd: 0, ctx: agent.ctxTokens() });
-    return null;
+    return failedStart(agent, cli, e);
   }
 }
 
@@ -561,31 +560,49 @@ export class Agent extends EventEmitter {
     // and `exec resume`.
     args.push('-');
 
-    const resolved = resolveCliGuarded(this, 'codex');
+    this.#spawnTurn('codex', args, (o) => this.#onCodexEvent(o), prompt);
+  }
+
+  /**
+   * One child process for one turn, shared by every turn-based CLI: spawn it
+   * guarded, stream its JSON lines to `onEvent`, and make sure the turn ENDS
+   * however the child does. `input`, when given, goes down stdin.
+   */
+  #spawnTurn(cli, args, onEvent, input) {
+    const resolved = resolveCliGuarded(this, cli);
     if (!resolved) return;
     const { command, prefixArgs } = resolved;
-    const proc = spawnGuarded(this, 'codex', command, [...prefixArgs, ...args], {
+    const proc = spawnGuarded(this, cli, command, [...prefixArgs, ...args], {
       cwd: this.cwd,
-      stdio: ['pipe', 'pipe', 'pipe'],
+      stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'],
       // Otherwise every turn flashes a console window on the sovereign's desktop.
       windowsHide: true,
     });
     if (!proc) return;
-    proc.stdin.on('error', () => {}); // a child that dies early must not throw EPIPE
-    proc.stdin.end(prompt);
+    if (input !== undefined) {
+      proc.stdin.on('error', () => {}); // a child that dies early must not throw EPIPE
+      proc.stdin.end(input);
+    }
     this.proc = proc;
     this.alive = true;
 
     let spoke = false;   // did this turn produce ANY protocol output?
     let err = '';
     proc.stdout.setEncoding('utf8');
-    proc.stdout.on('data', jsonLines((o) => { spoke = true; this.#onCodexEvent(o); }));
+    proc.stdout.on('data', jsonLines((o) => { spoke = true; onEvent(o); }));
     proc.stderr.setEncoding('utf8');
     proc.stderr.on('data', (d) => { err = (err + d).slice(-600); this.emit('stderr', d); });
-    const dog = armTurnWatchdog(this, 'codex', proc);
+    const dog = armTurnWatchdog(this, cli, proc);
     proc.on('error', (e) => this.emit('error', e.message));
     proc.on('exit', (code) => {
       dog.clear();
+      // A staged brief is read once, at the start of the turn it belongs to.
+      // Leaving them behind would strew 50kB files through temp for every
+      // long order the court ever takes.
+      if (this.briefFile) {
+        rmSync(this.briefFile, { force: true });
+        this.briefFile = null;
+      }
       this.busy = false;
       this.proc = null;
       // A turn that produced nothing at all is the failure mode that hides:
@@ -593,15 +610,45 @@ export class Agent extends EventEmitter {
       // exactly like thinking, so say it out loud and end the turn.
       if (!spoke) {
         this.emit('error',
-          `codex produced no output (exit ${code}). ${err.trim() || 'No error text.'}`);
+          `${cli} produced no output (exit ${code}). ${err.trim() || 'No error text.'}`);
       }
-      // A killed turn never reaches turn.completed, so the orchestrator would
-      // never see it end — no spend, no context, no recycle, no redelivery.
+      // A killed turn never reaches its completion event, so the orchestrator
+      // would never see it end — no spend, no context, no recycle, no redelivery.
       if (!spoke || dog.timedOut()) {
         this.emit('turn_end', { usage: null, costUsd: 0, ctx: this.ctxTokens() });
       }
-      if (this.queue.length) this.#runCodexTurn();
+      if (this.queue.length) this.#runTurn();
     });
+  }
+
+  /**
+   * agy and opencode take the prompt only as an argument, so a long brief
+   * cannot go on the command line: Windows caps it at 32,767 chars and spawn
+   * throws ENAMETOOLONG. Measured — a 53,214-char sovereign brief died in 0.2s.
+   *
+   * But both ARE agentic CLIs with file tools, so hand them the brief as a
+   * file and ask them to read it. The file goes to the OS temp directory, NEVER the
+   * member's cwd: a peasant's cwd is a git worktree and `commitAll` does
+   * `git add -A`, so a brief written there would be committed into the
+   * sovereign's repository and merged.
+   *
+   * Returns the prompt to actually pass on the command line.
+   */
+  #stagedPrompt(cli, prompt) {
+    if (prompt.length <= BRIEF_ARGV_BUDGET) return prompt;
+    try {
+      const file = join(tmpdir(), `kingdom-brief-${this.name}-${randomUUID().slice(0, 8)}.md`);
+      writeFileSync(file, prompt, 'utf8');
+      this.briefFile = file;   // removed when the turn exits
+      return `Your full instructions are in a file — they are too long for this command `
+        + `line. Read it and follow it exactly as if it had been typed here:\n\n${file}\n\n`
+        + `Read that file FIRST, before doing anything else. Do not summarise it back to me.`;
+    } catch (e) {
+      // Falling back to the raw prompt means spawnGuarded reports ENAMETOOLONG
+      // and the order is redelivered — worse than the file, better than silence.
+      this.emit('error', `Could not stage a long ${cli} brief (${e.message}); sending it inline.`);
+      return prompt;
+    }
   }
 
   /**
@@ -629,36 +676,6 @@ export class Agent extends EventEmitter {
    * `--output-format` means, emitted no JSONL at all, and was reported as
    * having produced no output and failed.
    */
-  /**
-   * agy has no stdin prompt and no --prompt-file, so a long brief cannot go on
-   * the command line: Windows caps it at 32,767 chars and spawn throws
-   * ENAMETOOLONG. Measured — a 53,214-char sovereign brief died in 0.2s.
-   *
-   * But agy IS an agentic CLI with file tools, so hand it the brief as a file
-   * and ask it to read it. The file goes to the OS temp directory, NEVER the
-   * member's cwd: a peasant's cwd is a git worktree and `commitAll` does
-   * `git add -A`, so a brief written there would be committed into the
-   * sovereign's repository and merged.
-   *
-   * Returns the prompt to actually pass on the command line.
-   */
-  #agyPrompt(prompt) {
-    if (prompt.length <= AGY_ARGV_BUDGET) return prompt;
-    try {
-      const file = join(tmpdir(), `kingdom-brief-${this.name}-${randomUUID().slice(0, 8)}.md`);
-      writeFileSync(file, prompt, 'utf8');
-      this.briefFile = file;   // removed when the turn exits
-      return `Your full instructions are too long for this command line, so they are in a `
-        + `file. Read it and follow it exactly as if it had been typed here:\n\n${file}\n\n`
-        + `Read that file FIRST, before doing anything else. Do not summarise it back to me.`;
-    } catch (e) {
-      // Falling back to the raw prompt means spawnGuarded reports ENAMETOOLONG
-      // and the order is redelivered — worse than the file, better than silence.
-      this.emit('error', `Could not stage a long agy brief (${e.message}); sending it inline.`);
-      return prompt;
-    }
-  }
-
   #runAgyTurn() {
     if (this.busy || !this.queue.length || !this.alive) return;
     this.busy = true;
@@ -667,7 +684,7 @@ export class Agent extends EventEmitter {
     const prompt = this.sessionId ? text : `${this.spec.prompt ?? ''}\n\n---\n\n${text}`;
     this.ctxChars += prompt.length;
 
-    const args = ['--print', this.#agyPrompt(prompt), '--output-format', 'stream-json'];
+    const args = ['--print', this.#stagedPrompt('agy', prompt), '--output-format', 'stream-json'];
     if (this.sessionId) args.push('--conversation', this.sessionId);
     if (this.spec.model) args.push('--model', this.spec.model);
     // agy's ladder is only low|medium|high — it has no xhigh/max/none, so a
@@ -680,50 +697,8 @@ export class Agent extends EventEmitter {
     if (this.spec.skipPermissions !== false) args.push('--dangerously-skip-permissions');
     args.push('--print-timeout', this.spec.printTimeout ?? '20m');
 
-    // agy has no stdin prompt, so a long brief still cannot be sent to it —
-    // but it must fail LOUDLY rather than wedging the member forever.
-    const resolved = resolveCliGuarded(this, 'agy');
-    if (!resolved) return;
-    const { command, prefixArgs } = resolved;
-    const proc = spawnGuarded(this, 'agy', command, [...prefixArgs, ...args], {
-      cwd: this.cwd,
-      stdio: ['ignore', 'pipe', 'pipe'],
-      windowsHide: true,
-    });
-    if (!proc) return;
-    this.proc = proc;
-    this.alive = true;
-
-    let spoke = false;
-    let err = '';
     const steps = new Map();   // step_index -> accumulated text
-
-    proc.stdout.setEncoding('utf8');
-    proc.stdout.on('data', jsonLines((o) => { spoke = true; this.#onAgyEvent(o, steps); }));
-    proc.stderr.setEncoding('utf8');
-    proc.stderr.on('data', (d) => { err = (err + d).slice(-600); this.emit('stderr', d); });
-    const dog = armTurnWatchdog(this, 'agy', proc);
-    proc.on('error', (e) => this.emit('error', e.message));
-    proc.on('exit', (code) => {
-      dog.clear();
-      // A staged brief is read once, at the start of the turn it belongs to.
-      // Leaving them behind would strew 50kB files through temp for every
-      // long order the court ever takes.
-      if (this.briefFile) {
-        rmSync(this.briefFile, { force: true });
-        this.briefFile = null;
-      }
-      this.busy = false;
-      this.proc = null;
-      if (!spoke) {
-        this.emit('error',
-          `agy produced no output (exit ${code}). ${err.trim() || 'No error text.'}`);
-      }
-      if (!spoke || dog.timedOut()) {
-        this.emit('turn_end', { usage: null, costUsd: 0, ctx: this.ctxTokens() });
-      }
-      if (this.queue.length) this.#runAgyTurn();
-    });
+    this.#spawnTurn('agy', args, (o) => this.#onAgyEvent(o, steps));
   }
 
   #onAgyEvent(o, steps) {
@@ -804,20 +779,6 @@ export class Agent extends EventEmitter {
 
   // --- opencode: turn-based CLI with --format json streaming ----------
 
-  #opencodePrompt(prompt) {
-    if (prompt.length <= OPENCODE_ARGV_BUDGET) return prompt;
-    try {
-      const file = join(tmpdir(), `kingdom-brief-${this.name}-${randomUUID().slice(0, 8)}.md`);
-      writeFileSync(file, prompt, 'utf8');
-      this.briefFile = file;
-      return `Your full instructions are in a file. Read it and follow it exactly as if it had been typed here:\n\n${file}\n\n`
-        + `Read that file FIRST, before doing anything else. Do not summarise it back to me.`;
-    } catch (e) {
-      this.emit('error', `Could not stage a long opencode brief (${e.message}); sending it inline.`);
-      return prompt;
-    }
-  }
-
   #runOpenCodeTurn() {
     if (this.busy || !this.queue.length || !this.alive) return;
     this.busy = true;
@@ -831,7 +792,7 @@ export class Agent extends EventEmitter {
     // title it ran google/gemini-3.7-flash first and, on this account, that
     // call errored out on an unrelated credit cap before the real turn ever
     // started streaming.
-    const args = ['run', this.#opencodePrompt(prompt), '--format', 'json', '--auto', '--title', this.name];
+    const args = ['run', this.#stagedPrompt('opencode', prompt), '--format', 'json', '--auto', '--title', this.name];
     if (this.sessionId) args.push('--session', this.sessionId);
     if (this.spec.model) args.push('--model', this.spec.model);
     // Not gated against a local allowlist, unlike agy: opencode's reasoning
@@ -841,44 +802,7 @@ export class Agent extends EventEmitter {
     if (this.spec.effort) args.push('--variant', this.spec.effort);
     if (this.spec.agent) args.push('--agent', this.spec.agent);
 
-    const resolved = resolveCliGuarded(this, 'opencode');
-    if (!resolved) return;
-    const { command, prefixArgs } = resolved;
-    const proc = spawnGuarded(this, 'opencode', command, [...prefixArgs, ...args], {
-      cwd: this.cwd,
-      stdio: ['ignore', 'pipe', 'pipe'],
-      windowsHide: true,
-    });
-    if (!proc) return;
-    this.proc = proc;
-    this.alive = true;
-
-    let spoke = false;
-    let err = '';
-
-    proc.stdout.setEncoding('utf8');
-    proc.stdout.on('data', jsonLines((o) => { spoke = true; this.#onOpenCodeEvent(o); }));
-    proc.stderr.setEncoding('utf8');
-    proc.stderr.on('data', (d) => { err = (err + d).slice(-600); this.emit('stderr', d); });
-    const dog = armTurnWatchdog(this, 'opencode', proc);
-    proc.on('error', (e) => this.emit('error', e.message));
-    proc.on('exit', (code) => {
-      dog.clear();
-      if (this.briefFile) {
-        rmSync(this.briefFile, { force: true });
-        this.briefFile = null;
-      }
-      this.busy = false;
-      this.proc = null;
-      if (!spoke) {
-        this.emit('error',
-          `opencode produced no output (exit ${code}). ${err.trim() || 'No error text.'}`);
-      }
-      if (!spoke || dog.timedOut()) {
-        this.emit('turn_end', { usage: null, costUsd: 0, ctx: this.ctxTokens() });
-      }
-      if (this.queue.length) this.#runOpenCodeTurn();
-    });
+    this.#spawnTurn('opencode', args, (o) => this.#onOpenCodeEvent(o));
   }
 
   #onOpenCodeEvent(o) {

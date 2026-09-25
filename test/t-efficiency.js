@@ -4,7 +4,7 @@
 //   node test/t-efficiency.js
 import { strict as a } from 'node:assert';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Bus } from '../src/bus.js';
@@ -195,6 +195,20 @@ console.log('  MCP surfaces are under budget and roster supports query, activeOn
   seen.close();
   rmSync(maskDir, { recursive: true, force: true });
   console.log('  observation masking increments durable call and character counters');
+
+  // A name in MASKABLE that is not a tool masks nothing, silently: the set
+  // once named "diff", "stat" and "read_file" while read_diff — the largest
+  // payload a member re-reads — was never masked at all.
+  const mcpSource = readFileSync(new URL('../src/mcp.js', import.meta.url), 'utf8');
+  const maskable = [...(/const MASKABLE = new Set\(\[([^\]]*)\]/.exec(mcpSource)?.[1] ?? '')
+    .matchAll(/'(\w+)'/g)].map((m) => m[1]);
+  const toolNames = new Set(readdirSync(new URL('../src/mcp/', import.meta.url))
+    .flatMap((f) => [...readFileSync(new URL(`../src/mcp/${f}`, import.meta.url), 'utf8')
+      .matchAll(/^ {2}(\w+): \{$/gm)].map((m) => m[1])));
+  a.ok(maskable.length, 'sanity: MASKABLE was found');
+  a.deepEqual(maskable.filter((n) => !toolNames.has(n)), [], 'every MASKABLE name must be a real tool');
+  a.ok(maskable.includes('read_diff'), 'a re-read diff is masked like a re-read note');
+  console.log('  every masked tool name is a tool that exists');
 }
 
 /* ---------- a projected total is measured from REAL campaign/event ids --- */

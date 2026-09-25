@@ -25,7 +25,7 @@ import { modeOf, modeName, modeBlock, canSummon } from './modes.js';
 import { buildPrompt } from './prompt.js';
 import {
   assertRepo, ensureRepo, behindBase, commitAll, createWorktree, dbPath, diffOf, statOf, kingdomDir,
-  globalTokenStore, mergeWorktree, removeWorktree, pushBase, runTests, testCommand, worktreePath,
+  globalTokenStore, mergeWorktree, removeWorktree, pushBase, runTests, worktreePath,
   revisionOf, createRunWorktree, mergeIntoRun, mergeRunBranch, runWorktreePath,
 } from './worktree.js';
 import { mirrorToProject, noteWritten } from './vault.js';
@@ -143,19 +143,6 @@ const DEFAULT_TURN_BUDGET = 500;
 // The pause reason #enforceTurnBudget writes; start() reads it back to tell a
 // budget pause from a manual one.
 const TURN_BUDGET_PAUSE = /-turn budget for this session was reached/;
-// Recycle thresholds now come from #recycleThreshold (per member, configurable).
-
-/**
- * How the court BUILDS, as opposed to how it talks to itself.
- *
- * One block on the shared peasant prompt rather than a line in each of the 16
- * role prompts: a rule copied sixteen times is a rule that drifts, and every
- * role added later would start out exempt from it.
- *
- * The doctrine is recorded in the sovereign's vault under
- * Kingdom/Kingdom Engineering Doctrine — this is the enforcement copy, and the
- * two are meant to say the same thing.
- */
 
 export class Kingdom extends EventEmitter {
   constructor(repo, configPath) {
@@ -247,6 +234,11 @@ export class Kingdom extends EventEmitter {
       : 'peasant';
   }
 
+  /** Every member spec: the two officers first, then the peasants. */
+  #members() {
+    return [this.config.orchestrator, this.config.briefer, ...this.config.peasants];
+  }
+
   specOf(name) {
     if (name === this.config.orchestrator.name) return this.config.orchestrator;
     if (name === this.config.briefer.name) return this.config.briefer;
@@ -291,7 +283,7 @@ export class Kingdom extends EventEmitter {
 
   #publishRoster() {
     if (this.stopping) return [];
-    const roster = [this.config.orchestrator, this.config.briefer, ...this.config.peasants].map((s) => ({
+    const roster = this.#members().map((s) => ({
       name: s.name,
       role: this.roleOf(s.name),
       title: s.title ?? '',
@@ -348,7 +340,7 @@ export class Kingdom extends EventEmitter {
   authEnvFor(name) {
     const pool = this.#loadTokens();
     if (!pool.length) return null;
-    const order = [this.config.orchestrator, this.config.briefer, ...this.config.peasants]
+    const order = this.#members()
       .findIndex((s) => s.name === name);
     const offset = Number(this.bus.get(`tokenshift:${name}`) ?? 0);
     return { CLAUDE_CODE_OAUTH_TOKEN: pool[(Math.max(order, 0) + offset) % pool.length] };
@@ -379,17 +371,6 @@ export class Kingdom extends EventEmitter {
   }
 
   /**
-   * Which members make up a domain, so a whole side of the stack can be moved
-   * onto one model in a single choice ("GPT on the frontend, Claude on the
-   * backend") instead of setting six dropdowns by hand.
-   *
-   * Overridable per kingdom with `"domains"` in the config. Cross-cutting roles
-   * — tester, reviewer, refactoring-engineer, debugger, researcher, writer — are in NEITHER by
-   * default: they follow the work rather than a layer, and sweeping them with a
-   * layer choice is how a reviewer ends up on a model nobody chose for it.
-   * A member listed in both domains simply takes whichever was applied last.
-   */
-  /**
    * The `/` menu: every skill's name, trigger and parts — never a body.
    *
    * Read off disk each call rather than cached, so a skill the sovereign has
@@ -401,6 +382,17 @@ export class Kingdom extends EventEmitter {
       .map(({ name, description, combo, source }) => ({ name, description, combo, source }));
   }
 
+  /**
+   * Which members make up a domain, so a whole side of the stack can be moved
+   * onto one model in a single choice ("GPT on the frontend, Claude on the
+   * backend") instead of setting six dropdowns by hand.
+   *
+   * Overridable per kingdom with `"domains"` in the config. Cross-cutting roles
+   * — tester, reviewer, refactoring-engineer, debugger, researcher, writer — are in NEITHER by
+   * default: they follow the work rather than a layer, and sweeping them with a
+   * layer choice is how a reviewer ends up on a model nobody chose for it.
+   * A member listed in both domains simply takes whichever was applied last.
+   */
   domains() {
     return this.config.domains ?? { frontend: ['designer', 'coder', 'frontend'],
       backend: ['backend', 'dba', 'architect', 'devops-engineer'] };
@@ -475,15 +467,6 @@ export class Kingdom extends EventEmitter {
    * tmp + rename, because rename is atomic: a reader sees the old file or the
    * new one, never half of either. vault.js:writeIndex already does this.
    */
-  /**
-   * What this project's tests are actually run with, told to the peasant.
-   *
-   * Read from the repo rather than a worktree: worktrees are created per
-   * peasant and this is built for the prompt, which is assembled before one
-   * necessarily exists. Same detector runTests uses, so what the peasant is
-   * told and what the orchestrator later runs cannot disagree.
-   */
-
   #persistConfig() {
     const tmp = `${this.configPath}.tmp`;
     writeFileSync(tmp, JSON.stringify(this.config, null, 2));
@@ -523,6 +506,23 @@ export class Kingdom extends EventEmitter {
     }
   }
 
+  /** What a member's MCP server is told about who and where it is. */
+  #mcpEnv(name, role) {
+    return {
+      KINGDOM_AGENT: name,
+      KINGDOM_ROLE: role,
+      KINGDOM_DB: this.dbPath,
+      // read_diff needs the repo, not the worktree — omitted entirely rather
+      // than passed as null, so mcp.js's own cwd-derived fallback
+      // (identityFromCwd) still works when no repo is attached.
+      ...(this.repo ? { KINGDOM_REPO: this.repo } : {}),
+      ...(this.config.vault ? {
+        KINGDOM_VAULT: this.config.vault,
+        KINGDOM_VAULT_DIR: this.config.vaultWriteDir ?? 'Kingdom',
+      } : {}),
+    };
+  }
+
   /**
    * Write the kingdom's MCP server configuration for `opencode` into workspace.
    */
@@ -535,15 +535,7 @@ export class Kingdom extends EventEmitter {
             type: 'local',
             command: [process.execPath, MCP_PATH],
             enabled: true,
-            environment: {
-              KINGDOM_AGENT: name,
-              KINGDOM_ROLE: role,
-              KINGDOM_DB: this.dbPath,
-              KINGDOM_REPO: this.repo,
-              ...(this.config.vault
-                ? { KINGDOM_VAULT: this.config.vault, KINGDOM_VAULT_DIR: this.config.vaultWriteDir ?? 'Kingdom' }
-                : {}),
-            },
+            environment: this.#mcpEnv(name, role),
           },
         },
       };
@@ -553,17 +545,6 @@ export class Kingdom extends EventEmitter {
     }
   }
 
-  /**
-   * Declare the kingdom's MCP server in agy's GLOBAL config.
-   *
-   * Measured on agy 1.1.10: a workspace `.agents/mcp_config.json` is IGNORED in
-   * headless (`-p`) mode, and `~/.gemini/config/mcp_config.json` is honoured.
-   * There is no flag and no config-dir env var, so this is the only route.
-   *
-   * Merged, never overwritten: this file belongs to the user's Antigravity
-   * install, not to the kingdom, and it may hold servers we know nothing about.
-   * Only the "kingdom" key is ours to write.
-   */
   /**
    * Keep the kingdom's own droppings out of the sovereign's repository.
    *
@@ -594,6 +575,21 @@ export class Kingdom extends EventEmitter {
     }
   }
 
+  #usesAgy() {
+    return this.#members().some((s) => (s?.cli ?? 'claude') === 'agy');
+  }
+
+  /**
+   * Declare the kingdom's MCP server in agy's GLOBAL config.
+   *
+   * Measured on agy 1.1.10: a workspace `.agents/mcp_config.json` is IGNORED in
+   * headless (`-p`) mode, and `~/.gemini/config/mcp_config.json` is honoured.
+   * There is no flag and no config-dir env var, so this is the only route.
+   *
+   * Merged, never overwritten: this file belongs to the user's Antigravity
+   * install, not to the kingdom, and it may hold servers we know nothing about.
+   * Only the "kingdom" key is ours to write.
+   */
   #installAgyMcp() {
     const path = join(homedir(), '.gemini', 'config', 'mcp_config.json');
     try {
@@ -724,6 +720,19 @@ export class Kingdom extends EventEmitter {
         + `moment anyone messages them. Do not use one unless this session's work needs it.`,
         'notice');
     }
+    // agy reads only the GLOBAL mcp_config.json, so the declaration has to be
+    // installed before any Antigravity member is spawned.
+    if (this.#usesAgy() || this.config.advisor?.cli === 'agy' || this.config.summarizer?.cli === 'agy') {
+      this.#installAgyMcp();
+      if (this.repo) this.#excludeAgentsDir();
+    }
+    // The goal lives in the config; the bus copy is what the MCP tools read,
+    // and it must be refreshed on every start or a restarted court forgets.
+    this.bus.set('goal', JSON.stringify(this.goal() ?? ''));
+    // Published before the first member spawns: every MCP server reads this to
+    // decide which tools it may offer, and one that starts before the key
+    // exists would fall back to Code and hand a Chat-mode court a summon tool.
+    this.bus.set('mode', this.mode());
     this.#publishRoster();
     this.#reloadApprovals();
     await this.#spawn(this.config.orchestrator.name);
@@ -758,20 +767,6 @@ export class Kingdom extends EventEmitter {
     }
 
     this.timer = setInterval(() => this.#tick().catch((e) => this.emit('error', e)), POLL_MS);
-    // agy reads only the GLOBAL mcp_config.json, so the declaration has to be
-    // installed before any Antigravity member is spawned.
-    const usesAgy = [this.config.orchestrator, this.config.briefer, ...this.config.peasants]
-      .some((s) => (s?.cli ?? 'claude') === 'agy')
-      || (this.config.advisor?.cli === 'agy') || (this.config.summarizer?.cli === 'agy');
-    if (usesAgy) { this.#installAgyMcp(); if (this.repo) this.#excludeAgentsDir(); }
-    // The goal lives in the config; the bus copy is what the MCP tools read,
-    // and it must be refreshed on every start or a restarted court forgets.
-    this.bus.set('goal', JSON.stringify(this.goal() ?? ''));
-    // Published before the first member spawns: every MCP server reads this to
-    // decide which tools it may offer, and one that starts before the key
-    // exists would fall back to Code and hand a Chat-mode court a summon tool.
-    this.bus.set('mode', this.mode());
-
     this.emit('started', { base: this.base, dir: kingdomDir(this.repo) });
   }
 
@@ -789,16 +784,18 @@ export class Kingdom extends EventEmitter {
    * and an unanswered proposal is by definition a recent one.
    */
   #reloadApprovals() {
-    for (const m of this.bus.approvals()) {
-      if (this.bus.get(`resolved:${m.id}`)) continue;
-      const p = readApproval(m.body);
-      if (!p) {
-        console.warn(`kingdom: approval #${m.id} from ${m.sender} is unreadable — skipped`);
-        continue;
-      }
-      this.approvals.set(m.id, { ...p, from: m.sender });
-      this.emit('approval', { id: m.id, from: m.sender, ...p });
+    for (const m of this.bus.approvals()) this.#offerApproval(m);
+  }
+
+  #offerApproval(m) {
+    if (this.bus.get(`resolved:${m.id}`)) return;
+    const p = readApproval(m.body);
+    if (!p) {
+      console.warn(`kingdom: approval #${m.id} from ${m.sender} is unreadable — skipped`);
+      return;
     }
+    this.approvals.set(m.id, { ...p, from: m.sender });
+    this.emit('approval', { id: m.id, from: m.sender, ...p });
   }
 
   async stop() {
@@ -978,19 +975,7 @@ export class Kingdom extends EventEmitter {
         mcp: {
           command: process.execPath,
           args: [MCP_PATH],
-          env: {
-            KINGDOM_AGENT: name,
-            KINGDOM_ROLE: role,
-            KINGDOM_DB: this.dbPath,
-            // read_diff needs the repo, not the worktree — omitted entirely
-            // rather than passed as null, so mcp.js's own cwd-derived fallback
-            // (identityFromCwd) still works when no repo is attached.
-            ...(this.repo ? { KINGDOM_REPO: this.repo } : {}),
-            ...(this.config.vault ? {
-              KINGDOM_VAULT: this.config.vault,
-              KINGDOM_VAULT_DIR: this.config.vaultWriteDir ?? 'Kingdom',
-            } : {}),
-          },
+          env: this.#mcpEnv(name, role),
         },
       }
     );
@@ -1126,7 +1111,8 @@ export class Kingdom extends EventEmitter {
       this.bus.set('tokens', String(tokens));
       this.bus.set(`tokens:${name}`, String(Number(this.bus.get(`tokens:${name}`) ?? 0) + spentTok));
 
-      const ctx = u.ctx ?? this.#contextTokens(u.usage);
+      // Fallback only: the agent measures its own context now (Agent#ctxTokens).
+      const ctx = u.ctx ?? inputTokens(u.usage ?? {});
       this.bus.set(`ctx:${name}:${agent.conversationId ?? 'default'}`, String(ctx));
       this.#countTurns();
       // `turns` here is SESSION-scoped (what the turn budget is measured
@@ -1340,7 +1326,7 @@ export class Kingdom extends EventEmitter {
     const cli = this.#cliOf(name);
     const quota = this.config.quotas?.[cli];
     const cap = Number(quota?.limitTokens ?? 0);
-    const names = [this.config.orchestrator, this.config.briefer, ...this.config.peasants]
+    const names = this.#members()
       .map((s) => s.name).filter((n) => this.#cliOf(n) === cli);
     return {
       cli, label: quota?.label ?? cli, cap,
@@ -1372,7 +1358,7 @@ export class Kingdom extends EventEmitter {
     if (name) this.bus.set(`spent:${name}`, '0');
     else {
       this.bus.set('spentUsd', '0');
-      for (const m of [this.config.orchestrator, this.config.briefer, ...this.config.peasants]) {
+      for (const m of this.#members()) {
         this.bus.set(`spent:${m.name}`, '0');
       }
     }
@@ -1600,9 +1586,7 @@ export class Kingdom extends EventEmitter {
     if (this.repo && this.repo !== repo) throw new Error('A different repository requires a fresh court.');
     this.base = await assertRepo(repo);
     this.repo = repo;
-    const usesAgy = [this.config.orchestrator, this.config.briefer, ...this.config.peasants]
-      .some((s) => (s?.cli ?? 'claude') === 'agy');
-    if (usesAgy) this.#excludeAgentsDir();
+    if (this.#usesAgy()) this.#excludeAgentsDir();
     this.config.repo = this.repo;
     this.#persistConfig();
     this.bus.set('base', this.base);
@@ -1707,8 +1691,6 @@ export class Kingdom extends EventEmitter {
     return out;
   }
 
-  /** The goal as a block of prompt, or '' when there is none. */
-
   #promptFor(name, role, spec, seedPrompt, orientation = null) {
     return buildPrompt({
       name, role, spec, seedPrompt, orientation,
@@ -1716,43 +1698,16 @@ export class Kingdom extends EventEmitter {
     });
   }
 
-  /** Read the optional run record without coupling the controller to one bus schema. */
+  /** The run table is the only record of a run; nothing else may stand in for it. */
   #activeRun() {
-    for (const method of ['activeRun', 'runState', 'currentRun']) {
-      if (typeof this.bus[method] !== 'function') continue;
-      try {
-        const run = this.bus[method]();
-        if (run && typeof run === 'object') return run;
-      } catch (e) { this.emit('error', e); }
-    }
-    for (const key of ['run:active', 'activeRun', 'run']) {
-      const raw = this.bus.get(key);
-      if (!raw) continue;
-      try {
-        const run = JSON.parse(raw);
-        if (run && typeof run === 'object' && !Array.isArray(run)) return run;
-      } catch { /* an unrelated legacy value is not an active run */ }
-    }
-    return null;
-  }
-
-  #saveRun(run) {
-    if (!run || typeof run !== 'object') return;
-    if (typeof this.bus.updateRun === 'function' && run.id != null) {
-      try { this.bus.updateRun(run.id, run); } catch (e) { this.emit('error', e); }
-    }
-    // This additive mirror keeps the execution loop restart-safe on older buses
-    // and is harmless when the run table is present.
-    this.bus.set('run', JSON.stringify(run));
-    if (run.id != null) this.bus.set(`run:${run.id}`, JSON.stringify(run));
+    return this.bus.currentRun();
   }
 
   #runBlock(run, operation, next, extra = {}) {
-    if (!run || !['planning', 'running', 'paused', 'verifying'].includes(run.state)) return;
+    if (!run || !['planning', 'running', 'paused', 'verifying', 'ready_for_review'].includes(run.state)) return;
     const blocker = { operation, next, at: Date.now(), ...extra };
-    const nextRun = { ...run, state: 'blocked', blocker,
-      blockers: [...(Array.isArray(run.blockers) ? run.blockers : []), blocker] };
-    this.#saveRun(nextRun);
+    // The blocker itself travels on the event; the run table records the state.
+    const nextRun = { ...this.bus.updateRun(run.id, { state: 'blocked' }), blocker, blockers: [blocker] };
     this.bus.post(CROWN, this.config.orchestrator.name,
       `RUN BLOCKED: ${operation}. Preserved work is available. Next action: ${next}`, 'notice');
     this.emit('run', nextRun);
@@ -1761,10 +1716,8 @@ export class Kingdom extends EventEmitter {
   #recordRecovery(name, operation, message, extra = {}) {
     const run = this.#activeRun();
     if (!run) return null;
-    const history = Array.isArray(run.recoveryHistory) ? run.recoveryHistory : [];
     const entry = { name, operation, message: String(message).slice(0, 600), at: Date.now(), ...extra };
-    const next = { ...run, recoveryHistory: [...history, entry] };
-    this.#saveRun(next);
+    const next = this.bus.updateRun(run.id, { recoveryHistory: [...run.recoveryHistory, entry] });
     this.emit('recovery', entry);
     // Per (name, operation), not the whole run's history: a benign, already-
     // resolved transport-retry on one worker must not count toward another
@@ -1788,8 +1741,7 @@ export class Kingdom extends EventEmitter {
    * automatic integration path; the original repository checkout is untouched.
    */
   async integrateVerified(peasant, { runId = null, revision = null } = {}) {
-    const run = this.#activeRun();
-    const id = runId ?? run?.id ?? run?.runId;
+    const id = runId ?? this.#activeRun()?.id;
     if (!id || !this.repo) throw new Error('No active run or repository is attached.');
     const evidence = this.verification(peasant) ?? {};
     const expected = revision ?? evidence.revision;
@@ -1801,8 +1753,7 @@ export class Kingdom extends EventEmitter {
     if (prior) {
       try { return JSON.parse(prior); } catch { return { runId: id, peasant, revision: expected }; }
     }
-    const path = run?.worktree ?? runWorktreePath(this.repo, id);
-    if (!existsSync(path)) await createRunWorktree(this.repo, id, run?.base ?? this.base);
+    if (!existsSync(runWorktreePath(this.repo, id))) await createRunWorktree(this.repo, id, this.base);
     const result = await mergeIntoRun(this.repo, peasant, id, { expectedRevision: expected });
     const integrated = { runId: id, peasant, sourceRevision: expected,
       revision: result.revision, branch: result.branch, at: Date.now() };
@@ -1815,14 +1766,12 @@ export class Kingdom extends EventEmitter {
   /** Stop only the workers owned by an active run and leave unrelated court members alone. */
   stopRun(runId = null, why = 'stopped by the sovereign') {
     const run = this.#activeRun();
-    const id = runId ?? run?.id ?? run?.runId;
-    if (!run || (runId != null && String(run.id ?? run.runId) !== String(runId))) {
+    if (!run || (runId != null && String(run.id) !== String(runId))) {
       throw new Error('No matching active run.');
     }
-    const names = new Set([...(run.workers ?? run.workerNames ?? [])]);
-    for (const t of this.bus.tasks()) {
-      if ((run.taskIds ?? []).map(Number).includes(Number(t.id)) && t.owner) names.add(t.owner);
-    }
+    const taskIds = new Set(run.taskIds.map(Number));
+    const names = new Set(this.bus.tasks()
+      .filter((t) => t.owner && taskIds.has(Number(t.id))).map((t) => t.owner));
     for (const name of names) {
       // Route through sleep(), not a raw agents.delete: it also drops the
       // name from `summoned` (or the delivery loop respawns it on the next
@@ -1838,8 +1787,7 @@ export class Kingdom extends EventEmitter {
       // on the live-agent side when there is none.
       if (this.agents.has(name) || this.summoned.has(name)) this.sleep(name, why);
     }
-    const stopped = { ...run, state: 'cancelled', cancelledAt: Date.now(), cancelReason: why };
-    this.#saveRun(stopped);
+    const stopped = this.bus.stopRun(run.id);
     this.#publishRoster();
     this.emit('run', stopped);
     return stopped;
@@ -1868,7 +1816,7 @@ export class Kingdom extends EventEmitter {
   }
 
   pauseRun(runId = null, why = '') {
-    const run = this.bus.run(runId ?? this.bus.currentRun()?.id);
+    const run = this.bus.run(runId);
     if (!run) throw new Error('No active run.');
     this.pause(why);
     const current = this.bus.run(run.id);
@@ -1877,10 +1825,11 @@ export class Kingdom extends EventEmitter {
   }
 
   async resumeRun(runId = null) {
-    const run = this.bus.run(runId ?? this.bus.currentRun()?.id);
+    const run = this.bus.run(runId);
     if (!run) throw new Error('No active run.');
     if (this.paused) this.resume();
-    else this.bus.resumeRun(run.id);
+    // Pausing the court leaves a blocked run blocked; Resume still means go.
+    if (['paused', 'blocked'].includes(this.bus.run(run.id).state)) this.bus.resumeRun(run.id);
     await this.#reconcileRun();
     const current = this.bus.run(run.id);
     this.emit('run', current);
@@ -1888,7 +1837,7 @@ export class Kingdom extends EventEmitter {
   }
 
   async applyRun(runId = null) {
-    const run = this.bus.run(runId ?? this.bus.currentRun()?.id);
+    const run = this.bus.run(runId);
     if (!run) throw new Error('No active run.');
     if (!this.repo) throw new Error('No repository is attached.');
     if (run.state !== 'ready_for_review' || !run.finalApproval) {
@@ -1910,14 +1859,8 @@ export class Kingdom extends EventEmitter {
   async #reconcileRun() {
     const run = this.#activeRun();
     if (!run || !this.repo || !['planning', 'running', 'paused', 'verifying'].includes(run.state)) return;
-    const id = run.id ?? run.runId;
-    if (!id) return;
     try {
-      const path = await createRunWorktree(this.repo, id, run.base ?? this.base);
-      const current = await revisionOf(path);
-      const next = { ...run, worktree: path, base: run.base ?? this.base, head: current };
-      this.#saveRun(next);
-      this.emit('runReconciled', next);
+      await createRunWorktree(this.repo, run.id, this.base);
     } catch (e) {
       this.#runBlock(run, 'startup reconciliation',
         `repair the run branch/worktree, then resume after refreshing review: ${e.message}`);
@@ -2138,6 +2081,24 @@ export class Kingdom extends EventEmitter {
   }
 
   /**
+   * The next unread requests of one kind, as [message, parsed body] pairs.
+   *
+   * Requests addressed to nobody (milestone, argue, control) are never
+   * delivered, so each kind keeps its own cursor over the log. Advanced ONCE,
+   * after the read, not per row — that was up to 50 writes per sweep to move
+   * one integer. Safe because every consumer is idempotent: re-scanning after
+   * a crash mid-sweep costs a re-read and nothing else.
+   */
+  #sweep(kind) {
+    const key = `${kind}:cursor`;
+    const rows = this.bus.history({ since: Number(this.bus.get(key) ?? 0), limit: 50 });
+    if (rows.length) this.bus.set(key, String(rows[rows.length - 1].id));
+    return rows.filter((m) => m.kind === kind).flatMap((m) => {
+      try { return [[m, JSON.parse(m.body)]]; } catch { return []; }
+    });
+  }
+
+  /**
    * Apply milestone claims the orchestrator has posted.
    *
    * They are addressed to "orchestrator", which is nobody's inbox — no member
@@ -2146,17 +2107,7 @@ export class Kingdom extends EventEmitter {
    * kingdom.config.json; a second writer would lose updates.
    */
   #applyMilestones() {
-    const seen = Number(this.bus.get('milestone:cursor') ?? 0);
-    const rows = this.bus.history({ since: seen, limit: 50 });
-    // Advanced ONCE, after the sweep, not per row before the kind check —
-    // that was up to 50 writes per sweep, twice per tick, 3.3 ticks a second,
-    // to move one integer. Safe because the sweep is idempotent: setMilestone
-    // is, so re-scanning after a crash mid-sweep costs a re-read and nothing else.
-    if (rows.length) this.bus.set('milestone:cursor', String(rows[rows.length - 1].id));
-    for (const m of rows) {
-      if (m.kind !== 'milestone') continue;
-      let claim;
-      try { claim = JSON.parse(m.body); } catch { continue; }
+    for (const [m, claim] of this.#sweep('milestone')) {
       const g = this.setMilestone(claim.index, true);
       const hit = g?.milestones?.[claim.index];
       if (!hit) continue;
@@ -2194,13 +2145,7 @@ export class Kingdom extends EventEmitter {
    * cursor, is what holds the backlog.
    */
   #applyArguments() {
-    const seen = Number(this.bus.get('argue:cursor') ?? 0);
-    const rows = this.bus.history({ since: seen, limit: 50 });
-    if (rows.length) this.bus.set('argue:cursor', String(rows[rows.length - 1].id));
-    for (const m of rows) {
-      if (m.kind !== 'argue') continue;
-      let req;
-      try { req = JSON.parse(m.body); } catch { continue; }
+    for (const [m, req] of this.#sweep('argue')) {
       const question = String(req?.question ?? '').trim();
       if (!question) continue;
       this.#argueQueue.push({ question, asker: m.sender });
@@ -2277,13 +2222,7 @@ export class Kingdom extends EventEmitter {
    * told what it was, rather than left wondering whether the call landed.
    */
   #applyControl() {
-    const seen = Number(this.bus.get('control:cursor') ?? 0);
-    const rows = this.bus.history({ since: seen, limit: 50 });
-    if (rows.length) this.bus.set('control:cursor', String(rows[rows.length - 1].id));
-    for (const m of rows) {
-      if (m.kind !== 'control') continue;
-      let req;
-      try { req = JSON.parse(m.body); } catch { continue; }
+    for (const [m, req] of this.#sweep('control')) {
       // CROWN for the same reason the argument verdict uses it: every lever in
       // src/mcp/control.js is roles: ['orchestrator'], so m.sender is the
       // orchestrator, and role-as-sender to name-as-recipient is self-addressed
@@ -2350,16 +2289,7 @@ export class Kingdom extends EventEmitter {
     // Once, after the sweep — see #applyMilestones. Idempotent here too: a
     // re-scan is guarded by `resolved:${m.id}` and by approvals being a Map.
     if (rows.length) this.bus.set('approvals:cursor', String(rows[rows.length - 1].id));
-    for (const m of rows) {
-      if (this.bus.get(`resolved:${m.id}`)) continue;
-      const payload = readApproval(m.body);
-      if (!payload) {
-        console.warn(`kingdom: approval #${m.id} from ${m.sender} is unreadable — skipped`);
-        continue;
-      }
-      this.approvals.set(m.id, { ...payload, from: m.sender });
-      this.emit('approval', { id: m.id, from: m.sender, ...payload });
-    }
+    for (const m of rows) this.#offerApproval(m);
   }
 
   /**
@@ -2528,10 +2458,8 @@ export class Kingdom extends EventEmitter {
     this.bus.set(`verification:${peasant}`, JSON.stringify(evidence));
     this.bus.set(`verification:${peasant}:${msg.id}`, JSON.stringify(evidence));
     const activeRun = this.#activeRun();
-    if (activeRun && typeof this.bus.updateRun === 'function') {
-      const evidenceRows = Array.isArray(activeRun.verificationEvidence)
-        ? activeRun.verificationEvidence : [];
-      const verificationEvidence = [...evidenceRows, { peasant, ...evidence }];
+    if (activeRun) {
+      const verificationEvidence = [...activeRun.verificationEvidence, { peasant, ...evidence }];
       // A run already blocked on something else — or in any state this
       // submission cannot legally leave — must not be silently cleared back
       // to verifying by an unrelated, later peasant's success. transitionRun's
@@ -2539,7 +2467,7 @@ export class Kingdom extends EventEmitter {
       // disallowed move still records the evidence, just without forcing
       // state. An invalid submission's own 'blocked' transition is #runBlock's
       // job below, which the caller already guards by run state.
-      if (valid && typeof this.bus.transitionRun === 'function') {
+      if (valid) {
         try { this.bus.transitionRun(activeRun.id, 'verifying', { verificationEvidence }); }
         catch { this.bus.updateRun(activeRun.id, { verificationEvidence }); }
       } else {
@@ -2579,7 +2507,10 @@ export class Kingdom extends EventEmitter {
       ? `then request_merge or send_back.`
       : `The work stays on its branch — nothing merges in this mode. Say whether it is `
         + `good enough and what is still open.`;
-    if (workers <= useBriefer) {
+    // An idle-slept briefer has no live process to hand the digest to; the
+    // orchestrator gets the plain report rather than nothing.
+    const briefer = this.agents.get(this.config.briefer.name);
+    if (workers <= useBriefer || !briefer) {
       this.bus.post(CROWN, this.config.orchestrator.name,
         `"${peasant}" submitted work for verification.\n${msg.body}\n\n${verdict}` +
         `\nREVISION: ${currentRevision ?? '(unknown)'}\n${tests.output.slice(-1200)}\n\n` +
@@ -2589,13 +2520,11 @@ export class Kingdom extends EventEmitter {
     }
 
     const truncated = diff.length > DIGEST_DIFF_LIMIT;
-    const briefer = this.agents.get(this.config.briefer.name);
-    briefer?.send(
+    briefer.send(
       `[ORCHESTRATOR] "${peasant}" submitted work for verification. Digest this for the orchestrator, then ` +
       `call brief_orchestrator with your digest.\n\n` +
       `THEIR SUMMARY:\n${msg.body}\n\n` +
-      `TESTS: ${tests.ran ? (valid ? 'PASSED' : 'FAILED OR STALE') : 'NONE FOUND (treat as unverified)'}\n` +
-      `REVISION: ${currentRevision ?? '(unknown)'}\n` +
+      `${verdict}\nREVISION: ${currentRevision ?? '(unknown)'}\n` +
       `${tests.output}\n\n` +
       `DIFFSTAT:\n${stat}\n\n` +
       `DIFF${truncated ? ' (truncated)' : ''}:\n${diff.slice(0, DIGEST_DIFF_LIMIT)}`
@@ -2615,14 +2544,14 @@ export class Kingdom extends EventEmitter {
    * and had no recycle at all. Whoever talks most needs this most.
    */
   async recycleAgent(name) {
-    const briefer = this.agents.get(name);
-    if (!briefer || briefer.recycling) return;
-    briefer.recycling = true;
+    const agent = this.agents.get(name);
+    if (!agent || agent.recycling) return;
+    agent.recycling = true;
 
-    const note = await this.#captureHandover(briefer);
-    const convId = briefer.conversationId ?? this.#activeConv(name);
+    const note = await this.#captureHandover(agent);
+    const convId = agent.conversationId ?? this.#activeConv(name);
 
-    briefer.stop();
+    agent.stop();
     this.agents.delete(name);
     // Scoped to the conversation that was actually recycled — a member with
     // several conversations must not have the OTHER ones silently reset too.
@@ -2785,18 +2714,6 @@ export class Kingdom extends EventEmitter {
         done(); // a dead transport has no handover, but must not block its successor
       }
     });
-  }
-
-  /**
-   * Fallback only — the agent measures its own context now (Agent#ctxTokens).
-   * Kept for turn_end events that predate that, e.g. replayed from the bus.
-   */
-  #contextTokens(usage = {}) {
-    // Shared with ctx.js via usage.js. This logic used to live in both files
-    // and they drifted: ctx.js kept counting Anthropic's alongside-cache
-    // against an input_tokens-only denominator and reported replay at 107.6%
-    // of input, with negative "genuinely new" tokens.
-    return inputTokens(usage);
   }
 
   /**
@@ -3117,10 +3034,11 @@ export class Kingdom extends EventEmitter {
     // fresh tab) while the court is paused must see WHY, not just that it
     // is — see the sidebar's pause banner and its raise-turn-budget action.
     this.bus.set('pausedWhy', why ?? '');
+    // Only a running run pauses: the state table allows nothing else, and a
+    // planning run moved to paused would resume straight into running with
+    // its plan never approved.
     const run = this.#activeRun();
-    if (run && ['planning', 'running', 'verifying'].includes(run.state)) {
-      this.#saveRun({ ...run, state: 'paused', pausedAt: Date.now(), pauseReason: why });
-    }
+    if (run?.state === 'running') this.bus.pauseRun(run.id);
     this.emit('paused', { paused: true, why });
     this.bus.post(CROWN, this.config.orchestrator.name,
       `The court is paused${why ? `: ${why}` : ''}. Nobody will be given a new turn until resume_court.`,
@@ -3133,7 +3051,7 @@ export class Kingdom extends EventEmitter {
     this.paused = false;
     this.bus.set('paused', '0');
     const run = this.#activeRun();
-    if (run?.state === 'paused') this.#saveRun({ ...run, state: 'running', resumedAt: Date.now() });
+    if (run?.state === 'paused') this.bus.resumeRun(run.id);
     this.emit('paused', { paused: false });
     this.bus.post(CROWN, this.config.orchestrator.name, 'The court has resumed.', 'notice');
     return { changed: true };
@@ -3331,7 +3249,6 @@ export class Kingdom extends EventEmitter {
         + 'Your message went through unchanged.');
     }
 
-    const applied = [];
     const final = rewritten ?? text;
 
     // The advisor switches the court without asking, in both directions. That
@@ -3345,9 +3262,7 @@ export class Kingdom extends EventEmitter {
     // carrying the previous shape, which is what the toast and its undo need.
     if (advice?.mode) this.queueMode(advice.mode, { why: text.slice(0, 120), by: 'advisor' });
 
-    this.emit('advising', {
-      stage: 'done', text, rewritten: rewritten ?? null, models: applied,
-    });
+    this.emit('advising', { stage: 'done', text, rewritten });
 
     // The original is recorded even when it was rewritten: the court acts on
     // the brief, but a successor reading the bus must be able to see what the
@@ -3359,7 +3274,7 @@ export class Kingdom extends EventEmitter {
     } else {
       this.bus.post('sovereign', this.config.orchestrator.name, final, 'assignment', convId, attachments);
     }
-    return { text: final, rewritten: rewritten ?? null, models: applied, campaign };
+    return { text: final, rewritten, campaign };
   }
 
   /**
@@ -3402,11 +3317,6 @@ export class Kingdom extends EventEmitter {
   }
 
   /** Ask the advisor which model each member should run for THIS task. */
-  /** Members that have handed their model choice to the advisor. */
-  #autoMembers() {
-    return this.config.peasants.filter((p) => p.auto === true);
-  }
-
   #autoModel(a, goal, opts) {
     const allowAll = [
       ...(this.models().codex ?? []).map((m) => `codex/${m}`),
@@ -3416,7 +3326,7 @@ export class Kingdom extends EventEmitter {
     // Only members set to Auto. A member the sovereign pinned to a model chose
     // it deliberately, and quietly moving it would make the dropdown a lie.
     // No Auto members means no advisor call at all — the pick would be discarded.
-    const members = this.#autoMembers();
+    const members = this.config.peasants.filter((p) => p.auto === true);
     if (!members.length) return Promise.resolve({});
     // Only the roles the advisor may move are relevant. outputEvidence ignores
     // pre-snapshot history instead of guessing which setting produced it.
@@ -3480,16 +3390,14 @@ export class Kingdom extends EventEmitter {
     // A peasant has no multi-conversation UI, so its pane always stays
     // 'default'. Attachments still travel with that durable assignment.
     this.bus.post('sovereign', name, text, 'assignment', 'default', attachments);
-    if (name !== this.config.orchestrator.name) {
-      // Framing matters: an earlier version phrased this as a plain report and
-      // the orchestrator obediently carried out the peasant's instruction itself.
-      this.bus.post(CROWN, this.config.orchestrator.name,
-        `AWARENESS ONLY — THIS IS NOT AN ORDER TO YOU. TAKE NO ACTION.\n` +
-        `The sovereign has spoken directly to "${name}". What they said to ${name} ` +
-        `was: "${text}"\nYou are told only so you are not surprised by what ` +
-        `${name} does next. Do not perform this task yourself and do not reply.`,
-        'notice'); // FYI: rides along with real traffic instead of costing its own turn
-    }
+    // Framing matters: an earlier version phrased this as a plain report and
+    // the orchestrator obediently carried out the peasant's instruction itself.
+    this.bus.post(CROWN, this.config.orchestrator.name,
+      `AWARENESS ONLY — THIS IS NOT AN ORDER TO YOU. TAKE NO ACTION.\n` +
+      `The sovereign has spoken directly to "${name}". What they said to ${name} ` +
+      `was: "${text}"\nYou are told only so you are not surprised by what ` +
+      `${name} does next. Do not perform this task yourself and do not reply.`,
+      'notice'); // FYI: rides along with real traffic instead of costing its own turn
   }
 
   async approve(id) {
@@ -3631,7 +3539,7 @@ export class Kingdom extends EventEmitter {
   }
 
   requestSummon(names, reason = '', from = 'sovereign') {
-    const roster = [this.config.orchestrator, this.config.briefer, ...this.config.peasants];
+    const roster = this.#members();
     const error = badSummon({ names, reason }, { roster });
     if (error) return { ok: false, error };
     this.bus.post(from, null, JSON.stringify({ kind: 'summon', names, reason: String(reason) }), 'approval');
@@ -3707,7 +3615,6 @@ export class Kingdom extends EventEmitter {
     this.sleep(peasant);
     await removeWorktree(this.repo, peasant).catch(() => {});
     this.bus.set(`session:${peasant}:${this.#activeConv(peasant)}`, ''); // its next task starts clean
-    this.#publishRoster();
     return out;
   }
 }

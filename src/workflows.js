@@ -2,7 +2,7 @@
 // (trigger + nodes with a `next` pointer), stored as one file per workflow
 // and run by a tiny interpreter. No eval, no shell — the node types below
 // are the entire surface area, on purpose.
-import { readdir, readFile, writeFile, unlink, mkdir, rm } from 'node:fs/promises';
+import { readdir, readFile, writeFile, unlink, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 
 const MAX_STEPS = 200; // a condition node can cycle; this is the loop guard.

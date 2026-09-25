@@ -576,6 +576,7 @@ try {
     await k.start();
 
     const run = await k.createRun({ objective: 'prove a paused run surfaces a broken worktree' });
+    await k.approveRun(run.id);   // only a running run can pause
     k.pauseRun(run.id);
     a.equal(k.bus.run(run.id).state, 'paused', 'sanity: the run is paused before the restart');
 
@@ -847,6 +848,104 @@ try {
       + 'block the whole run — neither worker actually failed twice');
 
     console.log('  a benign retry on one worker cannot combine with an unrelated single failure to block the run');
+  }
+
+  // A finished run stays finished. #saveRun used to mirror every run into a
+  // `run` bus key and #activeRun fell back to it whenever bus.currentRun()
+  // was null — which is exactly when the run has ended. The stale mirror
+  // still said `running`, so the next worker error recorded recovery against
+  // it and wrote that state straight back through updateRun: a cancelled run
+  // came back to life and createRun refused every new one.
+  {
+    if (k.bus.currentRun()) await k.stopRun(undefined, 'test cleanup: clear the previous section\'s run');
+    // The same bus calls #onDone and applyRun make: the run moves on without
+    // the controller ever rewriting its own copy.
+    const run = await k.createRun({ objective: 'prove a completed run stays completed' });
+    k.bus.approveRun(run.id);
+    k.bus.transitionRun(run.id, 'verifying');
+    k.bus.transitionRun(run.id, 'ready_for_review');
+    k.bus.approveRun(run.id);
+    k.bus.applyRun(run.id);
+    a.equal(k.bus.run(run.id).state, 'completed', 'sanity: the run is completed');
+
+    await k.wake('coder');
+    k.lastBatch.set('coder', { from: 1, to: 999 });
+    k.agents.get('coder').emit('error', 'turn exceeded the watchdog');
+    await wait(200);
+
+    a.equal(k.bus.run(run.id).state, 'completed', 'a worker error after the run ended must not revive it');
+    a.equal(k.bus.currentRun(), null, 'no run is current once the only one has completed');
+    console.log('  a worker error after a run ends cannot bring the run back');
+  }
+
+  // Pausing the court used to force the active run to `paused` from any of
+  // planning/running/verifying, and resume forced `paused` to `running`. A
+  // run still awaiting plan approval therefore came back from a pause
+  // running an unapproved plan.
+  {
+    if (k.bus.currentRun()) await k.stopRun(undefined, 'test cleanup');
+    const run = await k.createRun({ objective: 'prove pause cannot approve a plan' });
+    k.pause('a beat');
+    a.equal(k.bus.run(run.id).state, 'planning', 'pausing the court leaves a planning run in planning');
+    k.resume();
+    a.equal(k.bus.run(run.id).state, 'planning', 'resuming must not start a plan nobody approved');
+
+    await k.approveRun(run.id);
+    k.pause('a beat');
+    a.equal(k.bus.run(run.id).state, 'paused', 'a running run pauses with the court');
+    k.resume();
+    a.equal(k.bus.run(run.id).state, 'running', 'and resumes with it');
+    k.bus.transitionRun(run.id, 'blocked');
+    k.pause('a beat');
+    await k.resumeRun(run.id);
+    a.equal(k.paused, false, 'Resume lifts the court pause');
+    a.equal(k.bus.run(run.id).state, 'running', 'and the same click moves a blocked run on');
+    k.stopRun(run.id, 'test cleanup');
+    console.log('  pause and resume cannot carry a planning run past its approval');
+  }
+
+  // applyRun refuses when the source moved since the baseline and says it
+  // blocks the run — but #runBlock ignored ready_for_review runs, which is
+  // the only state applyRun accepts, so the blocker never landed.
+  {
+    const run = await k.createRun({ objective: 'prove source drift blocks apply' });
+    k.bus.approveRun(run.id);
+    k.bus.transitionRun(run.id, 'verifying');
+    k.bus.transitionRun(run.id, 'ready_for_review');
+    k.bus.approveRun(run.id);
+    writeFileSync(join(repo, 'drift.txt'), 'moved on\n');
+    execFileSync('git', ['add', 'drift.txt'], { cwd: repo });
+    execFileSync('git', ['commit', '-qm', 'drift'], { cwd: repo });
+
+    await a.rejects(() => k.applyRun(run.id), /Source changed/);
+    a.equal(k.bus.run(run.id).state, 'blocked', 'a refused apply leaves the run visibly blocked');
+    k.stopRun(run.id, 'test cleanup');
+    console.log('  an apply refused for source drift blocks the run, as it says it does');
+  }
+
+  // With enough peasants awake, #onDone hands the report to the briefer to
+  // digest — through `agents.get(briefer)?.send`. An idle-slept briefer has
+  // no live agent, so the report went nowhere and the orchestrator was never
+  // told the work existed.
+  {
+    const wt = await createWorktree(repo, 'carol', k.base);
+    writeFileSync(join(wt, 'carol.txt'), 'finished\n');
+    const saved = k.config.brieferDigestAbove;
+    k.config.brieferDigestAbove = -1;   // any number of workers takes the digest path
+    const briefer = k.agents.get(k.config.briefer.name);
+    briefer?.stop();
+    k.agents.delete(k.config.briefer.name);
+
+    const id = k.bus.post('carol', k.config.orchestrator.name, 'carol: finished work', 'done');
+    await until(() => Boolean(k.bus.get('tests:carol')));
+    await wait(100);
+    a.ok(k.bus.history({ limit: 400 }).some((m) => m.id > id && m.kind === 'done-report'
+      && m.recipient === k.config.orchestrator.name && /carol/.test(m.body)),
+    'with the briefer asleep the orchestrator must still get the done-report');
+
+    k.config.brieferDigestAbove = saved;
+    await removeWorktree(repo, 'carol');
+    console.log('  a done submission reaches the orchestrator even when the briefer is asleep');
   }
 
   console.log('t-control.js OK — a live court follows the repo, and the court can steer itself');

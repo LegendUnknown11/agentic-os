@@ -831,5 +831,4 @@ export function mountThread(root, options = {}) {
   };
 }
 
-export const renderThread = (root, state = storeState, options = {}) => mountThread(root, { ...options, state });
 export { entriesFor };

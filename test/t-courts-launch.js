@@ -96,4 +96,24 @@ a.equal(courtPortOf('http://127.0.0.1:7777/#/settings', 7777), 7777, 'the defaul
 a.equal(courtPortOf('', 7777), 7777, 'a window with nothing loaded yet falls back to the default port');
 a.equal(courtPortOf('https://example.com:8443/', 7777), 7777, 'a non-court URL never names a court port');
 
+// --- electron/main.js only listens for app events Electron has ------------
+// `app.on('browser-window-closed', ...)` was the handler meant to quit once
+// only the floating dog was left — and Electron has no such event, so it never
+// ran and the app could outlive its last court window as an unclosable pet.
+// Electron cannot launch in every environment this suite runs in, so the
+// check is against the installed typings rather than a live app.
+{
+  const { readFileSync, existsSync } = await import('node:fs');
+  const main = readFileSync(new URL('../electron/main.js', import.meta.url), 'utf8');
+  const typings = new URL('../node_modules/electron/electron.d.ts', import.meta.url);
+  if (existsSync(typings)) {
+    const dts = readFileSync(typings, 'utf8');
+    const used = [...main.matchAll(/\bapp\.(?:on|once)\('([\w-]+)'/g)].map((m) => m[1]);
+    a.ok(used.length, 'sanity: main.js listens for app events');
+    a.deepEqual(used.filter((ev) => !dts.includes(`on(event: '${ev}'`)), [],
+      'every app event electron/main.js listens for must exist in Electron');
+    console.log('  electron/main.js listens only for app events Electron actually emits');
+  }
+}
+
 console.log('t-courts-launch.js OK — a relaunch focuses a live court by repo (or the most recent one), and only starts a fresh daemon when nothing matches');

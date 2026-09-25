@@ -177,6 +177,54 @@ by path. This is steps 2 and 4's machinery only; steps 3-4's actual
 demonstration/audit/backlog/review work against Habitable itself is untouched
 and still gated on backlog approval, per the section below.
 
+## Current state (cleanup pass, 2026-09-24)
+
+Branch `claude/peaceful-bohr-c3dfn8`, from `main` at `a1b6d97`. A code cleanup
+with bug-hunting: `src/`, `ui/` and `electron/` lost a net 363 lines (491 added,
+854 removed), almost all of it duplicated sequences folded into one helper each
+(agent.js's three turn runners, bus.js's five migrations, worktree.js's merges
+and conflict checks, daemon.js's JSON responses and run actions, the views'
+`apiError`/`requestToken`) plus dead code and orphaned docblocks. Bugs fixed,
+each with a test that failed first:
+
+- A completed or cancelled run came back to life on the next worker error:
+  `#activeRun` fell back to a stale mirrored `run` bus key. Runs now live in the
+  run table only (`t-control.js`).
+- Pausing the court moved a `planning` run to `paused` and resume moved it to
+  `running`, skipping plan approval; only `running ⇄ paused` moves now.
+- `applyRun`'s source-drift refusal never blocked the run, because `#runBlock`
+  ignored `ready_for_review`.
+- A done-report was lost when the briefer was idle-slept.
+- `prune()` deleted a retained approval's `resolved:` flag, so a restart
+  re-offered long-settled cards (`node src/bus.js`).
+- The advisor passed agy its prompt in the pre-1.1.11 shape and got nothing back
+  (`t-agy.js`).
+- `readNote` served a cached note after it changed on disk (`t-vault.js`).
+- `read_diff` was never masked: `MASKABLE` named three tools that do not exist
+  (`t-efficiency.js`).
+- `electron/main.js` listened for `browser-window-closed`, which Electron does
+  not emit, so the app could outlive its last court window as a lone pet.
+  Guarded statically in `t-courts-launch.js`. **Not exercised in Electron.**
+- The overview showed "Recovery underway" for any run that had ever retried,
+  completed ones included (`node ui/run.js`).
+
+Evidence: `npm test` ran 89 suites, 88 passed. `t-theme-geometry.js` ran in
+real Chromium. `t-electron.js` failed because this Linux container has no
+display, and under `xvfb-run` it hung. That was the same result as the baseline
+before any change, so no Electron evidence is held. Source and HTTP-level
+evidence only.
+
+Left open, noted rather than changed:
+
+- `agent.js` treats an opencode `step_finish` as a turn end. If opencode emits
+  one per model step, turns are overcounted. This needs a real opencode stream
+  to confirm.
+- A bus-triggered workflow ignores only its own output, so two workflows that
+  match each other's output ping-pong every 5s tick. Whether to block chaining
+  is a product decision.
+- A run's blocker reason travels only on the live `run` event. It is not a run
+  table column, so a reload shows a blocked run with no reason.
+
 ## Evidence
 
 The combined source gate passed on merged `main`: `npm.cmd test` completed

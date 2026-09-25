@@ -283,8 +283,6 @@ export function setPlayer(patch) {
   announce();
 }
 
-export const seek = (s) => { if (Number.isFinite(audio.duration)) audio.currentTime = s; };
-
 export const fmt = (s) => {
   if (!Number.isFinite(s) || s < 0) return '0:00';
   return `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;

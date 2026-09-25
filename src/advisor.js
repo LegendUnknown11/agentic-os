@@ -73,7 +73,8 @@ export function ask(spec, prompt, {
       // confirmed against the real CLI's own `run --help`.
       ...(spec.effort ? ['--variant', spec.effort] : [])]
     : cli === 'agy'
-    ? ['--print', '--output-format', 'stream-json',
+    // The prompt is --print's VALUE since agy 1.1.11; see agent.js#runAgyTurn.
+    ? ['--print', prompt, '--output-format', 'stream-json',
       ...(spec.model ? ['--model', spec.model] : []),
       ...(spec.effort && AGY_EFFORTS.has(spec.effort) ? ['--effort', spec.effort] : []),
       // Measured: agy reaches for a shell command even on a pure text task, and
@@ -82,8 +83,7 @@ export function ask(spec, prompt, {
       // turn on quietly for a job that should touch nothing. Opt in per
       // kingdom with `"skipPermissions": true`, and know what it means.
       ...(spec.skipPermissions ? ['--dangerously-skip-permissions'] : []),
-      '--print-timeout', '5m',
-      prompt]
+      '--print-timeout', '5m']
     : cli === 'codex'
     ? ['exec', '--json', '-c', 'sandbox_mode="read-only"', '-c', 'approval_policy="never"',
       // The advisor only reasons about text it was handed and cannot write

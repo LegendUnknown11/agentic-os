@@ -1,11 +1,7 @@
-import {
-  h, page, section, empty, note, button, membersOf, displayName, modeAllows,
-  get, post, subscribe, setView, editing, tone,
-} from './util.js';
+import { h, page, section, empty, note, button, membersOf, displayName, modeAllows, get, post, subscribe, setView, editing, tone, apiError, requestToken } from './util.js';
 import { renderRunReview } from '../run.js';
 
 const rows = (value, key = 'rows') => Array.isArray(value) ? value : value?.[key] ?? [];
-const apiError = (result, fallback) => result?.ok === false ? result.error ?? fallback : null;
 const refresh = async (state, key, url) => {
   let result;
   try { result = await get(url); }
@@ -16,7 +12,6 @@ const refresh = async (state, key, url) => {
   } else state[`${key}Error`] = apiError(result, `Could not load ${key}.`);
   return result;
 };
-const requestToken = (state, key) => { state[key] = (state[key] ?? 0) + 1; return state[key]; };
 const rerender = (state, root, render) => { if (root.isConnected) render(state, root); };
 const refreshChanges = (state, options = {}) => options.refreshLists
   ? options.refreshLists()

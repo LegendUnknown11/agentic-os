@@ -24,7 +24,7 @@ const rosterEntry = (m = {}, prior = {}) => ({
   state: memberState({ ...prior, ...m }),
 });
 
-export const state = {
+const initialState = () => ({
   repo: null,
   base: null,
   members: new Map(),
@@ -67,7 +67,9 @@ export const state = {
   changesError: null,
   metricsError: null,
   workflowsError: null,
-};
+});
+
+export const state = initialState();
 
 const subs = new Set();
 let frame = 0;
@@ -288,12 +290,7 @@ export function reduce(_state, d = {}) {
       state.conversations = state.conversations.filter((x) => String(x.id) !== String(d.id));
       break;
     case 'goal': state.goal = d.text ? d : null; break;
-    case 'run': state.run = d.run ?? d.data ?? d; break;
-    case 'runUpdated': state.run = d.run ?? d.data ?? d; break;
-    case 'runState': state.run = d.run ?? d.data ?? { ...state.run, ...d }; break;
-    case 'runProgress': state.run = { ...state.run, progress: [...(state.run?.progress ?? []), d.progress ?? d] }; break;
-    case 'runReview': state.run = { ...state.run, review: d.review ?? d.data ?? d }; break;
-    case 'runEvidence': state.run = { ...state.run, evidence: d.evidence ?? d.data ?? d }; break;
+    case 'run': state.run = d.run ?? d; break;
     case 'mode': state.mode = d.mode ?? state.mode; break;
     case 'spend': state.spend = { ...state.spend, ...d }; break;
     case 'budget':
@@ -376,15 +373,4 @@ export const money = (n) => {
   return `$${Math.abs(value) >= 0.01 ? value.toFixed(2) : value.toFixed(3)}`;
 };
 
-export const resetForTest = () => {
-  for (const key of Object.keys(state)) {
-    if (state[key] instanceof Map) state[key].clear();
-    else if (state[key] instanceof Set) state[key].clear();
-  }
-  Object.assign(state, {
-    repo: null, base: null, run: null, goal: null, mode: 'code', models: {}, efforts: {}, skills: [],
-    summarizer: {}, advisor: {}, spend: {}, assetNotices: {}, assetUploads: {}, notices: [], lastEvent: null, conn: 'connecting', view: { page: 'home' }, cursor: 0,
-    messageCursor: 0, ready: false, rosterReady: false, doctorLoading: false, messages: [], approvals: [], conversations: [], tasks: [], changes: [],
-    notesDetail: null, notesError: null, memoryLoading: false, memoryError: null, activityError: null, tasksLoading: false, tasksError: null, changesError: null, metricsError: null, workflowsError: null,
-  });
-};
+export const resetForTest = () => { Object.assign(state, initialState(), { prefs: state.prefs }); };
