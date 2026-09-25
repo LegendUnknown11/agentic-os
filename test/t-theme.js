@@ -115,6 +115,7 @@ a.match(css, /--grain:\s*radial-gradient\(rgb\(var\(--text-rgb\) \/ \.05\)/, 'th
 a.match(css, /--wash:\s*radial-gradient\(.*rgb\(var\(--accent-rgb\) \/ \.09\).*radial-gradient\(.*rgb\(var\(--surface-rgb\) \/ \.95\)/, 'the depth wash must be a token built from channel colours, not a literal');
 a.match(css, /body \{[^}]*background:\s*var\(--wash\), var\(--bg\) var\(--grain\);/, 'the page ground must carry both the depth wash and the grain');
 a.doesNotMatch(rules, /linear-gradient/, 'no rule may invent a gradient of its own');
+a.match(css, /\.task-manage-controls select \{ height: var\(--tap-target-min\)/, 'task row controls must meet the 44px tap target, not browser-default selects');
 a.match(css, /\.run-spend-line\s*\{[^}]*stroke:\s*var\(--accent\)/, 'the run spend line wears the accent, the one series colour');
 a.match(css, /\.run-spend-cap\s*\{[^}]*stroke:\s*var\(--tone-attention\)[^}]*stroke-dasharray/, 'the run ceiling is a dashed attention line');
 a.match(css, /\.run-spend-line\s*\{[^}]*vector-effect:\s*non-scaling-stroke/, 'a stretched chart must not stretch its 2px line');

@@ -6,6 +6,7 @@ import { lastMessageIdFor } from '../ui/sidebar.js';
 import { taskMeta, visibleQueueRows } from '../ui/views/home.js';
 import { courtActionError } from '../ui/views/courts.js';
 import { resolvedOutcome } from '../ui/views/approvals.js';
+import { assignable, orderTasks } from '../ui/views/tasks.js';
 import { cancelMetrics, cancelRunSpend, loadMetrics, loadRunSpend, metricsView, recommendationFor, spendGeometry, warningFor } from '../ui/views/usage.js';
 
 const settingsSource = readFileSync(new URL('../ui/views/settings.js', import.meta.url), 'utf8');
@@ -51,7 +52,7 @@ a.equal(lastMessageIdFor({ messages: [
 const pagesOnlySource = readFileSync(new URL('../ui/views/pages.js', import.meta.url), 'utf8');
 const changesSource = readFileSync(new URL('../ui/views/changes.js', import.meta.url), 'utf8');
 const approvalsSource = readFileSync(new URL('../ui/views/approvals.js', import.meta.url), 'utf8');
-const viewSources = Object.fromEntries(['approvals', 'changes', 'usage', 'activity', 'messages', 'agents', 'objective', 'memory', 'notes', 'doctor']
+const viewSources = Object.fromEntries(['approvals', 'changes', 'usage', 'activity', 'messages', 'agents', 'objective', 'memory', 'notes', 'doctor', 'tasks']
   .map((name) => [name, readFileSync(new URL(`../ui/views/${name}.js`, import.meta.url), 'utf8')]));
 const pagesSource = [pagesOnlySource, ...Object.values(viewSources)].join('\n');
 const visibleCopySource = [homeSource, pagesSource, settingsSource].join('\n');
@@ -465,6 +466,27 @@ try {
   a.deepEqual(spendGeometry([{ ts: 5, usd: 1 }, { ts: 5, usd: 2 }], 0, { width: 100 }).points.map((p) => p.x), [0, 100], 'turns sharing a timestamp spread out');
   a.equal(spendGeometry([], 0).capY, null, 'no ceiling draws no ceiling line');
 }
+{
+  const { open, closed } = orderTasks([
+    { id: 1, state: 'pending', priority: 0 }, { id: 2, state: 'done', priority: 2 },
+    { id: 3, state: 'active', priority: 2 }, { id: 4, state: 'pending', priority: 2 }, { id: 5, state: 'dropped' },
+  ]);
+  a.deepEqual(open.map((t) => t.id), [3, 4, 1], 'open tasks: highest priority first, then oldest');
+  a.deepEqual(closed.map((t) => t.id), [5, 2], 'closed tasks: newest first, never mixed into the open list');
+  a.deepEqual(assignable({ members: new Map([['orchestrator', { role: 'orchestrator' }], ['briefer', { role: 'briefer' }], ['coder', { role: 'peasant' }]]) }),
+    ['orchestrator', 'coder'], 'the briefer only watches, so tasks cannot be assigned to it');
+}
+a.match(viewSources.tasks, /post\('task', body\)/, 'Tasks edits the queue through the daemon task action');
+a.match(viewSources.tasks, /refresh\?\.\(\)/, 'a change made from a focused select must still repaint');
+a.match(viewSources.tasks, /if \(!editing\(root\)\) renderTasks/, 'live updates must not repaint under someone typing a task');
+{
+  // A view registered for rendering but missing from the shell's route set
+  // silently falls back to Overview (found live for #tasks, 2026-09-25).
+  const routes = new Set(JSON.parse(/const VIEWS = new Set\((\[[^\]]*\])\)/.exec(mainSource)[1].replace(/'/g, '"')));
+  const { renderers } = await import('../ui/views/index.js');
+  for (const name of Object.keys(renderers)) a.ok(routes.has(name), `the shell must route #${name}, or it silently shows Overview`);
+}
+a.match(sidebarSource, /\['tasks', 'Tasks'\]/, 'Tasks is reachable from the rail');
 a.match(usageSource, /dashboard\.append\(runSpendSection\(state\)\)/, 'Usage must show the run spend section');
 a.match(usageSource, /cancelRunSpend\(state\); \}/, 'leaving Usage must cancel a pending run spend request');
 a.match(usageSource, /No run ceiling is set/, 'a missing maxRunUsd must be said, not drawn as an empty meter');

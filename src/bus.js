@@ -60,7 +60,8 @@ create table if not exists tasks (
   plan       text,
   by         text    not null,
   done_ts    integer,
-  run_id     text
+  run_id     text,
+  priority   integer not null default 0     -- higher is offered first; the sovereign sets it
 );
 create table if not exists runs (
   id                    text primary key,
@@ -245,6 +246,10 @@ export class Bus {
     // showed a blocked run with no reason and no next action.
     this.#migrate('schema:runs:blocker:v1', () => {
       if (!this.#columns('runs').includes('blocker')) this.db.exec('alter table runs add column blocker text');
+    });
+    // The sovereign can now reorder the queue; existing tasks start level.
+    this.#migrate('schema:tasks:priority:v1', () => {
+      if (!this.#columns('tasks').includes('priority')) this.db.exec('alter table tasks add column priority integer not null default 0');
     });
     // Approval payloads moved out of the message log so they survive pruning;
     // post() writes new ones there directly.
@@ -778,10 +783,10 @@ export class Bus {
   // constructor) makes the loser wait instead of failing.
 
   /** Deps are stored as json because a task has none or two, never a join. */
-  addTask({ title, detail = '', needs = [], needsPlan = false, by, runId = null }) {
+  addTask({ title, detail = '', needs = [], needsPlan = false, by, runId = null, priority = 0 }) {
     const { lastInsertRowid } = this.db.prepare(
-      'insert into tasks (ts, title, detail, needs, needs_plan, by, run_id) values (?,?,?,?,?,?,?)'
-    ).run(Date.now(), title, detail, JSON.stringify(needs.map(Number)), needsPlan ? 1 : 0, by, runId);
+      'insert into tasks (ts, title, detail, needs, needs_plan, by, run_id, priority) values (?,?,?,?,?,?,?,?)'
+    ).run(Date.now(), title, detail, JSON.stringify(needs.map(Number)), needsPlan ? 1 : 0, by, runId, Number(priority) || 0);
     return Number(lastInsertRowid);
   }
 
@@ -824,9 +829,10 @@ export class Bus {
     });
   }
 
-  /** Unclaimed, unblocked, oldest first — what an idle member could pick up. */
+  /** Unclaimed, unblocked, highest priority then oldest — what an idle member could pick up. */
   availableTasks() {
-    return this.tasks({ state: 'pending' }).filter((t) => !t.owner && !t.blockedBy.length);
+    return this.tasks({ state: 'pending' }).filter((t) => !t.owner && !t.blockedBy.length)
+      .sort((x, y) => (y.priority ?? 0) - (x.priority ?? 0) || x.id - y.id);
   }
 
   /**
@@ -872,7 +878,7 @@ export class Bus {
 
   /** Returns the updated row, or null if there is no such task. */
   updateTask(id, fields) {
-    const cols = { state: 'state', plan: 'plan', owner: 'owner', doneTs: 'done_ts', runId: 'run_id' };
+    const cols = { state: 'state', plan: 'plan', owner: 'owner', doneTs: 'done_ts', runId: 'run_id', priority: 'priority' };
     const set = [], args = [];
     for (const [k, col] of Object.entries(cols)) {
       if (fields[k] !== undefined) { set.push(`${col} = ?`); args.push(fields[k]); }

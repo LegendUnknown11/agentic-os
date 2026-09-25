@@ -525,6 +525,19 @@ try {
     console.log('  run spend: per-run ledger, ceiling, and newest-first history');
   }
 
+  /* ---------- 7. the sovereign edits the queue over HTTP ---------- */
+  {
+    const created = await post('/api/task', { op: 'create', title: 'from the panel', priority: 3 });
+    a.ok(created.ok, created.error);
+    a.equal(created.task.by, 'sovereign');
+    const listed = await get('/api/tasks');
+    a.ok(listed.tasks.some((t) => t.id === created.task.id && t.priority === 3), 'the new task is in the list with its priority');
+    const refused = await post('/api/task', { op: 'assign', id: created.task.id, owner: 'nobody' });
+    a.equal(refused.ok, false, 'an unknown member is a visible refusal, not a silent no-op');
+    a.match(refused.error, /not a member/);
+    console.log('  tasks: the sovereign creates and assigns over HTTP, and bad input is refused');
+  }
+
   console.log('t-panels.js OK — metrics take deltas, diffs are real, bad approvals cost one row, the task list is visible');
 } finally {
   daemon.kill();

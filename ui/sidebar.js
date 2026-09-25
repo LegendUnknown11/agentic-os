@@ -11,7 +11,7 @@ const node = (tag, className, text) => {
 };
 
 const NAV_ICONS = Object.freeze({
-  home: 'target', objective: 'goal', approvals: 'approve', changes: 'diff', agents: 'who', activity: 'log',
+  home: 'target', objective: 'goal', approvals: 'approve', changes: 'diff', tasks: 'checklist', agents: 'who', activity: 'log',
   messages: 'bus', usage: 'metrics', memory: 'vault', notes: 'document', automations: 'workflows', doctor: 'doctor',
 });
 
@@ -232,6 +232,7 @@ export function mountSidebar(root, options = {}) {
       ['objective', 'Objective'],
       ['approvals', pending ? `Decisions · ${pending}` : 'Decisions'],
       ['changes', changed.length ? `Work · ${changed.length}` : 'Work'],
+      ['tasks', 'Tasks'],
       ['agents', 'Team'],
       ['activity', 'Activity'],
     ];

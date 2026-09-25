@@ -28,7 +28,7 @@ const loadUI = () => uiReady ??= Promise.all([
 });
 
 const $ = (id) => document.getElementById(id);
-const VIEWS = new Set(['home', 'thread', 'approvals', 'changes', 'usage', 'activity', 'messages', 'agents', 'objective', 'memory', 'notes', 'automations', 'doctor', 'settings']);
+const VIEWS = new Set(['home', 'thread', 'approvals', 'changes', 'usage', 'activity', 'messages', 'agents', 'objective', 'memory', 'notes', 'automations', 'doctor', 'settings', 'tasks']);
 const KEYS = { a: 'approvals', d: 'changes', m: 'usage', c: 'activity', b: 'messages', e: 'agents', g: 'objective', r: 'memory', v: 'notes', f: 'automations' };
 const decodePart = (value) => {
   try { return decodeURIComponent(value); } catch { return value; }

@@ -312,6 +312,13 @@ const ACTIONS = {
     cli: b.cli, model: b.model, effort: b.effort, auto: b.auto,
   }),
   clearSpend: (b) => kingdom.clearSpend(b.name ?? null),
+  // The sovereign editing the team queue: {op: create|assign|priority|drop|reopen, ...}.
+  // Every open tab hears the new list, not just the one that clicked.
+  task: (b) => {
+    const task = kingdom.manageTask(b);
+    push('tasks', { tasks: kingdom.bus.tasks() });
+    return { task };
+  },
   // Answer first, then go: the caller must not get a dead socket for a
   // shutdown that actually worked.
   shutdown: () => { setTimeout(() => shutdown(0), 150); },

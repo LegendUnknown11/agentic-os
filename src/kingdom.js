@@ -1796,6 +1796,57 @@ export class Kingdom extends EventEmitter {
     return stopped;
   }
 
+  /**
+   * The sovereign editing the team's task list directly: create, assign (or
+   * unassign), reprioritise, drop, reopen. Every change a member must act on
+   * reaches them as a message, the same way the MCP task tools tell them, so
+   * nobody keeps working a task that moved. Returns the updated task.
+   */
+  manageTask({ op, id = null, title, detail = '', owner, priority, needs = [] } = {}) {
+    const fail = (message) => { throw Object.assign(new Error(message), { status: 400 }); };
+    const member = (name) => {
+      if (!this.specOf(name)) fail(`"${name}" is not a member of this team.`);
+      return name;
+    };
+    if (op === 'create') {
+      const text = String(title ?? '').trim();
+      if (!text) fail('A task needs a title.');
+      const created = this.bus.addTask({
+        title: text, detail: String(detail ?? ''), needs: Array.isArray(needs) ? needs : [],
+        priority: Number(priority) || 0, by: 'sovereign', runId: this.#activeRun()?.id ?? null,
+      });
+      return owner ? this.manageTask({ op: 'assign', id: created, owner }) : this.bus.task(created);
+    }
+    const task = this.bus.task(id);
+    if (!task) fail(`No task #${id}.`);
+    const tell = (to, text, kind) => { if (to) this.bus.post('sovereign', to, text, kind); };
+    switch (op) {
+      case 'assign': {
+        if (task.state === 'done' || task.state === 'dropped') fail(`Task #${task.id} is ${task.state}; reopen it first.`);
+        if (task.state === 'verifying') fail(`Task #${task.id} is being verified; wait for the result.`);
+        const next = owner ? member(owner) : null;
+        if (next === task.owner) return task;
+        const updated = this.bus.updateTask(task.id, next
+          ? { owner: next, state: task.state === 'planning' || task.needsPlan ? 'planning' : 'active' }
+          : { owner: null, state: 'pending' });
+        tell(next, `Task #${task.id} (${task.title}) was assigned to you by the sovereign.\n\n${task.detail}`, 'assignment');
+        tell(task.owner, `Task #${task.id} (${task.title}) was ${next ? `reassigned to ${next}` : 'unassigned'} by the sovereign. Stop work on it.`, 'notice');
+        return updated;
+      }
+      case 'priority':
+        return this.bus.updateTask(task.id, { priority: Number(priority) || 0 });
+      case 'drop':
+        if (task.state === 'done') fail(`Task #${task.id} is already done.`);
+        tell(task.owner, `Task #${task.id} (${task.title}) was dropped by the sovereign. Stop work on it.`, 'notice');
+        return this.bus.updateTask(task.id, { state: 'dropped', owner: null });
+      case 'reopen':
+        if (task.state !== 'done' && task.state !== 'dropped') fail(`Task #${task.id} is ${task.state}, not closed.`);
+        return this.bus.updateTask(task.id, { state: 'pending', owner: null, doneTs: null });
+      default:
+        return fail(`Unknown task operation "${op}".`);
+    }
+  }
+
   async createRun(fields = {}) {
     const baselineRevision = fields.baselineRevision ?? (this.repo ? await revisionOf(this.repo) : null);
     const run = this.bus.createRun({ ...fields, baselineRevision });
