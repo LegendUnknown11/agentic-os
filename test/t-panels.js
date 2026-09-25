@@ -538,6 +538,23 @@ try {
     console.log('  tasks: the sovereign creates and assigns over HTTP, and bad input is refused');
   }
 
+  /* ---------- 8. the sovereign's own list over HTTP ---------- */
+  {
+    const added = await post('/api/myTask', { op: 'add', title: 'renew passport', dueTs: 1 });
+    a.ok(added.ok, added.error);
+    const listed = await get('/api/myTasks');
+    a.equal(listed.due, 1, 'a past-due item counts as due');
+    await post('/api/myTask', { op: 'snooze', id: added.task.id, forMs: 60_000 });
+    a.equal((await get('/api/myTasks')).due, 0, 'snoozing takes it out of due');
+    const done = await post('/api/myTask', { op: 'done', id: added.task.id });
+    a.ok(done.task.doneTs, 'done records when');
+    const missing = await post('/api/myTask', { op: 'done', id: 9999 });
+    a.equal(missing.ok, false);
+    a.match(missing.error, /No task #9999 on your list/);
+    a.ok(!(await get('/api/tasks')).tasks.some((t) => t.title === 'renew passport'), "the sovereign's list never enters the team queue");
+    console.log("  my tasks: add, due, snooze, done over HTTP, kept out of the team queue");
+  }
+
   console.log('t-panels.js OK — metrics take deltas, diffs are real, bad approvals cost one row, the task list is visible');
 } finally {
   daemon.kill();

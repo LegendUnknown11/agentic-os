@@ -174,4 +174,8 @@ try {
   globalThis.fetch = fetchBeforeStoreCheck;
 }
 
+state.myTasksError = 'stale';
+apply({ type: 'myTasks', tasks: [{ id: 7, title: 'call the bank' }] });
+a.deepEqual(state.myTasks, [{ id: 7, title: 'call the bank' }], "a broadcast of the sovereign's list replaces it whole");
+a.equal(state.myTasksError, null, 'and clears a stale load error');
 console.log('t-store.js OK — reducer keeps dismissal, roles, three states, and money semantics');

@@ -109,9 +109,12 @@ process.stdout.write(JSON.stringify({ type: 'item.completed', item: {
 }
 
 /* ---------- MCP payload budgets and roster filtering --------------------- */
+// 2026-09-25: the orchestrator gained my_tasks and add_my_task (+2 tools,
+// +629 bytes, measured 15,698 code / 16,500 cowork). Both stay under the
+// byte ceilings below, which were not raised.
 const BASE = {
-  'code/orchestrator': [36, 17_924], 'code/briefer': [19, 9_160], 'code/peasant': [19, 8_817],
-  'cowork/orchestrator': [39, 18_774], 'cowork/briefer': [19, 9_160], 'cowork/peasant': [19, 8_817],
+  'code/orchestrator': [38, 17_924], 'code/briefer': [19, 9_160], 'code/peasant': [19, 8_817],
+  'cowork/orchestrator': [41, 18_774], 'cowork/briefer': [19, 9_160], 'cowork/peasant': [19, 8_817],
 };
 const db = join(dir, 'mcp.sqlite');
 const state = new Bus(db);

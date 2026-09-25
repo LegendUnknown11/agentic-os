@@ -312,6 +312,25 @@ const ACTIONS = {
     cli: b.cli, model: b.model, effort: b.effort, auto: b.auto,
   }),
   clearSpend: (b) => kingdom.clearSpend(b.name ?? null),
+  // The sovereign's own list: {op: add|update|done|undo|snooze|delete, ...}.
+  myTask: (b) => {
+    const bus = kingdom.bus;
+    const id = Number(b.id);
+    const need = () => { if (!bus.myTask(id)) throw new Error(`No task #${b.id} on your list.`); };
+    let task = null;
+    switch (b.op) {
+      case 'add': task = bus.addMyTask({ title: b.title, notes: b.notes, dueTs: b.dueTs ?? null }); break;
+      case 'update': need(); task = bus.updateMyTask(id, { title: b.title, notes: b.notes, dueTs: b.dueTs }); break;
+      case 'done': need(); task = bus.updateMyTask(id, { doneTs: Date.now() }); break;
+      case 'undo': need(); task = bus.updateMyTask(id, { doneTs: null }); break;
+      // Snooze pushes the reminder, not the deadline: the due time stays true.
+      case 'snooze': need(); task = bus.updateMyTask(id, { snoozedUntil: Date.now() + (Number(b.forMs) > 0 ? Number(b.forMs) : 86_400_000) }); break;
+      case 'delete': need(); bus.deleteMyTask(id); break;
+      default: throw new Error(`Unknown operation "${b.op}".`);
+    }
+    push('myTasks', { tasks: bus.myTasks() });
+    return { task };
+  },
   // The sovereign editing the team queue: {op: create|assign|priority|drop|reopen, ...}.
   // Every open tab hears the new list, not just the one that clicked.
   task: (b) => {
@@ -733,6 +752,8 @@ const READS = {
       available: kingdom.bus.availableTasks().length,
     }];
   },
+
+  '/api/myTasks': async (url, req) => [200, { ok: true, tasks: kingdom.bus.myTasks(), due: kingdom.bus.dueMyTasks().length }],
 
   '/api/run': async (url, req) => [200, { ok: true, run: kingdom.bus.currentRun() }],
   '/api/runs': async (url, req) => {

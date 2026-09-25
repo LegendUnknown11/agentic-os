@@ -86,6 +86,18 @@ create table if not exists runs (
   cancelled_ts          integer,
   blocker               text
 );
+-- The sovereign's own to-do list. Separate from tasks, which is the team's
+-- work queue: nothing here is claimable, and nothing here wakes a member.
+create table if not exists my_tasks (
+  id            integer primary key autoincrement,
+  created_ts    integer not null,
+  title         text    not null,
+  notes         text    not null default '',
+  due_ts        integer,
+  done_ts       integer,
+  snoozed_until integer,
+  by            text    not null default 'sovereign'
+);
 -- One row per priced turn taken while a run is current. A run's spend is the
 -- sum of its own rows, never lifetime spend minus a baseline: clearSpend()
 -- zeroes the lifetime counter and made that subtraction go negative.
@@ -723,6 +735,61 @@ export class Bus {
       : this.transitionRun(run.id, 'completed', { appliedTs: Date.now() });
   }
 
+  // --- the sovereign's own to-do list ----------------------------------
+
+  #myTaskRow(row) {
+    if (!row) return null;
+    return {
+      id: row.id, createdTs: row.created_ts, title: row.title, notes: row.notes,
+      dueTs: row.due_ts, doneTs: row.done_ts, snoozedUntil: row.snoozed_until, by: row.by,
+    };
+  }
+
+  addMyTask({ title, notes = '', dueTs = null, by = 'sovereign' } = {}) {
+    const text = String(title ?? '').trim();
+    if (!text) throw new Error('A task needs a title.');
+    const { lastInsertRowid } = this.db.prepare(
+      'insert into my_tasks (created_ts, title, notes, due_ts, by) values (?,?,?,?,?)',
+    ).run(Date.now(), text, String(notes ?? ''), dueTs == null ? null : Number(dueTs), String(by));
+    return this.myTask(Number(lastInsertRowid));
+  }
+
+  myTask(id) {
+    return this.#myTaskRow(this.db.prepare('select * from my_tasks where id = ?').get(Number(id)));
+  }
+
+  /** Open first (due soonest, undated last), then done (most recent first). */
+  myTasks({ includeDone = true } = {}) {
+    const rows = this.db.prepare(
+      `select * from my_tasks${includeDone ? '' : ' where done_ts is null'}
+       order by done_ts is not null, done_ts desc, due_ts is null, due_ts, id`,
+    ).all();
+    return rows.map((row) => this.#myTaskRow(row));
+  }
+
+  /** Open tasks whose due time has passed and are not snoozed past `now`. */
+  dueMyTasks(now = Date.now()) {
+    return this.myTasks({ includeDone: false })
+      .filter((t) => t.dueTs != null && t.dueTs <= now && !(t.snoozedUntil > now));
+  }
+
+  updateMyTask(id, fields = {}) {
+    const columns = { title: 'title', notes: 'notes', dueTs: 'due_ts', doneTs: 'done_ts', snoozedUntil: 'snoozed_until' };
+    const set = [], args = [];
+    for (const [key, column] of Object.entries(columns)) {
+      if (fields[key] === undefined) continue;
+      if (key === 'title' && !String(fields.title).trim()) throw new Error('A task needs a title.');
+      set.push(`${column} = ?`);
+      args.push(key === 'title' || key === 'notes' ? String(fields[key]).trim() : fields[key] == null ? null : Number(fields[key]));
+    }
+    if (set.length) this.db.prepare(`update my_tasks set ${set.join(', ')} where id = ?`).run(...args, Number(id));
+    return this.myTask(id);
+  }
+
+  deleteMyTask(id) {
+    return this.db.prepare('delete from my_tasks where id = ?').run(Number(id)).changes > 0;
+  }
+
   recordRunSpend(runId, agent, usd, ts = Date.now()) {
     this.db.prepare('insert into run_spend (run_id, ts, agent, usd) values (?,?,?,?)')
       .run(String(runId), ts, String(agent), Number(usd) || 0);
@@ -1108,6 +1175,28 @@ if (process.argv[1]?.endsWith('bus.js')) {
     a.equal(runs.runSpentUsd('run-none'), 0, 'a run with no ledger rows has spent nothing');
     a.deepEqual(runs.runSpendTotals(), { [run.id]: { usd: 5, turns: 10 }, 'run-other': { usd: 3, turns: 1 } });
     runs.close();
+  }
+
+  // --- the sovereign's own list: order, due, snooze, done ------------------
+  {
+    const mine = new Bus(':memory:');
+    const later = mine.addMyTask({ title: 'renew the domain', dueTs: 300 });
+    const soon = mine.addMyTask({ title: 'reply to Sam', dueTs: 100, notes: 'about the invoice' });
+    const undated = mine.addMyTask({ title: 'read the RFC' });
+    a.throws(() => mine.addMyTask({ title: '  ' }), /needs a title/);
+    a.deepEqual(mine.myTasks().map((t) => t.id), [soon.id, later.id, undated.id], 'due soonest first, undated last');
+    a.deepEqual(mine.dueMyTasks(200).map((t) => t.id), [soon.id], 'only what is past due is due');
+    mine.updateMyTask(soon.id, { snoozedUntil: 250 });
+    a.deepEqual(mine.dueMyTasks(200), [], 'a snoozed task is not due until the snooze ends');
+    a.deepEqual(mine.dueMyTasks(260).map((t) => t.id), [soon.id], 'and is due again after it');
+    mine.updateMyTask(soon.id, { doneTs: 270 });
+    a.deepEqual(mine.dueMyTasks(400).map((t) => t.id), [later.id], 'a done task is never due');
+    a.equal(mine.myTasks().at(-1).id, soon.id, 'done tasks sort after open ones');
+    a.equal(mine.myTasks({ includeDone: false }).length, 2);
+    a.equal(mine.tasks().length, 0, "the sovereign's list is not the team's queue");
+    a.equal(mine.deleteMyTask(undated.id), true);
+    a.equal(mine.myTask(undated.id), null);
+    mine.close();
   }
 
   // --- a run's blocker survives a restart, and leaving blocked clears it --

@@ -310,6 +310,8 @@ export function reduce(_state, d = {}) {
     case 'tasksLoading': state.tasksLoading = Boolean(d.loading); break;
     case 'tasks': state.tasks = d.tasks ?? []; state.tasksLoading = false; state.tasksError = null; break;
     case 'tasksError': state.tasksLoading = false; state.tasksError = d.error ?? 'Could not load current work.'; break;
+    // The sovereign's own list. Broadcast whole on every change, like 'tasks'.
+    case 'myTasks': state.myTasks = d.tasks ?? []; state.myTasksError = null; break;
     case 'changes': state.changes = d.changes ?? []; break;
     case 'conversations': {
       state.conversations = d.conversations ?? [];

@@ -6,7 +6,7 @@ import { lastMessageIdFor } from '../ui/sidebar.js';
 import { taskMeta, visibleQueueRows } from '../ui/views/home.js';
 import { courtActionError } from '../ui/views/courts.js';
 import { resolvedOutcome } from '../ui/views/approvals.js';
-import { assignable, orderTasks } from '../ui/views/tasks.js';
+import { assignable, dueState, loadMyTasks, orderTasks } from '../ui/views/tasks.js';
 import { cancelMetrics, cancelRunSpend, loadMetrics, loadRunSpend, metricsView, recommendationFor, spendGeometry, warningFor } from '../ui/views/usage.js';
 
 const settingsSource = readFileSync(new URL('../ui/views/settings.js', import.meta.url), 'utf8');
@@ -476,6 +476,37 @@ try {
   a.deepEqual(assignable({ members: new Map([['orchestrator', { role: 'orchestrator' }], ['briefer', { role: 'briefer' }], ['coder', { role: 'peasant' }]]) }),
     ['orchestrator', 'coder'], 'the briefer only watches, so tasks cannot be assigned to it');
 }
+{
+  const now = 10 * 86_400_000;
+  a.equal(dueState({ dueTs: now - 1 }, now).tone, 'attention', 'past due is attention');
+  a.match(dueState({ dueTs: now - 1 }, now).label, /^Overdue since/);
+  a.equal(dueState({ dueTs: now - 1, snoozedUntil: now + 5 }, now).tone, 'idle', 'a snoozed overdue task waits quietly');
+  a.equal(dueState({ dueTs: now + 3_600_000 }, now).tone, 'live', 'due within a day is live');
+  a.equal(dueState({ dueTs: now + 3 * 86_400_000 }, now).tone, '', 'due later is plain');
+  a.equal(dueState({ dueTs: null }, now).label, 'No due date');
+  a.equal(dueState({ dueTs: now - 1, doneTs: now }, now).tone, 'settled', 'done wins over overdue');
+}
+{
+  const fetchBefore = globalThis.fetch;
+  try {
+    const responses = [];
+    globalThis.fetch = () => new Promise((resolve) => responses.push(resolve));
+    const mine = {};
+    const older = loadMyTasks(mine);
+    const newer = loadMyTasks(mine);
+    responses[1](new Response(JSON.stringify({ ok: true, tasks: [{ id: 2 }] }), { status: 200 }));
+    await newer;
+    responses[0](new Response(JSON.stringify({ ok: true, tasks: [{ id: 1 }] }), { status: 200 }));
+    await older;
+    a.deepEqual(mine.myTasks, [{ id: 2 }], 'an older load of your list must not overwrite a newer one');
+    const failing = loadMyTasks(mine);
+    responses[2](new Response(JSON.stringify({ ok: false, error: 'locked' }), { status: 500 }));
+    await failing;
+    a.deepEqual(mine.myTasks, [{ id: 2 }], 'a failed load keeps the last list');
+    a.equal(mine.myTasksError, 'locked');
+  } finally { globalThis.fetch = fetchBefore; }
+}
+a.match(viewSources.tasks, /requestToken\(state, 'myTasksRequest'\); off\?\.\(\)/, 'leaving Tasks must invalidate a pending load of your list');
 a.match(viewSources.tasks, /post\('task', body\)/, 'Tasks edits the queue through the daemon task action');
 a.match(viewSources.tasks, /refresh\?\.\(\)/, 'a change made from a focused select must still repaint');
 a.match(viewSources.tasks, /if \(!editing\(root\)\) renderTasks/, 'live updates must not repaint under someone typing a task');
