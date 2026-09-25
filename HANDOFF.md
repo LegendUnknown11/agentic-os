@@ -274,6 +274,50 @@ That check found three layout defects, all fixed before commit. No desktop
 notification was observed on a real OS, and none of this was run in Electron
 or on Windows.
 
+## Current state (feature-implementation, round 2, 2026-09-25)
+
+Six more commits on the same branch and PR (#82), asked for by the sovereign
+after an interview: built-in assistant features, run templates, and the
+Electron sections. Contract and evidence: `PLAN.md`'s "Assistant features"
+section.
+
+- **Tasks view** (`ui/views/tasks.js`). *Team queue:* the sovereign creates,
+  assigns, reprioritises, drops and reopens the team's tasks
+  (`Kingdom.manageTask`, `POST /api/task`). Every change is messaged to the
+  member it affects. Tasks gained a `priority` column, and free tasks are
+  offered highest priority first. *My tasks:* the sovereign's own list
+  (`my_tasks` table, `/api/myTasks`, `POST /api/myTask`), with due, done and
+  snooze. It is kept out of the team queue. The orchestrator gained
+  `my_tasks` and `add_my_task`: 49 tools, up from 47. This was a deliberate
+  re-pin, and the payload stayed under the unchanged byte ceilings.
+- **Inbox** (`src/inbox.js`, `ui/views/inbox.js`, `/api/inbox`). One ranked
+  list of what is waiting on the sovereign inside the app. The rail shows a
+  count. It holds no email: the sovereign chose "in-app only".
+- **Automation templates** (`src/workflow-templates.js`, a Templates shelf in
+  Automations, which is visible in Cowork mode only, like the rest of
+  Automations). Morning inbox brief, daily team digest and a weekly
+  dependency check run on the app's own state, through the new `digest` and
+  `task` workflow nodes. The calendar brief and GitHub triage instead prompt
+  the orchestrator to use its own connector or `gh`, and are untestable here.
+  Daily triggers gained optional `days`.
+- **Start a run + run templates** (`ui/views/start-run.js` in Objective). Found
+  while planning: nothing in the UI posted `run/create`.
+- **Electron sections 3-6** in `test/t-electron.js`: recovery, collapsed rail,
+  the 720px drawer by keyboard, and reduced motion. Each was run verbatim in
+  real Chromium here first. They exposed two real defects, both fixed:
+  - every run blocker rendered as a blank line (`ui/run.js` `blockerText`);
+  - the drawer's focus trap let Tab escape past a `display:none` last button
+    (`ui/main.js`).
+
+**Test-hygiene trap, found this round.** `t-electron.js` used to delete
+`join(repo, '..', '.kingdom')`. Its repo is in the temp dir, so that was the
+`.kingdom` shared by every temp workspace, and it wiped other suites' state
+and a demo court twice. It now deletes only its own `kingdomDir(repo)`. That
+wide delete had been hiding a second problem: other suites leave their own
+`<tmp>/.kingdom/<name>` folders behind, and those now accumulate in the temp
+dir. They are harmless, but they are not cleaned up. That is a follow-up, not
+fixed here.
+
 ## Evidence
 
 The combined source gate passed on merged `main`: `npm.cmd test` completed
@@ -297,8 +341,15 @@ suite count is the contract.
 `test/t-electron.js` (the recovered Electron acceptance harness) is in the
 gate now; PR #71 landed on `main`.
 
-**Current count, 2026-09-25 (`feature-implementation`): 90 suites.** The new
-one is `test/t-notify.js`. In this Linux container the gate printed "90 suites,
+**Current count, 2026-09-25 (`feature-implementation`, round 2): 92 suites**:
+the round added `t-task-admin.js` and `t-inbox.js`. In this Linux container the
+gate printed "92 suites, 4-wide, 38.0s" with 91 passing; `t-electron.js` failed
+for want of a display. Every push of the round through `97b3282` ran green on
+`windows-latest` CI. The run for `6ed25bc`, the first to include the Electron
+sections 3-6, was still in progress when this was written. Read that result
+before claiming Electron evidence for those sections.
+
+Earlier the same day: 90 suites; the new one then was `test/t-notify.js`. In this Linux container the gate printed "90 suites,
 4-wide, 37.9s" with 89 passing; `t-electron.js` failed for want of a display.
 `xvfb-run` does not rescue it here: Electron hangs with no output, even with
 `ELECTRON_DISABLE_SANDBOX=1`. The husky pre-commit hook runs the whole gate, so
@@ -446,7 +497,10 @@ stateDiagram-v2
 | [test/t-theme.js](test/t-theme.js) | The stylesheet contract: pinned tokens, selectors, and the literal-colour ban. |
 | [test/t-pages.js](test/t-pages.js) | The view contract. Mostly behavioural guards; treat them as load-bearing. |
 | [test/t-thread.js](test/t-thread.js) | Mounts the thread against a hand-rolled fake DOM with literal selectors. |
-| [test/t-electron.js](test/t-electron.js) | Launches the real Electron binary with `playwright-core` and reads what Chromium painted. Covers the shell and the run lifecycle; recovery, the collapsed rail, the 720px drawer, and reduced motion are not yet sections here. |
+| [test/t-electron.js](test/t-electron.js) | Launches the real Electron binary with `playwright-core` and reads what Chromium painted. Sections: the shell, the run lifecycle, a blocked run's recovery, the collapsed rail, the 720px drawer by keyboard, and reduced motion. |
+| [src/inbox.js](src/inbox.js) | Pure: the ranked in-app inbox, its text brief, and the team digest. Shared by `/api/inbox` and the `digest` workflow node. |
+| [src/workflow-templates.js](src/workflow-templates.js) | The built-in automations the Automations Templates shelf installs as ordinary, editable workflows. |
+| [ui/views/tasks.js](ui/views/tasks.js) | The Tasks view: the sovereign's own list and the team queue's controls. |
 | [test/run-all.js](test/run-all.js) | A hardcoded suite array, not glob discovery. A new suite must be added by hand. |
 
 ## Commands and evidence
@@ -570,11 +624,11 @@ current proof; refresh them before the snapshot.
 - That 2026-09-21 demonstration was a one-time manual session, not a repeatable
   suite. `test/t-electron.js` (recovered 2026-09-22) turns the shell and the run
   lifecycle into automated Electron evidence that runs on every `npm test`.
-  Four clause items are still manual-only and each needs a section in that same
-  suite: a blocked run's recovery, the collapsed rail's controls, the drawer at
-  720px with its keyboard path, and reduced-motion behaviour — the last two need
-  `page.setViewportSize` and `page.emulateMedia({ reducedMotion: 'reduce' })`
-  rather than anything new.
+  ~~Four clause items are still manual-only.~~ Done 2026-09-25: a blocked
+  run's recovery, the collapsed rail, the 720px drawer's keyboard path and
+  reduced motion are sections 3-6 of that suite. They were proved in real
+  Chromium here, and they run in Electron on Windows CI (PR #82). Check that
+  run's result before treating them as Electron evidence.
 - ~~Confirm `t-electron.js` runs on the Windows CI runner.~~ Done 2026-09-25:
   the `windows-latest` job for PR #80 ran it to "live interface acceptance
   passed" (shell and run-lifecycle sections), with all 89 suites green.

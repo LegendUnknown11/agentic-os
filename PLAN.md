@@ -614,3 +614,76 @@ Usage.
   - the history table was cut off in a half-width column.
 - **Not held**: Electron, Windows, and a desktop notification actually shown by
   an operating system.
+
+## Assistant features — tasks, inbox, templates, run templates (2026-09-25)
+
+Asked for by the sovereign on 2026-09-25 ("actual functional features, like
+managing your tasks, briefing your inboxes … prebuilt in"), then scoped in an
+interview. All of it landed on `feature-implementation`, PR #82.
+
+**Contract, as the sovereign chose it.**
+
+1. **Tasks, both kinds.** The sovereign manages the team's queue from the
+   interface, and keeps a list of their own. The two stay separate: nothing on
+   the personal list is claimable or wakes a member. The orchestrator can read
+   the personal list, and add to it only when asked.
+2. **Inbox, in-app only.** It holds what is waiting on the sovereign inside the
+   app: a blocked run, pending requests and questions, overdue and due-today
+   personal tasks, a run ready for final review, and messages addressed to the
+   sovereign. There is no email, and no mail credentials anywhere.
+3. **Built-in assistants, shipped as automation templates.** "Switch on"
+   installs an ordinary, editable workflow. There are five:
+   - the morning inbox brief;
+   - the daily team digest;
+   - scheduled team work, handed to the team on a schedule (weekly
+     dependency check);
+   - a calendar brief, through the orchestrator's own connector;
+   - GitHub triage, through the orchestrator's `gh`.
+4. **Run templates.** A named objective, acceptance criteria and allowed
+   models, from which a run starts. This needed a "Start a run" form, because
+   nothing in the interface could start a run.
+5. **Electron sections** for the four clause items that were manual-only.
+
+**What closed it.**
+
+| Piece | Commit | Test that fails without it |
+|---|---|---|
+| Team queue management + priority | `d1518b7` | new `t-task-admin.js`; `t-panels` §7; t-pages route guard |
+| My tasks + orchestrator tools | `a2654ca` | bus self-check; `t-tasks` (real MCP processes); `t-panels` §8; `t-store` |
+| Inbox | `afcb1f6` | new `t-inbox.js`; `t-panels` §9; `t-pages`; `t-store` |
+| Templates, `digest`/`task` nodes, weekday triggers | `eb4ed5d` | workflows and graph self-checks; `t-panels` §10; `t-notify`; `t-pages` |
+| Start a run + run templates | `97b3282` | `t-pages`; `t-panels` §11 |
+| Electron sections 3-6, blank-blocker and focus-trap fixes | `6ed25bc` | `t-electron.js` (Windows CI); `ui/run.js` self-check; `t-pages` guard |
+
+**Acceptance evidence.**
+
+- **Source.** 92 suites, 91 passing in the Linux container. `t-electron.js`
+  fails there for want of a display. `t-theme-geometry.js` ran in real
+  Chromium. Every push through `97b3282` ran green on `windows-latest` CI.
+  The `6ed25bc` run was pending at the time of writing.
+- **Browser.** Every new view was driven in real Chromium against a real
+  daemon with seeded state, at 1440x900 and at 720 wide:
+  - team tasks: assigned, reprioritised, added with Enter;
+  - My tasks: added, done, snoozed;
+  - the Inbox: rank order, the rail count, Open links;
+  - templates: installed in Cowork mode and run; the brief reached the
+    Inbox; edited days and the template mark held;
+  - Start a run: from Overview's next step through a saved template to a
+    planning run carrying its criteria.
+
+  This found, and the listed commits fixed:
+  - `#tasks` silently rendered Overview, because the shell's route set was
+    never told about the view;
+  - 20px browser-default selects;
+  - a daily trigger's days and a template's mark dropped on save;
+  - a start-run confirmation erased by the repaint that followed;
+  - blank run blockers;
+  - Tab escaping the 720px drawer.
+- **Electron.** Sections 3-6 were first run verbatim in Chromium and passed
+  there. Their Electron evidence is the `windows-latest` job on PR #82, which
+  was still pending when this was written.
+- **Not held.**
+  - A calendar or GitHub connector actually answering. Those two templates
+    depend on the orchestrator's setup on the sovereign's machine.
+  - A desktop notification actually shown by an operating system.
+  - Any provider or model behaviour.
