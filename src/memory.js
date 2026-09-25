@@ -116,7 +116,7 @@ export function memoryIndex(vault, dir = 'Kingdom', { limit = 40, maxChars = 300
 
 /** Write one durable fact. Returns the vault-relative path. */
 export function remember(vault, { title, body: text, tags = [], by = 'court', dir = 'Kingdom' }) {
-  if (!vault) throw new Error('No vault is configured for this kingdom.');
+  if (!vault) throw new Error('No vault is configured for this workspace.');
   const d = root(vault, join(dir, MEMORY_DIR));
   mkdirSync(d, { recursive: true });
   const name = slugTitle(title);

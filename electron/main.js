@@ -56,7 +56,7 @@ const originFor = (port) => `http://127.0.0.1:${port}`;
  */
 async function chooseRepoDialog() {
   const { canceled, filePaths } = await dialog.showOpenDialog({
-    title: 'Choose the repository your kingdom will work on',
+    title: 'Choose the repository your team will work on',
     properties: ['openDirectory'],
   });
   if (canceled || !filePaths[0]) return { canceled: true };
@@ -135,7 +135,7 @@ async function spawnDaemon(repo, logPath, extraArgs, ready, what) {
         + 'Node 24+ must be on PATH.');
     }
     if (childExit) {
-      throw new Error(`The court daemon exited before it became ready `
+      throw new Error(`The Agentic OS daemon exited before it became ready `
         + `(code ${childExit.code ?? 'unknown'}, signal ${childExit.signal ?? 'none'}).\n\n`
         + logTail(logPath));
     }
@@ -143,7 +143,7 @@ async function spawnDaemon(repo, logPath, extraArgs, ready, what) {
     if (found) return found;
     await new Promise((r) => setTimeout(r, 400));
   }
-  throw new Error(`The court did not ${what} within 90s.\n\n${logTail(logPath)}`);
+  throw new Error(`The workspace did not ${what} within 90s.\n\n${logTail(logPath)}`);
 }
 
 /**
@@ -432,10 +432,10 @@ ipcMain.handle('court:switchRepo', async (event, rawPath) => {
     confirm: async (repo) => {
       const { response } = await dialog.showMessageBox({
         type: 'warning',
-        title: 'End this court?',
-        message: `End the current court and start a fresh one for:\n\n${repo}`,
-        detail: 'Any work in progress in the current court will stop. This cannot be undone.',
-        buttons: ['Cancel', 'End court and switch'],
+        title: 'End this workspace?',
+        message: `End the current workspace and start a fresh one for:\n\n${repo}`,
+        detail: 'Any work in progress in the current workspace will stop. This cannot be undone.',
+        buttons: ['Cancel', 'End workspace and switch'],
         defaultId: 0,
         cancelId: 0,
       });
@@ -479,20 +479,20 @@ ipcMain.handle('courts:open', async (event, rawPath) =>
 // are real and several can run at once, so a null repo cannot name one.
 ipcMain.handle('courts:focus', async (event, port) => {
   const found = (await listCourts()).find((c) => c.port === Number(port));
-  if (!found) return { ok: false, error: 'That court is no longer running.' };
+  if (!found) return { ok: false, error: 'That workspace is no longer running.' };
   openWindow(found.port);
   return { ok: true, port: found.port };
 });
 
 ipcMain.handle('courts:end', async (event, port) => {
   const found = (await listCourts()).find((c) => c.port === Number(port));
-  if (!found) return { ok: false, error: 'That court is no longer running.' };
+  if (!found) return { ok: false, error: 'That workspace is no longer running.' };
   const { response } = await dialog.showMessageBox({
     type: 'warning',
-    title: 'End this court?',
-    message: `End the court for:\n\n${found.repo ?? `the court on port ${found.port} (no repository attached)`}`,
-    detail: 'Any work in progress in that court will stop. This cannot be undone.',
-    buttons: ['Cancel', 'End court'],
+    title: 'End this workspace?',
+    message: `End the workspace for:\n\n${found.repo ?? `the workspace on port ${found.port} (no repository attached)`}`,
+    detail: 'Any work in progress in that workspace will stop. This cannot be undone.',
+    buttons: ['Cancel', 'End workspace'],
     defaultId: 0,
     cancelId: 0,
   });
@@ -518,7 +518,7 @@ if (!singleInstanceLock) {
 } else {
   app.on('second-instance', async (event, argv2) => {
     const result = await routeLaunch(repoFromArgv(argv2), launchDeps());
-    if (!result.ok) dialog.showErrorBox('The kingdom could not rise', result.error);
+    if (!result.ok) dialog.showErrorBox('Agentic OS could not start', result.error);
   });
 }
 
@@ -544,14 +544,14 @@ app.whenReady().then(async () => {
     try {
       targetPort = (await startDaemonAuto(plan.repo, logPath)).port;
     } catch (e) {
-      dialog.showErrorBox('The kingdom could not rise', e.message);
+      dialog.showErrorBox('Agentic OS could not start', e.message);
       return app.quit();
     }
   } else if (!running) {
     try {
       running = await startDaemon(repo, logPath);
     } catch (e) {
-      dialog.showErrorBox('The kingdom could not rise', e.message);
+      dialog.showErrorBox('Agentic OS could not start', e.message);
       return app.quit();
     }
   } else if (repo && !running.repo) {

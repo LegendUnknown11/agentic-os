@@ -217,7 +217,7 @@ export async function listCourts() {
 
 export class CourtConflictError extends Error {
   constructor(existing) {
-    super(`${existing.repo} already has a live court on port ${existing.port}.`);
+    super(`${existing.repo} already has a live workspace on port ${existing.port}.`);
     this.existing = existing;
   }
 }

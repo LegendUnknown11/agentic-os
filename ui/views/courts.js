@@ -51,9 +51,9 @@ function courtRow(state, court, rerender) {
   // Rows are addressed by PORT: a repo-less court has no path to name it, and
   // several repo-less courts can run at once.
   const openBtn = button(court.open ? 'Focus' : 'Open',
-    withBusy(() => window.kingdomShell.focusCourt(court.port), 'Could not open that court.'), 'primary');
+    withBusy(() => window.kingdomShell.focusCourt(court.port), 'Could not open that workspace.'), 'primary');
   const endBtn = button('End…',
-    withBusy(() => window.kingdomShell.endCourt(court.port), 'Could not end that court.'));
+    withBusy(() => window.kingdomShell.endCourt(court.port), 'Could not end that workspace.'));
   return h('div', { class: 'court-row' },
     h('div', { class: 'court-row-id' },
       h('span', { class: 'court-repo', text: label }),
@@ -68,18 +68,18 @@ function courtRow(state, court, rerender) {
  */
 export function courtsSwitcher(state, rerender) {
   if (!hasShell()) {
-    return note('Opening or ending another court is only available in the desktop app.');
+    return note('Opening or ending another workspace is only available in the desktop app.');
   }
   const list = state.courts ?? [];
-  const rows = list.length ? list.map((c) => courtRow(state, c, rerender)) : empty('No other courts are running right now.');
+  const rows = list.length ? list.map((c) => courtRow(state, c, rerender)) : empty('No other workspaces are running right now.');
 
-  const startBtn = button('Start a court for another repository…', async () => {
+  const startBtn = button('Start a workspace for another repository…', async () => {
     startBtn.disabled = true;
     try {
       await runAction(state, rerender, async () => {
         const picked = await window.kingdomShell.chooseRepo();
         return picked?.path ? window.kingdomShell.openCourt(picked.path) : null;
-      }, 'Could not start a court for that repository.');
+      }, 'Could not start a workspace for that repository.');
     } finally {
       startBtn.disabled = false;
     }

@@ -32,7 +32,7 @@ const pushTimeout = () => {
  * upstream. It accepts no remote, refspec or force option from the court.
  */
 export async function pushBase(repo, base) {
-  if (!repo || !base) throw new Error('This court has no base repository to push.');
+  if (!repo || !base) throw new Error('This workspace has no base repository to push.');
   const branch = (await git(repo, 'branch', '--show-current')).stdout.trim();
   if (branch !== base) throw new Error(`Base branch changed from ${base} to ${branch || '(detached)'}; nothing was pushed.`);
 
@@ -108,7 +108,7 @@ export async function assertRepo(repo) {
     return stdout.trim(); // the base branch the kingdom works against
   } catch (e) {
     if (/ambiguous argument ['"]?HEAD|unknown revision ['"]?HEAD/i.test(e.stderr ?? '')) {
-      throw new Error(`${repo} has no commit yet. Create an initial commit before launching the kingdom.`);
+      throw new Error(`${repo} has no commit yet. Create an initial commit before starting Agentic OS.`);
     }
     throw e;
   }
@@ -560,11 +560,17 @@ export async function runTests(dir, { revision = null } = {}) {
     ran: false, ok: false, stale: false, revision: checkedRevision,
     output: 'No test/build command found in this project.',
   };
+  // npm/cargo/pytest are .cmd shims on Windows and need a shell. Node warns
+  // (DEP0190) when args ride beside shell:true, because it only concatenates
+  // them — so on Windows the command goes as one string. Every part is a fixed
+  // literal from testCommand(), never input, so there is nothing to escape.
+  const win = process.platform === 'win32';
+  const [file, args] = win ? [[cmd[0], ...cmd[1]].join(' '), []] : cmd;
   let passed, output;
   try {
-    const { stdout, stderr } = await exec(cmd[0], cmd[1], {
+    const { stdout, stderr } = await exec(file, args, {
       cwd: dir,
-      shell: process.platform === 'win32', // npm/cargo/pytest are shims on Windows
+      shell: win,
       maxBuffer: 32 * 1024 * 1024,
       timeout: 15 * 60 * 1000,
       windowsHide: true,

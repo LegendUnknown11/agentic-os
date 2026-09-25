@@ -287,7 +287,7 @@ export function mountSidebar(root, options = {}) {
     pauseBanner.hidden = !paused;
     if (paused) {
       const why = currentState.pausedWhy || '';
-      pauseText.textContent = why ? `Paused — ${why}` : 'Paused by the sovereign.';
+      pauseText.textContent = why ? `Paused — ${why}` : 'Paused by you.';
       const isTurnBudget = /turn budget/i.test(why);
       raiseButton.hidden = !isTurnBudget;
     }
@@ -335,7 +335,7 @@ export function mountSidebar(root, options = {}) {
       resumeButton.disabled = true;
       send(post, 'resume', {}).then((result) => {
         resumeButton.disabled = false;
-        if (!result?.ok) options.toast?.(result?.error ?? 'Could not resume the court.', true);
+        if (!result?.ok) options.toast?.(result?.error ?? 'Could not resume the team.', true);
       });
     } else if (action === 'raise-turn-budget') {
       // "100 more turns from right now": the daemon adds them to this

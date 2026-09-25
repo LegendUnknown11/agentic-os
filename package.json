@@ -1,7 +1,7 @@
 {
   "name": "kingdom",
   "version": "0.1.0",
-  "description": "Agentic OS: a kingdom of AI peasants, a jester, and a king.",
+  "description": "Agentic OS: a local team of AI coding agents that work a git repository together.",
   "type": "module",
   "main": "electron/main.js",
   "scripts": {
@@ -18,7 +18,7 @@
   },
   "build": {
     "appId": "dev.kingdom.app",
-    "productName": "Kingdom",
+    "productName": "Agentic OS",
     "asar": false,
     "files": [
       "electron/**",

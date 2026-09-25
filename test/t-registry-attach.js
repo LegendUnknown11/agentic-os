@@ -90,7 +90,7 @@ try {
     body: JSON.stringify({ path: repoA }),
   }).then((r) => r.json());
   a.equal(conflictResult.ok, false, 'attaching a repo another live court already serves must be refused');
-  a.match(conflictResult.error, new RegExp(`already has a live court on port ${BASE}`),
+  a.match(conflictResult.error, new RegExp(`already has a live workspace on port ${BASE}`),
     'the refusal must name the port the OTHER court is already on');
 
   const stillRepoless = await fetch(`http://127.0.0.1:${BASE + 1}/api/ping`).then((r) => r.json());
@@ -124,13 +124,13 @@ try {
   let dupeAErr = '';
   dupeA.stderr.on('data', (d) => { dupeAErr += d; });
   await new Promise((resolvePromise) => dupeA.on('close', resolvePromise));
-  a.match(dupeAErr, new RegExp(`already has a live court on port ${BASE}`), 'repoA is still exclusively A\'s after all the attach traffic on B');
+  a.match(dupeAErr, new RegExp(`already has a live workspace on port ${BASE}`), 'repoA is still exclusively A\'s after all the attach traffic on B');
 
   const dupeC = spawn(process.execPath, [DAEMON, repoC], { env: childEnv, stdio: ['ignore', 'ignore', 'pipe'] });
   let dupeCErr = '';
   dupeC.stderr.on('data', (d) => { dupeCErr += d; });
   await new Promise((resolvePromise) => dupeC.on('close', resolvePromise));
-  a.match(dupeCErr, new RegExp(`already has a live court on port ${BASE + 1}`), 'repoC, now live-attached on B, refuses a second daemon too');
+  a.match(dupeCErr, new RegExp(`already has a live workspace on port ${BASE + 1}`), 'repoC, now live-attached on B, refuses a second daemon too');
 
   console.log('t-registry-attach.js OK — a live attach claims the repo in the registry, refuses when another court already holds it, and rolls back on failure');
 } finally {

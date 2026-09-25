@@ -285,13 +285,13 @@ a.equal(verified, 1, `a declare_done must be verified exactly once, got ${verifi
   // Both, not just the delivery: the spawn now fails asynchronously, so its
   // error can land after the message it must not have blocked.
   await until(() => live.sent.length > 0
-    && errs.some((e) => /No such member/.test(e.message)));
+    && errs.some((e) => /No such team member/.test(e.message)));
 
   a.equal(live.sent.length, 1,
     'a member behind a FAILING spawn must still be delivered — the old inline '
     + 'await threw out of the whole pass and starved everyone after it');
   a.match(live.sent[0], /but you do/);
-  a.ok(errs.some((e) => /No such member/.test(e.message)),
+  a.ok(errs.some((e) => /No such team member/.test(e.message)),
     'and the failure must still be reported, not swallowed');
 
   k2.summoned.delete('ghost');

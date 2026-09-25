@@ -112,7 +112,7 @@ export async function requestShutdown(origin, fetchFn = fetch) {
     return { ok: true, gone: true };
   }
   if (res.ok) return { ok: true };
-  let error = `the court refused to end (HTTP ${res.status})`;
+  let error = `the workspace refused to end (HTTP ${res.status})`;
   try { const j = await res.json(); if (j?.error) error += `: ${j.error}`; } catch { /* keep the status */ }
   return { ok: false, error };
 }
