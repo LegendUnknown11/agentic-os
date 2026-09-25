@@ -14,10 +14,12 @@ workflow run results survive store repaints through keyed state instead of a
 DOM reference, and the automation graph editor is widened to two columns. Its
 `test/t-theme.js` change moved with it.
 
-The push has since happened. Verified 2026-09-21: `main` and `origin/main` are
-in sync. `origin` now carries two branches, `main` and `ui-enhancement`; the
-other twenty were merged long ago and were deleted on 2026-09-21. The sovereign
-chose to keep `ui-enhancement`.
+Verified 2026-09-25 (`git branch -r`): `origin` carries `main` and
+`claude/peaceful-bohr-c3dfn8`. `ui-enhancement` and every feature branch named
+below (`ui-revamp`, `functional-revamp`, `chore/recover-electron-harness`, the
+`fix/issue-*` branches) are gone. Their work is on `main`: each PR head from
+#71-#79 is an ancestor of `origin/main`. Those PRs read "closed", not
+"merged", on GitHub because they were merged locally.
 
 Keep this trap in mind before judging a branch dead or alive: this repository
 squash-merges, so a merged branch does NOT appear under
@@ -78,7 +80,7 @@ shared declaration fixed all six; `fix/live-layout-defects` carries them with
 tests that pin the measured numbers.
 
 **2026-09-23: a glass layer was added on top of the paper palette**, on the
-`ui-revamp` branch. PLAN.md's new "UI revamp —
+`ui-revamp` branch, since merged to `main`. PLAN.md's new "UI revamp —
 paper with glass (2026-09-23)" section is the contract and its acceptance
 evidence; the summary: `#header`, `#sidebar` (rail and drawer), `#composer`,
 `.hover-tip`, and the drawer scrim gained
@@ -121,8 +123,8 @@ card; `align-items: start` was already correct).
 
 ## Current state (functional-revamp, 2026-09-23)
 
-On `functional-revamp`, two pieces of the 2026-09-23 "functional revamp" have
-landed: multiple courts at once (closes GitHub issue #42) and Habitable pilot
+Two pieces of the 2026-09-23 "functional revamp" landed on `main` from
+`functional-revamp`: multiple courts at once (closes GitHub issue #42) and Habitable pilot
 readiness (tooling detection plus an evidence gate, source-side only). Full
 contract and acceptance evidence: `PLAN.md`'s "Functional revamp" section.
 
@@ -179,7 +181,7 @@ and still gated on backlog approval, per the section below.
 
 ## Current state (cleanup pass, 2026-09-24)
 
-Branch `claude/peaceful-bohr-c3dfn8`, from `main` at `a1b6d97`. A code cleanup
+Merged to `main` as PR #80 (`c6f3b18`, squash). A code cleanup
 with bug-hunting: `src/`, `ui/` and `electron/` lost a net 363 lines (491 added,
 854 removed), almost all of it duplicated sequences folded into one helper each
 (agent.js's three turn runners, bus.js's five migrations, worktree.js's merges
@@ -208,11 +210,22 @@ each with a test that failed first:
 - The overview showed "Recovery underway" for any run that had ever retried,
   completed ones included (`node ui/run.js`).
 
-Evidence: `npm test` ran 89 suites, 88 passed. `t-theme-geometry.js` ran in
-real Chromium. `t-electron.js` failed because this Linux container has no
-display, and under `xvfb-run` it hung. That was the same result as the baseline
-before any change, so no Electron evidence is held. Source and HTTP-level
-evidence only.
+Evidence: in the Linux container `npm test` ran 89 suites and 88 passed.
+`t-theme-geometry.js` ran in real Chromium. `t-electron.js` failed there for
+lack of a display, the same as the baseline. Windows CI then ran all 89 green,
+`t-electron.js` included, so Electron evidence is held for the shell and the
+run lifecycle. The pet-only quit path has not been run in a live window.
+
+Follow-up on the same branch, 2026-09-25:
+- Issue #47: text people read now says workspace (a running instance per
+  repository), team (the agents), you (the sovereign) and Agentic OS. The
+  installer is "Agentic OS Setup". Code identifiers, config keys, `.kingdom/`,
+  `KINGDOM_*`, `appId` and agent prompts are unchanged. The packaged app's
+  userData folder follows `productName`, so an existing install starts with a
+  fresh `daemon.log` and pet position.
+- CI: `actions/checkout` and `setup-node` are now v5, and `runTests` no longer
+  passes args beside `shell: true` on Windows (DEP0190).
+- Issue #39 was closed at the owner's request.
 
 Left open, noted rather than changed:
 
@@ -245,10 +258,15 @@ the hadRealTurn wiring holds, workflows cannot loop unboundedly), plus new
 turn-budget cases inside the already-registered `t-budget.js` — bringing
 `npm test` to **79 suites, 4-wide, 40.2s, all passed** with both merged. The
 suite count is the contract.
-`test/t-electron.js` (the recovered Electron acceptance harness) is not yet in
-this count — it lands with PR #71, still open pending manual merge.
+`test/t-electron.js` (the recovered Electron acceptance harness) is in the
+gate now; PR #71 landed on `main`.
 
-On `functional-revamp` (2026-09-23, not yet merged to `main`), the same gate
+**Current count, 2026-09-25: 89 suites.** On `windows-latest` CI (PR #80, run
+36089050888) all 89 passed, 2-wide, in 105.8s, and `t-electron.js` printed "live
+interface acceptance passed". In this Linux container `t-electron.js` fails for
+want of a display, which makes it 88/89 here.
+
+On `functional-revamp` (2026-09-23, since merged to `main`), the same gate
 printed **84 suites, 4-wide, ~37s, all suites passed** after the two review
 fixes above landed (each its own commit, full gate green before and after —
 see the two "Review fix" paragraphs). The runner's array grew by eight over
@@ -510,10 +528,9 @@ current proof; refresh them before the snapshot.
   720px with its keyboard path, and reduced-motion behaviour — the last two need
   `page.setViewportSize` and `page.emulateMedia({ reducedMotion: 'reduce' })`
   rather than anything new.
-- **Confirm `t-electron.js` runs on the Windows CI runner.** It passes locally
-  and has never run in Actions. A GitHub `windows-latest` runner is expected to
-  launch Electron, but that is unverified here; if it cannot, the suite needs a
-  skip guard rather than a red build.
+- ~~Confirm `t-electron.js` runs on the Windows CI runner.~~ Done 2026-09-25:
+  the `windows-latest` job for PR #80 ran it to "live interface acceptance
+  passed" (shell and run-lifecycle sections), with all 89 suites green.
 - ~~Measure the collapsed rail's tap targets.~~ Done 2026-09-21. The conflict
   between the pinned 64px rail width and the pinned 44px minimum was real and
   resolved without moving either: the rail's own 16px inset drops to 8px when
@@ -530,7 +547,7 @@ current proof; refresh them before the snapshot.
   a real approved run is started.
 - Multiple courts at once (issue #42, `functional-revamp`, 2026-09-23) needs
   Electron and Windows acceptance: the single-instance lock, per-port windows,
-  the native "End court?" confirmations, and media-permission scoping per
+  the native "End this workspace?" confirmations, and media-permission scoping per
   court window were never run — this environment cannot launch Electron. A
   developer machine must exercise: two repositories open at once, a relaunch
   focusing the right court instead of starting a stray daemon, and the
