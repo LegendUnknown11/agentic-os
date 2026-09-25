@@ -103,6 +103,12 @@ writeFileSync(cfg, JSON.stringify({
   // to strand its claims forever). That is a different scenario than the one
   // this fixture is for.
   bus.set('summoned', JSON.stringify(['coder']));
+  // Two finished runs with ledgers, so the run spend panel has a history.
+  bus.createRun({ id: 'run-a', objective: 'first run', state: 'completed' });
+  bus.recordRunSpend('run-a', 'coder', 0.25, 1);
+  bus.createRun({ id: 'run-b', objective: 'second run', state: 'cancelled' });
+  bus.recordRunSpend('run-b', 'coder', 0.5, 2);
+  bus.recordRunSpend('run-b', 'orchestrator', 0.75, 3);
   bus.close();
 }
 
@@ -500,6 +506,23 @@ try {
     a.deepEqual(r.tasks[1].blockedBy, [r.tasks[0].id],
       'the panel must be told WHAT a task is waiting for, not merely that it waits');
     console.log('  tasks: outstanding, held, and blocked are three distinguishable states');
+  }
+
+  /* ---------- 6. run spend: one run's ledger, the ceiling, and history ---------- */
+  {
+    const r = await get('/api/runSpend');
+    a.ok(r.ok);
+    a.equal(r.cap, 0, 'no maxRunUsd configured reads as 0, not a guess');
+    a.equal(r.run.id, 'run-b', 'with no current run, the most recent run is shown');
+    a.equal(r.spend.usd, 1.25);
+    a.deepEqual(r.spend.members.map((m) => m.name), ['orchestrator', 'coder'], 'members rank by spend');
+    a.deepEqual(r.runs.map((x) => [x.id, x.usd, x.turns]), [['run-b', 1.25, 2], ['run-a', 0.25, 1]],
+      'history lists newest first with each run\'s own total');
+    const one = await get('/api/runSpend?id=run-a');
+    a.equal(one.spend.usd, 0.25, 'a named run reads its own ledger');
+    const missing = await fetch(`${base}/api/runSpend?id=run-none`);
+    a.equal(missing.status, 404, 'an unknown run is a visible 404, not an empty panel');
+    console.log('  run spend: per-run ledger, ceiling, and newest-first history');
   }
 
   console.log('t-panels.js OK — metrics take deltas, diffs are real, bad approvals cost one row, the task list is visible');

@@ -303,5 +303,61 @@ console.log('  MCP surfaces are under budget and roster supports query, activeOn
   console.log('  maxRunUsd stops a run that crosses it, the same restart-safe way maxBudgetUsd/maxKingdomUsd already do');
 }
 
+/* ---------- clearSpend cannot disarm the per-run ceiling ----------------- */
+// The ceiling used to be lifetime spend minus a baseline captured when the run
+// began. Court spend before the run, then the sovereign clearing spend, left
+// the run's figure negative, so it could never reach the cap.
+{
+  const runRepo = mkdtempSync(join(tmpdir(), 'kingdom-runledger-'));
+  const git = (...x) => execFileSync('git', x, { cwd: runRepo, stdio: 'pipe' });
+  git('init', '-q');
+  git('config', 'user.email', 'k@kingdom');
+  git('config', 'user.name', 'kingdom');
+  writeFileSync(join(runRepo, 'README.md'), '# t\n');
+  git('add', '-A');
+  git('commit', '-qm', 'init');
+
+  const runConfigPath = join(runRepo, 'kingdom.config.json');
+  writeFileSync(runConfigPath, JSON.stringify({
+    maxRunUsd: 1,
+    orchestrator: { name: 'orchestrator', cli: 'codex' },
+    briefer: { name: 'briefer', cli: 'codex' },
+    peasants: [{ name: 'coder', cli: 'codex' }],
+  }));
+
+  const rk = new Kingdom(runRepo, runConfigPath);
+  rk.on('error', () => {});
+  await rk.start();
+  await rk.wake('coder');
+  const coder = rk.agents.get('coder');
+  coder.send = () => {};
+  coder.stop = function () { this.stopped = true; };
+
+  // $4 of court spend before any run exists: not the run's money.
+  for (let i = 0; i < 2; i++) coder.emit('turn_end', { usage: { input_tokens: 10 }, costUsd: 2 });
+  await wait(100);
+  const run = await rk.createRun({ objective: 'prove clearSpend cannot disarm the run ceiling' });
+  rk.clearSpend();
+  const runEvents = [];
+  rk.on('run', (r) => runEvents.push(r));
+
+  for (let i = 0; i < 3; i++) coder.emit('turn_end', { usage: { input_tokens: 10 }, costUsd: 0.4 });
+  await wait(200);
+
+  a.ok(runEvents.some((r) => r.id === run.id && r.state === 'blocked'),
+    'crossing maxRunUsd after clearSpend must still block the run');
+  a.equal(rk.bus.run(run.id).state, 'blocked');
+  const ledger = rk.bus.runSpend(run.id);
+  a.ok(Math.abs(ledger.usd - 1.2) < 1e-9, `the run's ledger holds only its own turns, got ${ledger.usd}`);
+  a.equal(ledger.turns, 3);
+  a.deepEqual(ledger.members.map((m) => [m.name, m.turns]), [['coder', 3]]);
+  a.equal(ledger.series.length, 3, 'one cumulative point per turn');
+  a.ok(Math.abs(ledger.series.at(-1).usd - 1.2) < 1e-9, 'the series ends on the total');
+
+  await rk.stop();
+  rmSync(runRepo, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  console.log('  the run ceiling reads the run\'s own spend ledger, so clearSpend cannot disarm it');
+}
+
 rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 console.log('t-efficiency.js OK — accounting, telemetry, routing, budgets, roster and masking contracts hold');

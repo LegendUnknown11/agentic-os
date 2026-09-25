@@ -733,6 +733,28 @@ const READS = {
     return [200, { ok: true, runs: kingdom.bus.runs(state ? { state } : {}) }];
   },
 
+  // What a run has spent, from its own ledger: the requested run (default:
+  // the current one, else the most recent), against maxRunUsd, plus recent
+  // runs' totals for the history table.
+  '/api/runSpend': async (url, req) => {
+    const all = kingdom.bus.runs();
+    const id = url.searchParams.get('id');
+    const run = id ? kingdom.bus.run(id) : kingdom.bus.currentRun() ?? all.at(-1) ?? null;
+    if (id && !run) return [404, { ok: false, error: `No run ${id}.` }];
+    const totals = kingdom.bus.runSpendTotals();
+    const runs = all.slice(-20).reverse().map((r) => ({
+      id: r.id, state: r.state, objective: r.objective, createdTs: r.createdTs,
+      endedTs: r.completedTs ?? r.cancelledTs ?? null,
+      usd: totals[r.id]?.usd ?? 0, turns: totals[r.id]?.turns ?? 0,
+    }));
+    return [200, {
+      ok: true, cap: Number(kingdom.config.maxRunUsd ?? 0) || 0,
+      run: run ? { id: run.id, state: run.state, objective: run.objective, createdTs: run.createdTs } : null,
+      spend: run ? kingdom.bus.runSpend(run.id) : null,
+      runs,
+    }];
+  },
+
   '/api/campaigns': async (url, req) => {
     return [200, { ok: true, campaigns: kingdom.bus.campaigns() }];
   },

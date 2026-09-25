@@ -1101,6 +1101,8 @@ export class Kingdom extends EventEmitter {
       const cost = priced ?? 0;
       const spent = Number(this.bus.get('spentUsd') ?? 0) + cost;
       this.bus.set('spentUsd', String(spent));
+      const currentRun = this.#activeRun();
+      if (currentRun) this.bus.recordRunSpend(currentRun.id, name, cost);
       const mine = Number(this.bus.get(`spent:${name}`) ?? 0) + cost;
       this.bus.set(`spent:${name}`, String(mine));
 
@@ -1293,24 +1295,25 @@ export class Kingdom extends EventEmitter {
         `$${perMember}) and has been stopped. Do not wait on it. The sovereign ` +
         `must raise its budget or reassign the work.`, 'notice');
     }
-    this.#enforceRunBudget(spentTotal);
+    this.#enforceRunBudget();
   }
 
   /**
    * A per-run ceiling, beside maxBudgetUsd (per member, forever) and
-   * maxKingdomUsd (the whole court, forever). A run's own baseline is
-   * captured once in createRun(); this compares cumulative kingdom spend
-   * against that baseline, so it survives a restart the same way the other
-   * two ceilings do. Unrelated work is deliberately left alone — #runBlock is
-   * the same mechanism a stuck recovery or a failed verification already
-   * uses to stop THIS run while the rest of the court keeps going.
+   * maxKingdomUsd (the whole court, forever). It reads the run's own spend
+   * ledger (bus.runSpentUsd), which survives a restart the same way the other
+   * two ceilings do. It used to be lifetime spend minus a baseline captured at
+   * createRun(), and clearSpend() zeroing the lifetime counter drove that
+   * negative, so the ceiling could never fire again. Unrelated work is
+   * deliberately left alone — #runBlock is the same mechanism a stuck recovery
+   * or a failed verification already uses to stop THIS run while the rest of
+   * the court keeps going.
    */
-  #enforceRunBudget(spentTotal) {
+  #enforceRunBudget() {
     const run = this.#activeRun();
     const cap = this.config.maxRunUsd ?? 0;
     if (!run?.id || !cap) return;
-    const baseline = Number(this.bus.get(`run:${run.id}:baselineSpentUsd`) ?? 0);
-    const spent = spentTotal - baseline;
+    const spent = this.bus.runSpentUsd(run.id);
     if (spent < cap) return;
     this.emit('budget', { scope: 'run', runId: run.id, spent, cap });
     this.#runBlock(run, `run spend ceiling reached ($${spent.toFixed(2)} of $${cap})`,
@@ -1796,11 +1799,6 @@ export class Kingdom extends EventEmitter {
   async createRun(fields = {}) {
     const baselineRevision = fields.baselineRevision ?? (this.repo ? await revisionOf(this.repo) : null);
     const run = this.bus.createRun({ ...fields, baselineRevision });
-    // maxRunUsd is scoped to what THIS run spends, not lifetime court spend —
-    // captured once, here, in the bus's own restart-safe key-value store (no
-    // runs-table column needed). Same reasoning as #enforceBudget's own
-    // comment on why counting per-process was the bug in the first place.
-    this.bus.set(`run:${run.id}:baselineSpentUsd`, String(Number(this.bus.get('spentUsd') ?? 0)));
     await this.#reconcileRun();
     const current = this.bus.run(run.id);
     this.emit('run', current);

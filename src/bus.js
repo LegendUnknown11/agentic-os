@@ -85,6 +85,16 @@ create table if not exists runs (
   cancelled_ts          integer,
   blocker               text
 );
+-- One row per priced turn taken while a run is current. A run's spend is the
+-- sum of its own rows, never lifetime spend minus a baseline: clearSpend()
+-- zeroes the lifetime counter and made that subtraction go negative.
+create table if not exists run_spend (
+  id      integer primary key autoincrement,
+  run_id  text    not null,
+  ts      integer not null,
+  agent   text    not null,
+  usd     real    not null
+);
 create table if not exists campaigns (
   id            integer primary key autoincrement,
   ts            integer not null,
@@ -120,6 +130,7 @@ create index if not exists idx_msg_recipient on messages(recipient, id);
 create index if not exists idx_evt_agent on events(agent, id);
 create index if not exists idx_task_state on tasks(state, owner);
 create index if not exists idx_conv_member on conversations(member, created_ts);
+create index if not exists idx_run_spend on run_spend(run_id, id);
 `;
 
 // A pre-conversations db's messages/events tables don't have conversation_id
@@ -609,8 +620,8 @@ export class Bus {
 
   runs({ state = null } = {}) {
     const rows = state
-      ? this.db.prepare('select * from runs where state = ? order by created_ts').all(state)
-      : this.db.prepare('select * from runs order by created_ts').all();
+      ? this.db.prepare('select * from runs where state = ? order by created_ts, rowid').all(state)
+      : this.db.prepare('select * from runs order by created_ts, rowid').all();
     return rows.map((row) => this.#runRow(row));
   }
 
@@ -705,6 +716,51 @@ export class Bus {
     }
     return run.state === 'completed' ? this.updateRun(run.id, { appliedTs: Date.now() })
       : this.transitionRun(run.id, 'completed', { appliedTs: Date.now() });
+  }
+
+  recordRunSpend(runId, agent, usd, ts = Date.now()) {
+    this.db.prepare('insert into run_spend (run_id, ts, agent, usd) values (?,?,?,?)')
+      .run(String(runId), ts, String(agent), Number(usd) || 0);
+  }
+
+  runSpentUsd(runId) {
+    return this.db.prepare('select coalesce(sum(usd), 0) as usd from run_spend where run_id = ?').get(String(runId)).usd;
+  }
+
+  /**
+   * One run's spend: total, per member, and a cumulative series thinned to at
+   * most `maxPoints` (always keeping the last point, so the line ends on the
+   * total).
+   */
+  runSpend(runId, { maxPoints = 400 } = {}) {
+    const rows = this.db.prepare('select ts, agent, usd from run_spend where run_id = ? order by id').all(String(runId));
+    const members = new Map();
+    const series = [];
+    let total = 0;
+    for (const row of rows) {
+      total += row.usd;
+      const m = members.get(row.agent) ?? { name: row.agent, usd: 0, turns: 0 };
+      m.usd += row.usd; m.turns += 1;
+      members.set(row.agent, m);
+      series.push({ ts: row.ts, usd: total });
+    }
+    const step = Math.ceil(series.length / Math.max(2, maxPoints));
+    const thinned = step <= 1 ? series
+      : series.filter((_, i) => i % step === 0 || i === series.length - 1);
+    return {
+      runId: String(runId), usd: total, turns: rows.length,
+      members: [...members.values()].sort((x, y) => y.usd - x.usd),
+      series: thinned,
+    };
+  }
+
+  /** Spend and turn totals for every run that has any, keyed by run id. */
+  runSpendTotals() {
+    const out = {};
+    for (const row of this.db.prepare('select run_id, sum(usd) as usd, count(*) as turns from run_spend group by run_id').all()) {
+      out[row.run_id] = { usd: row.usd, turns: row.turns };
+    }
+    return out;
   }
 
   // --- the shared task list -------------------------------------------
@@ -1031,6 +1087,20 @@ if (process.argv[1]?.endsWith('bus.js')) {
     a.equal(runs.approveRun(run.id).finalApproval, true);
     a.equal(runs.applyRun(run.id).state, 'completed');
     a.equal(runs.currentRun(), null, 'completed runs are no longer current');
+
+    // The spend ledger: totals per run, a cumulative series thinned to a cap
+    // that still ends on the total.
+    for (let i = 1; i <= 10; i++) runs.recordRunSpend(run.id, i % 2 ? 'coder' : 'reviewer', 0.5, i);
+    runs.recordRunSpend('run-other', 'coder', 3, 11);
+    const spend = runs.runSpend(run.id, { maxPoints: 4 });
+    a.equal(spend.usd, 5);
+    a.equal(spend.turns, 10);
+    a.deepEqual(spend.members.map((m) => [m.name, m.usd, m.turns]), [['coder', 2.5, 5], ['reviewer', 2.5, 5]]);
+    a.ok(spend.series.length <= 5, `series thinned toward the cap, got ${spend.series.length}`);
+    a.deepEqual(spend.series.at(-1), { ts: 10, usd: 5 }, 'the thinned series still ends on the total');
+    a.equal(runs.runSpentUsd(run.id), 5);
+    a.equal(runs.runSpentUsd('run-none'), 0, 'a run with no ledger rows has spent nothing');
+    a.deepEqual(runs.runSpendTotals(), { [run.id]: { usd: 5, turns: 10 }, 'run-other': { usd: 3, turns: 1 } });
     runs.close();
   }
 
