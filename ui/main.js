@@ -484,7 +484,10 @@ function onKeydown(event) {
   if (event.key === 'Tab' && document.body.classList.contains('sidebar-open')) {
     const drawer = $('sidebar');
     const focusable = [...(drawer?.querySelectorAll('button, input, select, textarea, a[href], summary, [tabindex]:not([tabindex="-1"])') ?? [])]
-      .filter((element) => !element.disabled && !element.hidden);
+      // Rendered only. At 720px the drawer still CONTAINS the rail's Collapse
+      // and turn-budget buttons, display:none; counting them made the hidden
+      // Collapse the "last" element, so Tab from Settings escaped to <body>.
+      .filter((element) => !element.disabled && !element.hidden && element.getClientRects().length > 0);
     const current = focusable.indexOf(document.activeElement);
     const last = focusable.length - 1;
     if (last >= 0 && (current < 0 || (event.shiftKey && current === 0) || (!event.shiftKey && current === last))) {

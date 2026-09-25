@@ -534,6 +534,7 @@ a.equal(waitingCount([{ tone: 'attention' }, { tone: 'live' }, { tone: 'attentio
 a.match(viewSources.inbox, /clearTimeout\(timer\); requestToken\(state, 'inboxRequest'\); off\?\.\(\)/, 'leaving the Inbox stops its refetch and drops a pending load');
 a.match(mainSource, /get\('\/api\/inbox'\)[\s\S]*apply\(\{ type: 'inbox'/, 'the rail count is fed on navigation, not only from the Inbox view');
 a.match(sidebarSource, /\['inbox', /, 'Inbox is reachable from the rail');
+a.match(mainSource, /!element\.hidden && element\.getClientRects\(\)\.length > 0\)/, 'the drawer focus trap counts only rendered elements, or Tab escapes past a display:none last button');
 a.deepEqual(parseDays('1-5'), [1, 2, 3, 4, 5]);
 a.deepEqual(parseDays(' 1, 3 ,5 '), [1, 3, 5]);
 a.deepEqual(parseDays('0-1,6,1'), [0, 1, 6], 'ranges and repeats collapse into a sorted set');

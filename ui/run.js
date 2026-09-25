@@ -50,6 +50,21 @@ export const recoveryFor = (run) => (runStatus(run) === 'blocked'
   ? run?.recovery ?? run?.recoveryHistory?.at?.(-1) ?? null : null);
 const listFor = (run, names) => names.flatMap((name) => array(run, [name])).filter(Boolean);
 
+/** A blocker is {operation, next, at}; none of text()'s field names, so it rendered blank. */
+export const blockerText = (item) => (item && typeof item === 'object' && item.operation
+  ? `${item.operation}${item.next ? `. Next: ${item.next}` : ''}` : text(item));
+
+/** The daemon sends one blocker as both `blocker` and `blockers`; list it once. */
+export function blockersFor(run) {
+  const seen = new Set();
+  return listFor(run, ['blockers', 'blockedBy', 'blocker']).filter((item) => {
+    const key = typeof item === 'object' ? JSON.stringify(item) : String(item);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 function itemRows(items, emptyText = 'Nothing recorded yet.') {
   if (!items.length) return [h('p', { class: 'empty', text: emptyText })];
   return items.map((item) => {
@@ -130,7 +145,7 @@ export function renderRunOverview(state, options = {}) {
   const taskRows = Array.isArray(state.tasks) ? state.tasks.filter((task) => !runTaskIds.size || runTaskIds.has(Number(task.id))) : [];
   const currentRows = listFor(run, ['currentWork', 'current', 'activeTasks']);
   const current = currentRows.length ? currentRows : taskRows.filter((task) => !['done', 'dropped'].includes(task.state));
-  const blockers = listFor(run, ['blockers', 'blockedBy', 'blocker']);
+  const blockers = blockersFor(run);
   const decisions = [
     ...listFor(run, ['decisionsAwaiting', 'decisions', 'pendingDecisions']),
     ...(Array.isArray(state.approvals) ? state.approvals.filter((item) => item.runId === runId(run) || item.run_id === runId(run)) : []),
@@ -150,7 +165,7 @@ export function renderRunOverview(state, options = {}) {
   const grid = h('div', { class: 'run-grid' });
   grid.append(section(`Verified deliverables${verified.length ? ` · ${verified.length}` : ''}`, ...itemRows(verified, 'No deliverable has passed verification yet.')));
   grid.append(section(`Current work${current.length ? ` · ${current.length}` : ''}`, ...itemRows(current, 'No active work is recorded.')));
-  if (blockers.length) grid.append(section(`Blockers · ${blockers.length}`, ...blockers.map((item) => note(text(item), 'danger'))));
+  if (blockers.length) grid.append(section(`Blockers · ${blockers.length}`, ...blockers.map((item) => note(blockerText(item), 'danger'))));
   if (decisions.length) grid.append(section(`Decisions awaiting you · ${decisions.length}`, ...decisions.map((item) => note(text(item)))));
   if (recovery && recovery.active !== false) grid.append(section('Recovery underway', note(text(recovery), 'danger')));
   shell.append(grid);
@@ -234,5 +249,10 @@ if (typeof process !== 'undefined' && process.argv?.[1]?.endsWith('run.js')) {
   assert.equal(recoveryFor({ ...retried, state: 'completed' }), null, 'a finished run is not recovering');
   assert.equal(recoveryFor({ ...retried, state: 'running' }), null, 'a past retry is history, not a live recovery');
   assert.equal(recoveryFor({ ...retried, state: 'blocked' })?.operation, 'transport-retry', 'a blocked run shows its latest recovery');
+  const blocker = { operation: 'verification of coder', next: 'fix the failing test', at: 1 };
+  assert.equal(blockerText(blocker), 'verification of coder. Next: fix the failing test', 'a blocker says what and what next, never blank');
+  assert.equal(blockerText('plain reason'), 'plain reason');
+  assert.deepEqual(blockersFor({ blocker, blockers: [blocker] }), [blocker], 'one blocker sent two ways is listed once');
+  assert.deepEqual(blockersFor({ blockers: [] }), []);
   console.log('run.js OK — run lifecycle labels and objective fallback are stable');
 }
