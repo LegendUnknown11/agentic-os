@@ -1,4 +1,5 @@
-import { h, page, section, empty, note, button, meter, kb, money, displayName, get, apiError, requestToken } from './util.js';
+import { h, page, section, empty, note, button, meter, kb, money, displayName, get, apiError, requestToken, tone, date } from './util.js';
+import { runStatus, runStatusLabel } from '../run.js';
 
 const number = (value) => value !== null && value !== '' && Number.isFinite(Number(value)) ? Number(value) : null;
 const percent = (value) => number(value) == null ? null : Math.max(0, Math.min(100, number(value)));
@@ -122,6 +123,129 @@ export function cancelMetrics(state) {
   state.metricsPending = null;
 }
 
+/* ---------- run spend: one run's own ledger against maxRunUsd ---------- */
+
+export function loadRunSpend(state, render, force = false) {
+  if (!force && state.runSpendPending) return state.runSpendPending;
+  const token = requestToken(state, 'runSpendRequest');
+  const pending = get('/api/runSpend').then((data) => {
+    if (state.runSpendRequest !== token) return data;
+    if (data?.ok !== false) {
+      state.runSpend = data;
+      state.runSpendError = null;
+    } else {
+      state.runSpendError = apiError(data, 'Could not load run spend.');
+    }
+    render?.();
+    return data;
+  }).finally(() => {
+    if (state.runSpendPending === pending) state.runSpendPending = null;
+  });
+  state.runSpendPending = pending;
+  return pending;
+}
+
+export function cancelRunSpend(state) {
+  requestToken(state, 'runSpendRequest');
+  state.runSpendPending = null;
+}
+
+const SVG = 'http://www.w3.org/2000/svg';
+const svg = (tag, attrs = {}) => {
+  const node = document.createElementNS(SVG, tag);
+  for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, String(value));
+  return node;
+};
+
+/** Chart geometry, pure so the suite can pin it: points in a W x H box, the
+ *  ceiling's y when there is one, and the y-domain top they share. */
+export function spendGeometry(series = [], cap = 0, { width = 640, height = 160, inset = 0 } = {}) {
+  const points = series.filter((p) => Number.isFinite(p?.ts) && Number.isFinite(p?.usd));
+  const top = Math.max(cap > 0 ? cap : 0, ...points.map((p) => p.usd), 0) * 1.1 || 1;
+  const t0 = points[0]?.ts ?? 0;
+  const span = (points.at(-1)?.ts ?? 0) - t0;
+  const y = (usd) => height - (usd / top) * height;
+  const plotWidth = width - 2 * inset;
+  return {
+    width, height, top,
+    // Time on x; turns that share a timestamp spread evenly instead.
+    points: points.map((p, i) => ({
+      ...p, y: y(p.usd),
+      x: inset + (span > 0 ? ((p.ts - t0) / span) * plotWidth : points.length > 1 ? (i / (points.length - 1)) * plotWidth : plotWidth / 2),
+    })),
+    capY: cap > 0 ? y(cap) : null,
+  };
+}
+
+function spendChart(series, cap) {
+  const geo = spendGeometry(series, cap, { inset: 8 });
+  const readout = h('p', { class: 'run-spend-readout', text: 'Point at the line to read a turn.' });
+  const chart = svg('svg', {
+    class: 'run-spend-chart', viewBox: `0 0 ${geo.width} ${geo.height}`, preserveAspectRatio: 'none',
+    role: 'img', 'aria-label': `Cumulative run spend, ${money(series.at(-1)?.usd ?? 0)} over ${series.length} recorded points`,
+  });
+  chart.append(svg('line', { class: 'run-spend-axis', x1: 0, y1: geo.height, x2: geo.width, y2: geo.height }));
+  if (geo.capY != null) chart.append(svg('line', { class: 'run-spend-cap', x1: 0, y1: geo.capY, x2: geo.width, y2: geo.capY }));
+  if (geo.points.length > 1) {
+    chart.append(svg('path', { class: 'run-spend-line', d: geo.points.map((p, i) => `${i ? 'L' : 'M'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ') }));
+  }
+  const last = geo.points.at(-1);
+  // A stretched viewBox turns a <circle> into an ellipse. A zero-length path
+  // with a round cap and a non-scaling stroke stays a true circle.
+  const mark = (cls, p) => svg('path', { class: cls, d: p ? `M${p.x},${p.y} l0,0` : 'M0,0 l0,0' });
+  if (last) chart.append(mark('run-spend-end', last));
+  const cross = svg('line', { class: 'run-spend-cross', x1: 0, y1: 0, x2: 0, y2: geo.height, visibility: 'hidden' });
+  const dot = mark('run-spend-dot');
+  dot.setAttribute('visibility', 'hidden');
+  chart.append(cross, dot);
+  const hide = () => { cross.setAttribute('visibility', 'hidden'); dot.setAttribute('visibility', 'hidden'); readout.textContent = 'Point at the line to read a turn.'; };
+  chart.addEventListener('pointermove', (event) => {
+    const box = chart.getBoundingClientRect();
+    if (!box.width || !geo.points.length) return;
+    const at = ((event.clientX - box.left) / box.width) * geo.width;
+    const near = geo.points.reduce((best, p) => (Math.abs(p.x - at) < Math.abs(best.x - at) ? p : best));
+    cross.setAttribute('x1', near.x); cross.setAttribute('x2', near.x);
+    dot.setAttribute('d', `M${near.x},${near.y} l0,0`);
+    cross.setAttribute('visibility', 'visible'); dot.setAttribute('visibility', 'visible');
+    readout.textContent = `${date(near.ts)} · ${money(near.usd)} spent so far`;
+  });
+  chart.addEventListener('pointerleave', hide);
+  const legend = geo.capY == null ? null
+    : h('p', { class: 'run-spend-legend' }, h('i', { class: 'run-spend-cap-key', 'aria-hidden': 'true' }), `Dashed line: ${money(cap)} run ceiling`);
+  return h('figure', { class: 'run-spend-figure' }, chart, legend, readout);
+}
+
+export function runSpendSection(state) {
+  const data = state.runSpend;
+  const failure = state.runSpendError;
+  if (!data) return section('Run spend', failure ? note(failure, 'danger') : empty('Loading run spend.'));
+  const spend = data.spend;
+  if (!data.run || !spend) return section('Run spend', failure ? note(failure, 'danger') : null, empty('No run has started yet.'));
+  const cap = Number(data.cap) || 0;
+  const status = runStatus(data.run);
+  const header = h('div', { class: 'run-spend-head' },
+    h('p', { class: 'run-spend-objective', text: data.run.objective || 'Untitled run' }),
+    h('b', { class: `run-badge ${tone(status)}`.trim(), text: runStatusLabel(status) }));
+  const ceiling = cap > 0
+    ? meter((spend.usd / cap) * 100, `${money(spend.usd)} of ${money(cap)} run ceiling`)
+    : note(`${money(spend.usd)} spent. No run ceiling is set; add maxRunUsd to kingdom.config.json to stop a run at a limit.`);
+  const members = spend.members?.length
+    ? h('dl', { class: 'usage-breakdown compact' }, ...spend.members.flatMap((m) =>
+      definition(displayName(m.name), `${money(m.usd)} · ${m.turns} ${m.turns === 1 ? 'turn' : 'turns'}`)))
+    : empty('No turns recorded for this run yet.');
+  const history = (data.runs ?? []).length ? h('div', { class: 'table-wrap' }, h('table', { class: 'data-table' },
+    h('thead', {}, h('tr', {}, ...['Run', 'State', 'Started', 'Turns', 'Spend'].map((t) => h('th', { scope: 'col', text: t })))),
+    h('tbody', {}, ...data.runs.map((r) => h('tr', { class: r.id === data.run.id ? 'current' : null, 'aria-current': r.id === data.run.id ? 'true' : null },
+      h('td', { text: r.objective || r.id }), h('td', { text: runStatusLabel(runStatus(r)) }),
+      h('td', { text: date(r.createdTs) }), h('td', { text: String(r.turns ?? 0) }), h('td', { text: money(r.usd ?? 0) })))))) : null;
+  return section('Run spend',
+    failure ? note(`Refresh failed: ${failure} Showing the last valid run spend.`, 'danger') : null,
+    header, ceiling,
+    spend.series?.length ? spendChart(spend.series, cap) : empty('No turns recorded for this run yet.'),
+    h('div', { class: 'run-spend-members' }, h('h3', { class: 'run-spend-sub', text: 'By member' }), members),
+    history ? h('div', {}, h('h3', { class: 'run-spend-sub', text: 'Recent runs' }), history) : null);
+}
+
 const metricCard = (label, value, detail, extra) => h('article', { class: 'metric-card' },
   h('span', { class: 'metric-label', text: label }), h('strong', { class: 'metric-value', text: value }),
   h('span', { class: 'metric-detail', text: detail }), extra);
@@ -185,9 +309,11 @@ export function renderUsage(state, root) {
   const members = Array.isArray(metrics.members) ? metrics.members : [];
   const view = metricsView(metrics);
   const loadFailure = state.metricsError ?? apiError(metrics, 'Could not load usage.');
-  const refresh = button(state.metricsLoading ? 'Refresh again' : 'Refresh', () => loadMetrics(state, () => {
-    if (root.isConnected !== false) renderUsage(state, root);
-  }, true), 'primary');
+  const refresh = button(state.metricsLoading ? 'Refresh again' : 'Refresh', () => {
+    const repaint = () => { if (root.isConnected !== false) renderUsage(state, root); };
+    void loadRunSpend(state, repaint, true);
+    return loadMetrics(state, repaint, true);
+  }, 'primary');
   refresh.dataset.action = 'refresh-metrics';
   const status = h('p', {
     class: `usage-status${loadFailure ? ' danger' : ''}`, role: 'status', 'aria-live': 'polite',
@@ -213,6 +339,8 @@ export function renderUsage(state, root) {
   if (recommendation) dashboard.append(h('aside', { class: 'usage-recommendation attention' },
     h('div', {}, h('strong', { text: recommendation.condition }), h('p', { text: recommendation.consequence })),
     h('a', { class: 'button link', href: recommendation.href, text: recommendation.action })));
+
+  dashboard.append(runSpendSection(state));
 
   const tokenBreakdown = h('dl', { class: 'usage-breakdown' },
     ...definition('Fresh input', tokenText(view.fresh)), ...definition('Cached reads', tokenText(view.cached)),
@@ -262,8 +390,10 @@ export function renderUsage(state, root) {
 
 export function mountUsage(state, root) {
   renderUsage(state, root);
-  void loadMetrics(state, () => { if (root.isConnected !== false) renderUsage(state, root); }, true);
-  return () => { if (state.metricsLoading) cancelMetrics(state); };
+  const repaint = () => { if (root.isConnected !== false) renderUsage(state, root); };
+  void loadMetrics(state, repaint, true);
+  void loadRunSpend(state, repaint, true);
+  return () => { if (state.metricsLoading) cancelMetrics(state); cancelRunSpend(state); };
 }
 export const render = renderUsage;
 export const mount = mountUsage;

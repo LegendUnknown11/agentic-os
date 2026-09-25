@@ -6,7 +6,7 @@ import { lastMessageIdFor } from '../ui/sidebar.js';
 import { taskMeta, visibleQueueRows } from '../ui/views/home.js';
 import { courtActionError } from '../ui/views/courts.js';
 import { resolvedOutcome } from '../ui/views/approvals.js';
-import { cancelMetrics, loadMetrics, metricsView, recommendationFor, warningFor } from '../ui/views/usage.js';
+import { cancelMetrics, cancelRunSpend, loadMetrics, loadRunSpend, metricsView, recommendationFor, spendGeometry, warningFor } from '../ui/views/usage.js';
 
 const settingsSource = readFileSync(new URL('../ui/views/settings.js', import.meta.url), 'utf8');
 const automationsSource = readFileSync(new URL('../ui/views/automations.js', import.meta.url), 'utf8');
@@ -429,6 +429,46 @@ try {
 } finally {
   globalThis.fetch = fetchBeforeMetricsCheck;
 }
+// Run spend: its own request token, stale and failed responses handled like metrics.
+const fetchBeforeRunSpendCheck = globalThis.fetch;
+try {
+  const responses = [];
+  globalThis.fetch = () => new Promise((resolve) => responses.push(resolve));
+  const spendState = {};
+  const older = loadRunSpend(spendState);
+  const newer = loadRunSpend(spendState, null, true);
+  responses[1](new Response(JSON.stringify({ ok: true, cap: 2, spend: { usd: 1 } }), { status: 200 }));
+  await newer;
+  responses[0](new Response(JSON.stringify({ ok: true, cap: 2, spend: { usd: 0.5 } }), { status: 200 }));
+  await older;
+  a.equal(spendState.runSpend.spend.usd, 1, 'an older run spend response must not overwrite a newer one');
+  const lastGood = spendState.runSpend;
+  const failed = loadRunSpend(spendState, null, true);
+  responses[2](new Response(JSON.stringify({ ok: false, error: 'bus locked' }), { status: 500 }));
+  await failed;
+  a.equal(spendState.runSpend, lastGood, 'a failed run spend refresh keeps the last valid figures');
+  a.equal(spendState.runSpendError, 'bus locked', 'and says why');
+  const leaving = loadRunSpend(spendState, null, true);
+  cancelRunSpend(spendState);
+  responses[3](new Response(JSON.stringify({ ok: true, spend: { usd: 99 } }), { status: 200 }));
+  await leaving;
+  a.equal(spendState.runSpend, lastGood, 'a response after leaving Usage must not mutate run spend');
+} finally {
+  globalThis.fetch = fetchBeforeRunSpendCheck;
+}
+{
+  const geo = spendGeometry([{ ts: 0, usd: 0.5 }, { ts: 50, usd: 1 }, { ts: 100, usd: 1.5 }], 2, { width: 100, height: 100 });
+  a.ok(Math.abs(geo.top - 2.2) < 1e-9, 'the y domain covers the ceiling with headroom, even when spend is below it');
+  a.deepEqual(geo.points.map((p) => Math.round(p.x)), [0, 50, 100], 'x is time across the full width');
+  a.ok(Math.abs(geo.capY - (100 - (2 / 2.2) * 100)) < 1e-9, 'the ceiling sits at its own value on the shared scale');
+  a.equal(spendGeometry([{ ts: 5, usd: 3 }], 0, { width: 100, height: 100 }).points[0].x, 50, 'a single turn is centred, not pinned to an edge');
+  a.deepEqual(spendGeometry([{ ts: 5, usd: 1 }, { ts: 5, usd: 2 }], 0, { width: 100 }).points.map((p) => p.x), [0, 100], 'turns sharing a timestamp spread out');
+  a.equal(spendGeometry([], 0).capY, null, 'no ceiling draws no ceiling line');
+}
+a.match(usageSource, /dashboard\.append\(runSpendSection\(state\)\)/, 'Usage must show the run spend section');
+a.match(usageSource, /cancelRunSpend\(state\); \}/, 'leaving Usage must cancel a pending run spend request');
+a.match(usageSource, /No run ceiling is set/, 'a missing maxRunUsd must be said, not drawn as an empty meter');
+a.doesNotMatch(usageSource, /\btitle:/, 'run spend hover text must not use native title tooltips (Windows trap)');
 a.match(pagesSource, /apiError\(data, 'Could not load activity\.'/, 'activity load failures must be visible');
 a.match(viewSources.activity, /search\.setAttribute\('aria-label', 'Search activity'\)/, 'Activity search must have an explicit accessible name');
 a.match(viewSources.activity, /filters\.setAttribute\('aria-label', 'Filter activity'\)/, 'Activity filter must have an explicit accessible name');

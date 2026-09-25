@@ -115,6 +115,9 @@ a.match(css, /--grain:\s*radial-gradient\(rgb\(var\(--text-rgb\) \/ \.05\)/, 'th
 a.match(css, /--wash:\s*radial-gradient\(.*rgb\(var\(--accent-rgb\) \/ \.09\).*radial-gradient\(.*rgb\(var\(--surface-rgb\) \/ \.95\)/, 'the depth wash must be a token built from channel colours, not a literal');
 a.match(css, /body \{[^}]*background:\s*var\(--wash\), var\(--bg\) var\(--grain\);/, 'the page ground must carry both the depth wash and the grain');
 a.doesNotMatch(rules, /linear-gradient/, 'no rule may invent a gradient of its own');
+a.match(css, /\.run-spend-line\s*\{[^}]*stroke:\s*var\(--accent\)/, 'the run spend line wears the accent, the one series colour');
+a.match(css, /\.run-spend-cap\s*\{[^}]*stroke:\s*var\(--tone-attention\)[^}]*stroke-dasharray/, 'the run ceiling is a dashed attention line');
+a.match(css, /\.run-spend-line\s*\{[^}]*vector-effect:\s*non-scaling-stroke/, 'a stretched chart must not stretch its 2px line');
 a.match(css, /\.mode-switcher\s*\{[^}]*border-radius:\s*var\(--radius-pill\)/, 'work modes must read as one segmented control');
 a.match(css, /\.mode-option\.selected\s*\{[^}]*background:\s*var\(--accent\)/, 'the active work mode needs one clear accent state');
 // 2026-09-23: reverses the line above. Read against a populated demo court,

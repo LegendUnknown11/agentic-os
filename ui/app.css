@@ -915,6 +915,34 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .usage-purpose-row span { min-width: 0; overflow-wrap: anywhere; }
 
+.run-spend-head { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: var(--space-3); }
+
+.run-spend-objective { min-width: 0; margin: 0; overflow-wrap: anywhere; }
+
+.run-spend-figure { display: grid; gap: var(--space-1); margin: 0; }
+
+/* One series, so no legend box: the section title names it. The line wears the
+   accent; the ceiling is attention, dashed, and named in text beside it. */
+.run-spend-chart { display: block; width: 100%; height: 160px; overflow: visible; }
+
+.run-spend-axis { stroke: var(--line); stroke-width: 1; vector-effect: non-scaling-stroke; }
+
+.run-spend-line { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+
+.run-spend-cap { stroke: var(--tone-attention); stroke-width: 1.5; stroke-dasharray: 6 4; vector-effect: non-scaling-stroke; }
+
+.run-spend-end, .run-spend-dot { fill: none; stroke: var(--accent); stroke-width: 9; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+
+.run-spend-cross { stroke: var(--muted); stroke-width: 1; vector-effect: non-scaling-stroke; }
+
+.run-spend-legend, .run-spend-readout { display: flex; align-items: center; gap: var(--space-2); margin: 0; color: var(--muted); font-size: var(--t-xs); }
+
+.run-spend-cap-key { width: 18px; border-top: 2px dashed var(--tone-attention); }
+
+.run-spend-sub { margin: 0 0 var(--space-2); font-size: var(--t-sm); }
+
+.run-spend-members { max-width: 480px; }
+
 .agent-heading { display: flex; min-width: 0; align-items: flex-start; gap: var(--space-3); }
 
 .agent-heading > div:last-child { min-width: 0; }
