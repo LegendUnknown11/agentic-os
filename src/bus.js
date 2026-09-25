@@ -82,7 +82,8 @@ create table if not exists runs (
   final_approved_ts     integer,
   applied_ts            integer,
   completed_ts          integer,
-  cancelled_ts          integer
+  cancelled_ts          integer,
+  blocker               text
 );
 create table if not exists campaigns (
   id            integer primary key autoincrement,
@@ -228,6 +229,11 @@ export class Bus {
       const runColumns = this.#columns('runs');
       if (!runColumns.includes('final_approved')) this.db.exec('alter table runs add column final_approved integer not null default 0');
       if (!runColumns.includes('final_approved_ts')) this.db.exec('alter table runs add column final_approved_ts integer');
+    });
+    // The blocker used to travel only on the live 'run' event, so a reload
+    // showed a blocked run with no reason and no next action.
+    this.#migrate('schema:runs:blocker:v1', () => {
+      if (!this.#columns('runs').includes('blocker')) this.db.exec('alter table runs add column blocker text');
     });
     // Approval payloads moved out of the message log so they survive pruning;
     // post() writes new ones there directly.
@@ -546,6 +552,7 @@ export class Bus {
 
   #runRow(row) {
     if (!row) return null;
+    const blocker = parsed(row.blocker, null);
     return {
       id: row.id,
       createdTs: row.created_ts,
@@ -567,6 +574,8 @@ export class Bus {
       appliedTs: row.applied_ts,
       completedTs: row.completed_ts,
       cancelledTs: row.cancelled_ts,
+      blocker,
+      blockers: blocker ? [blocker] : [],
     };
   }
 
@@ -620,8 +629,13 @@ export class Bus {
       recoveryHistory: 'recovery_history', verificationEvidence: 'verification_evidence',
       baselineRevision: 'baseline_revision', branch: 'branch', approvedTs: 'approved_ts', appliedTs: 'applied_ts',
       finalApproval: 'final_approved', finalApprovedTs: 'final_approved_ts',
-      completedTs: 'completed_ts', cancelledTs: 'cancelled_ts',
+      completedTs: 'completed_ts', cancelledTs: 'cancelled_ts', blocker: 'blocker',
     };
+    // A blocker describes the blocked state and nothing else: leaving it (a
+    // recovery back to running, a stop) clears it unless the caller sets one.
+    if (fields.state !== undefined && fields.state !== 'blocked' && fields.blocker === undefined) {
+      fields = { ...fields, blocker: null };
+    }
     const arrays = new Set(['acceptanceCriteria', 'allowedModels', 'taskIds', 'recoveryHistory', 'verificationEvidence']);
     const objects = new Set(['sourceSnapshot', 'approvedPlan']);
     const set = [], args = [];
@@ -630,6 +644,7 @@ export class Bus {
       if (key === 'state' && !RUN_STATES.has(fields[key])) throw new Error(`Unknown run state: ${fields[key]}`);
       set.push(`${column} = ?`);
       args.push(key === 'finalApproval' ? (fields[key] ? 1 : 0)
+        : key === 'blocker' ? (fields[key] == null ? null : json(fields[key], null))
         : arrays.has(key) || objects.has(key) ? json(fields[key], arrays.has(key) ? [] : {}) : fields[key]);
     }
     if (!set.length) return run;
@@ -1017,6 +1032,39 @@ if (process.argv[1]?.endsWith('bus.js')) {
     a.equal(runs.applyRun(run.id).state, 'completed');
     a.equal(runs.currentRun(), null, 'completed runs are no longer current');
     runs.close();
+  }
+
+  // --- a run's blocker survives a restart, and leaving blocked clears it --
+  {
+    const blockDir = mkdtempSync(join(tmpdir(), 'kingdom-run-blocker-'));
+    const blockPath = join(blockDir, 'kingdom.db');
+    const first = new Bus(blockPath);
+    const run = first.createRun({ id: 'run-blocked', objective: 'prove a blocker is durable' });
+    first.approveRun(run.id);
+    const blocker = { operation: 'verification of coder', next: 'fix the failing test', at: 1 };
+    a.deepEqual(first.updateRun(run.id, { state: 'blocked', blocker }).blocker, blocker);
+    first.close();
+
+    const reopened = new Bus(blockPath);
+    a.deepEqual(reopened.run(run.id).blocker, blocker, 'a reload must still say why the run is blocked');
+    a.deepEqual(reopened.currentRun().blockers, [blocker], 'the UI reads blockers as a list');
+    const resumed = reopened.resumeRun(run.id);
+    a.equal(resumed.blocker, null, 'recovering a run clears its blocker');
+    a.deepEqual(resumed.blockers, []);
+    reopened.close();
+
+    // A court whose runs table predates the column gains it on open, and its
+    // existing runs read back with no blocker rather than failing.
+    const legacy = new DatabaseSync(blockPath);
+    legacy.exec('alter table runs drop column blocker');
+    legacy.prepare("delete from state where k = 'schema:runs:blocker:v1'").run();
+    legacy.close();
+    const upgraded = new Bus(blockPath);
+    a.equal(upgraded.run(run.id).blocker, null, 'a pre-blocker run reads back with no blocker');
+    a.deepEqual(upgraded.updateRun(run.id, { state: 'blocked', blocker }).blocker, blocker,
+      'the migration adds a writable blocker column');
+    upgraded.close();
+    rmSync(blockDir, { recursive: true, force: true });
   }
 
   // Pruning deletes old source rows. The mirrors must delete with them or a

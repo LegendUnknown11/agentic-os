@@ -600,6 +600,13 @@ try {
       'a paused run whose worktree cannot be reconciled at restart must become visibly blocked, not stay silently paused');
     a.ok(runEvents.some((r) => r.id === run.id && r.state === 'blocked'),
       'the blocked transition must actually be emitted, not just written');
+    await k.stop();
+    k = new Kingdom(repo, configPath);
+    k.on('error', () => {});
+    await k.start();
+    a.match(k.bus.run(run.id).blocker?.operation ?? '', /startup reconciliation/,
+      'the blocker must survive a reload, or a restarted court shows a blocked run with no reason');
+    a.ok(k.bus.run(run.id).blocker.next, 'and it must still carry the next action');
     a.ok(k.bus.history({ limit: 400 }).some((m) =>
       m.recipient === k.config.orchestrator.name && /RUN BLOCKED: startup reconciliation/.test(m.body)),
     'the orchestrator must be told, or the failure has no visible next action');

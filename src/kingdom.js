@@ -1706,8 +1706,8 @@ export class Kingdom extends EventEmitter {
   #runBlock(run, operation, next, extra = {}) {
     if (!run || !['planning', 'running', 'paused', 'verifying', 'ready_for_review'].includes(run.state)) return;
     const blocker = { operation, next, at: Date.now(), ...extra };
-    // The blocker itself travels on the event; the run table records the state.
-    const nextRun = { ...this.bus.updateRun(run.id, { state: 'blocked' }), blocker, blockers: [blocker] };
+    // Stored with the state, so a reload still shows why and what to do next.
+    const nextRun = this.bus.updateRun(run.id, { state: 'blocked', blocker });
     this.bus.post(CROWN, this.config.orchestrator.name,
       `RUN BLOCKED: ${operation}. Preserved work is available. Next action: ${next}`, 'notice');
     this.emit('run', nextRun);
