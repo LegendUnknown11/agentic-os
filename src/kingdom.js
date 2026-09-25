@@ -1101,6 +1101,8 @@ export class Kingdom extends EventEmitter {
       const cost = priced ?? 0;
       const spent = Number(this.bus.get('spentUsd') ?? 0) + cost;
       this.bus.set('spentUsd', String(spent));
+      const currentRun = this.#activeRun();
+      if (currentRun) this.bus.recordRunSpend(currentRun.id, name, cost);
       const mine = Number(this.bus.get(`spent:${name}`) ?? 0) + cost;
       this.bus.set(`spent:${name}`, String(mine));
 
@@ -1293,24 +1295,25 @@ export class Kingdom extends EventEmitter {
         `$${perMember}) and has been stopped. Do not wait on it. The sovereign ` +
         `must raise its budget or reassign the work.`, 'notice');
     }
-    this.#enforceRunBudget(spentTotal);
+    this.#enforceRunBudget();
   }
 
   /**
    * A per-run ceiling, beside maxBudgetUsd (per member, forever) and
-   * maxKingdomUsd (the whole court, forever). A run's own baseline is
-   * captured once in createRun(); this compares cumulative kingdom spend
-   * against that baseline, so it survives a restart the same way the other
-   * two ceilings do. Unrelated work is deliberately left alone — #runBlock is
-   * the same mechanism a stuck recovery or a failed verification already
-   * uses to stop THIS run while the rest of the court keeps going.
+   * maxKingdomUsd (the whole court, forever). It reads the run's own spend
+   * ledger (bus.runSpentUsd), which survives a restart the same way the other
+   * two ceilings do. It used to be lifetime spend minus a baseline captured at
+   * createRun(), and clearSpend() zeroing the lifetime counter drove that
+   * negative, so the ceiling could never fire again. Unrelated work is
+   * deliberately left alone — #runBlock is the same mechanism a stuck recovery
+   * or a failed verification already uses to stop THIS run while the rest of
+   * the court keeps going.
    */
-  #enforceRunBudget(spentTotal) {
+  #enforceRunBudget() {
     const run = this.#activeRun();
     const cap = this.config.maxRunUsd ?? 0;
     if (!run?.id || !cap) return;
-    const baseline = Number(this.bus.get(`run:${run.id}:baselineSpentUsd`) ?? 0);
-    const spent = spentTotal - baseline;
+    const spent = this.bus.runSpentUsd(run.id);
     if (spent < cap) return;
     this.emit('budget', { scope: 'run', runId: run.id, spent, cap });
     this.#runBlock(run, `run spend ceiling reached ($${spent.toFixed(2)} of $${cap})`,
@@ -1706,8 +1709,8 @@ export class Kingdom extends EventEmitter {
   #runBlock(run, operation, next, extra = {}) {
     if (!run || !['planning', 'running', 'paused', 'verifying', 'ready_for_review'].includes(run.state)) return;
     const blocker = { operation, next, at: Date.now(), ...extra };
-    // The blocker itself travels on the event; the run table records the state.
-    const nextRun = { ...this.bus.updateRun(run.id, { state: 'blocked' }), blocker, blockers: [blocker] };
+    // Stored with the state, so a reload still shows why and what to do next.
+    const nextRun = this.bus.updateRun(run.id, { state: 'blocked', blocker });
     this.bus.post(CROWN, this.config.orchestrator.name,
       `RUN BLOCKED: ${operation}. Preserved work is available. Next action: ${next}`, 'notice');
     this.emit('run', nextRun);
@@ -1793,14 +1796,60 @@ export class Kingdom extends EventEmitter {
     return stopped;
   }
 
+  /**
+   * The sovereign editing the team's task list directly: create, assign (or
+   * unassign), reprioritise, drop, reopen. Every change a member must act on
+   * reaches them as a message, the same way the MCP task tools tell them, so
+   * nobody keeps working a task that moved. Returns the updated task.
+   */
+  manageTask({ op, id = null, title, detail = '', owner, priority, needs = [] } = {}) {
+    const fail = (message) => { throw Object.assign(new Error(message), { status: 400 }); };
+    const member = (name) => {
+      if (!this.specOf(name)) fail(`"${name}" is not a member of this team.`);
+      return name;
+    };
+    if (op === 'create') {
+      const text = String(title ?? '').trim();
+      if (!text) fail('A task needs a title.');
+      const created = this.bus.addTask({
+        title: text, detail: String(detail ?? ''), needs: Array.isArray(needs) ? needs : [],
+        priority: Number(priority) || 0, by: 'sovereign', runId: this.#activeRun()?.id ?? null,
+      });
+      return owner ? this.manageTask({ op: 'assign', id: created, owner }) : this.bus.task(created);
+    }
+    const task = this.bus.task(id);
+    if (!task) fail(`No task #${id}.`);
+    const tell = (to, text, kind) => { if (to) this.bus.post('sovereign', to, text, kind); };
+    switch (op) {
+      case 'assign': {
+        if (task.state === 'done' || task.state === 'dropped') fail(`Task #${task.id} is ${task.state}; reopen it first.`);
+        if (task.state === 'verifying') fail(`Task #${task.id} is being verified; wait for the result.`);
+        const next = owner ? member(owner) : null;
+        if (next === task.owner) return task;
+        const updated = this.bus.updateTask(task.id, next
+          ? { owner: next, state: task.state === 'planning' || task.needsPlan ? 'planning' : 'active' }
+          : { owner: null, state: 'pending' });
+        tell(next, `Task #${task.id} (${task.title}) was assigned to you by the sovereign.\n\n${task.detail}`, 'assignment');
+        tell(task.owner, `Task #${task.id} (${task.title}) was ${next ? `reassigned to ${next}` : 'unassigned'} by the sovereign. Stop work on it.`, 'notice');
+        return updated;
+      }
+      case 'priority':
+        return this.bus.updateTask(task.id, { priority: Number(priority) || 0 });
+      case 'drop':
+        if (task.state === 'done') fail(`Task #${task.id} is already done.`);
+        tell(task.owner, `Task #${task.id} (${task.title}) was dropped by the sovereign. Stop work on it.`, 'notice');
+        return this.bus.updateTask(task.id, { state: 'dropped', owner: null });
+      case 'reopen':
+        if (task.state !== 'done' && task.state !== 'dropped') fail(`Task #${task.id} is ${task.state}, not closed.`);
+        return this.bus.updateTask(task.id, { state: 'pending', owner: null, doneTs: null });
+      default:
+        return fail(`Unknown task operation "${op}".`);
+    }
+  }
+
   async createRun(fields = {}) {
     const baselineRevision = fields.baselineRevision ?? (this.repo ? await revisionOf(this.repo) : null);
     const run = this.bus.createRun({ ...fields, baselineRevision });
-    // maxRunUsd is scoped to what THIS run spends, not lifetime court spend —
-    // captured once, here, in the bus's own restart-safe key-value store (no
-    // runs-table column needed). Same reasoning as #enforceBudget's own
-    // comment on why counting per-process was the bug in the first place.
-    this.bus.set(`run:${run.id}:baselineSpentUsd`, String(Number(this.bus.get('spentUsd') ?? 0)));
     await this.#reconcileRun();
     const current = this.bus.run(run.id);
     this.emit('run', current);

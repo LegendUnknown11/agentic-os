@@ -60,7 +60,8 @@ create table if not exists tasks (
   plan       text,
   by         text    not null,
   done_ts    integer,
-  run_id     text
+  run_id     text,
+  priority   integer not null default 0     -- higher is offered first; the sovereign sets it
 );
 create table if not exists runs (
   id                    text primary key,
@@ -82,7 +83,30 @@ create table if not exists runs (
   final_approved_ts     integer,
   applied_ts            integer,
   completed_ts          integer,
-  cancelled_ts          integer
+  cancelled_ts          integer,
+  blocker               text
+);
+-- The sovereign's own to-do list. Separate from tasks, which is the team's
+-- work queue: nothing here is claimable, and nothing here wakes a member.
+create table if not exists my_tasks (
+  id            integer primary key autoincrement,
+  created_ts    integer not null,
+  title         text    not null,
+  notes         text    not null default '',
+  due_ts        integer,
+  done_ts       integer,
+  snoozed_until integer,
+  by            text    not null default 'sovereign'
+);
+-- One row per priced turn taken while a run is current. A run's spend is the
+-- sum of its own rows, never lifetime spend minus a baseline: clearSpend()
+-- zeroes the lifetime counter and made that subtraction go negative.
+create table if not exists run_spend (
+  id      integer primary key autoincrement,
+  run_id  text    not null,
+  ts      integer not null,
+  agent   text    not null,
+  usd     real    not null
 );
 create table if not exists campaigns (
   id            integer primary key autoincrement,
@@ -119,6 +143,7 @@ create index if not exists idx_msg_recipient on messages(recipient, id);
 create index if not exists idx_evt_agent on events(agent, id);
 create index if not exists idx_task_state on tasks(state, owner);
 create index if not exists idx_conv_member on conversations(member, created_ts);
+create index if not exists idx_run_spend on run_spend(run_id, id);
 `;
 
 // A pre-conversations db's messages/events tables don't have conversation_id
@@ -228,6 +253,15 @@ export class Bus {
       const runColumns = this.#columns('runs');
       if (!runColumns.includes('final_approved')) this.db.exec('alter table runs add column final_approved integer not null default 0');
       if (!runColumns.includes('final_approved_ts')) this.db.exec('alter table runs add column final_approved_ts integer');
+    });
+    // The blocker used to travel only on the live 'run' event, so a reload
+    // showed a blocked run with no reason and no next action.
+    this.#migrate('schema:runs:blocker:v1', () => {
+      if (!this.#columns('runs').includes('blocker')) this.db.exec('alter table runs add column blocker text');
+    });
+    // The sovereign can now reorder the queue; existing tasks start level.
+    this.#migrate('schema:tasks:priority:v1', () => {
+      if (!this.#columns('tasks').includes('priority')) this.db.exec('alter table tasks add column priority integer not null default 0');
     });
     // Approval payloads moved out of the message log so they survive pruning;
     // post() writes new ones there directly.
@@ -546,6 +580,7 @@ export class Bus {
 
   #runRow(row) {
     if (!row) return null;
+    const blocker = parsed(row.blocker, null);
     return {
       id: row.id,
       createdTs: row.created_ts,
@@ -567,6 +602,8 @@ export class Bus {
       appliedTs: row.applied_ts,
       completedTs: row.completed_ts,
       cancelledTs: row.cancelled_ts,
+      blocker,
+      blockers: blocker ? [blocker] : [],
     };
   }
 
@@ -600,8 +637,8 @@ export class Bus {
 
   runs({ state = null } = {}) {
     const rows = state
-      ? this.db.prepare('select * from runs where state = ? order by created_ts').all(state)
-      : this.db.prepare('select * from runs order by created_ts').all();
+      ? this.db.prepare('select * from runs where state = ? order by created_ts, rowid').all(state)
+      : this.db.prepare('select * from runs order by created_ts, rowid').all();
     return rows.map((row) => this.#runRow(row));
   }
 
@@ -620,8 +657,13 @@ export class Bus {
       recoveryHistory: 'recovery_history', verificationEvidence: 'verification_evidence',
       baselineRevision: 'baseline_revision', branch: 'branch', approvedTs: 'approved_ts', appliedTs: 'applied_ts',
       finalApproval: 'final_approved', finalApprovedTs: 'final_approved_ts',
-      completedTs: 'completed_ts', cancelledTs: 'cancelled_ts',
+      completedTs: 'completed_ts', cancelledTs: 'cancelled_ts', blocker: 'blocker',
     };
+    // A blocker describes the blocked state and nothing else: leaving it (a
+    // recovery back to running, a stop) clears it unless the caller sets one.
+    if (fields.state !== undefined && fields.state !== 'blocked' && fields.blocker === undefined) {
+      fields = { ...fields, blocker: null };
+    }
     const arrays = new Set(['acceptanceCriteria', 'allowedModels', 'taskIds', 'recoveryHistory', 'verificationEvidence']);
     const objects = new Set(['sourceSnapshot', 'approvedPlan']);
     const set = [], args = [];
@@ -630,6 +672,7 @@ export class Bus {
       if (key === 'state' && !RUN_STATES.has(fields[key])) throw new Error(`Unknown run state: ${fields[key]}`);
       set.push(`${column} = ?`);
       args.push(key === 'finalApproval' ? (fields[key] ? 1 : 0)
+        : key === 'blocker' ? (fields[key] == null ? null : json(fields[key], null))
         : arrays.has(key) || objects.has(key) ? json(fields[key], arrays.has(key) ? [] : {}) : fields[key]);
     }
     if (!set.length) return run;
@@ -692,6 +735,111 @@ export class Bus {
       : this.transitionRun(run.id, 'completed', { appliedTs: Date.now() });
   }
 
+  // --- the sovereign's own to-do list ----------------------------------
+
+  #myTaskRow(row) {
+    if (!row) return null;
+    return {
+      id: row.id, createdTs: row.created_ts, title: row.title, notes: row.notes,
+      dueTs: row.due_ts, doneTs: row.done_ts, snoozedUntil: row.snoozed_until, by: row.by,
+    };
+  }
+
+  addMyTask({ title, notes = '', dueTs = null, by = 'sovereign' } = {}) {
+    const text = String(title ?? '').trim();
+    if (!text) throw new Error('A task needs a title.');
+    const { lastInsertRowid } = this.db.prepare(
+      'insert into my_tasks (created_ts, title, notes, due_ts, by) values (?,?,?,?,?)',
+    ).run(Date.now(), text, String(notes ?? ''), dueTs == null ? null : Number(dueTs), String(by));
+    return this.myTask(Number(lastInsertRowid));
+  }
+
+  myTask(id) {
+    return this.#myTaskRow(this.db.prepare('select * from my_tasks where id = ?').get(Number(id)));
+  }
+
+  /** Open first (due soonest, undated last), then done (most recent first). */
+  myTasks({ includeDone = true } = {}) {
+    const rows = this.db.prepare(
+      `select * from my_tasks${includeDone ? '' : ' where done_ts is null'}
+       order by done_ts is not null, done_ts desc, due_ts is null, due_ts, id`,
+    ).all();
+    return rows.map((row) => this.#myTaskRow(row));
+  }
+
+  /** Open tasks whose due time has passed and are not snoozed past `now`. */
+  dueMyTasks(now = Date.now()) {
+    return this.myTasks({ includeDone: false })
+      .filter((t) => t.dueTs != null && t.dueTs <= now && !(t.snoozedUntil > now));
+  }
+
+  updateMyTask(id, fields = {}) {
+    const columns = { title: 'title', notes: 'notes', dueTs: 'due_ts', doneTs: 'done_ts', snoozedUntil: 'snoozed_until' };
+    const set = [], args = [];
+    for (const [key, column] of Object.entries(columns)) {
+      if (fields[key] === undefined) continue;
+      if (key === 'title' && !String(fields.title).trim()) throw new Error('A task needs a title.');
+      set.push(`${column} = ?`);
+      args.push(key === 'title' || key === 'notes' ? String(fields[key]).trim() : fields[key] == null ? null : Number(fields[key]));
+    }
+    if (set.length) this.db.prepare(`update my_tasks set ${set.join(', ')} where id = ?`).run(...args, Number(id));
+    return this.myTask(id);
+  }
+
+  deleteMyTask(id) {
+    return this.db.prepare('delete from my_tasks where id = ?').run(Number(id)).changes > 0;
+  }
+
+  recordRunSpend(runId, agent, usd, ts = Date.now()) {
+    this.db.prepare('insert into run_spend (run_id, ts, agent, usd) values (?,?,?,?)')
+      .run(String(runId), ts, String(agent), Number(usd) || 0);
+  }
+
+  runSpentUsd(runId) {
+    return this.db.prepare('select coalesce(sum(usd), 0) as usd from run_spend where run_id = ?').get(String(runId)).usd;
+  }
+
+  /**
+   * One run's spend: total, per member, and a cumulative series thinned to at
+   * most `maxPoints` (always keeping the last point, so the line ends on the
+   * total).
+   */
+  runSpend(runId, { maxPoints = 400 } = {}) {
+    const rows = this.db.prepare('select ts, agent, usd from run_spend where run_id = ? order by id').all(String(runId));
+    const members = new Map();
+    const series = [];
+    let total = 0;
+    for (const row of rows) {
+      total += row.usd;
+      const m = members.get(row.agent) ?? { name: row.agent, usd: 0, turns: 0 };
+      m.usd += row.usd; m.turns += 1;
+      members.set(row.agent, m);
+      series.push({ ts: row.ts, usd: total });
+    }
+    const step = Math.ceil(series.length / Math.max(2, maxPoints));
+    const thinned = step <= 1 ? series
+      : series.filter((_, i) => i % step === 0 || i === series.length - 1);
+    return {
+      runId: String(runId), usd: total, turns: rows.length,
+      members: [...members.values()].sort((x, y) => y.usd - x.usd),
+      series: thinned,
+    };
+  }
+
+  /** Run-ledger spend since `ts`, across every run. */
+  runSpendSince(ts) {
+    return this.db.prepare('select coalesce(sum(usd), 0) as usd from run_spend where ts >= ?').get(Number(ts)).usd;
+  }
+
+  /** Spend and turn totals for every run that has any, keyed by run id. */
+  runSpendTotals() {
+    const out = {};
+    for (const row of this.db.prepare('select run_id, sum(usd) as usd, count(*) as turns from run_spend group by run_id').all()) {
+      out[row.run_id] = { usd: row.usd, turns: row.turns };
+    }
+    return out;
+  }
+
   // --- the shared task list -------------------------------------------
   //
   // Before this, the orchestrator assigned by message and nothing tracked the result.
@@ -707,10 +855,10 @@ export class Bus {
   // constructor) makes the loser wait instead of failing.
 
   /** Deps are stored as json because a task has none or two, never a join. */
-  addTask({ title, detail = '', needs = [], needsPlan = false, by, runId = null }) {
+  addTask({ title, detail = '', needs = [], needsPlan = false, by, runId = null, priority = 0 }) {
     const { lastInsertRowid } = this.db.prepare(
-      'insert into tasks (ts, title, detail, needs, needs_plan, by, run_id) values (?,?,?,?,?,?,?)'
-    ).run(Date.now(), title, detail, JSON.stringify(needs.map(Number)), needsPlan ? 1 : 0, by, runId);
+      'insert into tasks (ts, title, detail, needs, needs_plan, by, run_id, priority) values (?,?,?,?,?,?,?,?)'
+    ).run(Date.now(), title, detail, JSON.stringify(needs.map(Number)), needsPlan ? 1 : 0, by, runId, Number(priority) || 0);
     return Number(lastInsertRowid);
   }
 
@@ -753,9 +901,10 @@ export class Bus {
     });
   }
 
-  /** Unclaimed, unblocked, oldest first — what an idle member could pick up. */
+  /** Unclaimed, unblocked, highest priority then oldest — what an idle member could pick up. */
   availableTasks() {
-    return this.tasks({ state: 'pending' }).filter((t) => !t.owner && !t.blockedBy.length);
+    return this.tasks({ state: 'pending' }).filter((t) => !t.owner && !t.blockedBy.length)
+      .sort((x, y) => (y.priority ?? 0) - (x.priority ?? 0) || x.id - y.id);
   }
 
   /**
@@ -801,7 +950,7 @@ export class Bus {
 
   /** Returns the updated row, or null if there is no such task. */
   updateTask(id, fields) {
-    const cols = { state: 'state', plan: 'plan', owner: 'owner', doneTs: 'done_ts', runId: 'run_id' };
+    const cols = { state: 'state', plan: 'plan', owner: 'owner', doneTs: 'done_ts', runId: 'run_id', priority: 'priority' };
     const set = [], args = [];
     for (const [k, col] of Object.entries(cols)) {
       if (fields[k] !== undefined) { set.push(`${col} = ?`); args.push(fields[k]); }
@@ -1016,7 +1165,76 @@ if (process.argv[1]?.endsWith('bus.js')) {
     a.equal(runs.approveRun(run.id).finalApproval, true);
     a.equal(runs.applyRun(run.id).state, 'completed');
     a.equal(runs.currentRun(), null, 'completed runs are no longer current');
+
+    // The spend ledger: totals per run, a cumulative series thinned to a cap
+    // that still ends on the total.
+    for (let i = 1; i <= 10; i++) runs.recordRunSpend(run.id, i % 2 ? 'coder' : 'reviewer', 0.5, i);
+    runs.recordRunSpend('run-other', 'coder', 3, 11);
+    const spend = runs.runSpend(run.id, { maxPoints: 4 });
+    a.equal(spend.usd, 5);
+    a.equal(spend.turns, 10);
+    a.deepEqual(spend.members.map((m) => [m.name, m.usd, m.turns]), [['coder', 2.5, 5], ['reviewer', 2.5, 5]]);
+    a.ok(spend.series.length <= 5, `series thinned toward the cap, got ${spend.series.length}`);
+    a.deepEqual(spend.series.at(-1), { ts: 10, usd: 5 }, 'the thinned series still ends on the total');
+    a.equal(runs.runSpentUsd(run.id), 5);
+    a.equal(runs.runSpentUsd('run-none'), 0, 'a run with no ledger rows has spent nothing');
+    a.deepEqual(runs.runSpendTotals(), { [run.id]: { usd: 5, turns: 10 }, 'run-other': { usd: 3, turns: 1 } });
     runs.close();
+  }
+
+  // --- the sovereign's own list: order, due, snooze, done ------------------
+  {
+    const mine = new Bus(':memory:');
+    const later = mine.addMyTask({ title: 'renew the domain', dueTs: 300 });
+    const soon = mine.addMyTask({ title: 'reply to Sam', dueTs: 100, notes: 'about the invoice' });
+    const undated = mine.addMyTask({ title: 'read the RFC' });
+    a.throws(() => mine.addMyTask({ title: '  ' }), /needs a title/);
+    a.deepEqual(mine.myTasks().map((t) => t.id), [soon.id, later.id, undated.id], 'due soonest first, undated last');
+    a.deepEqual(mine.dueMyTasks(200).map((t) => t.id), [soon.id], 'only what is past due is due');
+    mine.updateMyTask(soon.id, { snoozedUntil: 250 });
+    a.deepEqual(mine.dueMyTasks(200), [], 'a snoozed task is not due until the snooze ends');
+    a.deepEqual(mine.dueMyTasks(260).map((t) => t.id), [soon.id], 'and is due again after it');
+    mine.updateMyTask(soon.id, { doneTs: 270 });
+    a.deepEqual(mine.dueMyTasks(400).map((t) => t.id), [later.id], 'a done task is never due');
+    a.equal(mine.myTasks().at(-1).id, soon.id, 'done tasks sort after open ones');
+    a.equal(mine.myTasks({ includeDone: false }).length, 2);
+    a.equal(mine.tasks().length, 0, "the sovereign's list is not the team's queue");
+    a.equal(mine.deleteMyTask(undated.id), true);
+    a.equal(mine.myTask(undated.id), null);
+    mine.close();
+  }
+
+  // --- a run's blocker survives a restart, and leaving blocked clears it --
+  {
+    const blockDir = mkdtempSync(join(tmpdir(), 'kingdom-run-blocker-'));
+    const blockPath = join(blockDir, 'kingdom.db');
+    const first = new Bus(blockPath);
+    const run = first.createRun({ id: 'run-blocked', objective: 'prove a blocker is durable' });
+    first.approveRun(run.id);
+    const blocker = { operation: 'verification of coder', next: 'fix the failing test', at: 1 };
+    a.deepEqual(first.updateRun(run.id, { state: 'blocked', blocker }).blocker, blocker);
+    first.close();
+
+    const reopened = new Bus(blockPath);
+    a.deepEqual(reopened.run(run.id).blocker, blocker, 'a reload must still say why the run is blocked');
+    a.deepEqual(reopened.currentRun().blockers, [blocker], 'the UI reads blockers as a list');
+    const resumed = reopened.resumeRun(run.id);
+    a.equal(resumed.blocker, null, 'recovering a run clears its blocker');
+    a.deepEqual(resumed.blockers, []);
+    reopened.close();
+
+    // A court whose runs table predates the column gains it on open, and its
+    // existing runs read back with no blocker rather than failing.
+    const legacy = new DatabaseSync(blockPath);
+    legacy.exec('alter table runs drop column blocker');
+    legacy.prepare("delete from state where k = 'schema:runs:blocker:v1'").run();
+    legacy.close();
+    const upgraded = new Bus(blockPath);
+    a.equal(upgraded.run(run.id).blocker, null, 'a pre-blocker run reads back with no blocker');
+    a.deepEqual(upgraded.updateRun(run.id, { state: 'blocked', blocker }).blocker, blocker,
+      'the migration adds a writable blocker column');
+    upgraded.close();
+    rmSync(blockDir, { recursive: true, force: true });
   }
 
   // Pruning deletes old source rows. The mirrors must delete with them or a

@@ -33,6 +33,8 @@ import { tmpdir } from 'node:os';
 import { join, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { _electron } from 'playwright-core';
+import { Bus } from '../src/bus.js';
+import { dbPath, kingdomDir } from '../src/worktree.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, '..');
@@ -169,12 +171,125 @@ try {
     await api('run/stop', { id: 'run-acceptance', why: 'acceptance check complete' });
     await onScreen('Cancelled');
   });
+
+  /* ----------------------------------------- 3. a blocked run's recovery -- */
+  //
+  // The blocked state is written straight to the run table and the window
+  // reloaded: that is also the proof a blocker survives a reload (it used to
+  // travel only on the live event), and it needs no failing worker to stage.
+  // Resume is then CLICKED, not posted, because recovery is the sovereign's
+  // action and the control is what is under test.
+
+  console.log('blocked-run recovery');
+  const gone = (needle, timeout = 30_000) => page.waitForFunction(
+    (t) => !document.body.innerText.includes(t), needle, { timeout });
+  await page.setViewportSize({ width: 1280, height: 900 });
+
+  await check('a blocked run shows its reason after a reload, not only on the live event', async () => {
+    await api('run/create', { id: 'run-recovery', objective: 'prove a blocked run recovers' });
+    await api('run/approve', { id: 'run-recovery', baselineRevision: git('rev-parse', 'HEAD') });
+    await onScreen('Running');
+    const bus = new Bus(dbPath(repo));
+    try {
+      bus.updateRun('run-recovery', {
+        state: 'blocked', blocker: { operation: 'verification of coder', next: 'fix the failing parser test', at: Date.now() },
+      });
+    } finally { bus.close(); }
+    await page.reload();
+    await onScreen('Blocked');
+    await onScreen('verification of coder');
+    await button('Resume').waitFor({ state: 'visible', timeout: 15_000 });
+  });
+
+  await check('Resume, clicked on screen, carries the run back to Running and clears the reason', async () => {
+    await button('Resume').click();
+    await onScreen('Running');
+    await gone('verification of coder');
+    a.equal((await (await fetch(`${base}/api/run`)).json()).run.blocker, null, 'the durable blocker is cleared too');
+    await api('run/stop', { id: 'run-recovery', why: 'recovery check complete' });
+    await onScreen('Cancelled');
+  });
+
+  /* --------------------------------------------- 4. the collapsed rail -- */
+
+  console.log('collapsed rail');
+
+  await check('collapsing keeps every rail control at the 44px tap target, with drawn tips', async () => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.locator('.sidebar-collapse').click();
+    await page.waitForFunction(() => document.body.classList.contains('sidebar-collapsed'));
+    const rail = await page.locator('#sidebar').boundingBox();
+    a.ok(rail.width <= 72, `the collapsed rail is narrow, measured ${Math.round(rail.width)}px`);
+    const sizes = await page.$$eval('#sidebar .sidebar-nav-button', (els) => els.filter((e) => e.offsetParent)
+      .map((e) => { const r = e.getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height), e.hasAttribute('title')]; }));
+    a.ok(sizes.length >= 4, `nav buttons are still reachable collapsed (${sizes.length})`);
+    for (const [w, h, title] of sizes) {
+      a.ok(w >= 44 && h >= 44, `a collapsed nav button measured ${w}x${h}, under 44x44`);
+      a.equal(title, false, 'no native title tooltip (garbled on Windows); the rail draws .hover-tip');
+    }
+    await page.locator('.sidebar-collapse').click();
+    await page.waitForFunction(() => !document.body.classList.contains('sidebar-collapsed'));
+  });
+
+  /* ------------------------- 5. the drawer at 720px, by keyboard only -- */
+
+  console.log('720px drawer');
+
+  await check('at 720px the drawer traps Tab, makes the workspace inert, and Escape returns focus to Menu', async () => {
+    await page.setViewportSize({ width: 720, height: 900 });
+    const menu = page.locator('#header .mobile-menu');
+    await menu.waitFor({ state: 'visible', timeout: 15_000 });
+    await menu.click();
+    await page.waitForFunction(() => document.body.classList.contains('sidebar-open'));
+    a.equal(await page.locator('#main').getAttribute('inert'), '', 'the covered workspace is inert');
+    for (let i = 0; i < 30; i++) {
+      await page.keyboard.press('Tab');
+      a.ok(await page.evaluate(() => document.getElementById('sidebar').contains(document.activeElement)), `Tab ${i + 1} escaped the drawer`);
+    }
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(() => !document.body.classList.contains('sidebar-open'));
+    a.ok(await page.evaluate(() => document.activeElement?.classList.contains('mobile-menu')), 'focus returns to Menu');
+    a.equal(await page.locator('#main').getAttribute('inert'), null, 'the workspace is live again');
+    await page.setViewportSize({ width: 1280, height: 900 });
+  });
+
+  /* ---------------------------------------------- 6. reduced motion -- */
+  //
+  // A live status dot is probed rather than found: whether a member happens
+  // to be live is not what this checks, the stylesheet's reduce rule is.
+
+  console.log('reduced motion');
+  const probe = () => page.evaluate(() => {
+    const dot = document.createElement('span');
+    dot.className = 'status-dot live';
+    document.body.append(dot);
+    const animation = getComputedStyle(dot).animationName;
+    dot.remove();
+    return animation;
+  });
+
+  await check('at reduce, the live pulse stops and transitions collapse', async () => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    a.equal(await probe(), 'none', 'the live pulse must not animate under reduced motion');
+    const slowest = await page.evaluate(() => Math.max(...[...document.querySelectorAll('button')]
+      .map((e) => parseFloat(getComputedStyle(e).transitionDuration) || 0)));
+    a.ok(slowest <= 0.001, `a button transition ran ${slowest}s under reduced motion`);
+  });
+
+  await check('at no-preference, the live pulse runs', async () => {
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
+    a.equal(await probe(), 'busy');
+    await page.emulateMedia({ reducedMotion: null });
+  });
 } finally {
   // The daemon is DETACHED (electron/main.js says so on purpose), so closing
   // the window would leave it holding the port and the temp kingdom forever.
   try { await api('shutdown'); } catch { /* already gone */ }
   try { await app?.close(); } catch { /* already gone */ }
-  try { rmSync(join(repo, '..', '.kingdom'), { recursive: true, force: true, maxRetries: 5 }); } catch { /* best effort */ }
+  // This repo's OWN state folder. It used to remove join(repo, '..', '.kingdom'):
+  // the repo sits in the system temp dir, so that was the .kingdom shared by
+  // every temp workspace, other suites' live databases included.
+  try { rmSync(kingdomDir(repo), { recursive: true, force: true, maxRetries: 5 }); } catch { /* best effort */ }
   try { rmSync(repo, { recursive: true, force: true, maxRetries: 5 }); } catch { /* best effort */ }
 }
 

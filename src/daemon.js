@@ -24,6 +24,8 @@ import { Speech } from './stt.js';
 import { deltaOf, hasUsage, totalsOf } from './usage.js';
 import { costClassOf, costOf, tableFrom } from './price.js';
 import { readApproval } from './approval.js';
+import { inboxBrief, inboxItems, teamDigest } from './inbox.js';
+import { WORKFLOW_TEMPLATES, instantiateTemplate } from './workflow-templates.js';
 import { listWorkflows, saveWorkflow, deleteWorkflow, runWorkflow, tickScheduler, logRun, runHistory, validWorkflowId } from './workflows.js';
 import { runDoctor } from './doctor.js';
 import { registerCourt, unregisterCourt, listCourts, CourtConflictError, firstFreePort } from './courts.js';
@@ -162,6 +164,51 @@ for (const ev of ['agent', 'event', 'delivered', 'approval', 'verified', 'merged
   });
 }
 kingdom.on('error', (e) => push('error', { message: e.message }));
+
+// Run templates live in the bus's key-value state: a handful of small records,
+// read whole and written whole. An unreadable value reads as no templates.
+function readRunTemplates() {
+  try {
+    const list = JSON.parse(kingdom.bus.get('run-templates') ?? '[]');
+    return Array.isArray(list) ? list.sort((x, y) => String(x.name).localeCompare(String(y.name))) : [];
+  } catch { return []; }
+}
+const writeRunTemplates = (list) => kingdom.bus.set('run-templates', JSON.stringify(list));
+
+/** The inbox as of now; shared by /api/inbox and the digest workflow node. */
+function inboxNow(now = Date.now()) {
+  const bus = kingdom.bus;
+  const approvals = bus.approvals().flatMap((m) => {
+    const p = readApproval(m.body);
+    return p ? [{ id: m.id, ts: m.ts, from: m.sender, ...p, resolved: bus.get(`resolved:${m.id}`) ?? null }] : [];
+  });
+  const messages = bus.history({ agent: 'sovereign', tail: true, limit: 50 }).filter((m) => m.recipient === 'sovereign');
+  return inboxItems({ approvals, run: bus.currentRun(), myTasks: bus.myTasks({ includeDone: false }), messages, now });
+}
+
+/**
+ * What a workflow can do that only the daemon can: build a digest from live
+ * state, show it on the sovereign's desktop, put a task on the team queue.
+ * Handed to every runWorkflow call (manual, webhook, scheduler).
+ */
+const WORKFLOW_SERVICES = {
+  digest: (of) => {
+    const now = Date.now();
+    const items = inboxNow(now);
+    if (of !== 'team') return inboxBrief(items, { now });
+    const bus = kingdom.bus;
+    return teamDigest({
+      tasks: bus.tasks(), runs: bus.runs(), runSpendUsd: bus.runSpendSince(now - 86_400_000),
+      waiting: items.filter((item) => item.tone === 'attention').length, now,
+    });
+  },
+  notify: ({ title, body, workflowId }) => push('digest', { title, body, workflowId }),
+  addTask: (task) => {
+    const created = kingdom.manageTask({ op: 'create', ...task });
+    push('tasks', { tasks: kingdom.bus.tasks() });
+    return created;
+  },
+};
 
 const runIdOf = (body) => body.runId ?? body.run_id ?? body.id ?? null;
 const publishRun = (run) => { push('run', { run }); return { run }; };
@@ -312,6 +359,53 @@ const ACTIONS = {
     cli: b.cli, model: b.model, effort: b.effort, auto: b.auto,
   }),
   clearSpend: (b) => kingdom.clearSpend(b.name ?? null),
+  // Saved starting points for a run: {op: save|delete, name, objective,
+  // acceptanceCriteria[], allowedModels[]}. Kept in the bus beside the court.
+  runTemplate: (b) => {
+    const templates = readRunTemplates();
+    if (b.op === 'delete') {
+      writeRunTemplates(templates.filter((t) => t.id !== b.id));
+      return { templates: readRunTemplates() };
+    }
+    if (b.op !== 'save') throw new Error(`Unknown operation "${b.op}".`);
+    const name = String(b.name ?? '').trim();
+    const objective = String(b.objective ?? '').trim();
+    if (!name) throw new Error('A template needs a name.');
+    if (!objective) throw new Error('A template needs an objective.');
+    const clean = (list) => (Array.isArray(list) ? list : []).map((x) => String(x).trim()).filter(Boolean);
+    const template = {
+      id: b.id || `rt-${Date.now().toString(36)}`, name, objective,
+      acceptanceCriteria: clean(b.acceptanceCriteria), allowedModels: clean(b.allowedModels), updatedTs: Date.now(),
+    };
+    writeRunTemplates([...templates.filter((t) => t.id !== template.id), template]);
+    return { template, templates: readRunTemplates() };
+  },
+  // The sovereign's own list: {op: add|update|done|undo|snooze|delete, ...}.
+  myTask: (b) => {
+    const bus = kingdom.bus;
+    const id = Number(b.id);
+    const need = () => { if (!bus.myTask(id)) throw new Error(`No task #${b.id} on your list.`); };
+    let task = null;
+    switch (b.op) {
+      case 'add': task = bus.addMyTask({ title: b.title, notes: b.notes, dueTs: b.dueTs ?? null }); break;
+      case 'update': need(); task = bus.updateMyTask(id, { title: b.title, notes: b.notes, dueTs: b.dueTs }); break;
+      case 'done': need(); task = bus.updateMyTask(id, { doneTs: Date.now() }); break;
+      case 'undo': need(); task = bus.updateMyTask(id, { doneTs: null }); break;
+      // Snooze pushes the reminder, not the deadline: the due time stays true.
+      case 'snooze': need(); task = bus.updateMyTask(id, { snoozedUntil: Date.now() + (Number(b.forMs) > 0 ? Number(b.forMs) : 86_400_000) }); break;
+      case 'delete': need(); bus.deleteMyTask(id); break;
+      default: throw new Error(`Unknown operation "${b.op}".`);
+    }
+    push('myTasks', { tasks: bus.myTasks() });
+    return { task };
+  },
+  // The sovereign editing the team queue: {op: create|assign|priority|drop|reopen, ...}.
+  // Every open tab hears the new list, not just the one that clicked.
+  task: (b) => {
+    const task = kingdom.manageTask(b);
+    push('tasks', { tasks: kingdom.bus.tasks() });
+    return { task };
+  },
   // Answer first, then go: the caller must not get a dead socket for a
   // shutdown that actually worked.
   shutdown: () => { setTimeout(() => shutdown(0), 150); },
@@ -727,10 +821,40 @@ const READS = {
     }];
   },
 
+  // Everything waiting on the sovereign inside the app, ranked (src/inbox.js).
+  // Unreadable approvals are skipped here exactly as /api/approvals skips them.
+  '/api/inbox': async (url, req) => [200, { ok: true, items: inboxNow() }],
+
+  '/api/runTemplates': async (url, req) => [200, { ok: true, templates: readRunTemplates() }],
+
+  '/api/myTasks': async (url, req) => [200, { ok: true, tasks: kingdom.bus.myTasks(), due: kingdom.bus.dueMyTasks().length }],
+
   '/api/run': async (url, req) => [200, { ok: true, run: kingdom.bus.currentRun() }],
   '/api/runs': async (url, req) => {
     const state = url.searchParams.get('state');
     return [200, { ok: true, runs: kingdom.bus.runs(state ? { state } : {}) }];
+  },
+
+  // What a run has spent, from its own ledger: the requested run (default:
+  // the current one, else the most recent), against maxRunUsd, plus recent
+  // runs' totals for the history table.
+  '/api/runSpend': async (url, req) => {
+    const all = kingdom.bus.runs();
+    const id = url.searchParams.get('id');
+    const run = id ? kingdom.bus.run(id) : kingdom.bus.currentRun() ?? all.at(-1) ?? null;
+    if (id && !run) return [404, { ok: false, error: `No run ${id}.` }];
+    const totals = kingdom.bus.runSpendTotals();
+    const runs = all.slice(-20).reverse().map((r) => ({
+      id: r.id, state: r.state, objective: r.objective, createdTs: r.createdTs,
+      endedTs: r.completedTs ?? r.cancelledTs ?? null,
+      usd: totals[r.id]?.usd ?? 0, turns: totals[r.id]?.turns ?? 0,
+    }));
+    return [200, {
+      ok: true, cap: Number(kingdom.config.maxRunUsd ?? 0) || 0,
+      run: run ? { id: run.id, state: run.state, objective: run.objective, createdTs: run.createdTs } : null,
+      spend: run ? kingdom.bus.runSpend(run.id) : null,
+      runs,
+    }];
   },
 
   '/api/campaigns': async (url, req) => {
@@ -1021,6 +1145,9 @@ const handle = async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/api/workflows') {
       return send(200, { ok: true, workflows: await listWorkflows(WORKFLOWS_DIR) });
     }
+    if (req.method === 'GET' && url.pathname === '/api/workflows/templates') {
+      return send(200, { ok: true, templates: WORKFLOW_TEMPLATES.map(({ workflow, ...t }) => ({ ...t, trigger: workflow.trigger })) });
+    }
     if (req.method === 'GET' && url.pathname === '/api/workflows/runs') {
       const id = url.searchParams.get('id');
       if (!id) return send(400, { ok: false, error: 'id required' });
@@ -1039,7 +1166,7 @@ const handle = async (req, res) => {
       if (wf.trigger?.type !== 'webhook') return send(400, { ok: false, error: 'not a webhook-triggered workflow' });
       if (wf.enabled === false) return send(409, { ok: false, error: 'workflow is disabled' });
       let input; try { input = body ? JSON.parse(body) : {}; } catch { input = body; }
-      const result = await runWorkflow(wf, { bus: kingdom.bus, input });
+      const result = await runWorkflow(wf, { bus: kingdom.bus, input, services: WORKFLOW_SERVICES });
       logRun(kingdom.bus, wf, result);
       return send(200, { ok: true, result });
     }
@@ -1056,10 +1183,17 @@ const handle = async (req, res) => {
       await deleteWorkflow(WORKFLOWS_DIR, b.id);
       return send(200, { ok: true });
     }
+    // Install a built-in template as an ordinary, editable, enabled workflow.
+    if (url.pathname === '/api/workflows/install') {
+      const wf = instantiateTemplate(String(b.template ?? ''));
+      if (!wf) return send(404, { ok: false, error: `No template "${b.template}".` });
+      await saveWorkflow(WORKFLOWS_DIR, wf);
+      return send(200, { ok: true, workflow: wf });
+    }
     if (url.pathname === '/api/workflows/run') {
       const wf = (await listWorkflows(WORKFLOWS_DIR)).find((w) => w.id === b.id);
       if (!wf) return send(404, { ok: false, error: 'no such workflow' });
-      const result = await runWorkflow(wf, { bus: kingdom.bus });
+      const result = await runWorkflow(wf, { bus: kingdom.bus, services: WORKFLOW_SERVICES });
       logRun(kingdom.bus, wf, result);
       return send(200, { ok: true, result });
     }
@@ -1307,6 +1441,7 @@ server.on('error', (e) => {
     setInterval(() => {
       tickScheduler(WORKFLOWS_DIR, {
         bus: kingdom.bus,
+        services: WORKFLOW_SERVICES,
         onRun: (wf, result) => push('workflow_run', { id: wf.id, name: wf.name, ok: result.ok }),
       }).catch((e) => console.error('workflow scheduler:', e?.stack ?? e));
     }, 5000);

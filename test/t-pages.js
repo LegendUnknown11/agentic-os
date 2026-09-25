@@ -6,7 +6,11 @@ import { lastMessageIdFor } from '../ui/sidebar.js';
 import { taskMeta, visibleQueueRows } from '../ui/views/home.js';
 import { courtActionError } from '../ui/views/courts.js';
 import { resolvedOutcome } from '../ui/views/approvals.js';
-import { cancelMetrics, loadMetrics, metricsView, recommendationFor, warningFor } from '../ui/views/usage.js';
+import { assignable, dueState, loadMyTasks, orderTasks } from '../ui/views/tasks.js';
+import { loadInbox, waitingCount } from '../ui/views/inbox.js';
+import { daysText, parseDays, triggerText } from '../ui/views/automations.js';
+import { draftFrom, loadRunTemplates, runBody } from '../ui/views/start-run.js';
+import { cancelMetrics, cancelRunSpend, loadMetrics, loadRunSpend, metricsView, recommendationFor, spendGeometry, warningFor } from '../ui/views/usage.js';
 
 const settingsSource = readFileSync(new URL('../ui/views/settings.js', import.meta.url), 'utf8');
 const automationsSource = readFileSync(new URL('../ui/views/automations.js', import.meta.url), 'utf8');
@@ -51,7 +55,7 @@ a.equal(lastMessageIdFor({ messages: [
 const pagesOnlySource = readFileSync(new URL('../ui/views/pages.js', import.meta.url), 'utf8');
 const changesSource = readFileSync(new URL('../ui/views/changes.js', import.meta.url), 'utf8');
 const approvalsSource = readFileSync(new URL('../ui/views/approvals.js', import.meta.url), 'utf8');
-const viewSources = Object.fromEntries(['approvals', 'changes', 'usage', 'activity', 'messages', 'agents', 'objective', 'memory', 'notes', 'doctor']
+const viewSources = Object.fromEntries(['approvals', 'changes', 'usage', 'activity', 'messages', 'agents', 'objective', 'memory', 'notes', 'doctor', 'tasks', 'inbox']
   .map((name) => [name, readFileSync(new URL(`../ui/views/${name}.js`, import.meta.url), 'utf8')]));
 const pagesSource = [pagesOnlySource, ...Object.values(viewSources)].join('\n');
 const visibleCopySource = [homeSource, pagesSource, settingsSource].join('\n');
@@ -344,7 +348,7 @@ a.match(mainSource, /Could not load current work\./, 'task refresh failures must
 a.match(mainSource, /type: 'tasksLoading'/, 'task refreshes must expose their loading state');
 a.match(mainSource, /const tasksRequest = get\('\/api\/tasks'\)\.then/, 'task refreshes must settle independently of changes');
 a.match(mainSource, /const changesRequest = get\('\/api\/changes'\)\.then/, 'change refreshes must settle independently of tasks');
-a.match(mainSource, /Promise\.all\(\[tasksRequest, changesRequest\]\)/, 'the shared refresh must still await both independent requests');
+a.match(mainSource, /Promise\.all\(\[tasksRequest, changesRequest, inboxRequest\]\)/, 'the shared refresh must still await every independent request (tasks, changes, and the inbox count)');
 a.match(mainSource, /let listsRequest = null/, 'the shared list poll must own one in-flight request');
 a.match(mainSource, /if \(listsRequest\) return listsRequest/, 'a second list refresh must reuse the in-flight request');
 a.match(mainSource, /const listsRefresh = refreshLists\(\)/, 'the first list refresh must start before the view paints');
@@ -429,6 +433,165 @@ try {
 } finally {
   globalThis.fetch = fetchBeforeMetricsCheck;
 }
+// Run spend: its own request token, stale and failed responses handled like metrics.
+const fetchBeforeRunSpendCheck = globalThis.fetch;
+try {
+  const responses = [];
+  globalThis.fetch = () => new Promise((resolve) => responses.push(resolve));
+  const spendState = {};
+  const older = loadRunSpend(spendState);
+  const newer = loadRunSpend(spendState, null, true);
+  responses[1](new Response(JSON.stringify({ ok: true, cap: 2, spend: { usd: 1 } }), { status: 200 }));
+  await newer;
+  responses[0](new Response(JSON.stringify({ ok: true, cap: 2, spend: { usd: 0.5 } }), { status: 200 }));
+  await older;
+  a.equal(spendState.runSpend.spend.usd, 1, 'an older run spend response must not overwrite a newer one');
+  const lastGood = spendState.runSpend;
+  const failed = loadRunSpend(spendState, null, true);
+  responses[2](new Response(JSON.stringify({ ok: false, error: 'bus locked' }), { status: 500 }));
+  await failed;
+  a.equal(spendState.runSpend, lastGood, 'a failed run spend refresh keeps the last valid figures');
+  a.equal(spendState.runSpendError, 'bus locked', 'and says why');
+  const leaving = loadRunSpend(spendState, null, true);
+  cancelRunSpend(spendState);
+  responses[3](new Response(JSON.stringify({ ok: true, spend: { usd: 99 } }), { status: 200 }));
+  await leaving;
+  a.equal(spendState.runSpend, lastGood, 'a response after leaving Usage must not mutate run spend');
+} finally {
+  globalThis.fetch = fetchBeforeRunSpendCheck;
+}
+{
+  const geo = spendGeometry([{ ts: 0, usd: 0.5 }, { ts: 50, usd: 1 }, { ts: 100, usd: 1.5 }], 2, { width: 100, height: 100 });
+  a.ok(Math.abs(geo.top - 2.2) < 1e-9, 'the y domain covers the ceiling with headroom, even when spend is below it');
+  a.deepEqual(geo.points.map((p) => Math.round(p.x)), [0, 50, 100], 'x is time across the full width');
+  a.ok(Math.abs(geo.capY - (100 - (2 / 2.2) * 100)) < 1e-9, 'the ceiling sits at its own value on the shared scale');
+  a.equal(spendGeometry([{ ts: 5, usd: 3 }], 0, { width: 100, height: 100 }).points[0].x, 50, 'a single turn is centred, not pinned to an edge');
+  a.deepEqual(spendGeometry([{ ts: 5, usd: 1 }, { ts: 5, usd: 2 }], 0, { width: 100 }).points.map((p) => p.x), [0, 100], 'turns sharing a timestamp spread out');
+  a.equal(spendGeometry([], 0).capY, null, 'no ceiling draws no ceiling line');
+}
+{
+  const { open, closed } = orderTasks([
+    { id: 1, state: 'pending', priority: 0 }, { id: 2, state: 'done', priority: 2 },
+    { id: 3, state: 'active', priority: 2 }, { id: 4, state: 'pending', priority: 2 }, { id: 5, state: 'dropped' },
+  ]);
+  a.deepEqual(open.map((t) => t.id), [3, 4, 1], 'open tasks: highest priority first, then oldest');
+  a.deepEqual(closed.map((t) => t.id), [5, 2], 'closed tasks: newest first, never mixed into the open list');
+  a.deepEqual(assignable({ members: new Map([['orchestrator', { role: 'orchestrator' }], ['briefer', { role: 'briefer' }], ['coder', { role: 'peasant' }]]) }),
+    ['orchestrator', 'coder'], 'the briefer only watches, so tasks cannot be assigned to it');
+}
+{
+  const now = 10 * 86_400_000;
+  a.equal(dueState({ dueTs: now - 1 }, now).tone, 'attention', 'past due is attention');
+  a.match(dueState({ dueTs: now - 1 }, now).label, /^Overdue since/);
+  a.equal(dueState({ dueTs: now - 1, snoozedUntil: now + 5 }, now).tone, 'idle', 'a snoozed overdue task waits quietly');
+  a.equal(dueState({ dueTs: now + 3_600_000 }, now).tone, 'live', 'due within a day is live');
+  a.equal(dueState({ dueTs: now + 3 * 86_400_000 }, now).tone, '', 'due later is plain');
+  a.equal(dueState({ dueTs: null }, now).label, 'No due date');
+  a.equal(dueState({ dueTs: now - 1, doneTs: now }, now).tone, 'settled', 'done wins over overdue');
+}
+{
+  const fetchBefore = globalThis.fetch;
+  try {
+    const responses = [];
+    globalThis.fetch = () => new Promise((resolve) => responses.push(resolve));
+    const mine = {};
+    const older = loadMyTasks(mine);
+    const newer = loadMyTasks(mine);
+    responses[1](new Response(JSON.stringify({ ok: true, tasks: [{ id: 2 }] }), { status: 200 }));
+    await newer;
+    responses[0](new Response(JSON.stringify({ ok: true, tasks: [{ id: 1 }] }), { status: 200 }));
+    await older;
+    a.deepEqual(mine.myTasks, [{ id: 2 }], 'an older load of your list must not overwrite a newer one');
+    const failing = loadMyTasks(mine);
+    responses[2](new Response(JSON.stringify({ ok: false, error: 'locked' }), { status: 500 }));
+    await failing;
+    a.deepEqual(mine.myTasks, [{ id: 2 }], 'a failed load keeps the last list');
+    a.equal(mine.myTasksError, 'locked');
+  } finally { globalThis.fetch = fetchBefore; }
+}
+a.match(viewSources.tasks, /requestToken\(state, 'myTasksRequest'\); off\?\.\(\)/, 'leaving Tasks must invalidate a pending load of your list');
+a.equal(waitingCount([{ tone: 'attention' }, { tone: 'live' }, { tone: 'attention' }, { tone: 'idle' }]), 2, 'only decisions badge, not news or due-soon');
+{
+  const fetchBefore = globalThis.fetch;
+  try {
+    const responses = [];
+    globalThis.fetch = () => new Promise((resolve) => responses.push(resolve));
+    const inboxState = {};
+    const older = loadInbox(inboxState);
+    const newer = loadInbox(inboxState);
+    responses[1](new Response(JSON.stringify({ ok: true, items: [{ id: 'b' }] }), { status: 200 }));
+    await newer;
+    responses[0](new Response(JSON.stringify({ ok: true, items: [{ id: 'a' }] }), { status: 200 }));
+    await older;
+    a.deepEqual(inboxState.inbox, [{ id: 'b' }], 'an older inbox load must not overwrite a newer one');
+    const failing = loadInbox(inboxState);
+    responses[2](new Response(JSON.stringify({ ok: false, error: 'bus locked' }), { status: 500 }));
+    await failing;
+    a.deepEqual(inboxState.inbox, [{ id: 'b' }], 'a failed refresh keeps the last inbox');
+    a.equal(inboxState.inboxError, 'bus locked');
+  } finally { globalThis.fetch = fetchBefore; }
+}
+a.match(viewSources.inbox, /clearTimeout\(timer\); requestToken\(state, 'inboxRequest'\); off\?\.\(\)/, 'leaving the Inbox stops its refetch and drops a pending load');
+a.match(mainSource, /get\('\/api\/inbox'\)[\s\S]*apply\(\{ type: 'inbox'/, 'the rail count is fed on navigation, not only from the Inbox view');
+a.match(sidebarSource, /\['inbox', /, 'Inbox is reachable from the rail');
+a.match(mainSource, /!element\.hidden && element\.getClientRects\(\)\.length > 0\)/, 'the drawer focus trap counts only rendered elements, or Tab escapes past a display:none last button');
+a.deepEqual(parseDays('1-5'), [1, 2, 3, 4, 5]);
+a.deepEqual(parseDays(' 1, 3 ,5 '), [1, 3, 5]);
+a.deepEqual(parseDays('0-1,6,1'), [0, 1, 6], 'ranges and repeats collapse into a sorted set');
+a.equal(parseDays(''), null, 'blank means every day');
+for (const bad of ['7', 'mon', '5-1', '1-', '1,,2']) a.equal(parseDays(bad), false, `"${bad}" is refused, not guessed`);
+a.equal(daysText([1, 2, 3, 4, 5]), 'weekdays');
+a.equal(daysText([1]), 'Mondays');
+a.equal(daysText([1, 3]), 'Mondays, Wednesdays');
+a.equal(daysText(null), 'daily');
+a.equal(triggerText({ type: 'daily', at: '08:00', days: [1, 2, 3, 4, 5] }), 'weekdays at 08:00');
+a.match(automationsSource, /existing\?\.template \? \{ template: existing\.template \}/, 'editing an installed template keeps its template mark');
+a.match(automationsSource, /\.\.\.\(dayList \? \{ days: dayList \} : \{\}\)/, 'editing a weekday automation keeps its days');
+a.match(automationsSource, /post\('workflows\/install', \{ template: template\.id \}\)/, 'templates install through the daemon');
+a.deepEqual(runBody({ objective: '  ship it ', criteria: 'npm test passes\n\n  lint is clean  \n', models: 'codex/gpt-5, , claude/opus' }),
+  { objective: 'ship it', acceptanceCriteria: ['npm test passes', 'lint is clean'], allowedModels: ['codex/gpt-5', 'claude/opus'] },
+  'blank criteria lines and empty model entries are dropped, not sent');
+{
+  const t = { id: 'rt-1', name: 'Release', objective: 'cut 0.4', acceptanceCriteria: ['tests pass', 'changelog'], allowedModels: ['codex/gpt-5'] };
+  a.deepEqual(runBody(draftFrom(t)), { objective: t.objective, acceptanceCriteria: t.acceptanceCriteria, allowedModels: t.allowedModels },
+    'a template round-trips through the form unchanged');
+  a.equal(draftFrom(t).templateId, 'rt-1');
+}
+{
+  const fetchBefore = globalThis.fetch;
+  try {
+    const responses = [];
+    globalThis.fetch = () => new Promise((resolve) => responses.push(resolve));
+    const st = {};
+    const older = loadRunTemplates(st);
+    const newer = loadRunTemplates(st);
+    responses[1](new Response(JSON.stringify({ ok: true, templates: [{ id: 'b' }] }), { status: 200 }));
+    await newer;
+    responses[0](new Response(JSON.stringify({ ok: true, templates: [{ id: 'a' }] }), { status: 200 }));
+    await older;
+    a.deepEqual(st.runTemplates, [{ id: 'b' }], 'an older template load must not overwrite a newer one');
+  } finally { globalThis.fetch = fetchBefore; }
+}
+const startRunSource = readFileSync(new URL('../ui/views/start-run.js', import.meta.url), 'utf8');
+a.match(startRunSource, /post\('runCreate', body\)/, 'the interface can start a run (nothing posted run/create before)');
+a.match(startRunSource, /start\.disabled = Boolean\(active\)/, 'Start run is disabled while another run is active');
+a.match(viewSources.objective, /startRunSection\(state,/, 'the Objective view carries the Start a run form');
+a.match(homeSource, /card\.dataset\.lead = 'start-run'/, 'with an objective and no run, Overview points at starting one');
+a.match(viewSources.tasks, /post\('task', body\)/, 'Tasks edits the queue through the daemon task action');
+a.match(viewSources.tasks, /refresh\?\.\(\)/, 'a change made from a focused select must still repaint');
+a.match(viewSources.tasks, /if \(!editing\(root\)\) renderTasks/, 'live updates must not repaint under someone typing a task');
+{
+  // A view registered for rendering but missing from the shell's route set
+  // silently falls back to Overview (found live for #tasks, 2026-09-25).
+  const routes = new Set(JSON.parse(/const VIEWS = new Set\((\[[^\]]*\])\)/.exec(mainSource)[1].replace(/'/g, '"')));
+  const { renderers } = await import('../ui/views/index.js');
+  for (const name of Object.keys(renderers)) a.ok(routes.has(name), `the shell must route #${name}, or it silently shows Overview`);
+}
+a.match(sidebarSource, /\['tasks', 'Tasks'\]/, 'Tasks is reachable from the rail');
+a.match(usageSource, /dashboard\.append\(runSpendSection\(state\)\)/, 'Usage must show the run spend section');
+a.match(usageSource, /cancelRunSpend\(state\); \}/, 'leaving Usage must cancel a pending run spend request');
+a.match(usageSource, /No run ceiling is set/, 'a missing maxRunUsd must be said, not drawn as an empty meter');
+a.doesNotMatch(usageSource, /\btitle:/, 'run spend hover text must not use native title tooltips (Windows trap)');
 a.match(pagesSource, /apiError\(data, 'Could not load activity\.'/, 'activity load failures must be visible');
 a.match(viewSources.activity, /search\.setAttribute\('aria-label', 'Search activity'\)/, 'Activity search must have an explicit accessible name');
 a.match(viewSources.activity, /filters\.setAttribute\('aria-label', 'Filter activity'\)/, 'Activity filter must have an explicit accessible name');
@@ -504,6 +667,7 @@ a.match(settingsSource, /assetUploads/, 'Settings uploads must stay disabled whi
 a.match(settingsSource, /Confirm delete/, 'asset deletion must require a deliberate second click');
 a.match(settingsSource, /async function removeAsset/, 'asset deletion failures must remain visible and retryable');
 a.match(settingsSource, /await Notify\.request\(\)/, 'notification permission changes must refresh Settings');
+a.match(settingsSource, /row\('runBlocked'[\s\S]*row\('runReview'[\s\S]*row\('runCompleted'[\s\S]*row\('digests'/, 'Settings must offer the run and digest notification toggles');
 a.match(settingsSource, /unsupported.*Not supported here/, 'unsupported notification environments must say why toggles are unavailable');
 a.match(settingsSource, /function settingWrite/, 'settings writes share retryable feedback');
 a.match(settingsSource, /showSettingFeedback\(state, feedback, 'Saved\.'\)/, 'successful Settings writes must confirm the change');

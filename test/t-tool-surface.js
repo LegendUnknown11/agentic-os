@@ -68,10 +68,10 @@ const digest = (tools) => createHash('sha256')
 // `mode/role` -> [tool count, sha256-16 of the sorted shapes].
 // Regenerate with --print.
 const EXPECT = {
-  'code/orchestrator': [36, 'db900623d7267c69'],
+  'code/orchestrator': [38, '320f63826d6291eb'],
   'code/briefer': [19, '725a9fd9dc622a77'],
   'code/peasant': [19, '8dabdf83354f113a'],
-  'cowork/orchestrator': [39, 'ad56d9aeb75defdf'],
+  'cowork/orchestrator': [41, '345c81c347028546'],
   'cowork/briefer': [19, '725a9fd9dc622a77'],
   'cowork/peasant': [19, '8dabdf83354f113a'],
 };
@@ -141,11 +141,12 @@ try {
         `${key}'s tool surface changed (names, arguments or required fields). `
         + 'If that was deliberate, rerun with --print.');
     }
-    // The roles between them must still see all 47. A tool present in the file
+    // The roles between them must still see all 49 (47, plus my_tasks and
+    // add_my_task on 2026-09-25: the orchestrator's view of the sovereign's list). A tool present in the file
     // but gated to no role is invisible, and that is the failure mode a split
     // produces most easily.
-    a.equal(union.size, 47, `expected 47 distinct tools across all roles, saw ${union.size}`);
-    console.log(`  47 tools, 6 mode/role surfaces byte-stable (${Object.values(seen).map(([n]) => n).join('/')})`);
+    a.equal(union.size, 49, `expected 49 distinct tools across all roles, saw ${union.size}`);
+    console.log(`  49 tools, 6 mode/role surfaces byte-stable (${Object.values(seen).map(([n]) => n).join('/')})`);
   }
 } finally {
   rmSync(dir, { recursive: true, force: true });

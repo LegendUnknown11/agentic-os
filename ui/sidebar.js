@@ -11,7 +11,7 @@ const node = (tag, className, text) => {
 };
 
 const NAV_ICONS = Object.freeze({
-  home: 'target', objective: 'goal', approvals: 'approve', changes: 'diff', agents: 'who', activity: 'log',
+  home: 'target', objective: 'goal', approvals: 'approve', changes: 'diff', tasks: 'checklist', inbox: 'bell', agents: 'who', activity: 'log',
   messages: 'bus', usage: 'metrics', memory: 'vault', notes: 'document', automations: 'workflows', doctor: 'doctor',
 });
 
@@ -229,9 +229,13 @@ export function mountSidebar(root, options = {}) {
     const changed = currentState.changes?.changed ?? currentState.changes ?? [];
     const items = [
       ['home', 'Overview'],
+      // Counts only what needs a decision; news and due-soon items do not badge.
+      ['inbox', currentState.inbox?.some?.((item) => item.tone === 'attention')
+        ? `Inbox · ${currentState.inbox.filter((item) => item.tone === 'attention').length}` : 'Inbox'],
       ['objective', 'Objective'],
       ['approvals', pending ? `Decisions · ${pending}` : 'Decisions'],
       ['changes', changed.length ? `Work · ${changed.length}` : 'Work'],
+      ['tasks', 'Tasks'],
       ['agents', 'Team'],
       ['activity', 'Activity'],
     ];

@@ -76,6 +76,18 @@ export const TYPES = {
     fields: [['from', 'text'], ['to', 'text'], ['filter', 'json'], ['pick', 'json']],
     sub: (c) => c.from || '—',
   },
+  digest: {
+    blurb: 'Brief the sovereign from live state',
+    defaults: { of: 'inbox' },
+    fields: [['of', 'select', ['inbox', 'team']], ['to', 'text'], ['title', 'text']],
+    sub: (c) => (c.of === 'team' ? 'team digest' : 'inbox brief'),
+  },
+  task: {
+    blurb: "Add a task to the team's queue",
+    defaults: { title: '', owner: '' },
+    fields: [['title', 'text'], ['detail', 'text'], ['owner', 'text'], ['priority', 'text']],
+    sub: (c) => c.title || '—',
+  },
   foreach: {
     blurb: 'Repeat a sub-chain per item',
     defaults: { from: '', item: 'item', body: [] },

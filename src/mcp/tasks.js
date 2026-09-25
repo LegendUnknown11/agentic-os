@@ -9,7 +9,45 @@ const runFor = (requested) => {
   return { id };
 };
 
+// The sovereign's own to-do list (bus my_tasks), not the team queue. The
+// orchestrator reads it to answer "what's on my plate" and adds to it only
+// when the sovereign asks; nothing here assigns work to a member.
+const when = (ts) => (ts == null ? 'no due date' : new Date(ts).toISOString().replace(':00.000Z', 'Z'));
+
 export const tasks = {
+  my_tasks: {
+    roles: ['orchestrator'],
+    description: "Read the sovereign's own to-do list (not the team queue): open items, due soonest first, "
+      + 'with overdue ones marked. Use it when the sovereign asks what is on their plate.',
+    schema: { type: 'object', properties: {} },
+    run: () => {
+      const open = bus.myTasks({ includeDone: false });
+      if (!open.length) return "The sovereign's list is empty.";
+      const now = Date.now();
+      return open.map((t) => `#${t.id} ${t.title} — ${when(t.dueTs)}${t.dueTs != null && t.dueTs <= now ? ' (OVERDUE)' : ''}`
+        + `${t.notes ? `\n    ${t.notes}` : ''}`).join('\n');
+    },
+  },
+
+  add_my_task: {
+    roles: ['orchestrator'],
+    description: "Add an item to the sovereign's own to-do list. ONLY when the sovereign asked you to note "
+      + 'or remind them of something; never to hand them work you could do. due is ISO 8601, optional.',
+    schema: {
+      type: 'object',
+      properties: { title: str('What to remember'), notes: str('Optional detail'), due: str('Optional ISO 8601 due time') },
+      required: ['title'],
+    },
+    run: ({ title, notes = '', due }) => {
+      const dueTs = due ? Date.parse(due) : null;
+      if (due && !Number.isFinite(dueTs)) return `Not added: "${due}" is not a date. Use ISO 8601, e.g. 2026-10-01T09:00:00Z.`;
+      try {
+        const t = bus.addMyTask({ title, notes, dueTs, by: ME });
+        return `Added #${t.id} to the sovereign's list (${when(t.dueTs)}).`;
+      } catch (e) { return `Not added: ${e.message}`; }
+    },
+  },
+
   assign: {
     roles: ['orchestrator'],
     description: 'Assign a task. Be specific about scope and done-criteria.',

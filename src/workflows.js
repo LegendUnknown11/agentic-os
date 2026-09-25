@@ -74,9 +74,12 @@ function evalCondition(cfg, ctx) {
  * here — or listed here and never implemented — fails the suite instead of
  * surfacing as a palette chip that produces an unrunnable graph.
  */
-export const NODE_TYPES = ['http', 'delay', 'log', 'set', 'condition', 'bus', 'transform', 'foreach'];
+export const NODE_TYPES = ['http', 'delay', 'log', 'set', 'condition', 'bus', 'transform', 'foreach', 'digest', 'task'];
 
-async function runNode(node, ctx, { bus, budget, workflowId } = {}) {
+// `services` is what only the daemon can do: build a digest from live state,
+// notify the sovereign's desktop, put a task on the team queue. Passed in, so
+// this file stays free of the daemon and the self-check can supply fakes.
+async function runNode(node, ctx, { bus, budget, workflowId, services } = {}) {
   if (budget && ++budget.used > MAX_STEPS) throw new Error(`foreach: max steps exceeded (${MAX_STEPS})`);
   const cfg = interp(node.config ?? {}, ctx);
   switch (node.type) {
@@ -110,6 +113,29 @@ async function runNode(node, ctx, { bus, budget, workflowId } = {}) {
       // config `from` could otherwise forge 'sovereign' or a member (#52).
       bus.post(`workflow:${workflowId ?? 'unknown'}`, cfg.to || null, cfg.body ?? '', cfg.kind || 'message');
       return true;
+    // A brief built from the app's own state (src/inbox.js), posted to the
+    // sovereign and shown on their desktop. No model turn, so it costs nothing.
+    case 'digest': {
+      if (!services?.digest) throw new Error('digest node: only runs inside the daemon');
+      if (!bus) throw new Error('digest node: no bus attached to this run');
+      const of = cfg.of === 'team' ? 'team' : 'inbox';
+      const text = await services.digest(of);
+      bus.post(`workflow:${workflowId ?? 'unknown'}`, cfg.to || 'sovereign', text, 'message');
+      services.notify?.({ title: cfg.title || (of === 'team' ? 'Team digest' : 'Your morning brief'), body: text, workflowId });
+      ctx[node.id] = { of, text };
+      return true;
+    }
+    // Hands the team work on a schedule: the same path as the sovereign
+    // adding a task in the Tasks view, owner told if one is named.
+    case 'task': {
+      if (!services?.addTask) throw new Error('task node: only runs inside the daemon');
+      if (!String(cfg.title ?? '').trim()) throw new Error('task node: title required');
+      const task = await services.addTask({
+        title: String(cfg.title), detail: String(cfg.detail ?? ''), owner: cfg.owner || null, priority: Number(cfg.priority) || 0,
+      });
+      ctx[node.id] = { id: task?.id ?? null };
+      return true;
+    }
     // ponytail: filter/pick only, not a general map — enough to shape an http
     // response into what the rest of the graph needs, without an eval.
     case 'transform': {
@@ -133,7 +159,7 @@ async function runNode(node, ctx, { bus, budget, workflowId } = {}) {
       budget ??= { used: 0 };
       for (const item of arr) {
         const subCtx = { ...ctx, [itemVar]: item };
-        for (const sub of node.config.body ?? []) await runNode(sub, subCtx, { bus, budget, workflowId });
+        for (const sub of node.config.body ?? []) await runNode(sub, subCtx, { bus, budget, workflowId, services });
         results.push(subCtx);
       }
       ctx[node.config.to || node.id] = results;
@@ -149,7 +175,7 @@ async function runNode(node, ctx, { bus, budget, workflowId } = {}) {
  * either a node id, or `{then, else}` for a condition node's branch.
  * `input` seeds ctx for a webhook or bus trigger's payload.
  */
-export async function runWorkflow(wf, { bus, input } = {}) {
+export async function runWorkflow(wf, { bus, input, services } = {}) {
   const ctx = input !== undefined ? { input } : {};
   const steps = [];
   const byId = Object.fromEntries((wf.nodes ?? []).map((n) => [n.id, n]));
@@ -160,7 +186,7 @@ export async function runWorkflow(wf, { bus, input } = {}) {
     const node = byId[cur];
     if (!node) { steps.push({ id: cur, ok: false, error: 'no such node' }); break; }
     try {
-      const result = await runNode(node, ctx, { bus, workflowId: wf.id });
+      const result = await runNode(node, ctx, { bus, workflowId: wf.id, services });
       steps.push({ id: node.id, type: node.type, ok: true });
       cur = node.next && typeof node.next === 'object' ? node.next[result ? 'then' : 'else'] : node.next;
     } catch (e) {
@@ -183,6 +209,11 @@ const dailyTime = (trigger) => {
   const match = /^([01]?\d|2[0-3]):([0-5]\d)$/.exec(String(trigger?.at ?? ''));
   return match && [Number(match[1]), Number(match[2])];
 };
+// Optional weekdays on a daily trigger, 0 = Sunday .. 6 = Saturday, so
+// "every Monday at 09:00" needs no trigger type of its own. Absent = every day.
+const dailyDays = (trigger) => (trigger?.days == null ? null
+  : Array.isArray(trigger.days) && trigger.days.length && trigger.days.every((d) => Number.isInteger(d) && d >= 0 && d <= 6)
+    ? trigger.days : false);
 const busPattern = (trigger) => String(trigger?.pattern ?? '').trim();
 const invalidWorkflow = (message) => Object.assign(new Error(message), { status: 400 });
 function validateSchedule(trigger) {
@@ -191,6 +222,9 @@ function validateSchedule(trigger) {
   }
   if (trigger?.type === 'daily' && !dailyTime(trigger)) {
     throw invalidWorkflow('daily trigger needs a time from 00:00 to 23:59');
+  }
+  if (trigger?.type === 'daily' && dailyDays(trigger) === false) {
+    throw invalidWorkflow('daily trigger days must be weekday numbers 0 (Sunday) to 6 (Saturday)');
   }
   if (trigger?.type === 'bus' && !busPattern(trigger)) {
     throw invalidWorkflow('bus trigger needs a non-empty pattern');
@@ -258,13 +292,13 @@ const unreadableWorkflowFiles = new Set();
 let schedulerRunning = false;
 
 /** Call periodically (daemon.js runs this off a setInterval). */
-export async function tickScheduler(dir, { bus, onRun, now: nowMs } = {}) {
+export async function tickScheduler(dir, { bus, onRun, now: nowMs, services } = {}) {
   if (schedulerRunning) return;
   schedulerRunning = true;
   try {
     const now = nowMs ?? Date.now();
     const fire = async (wf, input) => {
-      const result = await runWorkflow(wf, { bus, input }).catch((e) => ({ ok: false, error: e.message, steps: [] }));
+      const result = await runWorkflow(wf, { bus, input, services }).catch((e) => ({ ok: false, error: e.message, steps: [] }));
       if (bus) logRun(bus, wf, result);
       onRun?.(wf, result);
     };
@@ -288,6 +322,8 @@ export async function tickScheduler(dir, { bus, onRun, now: nowMs } = {}) {
         const time = dailyTime(wf.trigger);
         if (!time) continue;
         const d = new Date(now);
+        const days = dailyDays(wf.trigger);
+        if (days === false || (days && !days.includes(d.getDay()))) continue;
         const target = new Date(d.getFullYear(), d.getMonth(), d.getDate(), ...time).getTime();
         if (now < target) continue;                        // today's time hasn't come yet
         if ((lastRun.get(wf.id) ?? 0) >= target) continue;  // already fired for today's target
@@ -400,6 +436,7 @@ if (process.argv[1]?.endsWith('workflows.js')) {
     http: { url: '' }, delay: { ms: 0 }, log: { message: 'x' }, set: { values: {} },
     condition: { path: 'x', op: 'exists' }, bus: { body: 'x' },
     transform: { from: 'missing' }, foreach: { from: 'missing' },
+    digest: { of: 'inbox' }, task: { title: 'x' },
   };
   for (const type of NODE_TYPES) {
     const r = await runWorkflow(
@@ -652,6 +689,45 @@ if (process.argv[1]?.endsWith('workflows.js')) {
   a.equal(dailyRuns.past, 1, 'and not again later the same day');
   await deleteWorkflow(dir, 'daily-future');
   await deleteWorkflow(dir, 'daily-past');
+
+  // weekdays on a daily trigger: 2026-01-15 is a Thursday (4)
+  a.equal(now2.getDay(), 4, 'sanity: the pinned day is a Thursday');
+  const at = hhmm(new Date(now2.getTime() - 60_000));
+  await saveWorkflow(dir, { id: 'weekday-thu', trigger: { type: 'daily', at, days: [4] }, nodes: busWf.nodes });
+  await saveWorkflow(dir, { id: 'weekday-mon', trigger: { type: 'daily', at, days: [1] }, nodes: busWf.nodes });
+  await a.rejects(() => saveWorkflow(dir, { id: 'weekday-bad', trigger: { type: 'daily', at, days: [7] }, nodes: [] }),
+    /weekday numbers 0 \(Sunday\) to 6/, 'a weekday outside 0-6 is refused at save');
+  const weekdayRuns = [];
+  await tickScheduler(dir, { bus: realBus, now: now2.getTime(), onRun: (w) => weekdayRuns.push(w.id) });
+  a.ok(weekdayRuns.includes('weekday-thu'), 'a Thursday workflow fires on a Thursday');
+  a.ok(!weekdayRuns.includes('weekday-mon'), 'a Monday workflow does not fire on a Thursday');
+  await deleteWorkflow(dir, 'weekday-thu');
+  await deleteWorkflow(dir, 'weekday-mon');
+
+  // digest and task nodes: daemon-only services, posted as the workflow
+  {
+    const notified = [], added = [];
+    const services = {
+      digest: async (of) => `${of} brief`,
+      notify: (n) => notified.push(n),
+      addTask: async (t) => { added.push(t); return { id: 42 }; },
+    };
+    const posts = [];
+    const svcBus = { post: (...args) => posts.push(args) };
+    const r = await runWorkflow({ id: 'brief', trigger: { type: 'manual' }, nodes: [
+      { id: 'd', type: 'digest', config: { of: 'team' }, next: 't' },
+      { id: 't', type: 'task', config: { title: 'Check dependencies', owner: 'coder', priority: '1' } },
+    ] }, { bus: svcBus, services });
+    a.equal(r.ok, true, JSON.stringify(r.steps));
+    a.deepEqual(posts[0].slice(0, 4), ['workflow:brief', 'sovereign', 'team brief', 'message'], 'a digest posts to the sovereign as the workflow');
+    a.deepEqual(notified[0], { title: 'Team digest', body: 'team brief', workflowId: 'brief' }, 'and shows on the desktop');
+    a.deepEqual(added[0], { title: 'Check dependencies', detail: '', owner: 'coder', priority: 1 });
+    a.equal(r.ctx.t.id, 42);
+    const outside = await runWorkflow({ id: 'x', trigger: { type: 'manual' }, nodes: [{ id: 'd', type: 'digest', config: {} }] }, { bus: svcBus });
+    a.match(outside.steps[0].error, /only runs inside the daemon/, 'without daemon services the node fails visibly, not silently');
+    const untitled = await runWorkflow({ id: 'x', trigger: { type: 'manual' }, nodes: [{ id: 't', type: 'task', config: {} }] }, { bus: svcBus, services });
+    a.match(untitled.steps[0].error, /title required/);
+  }
 
   // a bus-triggered workflow fires only on a message matching its pattern,
   // and only ever sees messages posted AFTER it started watching

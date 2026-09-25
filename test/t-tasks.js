@@ -272,6 +272,25 @@ try {
     console.log('  declare_done refuses a run-owned task instead of silently bypassing its verification gate');
   }
 
+  /* ---------- the sovereign's own list: orchestrator reads and adds, peasants cannot ---------- */
+  {
+    const k = await orchestrator.tools(), c = await coder.tools();
+    a.ok(k.includes('my_tasks') && k.includes('add_my_task'), "the orchestrator can read and add to the sovereign's list");
+    a.ok(!c.includes('my_tasks') && !c.includes('add_my_task'), "a peasant never sees the sovereign's list");
+    a.match(await orchestrator.call('my_tasks'), /list is empty/);
+    a.match(await orchestrator.call('add_my_task', { title: 'call the accountant', due: '2020-01-01T09:00:00Z' }), /Added #\d+ .*2020-01-01T09:00Z/);
+    a.match(await orchestrator.call('add_my_task', { title: 'x', due: 'next tuesday-ish' }), /not a date/,
+      'an unparseable due date is refused, not stored as no date');
+    const listed = await orchestrator.call('my_tasks');
+    a.match(listed, /call the accountant — 2020-01-01T09:00Z \(OVERDUE\)/, 'overdue items are marked');
+    a.doesNotMatch(listed, /\bx\b —/, 'the refused item is not on the list');
+    const direct = new Bus(db);
+    a.equal(direct.myTasks()[0].by, 'sovereign-regent', 'the list records which member added an item');
+    a.equal(direct.tasks().some((t) => t.title === 'call the accountant'), false, 'and it never lands in the team queue');
+    direct.close();
+    console.log("  my_tasks: the orchestrator reads and adds to the sovereign's list; peasants cannot");
+  }
+
   console.log('t-tasks.js OK — a shared list two processes cannot both claim, with a plan gate that holds');
 } finally {
   // Wait for the processes to actually go before deleting the db they have

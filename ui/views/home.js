@@ -62,7 +62,14 @@ function nextStepFor({ urgent, changesVisible, changes, goal }) {
     card.dataset.lead = 'objective';
     return card;
   }
-  return null;
+  // An objective and no run: the next step is starting one (the form lives
+  // on the Objective view, beside the outcome it is started from).
+  const card = h('section', { class: 'home-card home-next-step' },
+    h('h2', { text: 'Next step' }),
+    h('p', { text: 'Start a run to put the team on this objective, with acceptance criteria to verify against.' }),
+    h('div', { class: 'button-row' }, button('Start a run', open('objective'), 'primary')));
+  card.dataset.lead = 'start-run';
+  return card;
 }
 
 export function render(state, root, actions = {}, queueExpanded = false) {

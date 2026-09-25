@@ -103,6 +103,12 @@ writeFileSync(cfg, JSON.stringify({
   // to strand its claims forever). That is a different scenario than the one
   // this fixture is for.
   bus.set('summoned', JSON.stringify(['coder']));
+  // Two finished runs with ledgers, so the run spend panel has a history.
+  bus.createRun({ id: 'run-a', objective: 'first run', state: 'completed' });
+  bus.recordRunSpend('run-a', 'coder', 0.25, 1);
+  bus.createRun({ id: 'run-b', objective: 'second run', state: 'cancelled' });
+  bus.recordRunSpend('run-b', 'coder', 0.5, 2);
+  bus.recordRunSpend('run-b', 'orchestrator', 0.75, 3);
   bus.close();
 }
 
@@ -500,6 +506,120 @@ try {
     a.deepEqual(r.tasks[1].blockedBy, [r.tasks[0].id],
       'the panel must be told WHAT a task is waiting for, not merely that it waits');
     console.log('  tasks: outstanding, held, and blocked are three distinguishable states');
+  }
+
+  /* ---------- 6. run spend: one run's ledger, the ceiling, and history ---------- */
+  {
+    const r = await get('/api/runSpend');
+    a.ok(r.ok);
+    a.equal(r.cap, 0, 'no maxRunUsd configured reads as 0, not a guess');
+    a.equal(r.run.id, 'run-b', 'with no current run, the most recent run is shown');
+    a.equal(r.spend.usd, 1.25);
+    a.deepEqual(r.spend.members.map((m) => m.name), ['orchestrator', 'coder'], 'members rank by spend');
+    a.deepEqual(r.runs.map((x) => [x.id, x.usd, x.turns]), [['run-b', 1.25, 2], ['run-a', 0.25, 1]],
+      'history lists newest first with each run\'s own total');
+    const one = await get('/api/runSpend?id=run-a');
+    a.equal(one.spend.usd, 0.25, 'a named run reads its own ledger');
+    const missing = await fetch(`${base}/api/runSpend?id=run-none`);
+    a.equal(missing.status, 404, 'an unknown run is a visible 404, not an empty panel');
+    console.log('  run spend: per-run ledger, ceiling, and newest-first history');
+  }
+
+  /* ---------- 7. the sovereign edits the queue over HTTP ---------- */
+  {
+    const created = await post('/api/task', { op: 'create', title: 'from the panel', priority: 3 });
+    a.ok(created.ok, created.error);
+    a.equal(created.task.by, 'sovereign');
+    const listed = await get('/api/tasks');
+    a.ok(listed.tasks.some((t) => t.id === created.task.id && t.priority === 3), 'the new task is in the list with its priority');
+    const refused = await post('/api/task', { op: 'assign', id: created.task.id, owner: 'nobody' });
+    a.equal(refused.ok, false, 'an unknown member is a visible refusal, not a silent no-op');
+    a.match(refused.error, /not a member/);
+    console.log('  tasks: the sovereign creates and assigns over HTTP, and bad input is refused');
+  }
+
+  /* ---------- 8. the sovereign's own list over HTTP ---------- */
+  {
+    const added = await post('/api/myTask', { op: 'add', title: 'renew passport', dueTs: 1 });
+    a.ok(added.ok, added.error);
+    const listed = await get('/api/myTasks');
+    a.equal(listed.due, 1, 'a past-due item counts as due');
+    await post('/api/myTask', { op: 'snooze', id: added.task.id, forMs: 60_000 });
+    a.equal((await get('/api/myTasks')).due, 0, 'snoozing takes it out of due');
+    const done = await post('/api/myTask', { op: 'done', id: added.task.id });
+    a.ok(done.task.doneTs, 'done records when');
+    const missing = await post('/api/myTask', { op: 'done', id: 9999 });
+    a.equal(missing.ok, false);
+    a.match(missing.error, /No task #9999 on your list/);
+    a.ok(!(await get('/api/tasks')).tasks.some((t) => t.title === 'renew passport'), "the sovereign's list never enters the team queue");
+    console.log("  my tasks: add, due, snooze, done over HTTP, kept out of the team queue");
+  }
+
+  /* ---------- 9. the inbox over HTTP ---------- */
+  {
+    await post('/api/myTask', { op: 'add', title: 'sign the lease', dueTs: 5 });
+    const inbox = await get('/api/inbox');
+    a.ok(inbox.ok);
+    const ids = inbox.items.map((i) => i.kind);
+    a.ok(inbox.items.some((i) => i.kind === 'approval' && i.title === 'Summon coder'), 'the pending summon is waiting on you');
+    a.ok(inbox.items.some((i) => i.kind === 'task' && i.title === 'sign the lease'), 'an overdue item of yours is there');
+    a.ok(ids.indexOf('approval') < ids.indexOf('task'), 'decisions rank above your own overdue tasks');
+    a.ok(!inbox.items.some((i) => i.title === 'renew passport'), 'a done task is not in the inbox');
+    console.log('  inbox: approvals and your overdue tasks, ranked, over HTTP');
+  }
+
+  /* ---------- 10. templates install and run end to end ---------- */
+  {
+    const list = await get('/api/workflows/templates');
+    a.deepEqual(list.templates.map((t) => t.id), ['morning-brief', 'team-digest', 'weekly-dependencies', 'calendar-brief', 'github-triage']);
+    a.ok(list.templates.filter((t) => t.needs).every((t) => /say so/.test(t.needs)), 'connector templates say what they need');
+    const brief = await post('/api/workflows/install', { template: 'morning-brief' });
+    a.ok(brief.ok, brief.error);
+    a.equal(brief.workflow.template, 'morning-brief');
+    a.deepEqual(brief.workflow.trigger, { type: 'daily', at: '08:00', days: [1, 2, 3, 4, 5] });
+    const ran = await post('/api/workflows/run', { id: brief.workflow.id });
+    a.equal(ran.result.ok, true, JSON.stringify(ran.result.steps));
+    a.match(ran.result.ctx.brief.text, /things? need(s)? you|Nothing is waiting/, 'the brief is built from live state');
+    const inbox = await get('/api/inbox');
+    a.ok(inbox.items.some((i) => i.kind === 'message' && i.title === `From workflow:${brief.workflow.id}`), 'the brief lands where the sovereign reads it');
+    const digest = await post('/api/workflows/install', { template: 'team-digest' });
+    const digestRun = await post('/api/workflows/run', { id: digest.workflow.id });
+    a.match(digestRun.result.ctx.digest.text, /^Team digest \(/);
+    const weekly = await post('/api/workflows/install', { template: 'weekly-dependencies' });
+    const weeklyRun = await post('/api/workflows/run', { id: weekly.workflow.id });
+    a.equal(weeklyRun.result.ok, true, JSON.stringify(weeklyRun.result.steps));
+    a.ok((await get('/api/tasks')).tasks.some((t) => t.title === 'Check dependencies for updates' && t.by === 'sovereign'),
+      'a scheduled task lands on the team queue');
+    const missing = await post('/api/workflows/install', { template: 'nope' });
+    a.equal(missing.ok, false);
+    console.log('  templates: install, run the brief, the digest and a scheduled team task end to end');
+  }
+
+  /* ---------- 11. run templates, and starting a run from one ---------- */
+  {
+    a.deepEqual((await get('/api/runTemplates')).templates, []);
+    const refused = await post('/api/runTemplate', { op: 'save', name: 'Release' });
+    a.equal(refused.ok, false);
+    a.match(refused.error, /needs an objective/);
+    const saved = await post('/api/runTemplate', {
+      op: 'save', name: 'Release', objective: 'cut 0.4', acceptanceCriteria: ['tests pass', ' ', 'changelog'], allowedModels: ['codex/gpt-5'],
+    });
+    a.ok(saved.ok, saved.error);
+    a.deepEqual(saved.template.acceptanceCriteria, ['tests pass', 'changelog'], 'blank criteria are dropped');
+    const updated = await post('/api/runTemplate', { op: 'save', id: saved.template.id, name: 'Release', objective: 'cut 0.5' });
+    a.equal((await get('/api/runTemplates')).templates.length, 1, 'saving with an id updates, not duplicates');
+    a.equal(updated.template.objective, 'cut 0.5');
+    const { template } = saved;
+    const started = await post('/api/runCreate', { objective: template.objective, acceptanceCriteria: template.acceptanceCriteria, allowedModels: template.allowedModels });
+    a.ok(started.ok, started.error);
+    a.equal(started.run.state, 'planning');
+    a.deepEqual(started.run.acceptanceCriteria, ['tests pass', 'changelog'], 'the run carries the template criteria');
+    const second = await post('/api/runCreate', { objective: 'another' });
+    a.equal(second.ok, false, 'a second run is refused while one is active');
+    await post('/api/runStop', { id: started.run.id });
+    await post('/api/runTemplate', { op: 'delete', id: saved.template.id });
+    a.deepEqual((await get('/api/runTemplates')).templates, []);
+    console.log('  run templates: save, update, delete; a run starts from one with its criteria');
   }
 
   console.log('t-panels.js OK — metrics take deltas, diffs are real, bad approvals cost one row, the task list is visible');
