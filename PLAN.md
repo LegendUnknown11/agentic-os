@@ -563,3 +563,54 @@ pilot-section cases. **Not held**: any run against real Flutter tooling or the
 real Habitable checkout — that is explicitly out of scope for this round and
 remains gated on HANDOFF.md's step 3 (demonstrate, audit, get a backlog
 approved) before implementation on Habitable itself can start.
+
+## Run visibility — blocker, spend, notifications (2026-09-25)
+
+Asked for by the sovereign on 2026-09-25 after an interview. It is three
+features on `feature-implementation`, each its own commit. None of them
+touches the interface contract in sections 1-5 beyond adding one section to
+Usage.
+
+**Contract.**
+
+1. A blocked run's reason (operation and next action) is durable. A reload or
+   a restarted workspace shows it, and leaving `blocked` clears it.
+2. A run's spend is its own ledger, one row per priced turn while the run is
+   current. `maxRunUsd` reads that ledger, so `clearSpend()` cannot disarm it.
+3. Usage gains a **Run spend** section with these parts:
+   - the current run (else the most recent), shown as objective and state;
+   - a meter against `maxRunUsd`, or a plain note when none is set;
+   - a cumulative spend line with the ceiling dashed;
+   - spend and turns per member;
+   - recent runs' totals.
+
+   There is one series, so no legend box. Hover uses a drawn readout, never a
+   native `title`.
+4. Desktop notifications fire when a run moves into `blocked` (on by default,
+   carrying the reason) or `ready_for_review` (on). A notification for
+   `completed` is available but off by default. Each fires once per move, and
+   a reconnect snapshot never notifies.
+
+**What closed it.**
+
+| Piece | Commit | Test that fails without it |
+|---|---|---|
+| Durable blocker | `78cd302` | `t-control.js` section 9 (survives a real restart); bus self-check |
+| Spend ledger + ceiling fix + `/api/runSpend` | `6c98780` | `t-efficiency.js` (prior spend, `clearSpend`, then crossing the cap still blocks); `t-panels.js` section 6 |
+| Run spend section | `e15e588` | `t-pages.js` (loader tokens, `spendGeometry`); `t-theme.js` (token strokes) |
+| Run notifications | `7848e7c` | new `t-notify.js` |
+
+**Acceptance evidence.**
+
+- Source: 90 suites, with 89 passing in the Linux container. `t-electron.js`
+  fails there for want of a display, the same as on the unchanged base.
+  `t-theme-geometry.js` ran in real Chromium.
+- Browser: the Run spend section was rendered by a real daemon against a seeded
+  court and inspected in Chromium at 1440x900 and 720x900. The hover readout
+  was exercised, no page errors occurred, and there was no horizontal overflow.
+  This found three defects, all fixed before commit:
+  - the round marks stretched into ellipses under the stretched viewBox;
+  - the end mark was clipped at the right edge;
+  - the history table was cut off in a half-width column.
+- **Not held**: Electron, Windows, and a desktop notification actually shown by
+  an operating system.
