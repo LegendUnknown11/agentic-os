@@ -7,6 +7,22 @@ export const PRIORITIES = [[2, 'Urgent'], [1, 'High'], [0, 'Normal'], [-1, 'Low'
 const priorityLabel = (value) => (PRIORITIES.find(([n]) => n === Number(value ?? 0)) ?? PRIORITIES[2])[1];
 const CLOSED = new Set(['done', 'dropped']);
 
+// The view repaints on every store change, which during a stream is every
+// frame. What the sovereign has opened or half-typed lives in state, or the
+// next event collapsed the closed list and wiped the new-task fields.
+const viewState = (state) => (state.tasksView ??= { closedOpen: false, doneOpen: false, team: '', mine: '', due: '' });
+function remembered(control, view, key) {
+  control.value = view[key];
+  control.addEventListener('input', () => { view[key] = control.value; });
+  return control;
+}
+function foldable(view, key, summary, list) {
+  const details = h('details', { class: 'task-closed' }, h('summary', { text: summary }), list);
+  details.open = view[key];
+  details.addEventListener('toggle', () => { view[key] = details.open; });
+  return details;
+}
+
 /** Open first by priority then age; closed after, newest first. Pure, for the suite. */
 export function orderTasks(tasks = []) {
   const open = tasks.filter((t) => !CLOSED.has(t.state))
@@ -64,7 +80,8 @@ function teamQueue(state, refresh) {
   feedback.hidden = true;
   feedback.setAttribute('role', 'alert');
 
-  const title = input('', 'What should the team do?');
+  const view = viewState(state);
+  const title = remembered(input('', 'What should the team do?'), view, 'team');
   title.setAttribute('aria-label', 'New team task');
   const owner = select([['', 'Anyone (unassigned)'], ...members.map((m) => [m, m])], '');
   owner.setAttribute('aria-label', 'Assign the new task to');
@@ -73,7 +90,8 @@ function teamQueue(state, refresh) {
   const add = button('Add task', async () => {
     const text = title.value.trim();
     if (!text) { feedback.textContent = 'Enter a task first.'; feedback.hidden = false; return; }
-    await taskAction({ op: 'create', title: text, owner: owner.value || null, priority: Number(priority.value) }, feedback, add, refresh);
+    const result = await taskAction({ op: 'create', title: text, owner: owner.value || null, priority: Number(priority.value) }, feedback, add);
+    if (result) { view.team = ''; refresh?.(); }
   }, 'primary');
   title.addEventListener('keydown', (event) => { if (event.key === 'Enter') { event.preventDefault(); add.click(); } });
 
@@ -84,7 +102,7 @@ function teamQueue(state, refresh) {
     state.tasksError ? note(state.tasksError, 'danger') : null,
     open.length ? h('ul', { class: 'task-manage-list', 'aria-label': 'Open team tasks' }, ...open.map((t) => teamRow(t, members, feedback, refresh)))
       : empty(state.tasksLoading ? 'Loading the team queue…' : 'Nothing is queued for the team.'),
-    closed.length ? h('details', { class: 'task-closed' }, h('summary', { text: `Closed · ${closed.length}` }),
+    closed.length ? foldable(view, 'closedOpen', `Closed · ${closed.length}`,
       h('ul', { class: 'task-manage-list', 'aria-label': 'Closed team tasks' }, ...closed.map((t) => teamRow(t, members, feedback, refresh)))) : null);
 }
 
@@ -144,14 +162,16 @@ function myTasks(state, refresh) {
   const feedback = note('', 'danger');
   feedback.hidden = true;
   feedback.setAttribute('role', 'alert');
-  const title = input('', 'Something to remember…');
+  const view = viewState(state);
+  const title = remembered(input('', 'Something to remember…'), view, 'mine');
   title.setAttribute('aria-label', 'New task for you');
-  const due = h('input', { type: 'datetime-local', 'aria-label': 'Due (optional)' });
+  const due = remembered(h('input', { type: 'datetime-local', 'aria-label': 'Due (optional)' }), view, 'due');
   const add = button('Add', async () => {
     const text = title.value.trim();
     if (!text) { feedback.textContent = 'Enter a task first.'; feedback.hidden = false; return; }
     const dueTs = due.value ? new Date(due.value).getTime() : null;
-    await myAction({ op: 'add', title: text, dueTs: Number.isFinite(dueTs) ? dueTs : null }, feedback, add, refresh);
+    const result = await myAction({ op: 'add', title: text, dueTs: Number.isFinite(dueTs) ? dueTs : null }, feedback, add);
+    if (result) { view.mine = ''; view.due = ''; refresh?.(); }
   }, 'primary');
   title.addEventListener('keydown', (event) => { if (event.key === 'Enter') { event.preventDefault(); add.click(); } });
   const open = tasks.filter((t) => !t.doneTs);
@@ -162,7 +182,7 @@ function myTasks(state, refresh) {
     state.myTasksError ? note(state.myTasksError, 'danger') : null,
     open.length ? h('ul', { class: 'task-manage-list', 'aria-label': 'Your open tasks' }, ...open.map((t) => myRow(t, feedback, refresh)))
       : empty(state.myTasks ? 'Nothing on your list.' : 'Loading your list…'),
-    closed.length ? h('details', { class: 'task-closed' }, h('summary', { text: `Done · ${closed.length}` }),
+    closed.length ? foldable(view, 'doneOpen', `Done · ${closed.length}`,
       h('ul', { class: 'task-manage-list', 'aria-label': 'Your finished tasks' }, ...closed.map((t) => myRow(t, feedback, refresh)))) : null);
 }
 

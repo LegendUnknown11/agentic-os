@@ -14,11 +14,11 @@ workflow run results survive store repaints through keyed state instead of a
 DOM reference, and the automation graph editor is widened to two columns. Its
 `test/t-theme.js` change moved with it.
 
-Verified 2026-09-25 (`git branch -r`, late in the day): `origin` carries
-`main`, `claude/peaceful-bohr-c3dfn8` (PRs #80 and #81, both on `main` as
-`c6f3b18` and `ca8dabf`), `claude/confident-brown-trd7w2` (a session branch
-level with `main`, no PR) and `feature-implementation` (the run-visibility work
-below, in review). `ui-enhancement` and every feature branch named
+Verified 2026-09-25 (`git ls-remote --heads origin`, after #82 landed):
+`origin` carries `main`, `claude/peaceful-bohr-c3dfn8` (PRs #80 and #81, both
+on `main` as `c6f3b18` and `ca8dabf`; the branch was restarted from `main` for
+the post-#82 cleanup) and `feature-implementation` (PR #82, on `main` as
+`544fe41`). `claude/confident-brown-trd7w2` is gone. `ui-enhancement` and every feature branch named
 below (`ui-revamp`, `functional-revamp`, `chore/recover-electron-harness`, the
 `fix/issue-*` branches) are gone. Their work is on `main`: each PR head from
 #71-#79 is an ancestor of `origin/main`. Those PRs read "closed", not
@@ -285,7 +285,11 @@ section.
   assigns, reprioritises, drops and reopens the team's tasks
   (`Kingdom.manageTask`, `POST /api/task`). Every change is messaged to the
   member it affects. Tasks gained a `priority` column, and free tasks are
-  offered highest priority first. *My tasks:* the sovereign's own list
+  offered highest priority first. `dropped` is a closed state beside `done`
+  (`TASK_CLOSED` in `src/bus.js`): it releases the tasks that waited on it,
+  lists under CLOSED in the `tasks` tool, and is not open in any count. A task
+  whose dependencies are unfinished cannot be assigned, the same refusal as
+  `claim_task`. *My tasks:* the sovereign's own list
   (`my_tasks` table, `/api/myTasks`, `POST /api/myTask`), with due, done and
   snooze. It is kept out of the team queue. The orchestrator gained
   `my_tasks` and `add_my_task`: 49 tools, up from 47. This was a deliberate

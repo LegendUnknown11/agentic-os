@@ -9,6 +9,10 @@ export const RUN_STATES = new Set([
   'ready_for_review', 'completed', 'cancelled',
 ]);
 
+// A task in either state is finished with: it holds nothing, blocks nothing,
+// and is not "open". 'dropped' is the sovereign cancelling it (manageTask).
+export const TASK_CLOSED = new Set(['done', 'dropped']);
+
 const RUN_ACTIVE_STATES = new Set(['planning', 'running', 'paused', 'blocked', 'verifying', 'ready_for_review']);
 const json = (value, fallback) => JSON.stringify(value ?? fallback);
 const parsed = (value, fallback) => {
@@ -299,6 +303,20 @@ export class Bus {
   approvals({ since = 0 } = {}) {
     return this.db.prepare("select v from state where k like 'approval:%' and cast(substr(k, 10) as integer) > ? order by cast(substr(k, 10) as integer)")
       .all(since).flatMap(({ v }) => {
+        try {
+          const row = JSON.parse(v);
+          return [{ ...row, runId: row.runId ?? row.run_id ?? null }];
+        } catch { return []; }
+      });
+  }
+
+  /** approvals() minus the answered ones, in one query rather than a lookup per row. */
+  pendingApprovals() {
+    return this.db.prepare(`select a.v from state a
+      left join state r on r.k = 'resolved:' || substr(a.k, 10)
+      where a.k like 'approval:%' and r.k is null
+      order by cast(substr(a.k, 10) as integer)`)
+      .all().flatMap(({ v }) => {
         try {
           const row = JSON.parse(v);
           return [{ ...row, runId: row.runId ?? row.run_id ?? null }];
@@ -878,7 +896,8 @@ export class Bus {
     // paid a full scan and a JSON.parse per row to look at a handful.
     // `done` still needs the whole set, but only the ids, and only from the
     // rows that can block anything.
-    const done = new Set(this.db.prepare("select id from tasks where state = 'done'")
+    // A dropped task will never finish, so it releases its dependents too.
+    const done = new Set(this.db.prepare("select id from tasks where state in ('done', 'dropped')")
       .all().map((t) => t.id));
     const where = [], args = [];
     if (state) { where.push('state = ?'); args.push(state); }
@@ -1275,6 +1294,8 @@ if (process.argv[1]?.endsWith('bus.js')) {
     p.prune({ keepMessages: 10, keepEvents: 10 });
     a.equal(p.approvals().some((m) => m.id === approval), true, 'sanity: the approval is retained');
     a.equal(p.get(`resolved:${approval}`), 'approved', 'a retained approval keeps its decision');
+    const open = p.post('orchestrator', null, JSON.stringify({ kind: 'merge' }), 'approval');
+    a.deepEqual(p.pendingApprovals().map((m) => m.id), [open], 'pending is every approval without a resolved flag');
     p.close();
   }
 

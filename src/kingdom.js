@@ -13,7 +13,7 @@ import { brainBlock, brainFingerprint, remember } from './memory.js';
 import { skillsBlock, expandSkillCommand, listSkills } from './skills.js';
 import { engineerPrompt, outputEvidence, pickModels } from './advisor.js';
 import { summarize, settingsOf as summarizerSettings } from './summarize.js';
-import { Bus } from './bus.js';
+import { Bus, TASK_CLOSED } from './bus.js';
 import { inputTokens, deltaOf, totalsOf, hasUsage } from './usage.js';
 import { costOf, tableFrom } from './price.js';
 import { forecast as forecastOf } from './forecast.js';
@@ -755,7 +755,7 @@ export class Kingdom extends EventEmitter {
     // briefer into `summoned`, so by here the set is complete and the test is
     // simply "can anybody work this" — no special cases for the crown.
     const orphans = this.bus.tasks()
-      .filter((t) => t.owner && t.state !== 'done' && !this.summoned.has(t.owner));
+      .filter((t) => t.owner && !TASK_CLOSED.has(t.state) && !this.summoned.has(t.owner));
     const orphanLoss = this.#releaseHeldTasks(orphans);
     if (orphans.length) {
       this.bus.post(CROWN, this.config.orchestrator.name,
@@ -1809,10 +1809,19 @@ export class Kingdom extends EventEmitter {
       return name;
     };
     if (op === 'create') {
-      const text = String(title ?? '').trim();
+      // Everything is checked before the insert: a refusal after it left the
+      // task behind, so retrying the form added it twice.
+      const text = String(title ?? '').trim().slice(0, 200);
       if (!text) fail('A task needs a title.');
+      if (owner) member(owner);
+      const deps = (Array.isArray(needs) ? needs : []).map(Number);
+      const known = new Map(this.bus.tasks().map((t) => [t.id, t]));
+      const missing = deps.filter((n) => !known.has(n));
+      if (missing.length) fail(`No such task: ${missing.map((n) => `#${n}`).join(', ')}.`);
+      const waiting = deps.filter((n) => !TASK_CLOSED.has(known.get(n).state));
+      if (owner && waiting.length) fail(`A task that waits on ${waiting.map((n) => `#${n}`).join(', ')} cannot be assigned yet.`);
       const created = this.bus.addTask({
-        title: text, detail: String(detail ?? ''), needs: Array.isArray(needs) ? needs : [],
+        title: text, detail: String(detail ?? '').slice(0, 2000), needs: deps,
         priority: Number(priority) || 0, by: 'sovereign', runId: this.#activeRun()?.id ?? null,
       });
       return owner ? this.manageTask({ op: 'assign', id: created, owner }) : this.bus.task(created);
@@ -1822,13 +1831,16 @@ export class Kingdom extends EventEmitter {
     const tell = (to, text, kind) => { if (to) this.bus.post('sovereign', to, text, kind); };
     switch (op) {
       case 'assign': {
-        if (task.state === 'done' || task.state === 'dropped') fail(`Task #${task.id} is ${task.state}; reopen it first.`);
+        if (TASK_CLOSED.has(task.state)) fail(`Task #${task.id} is ${task.state}; reopen it first.`);
         if (task.state === 'verifying') fail(`Task #${task.id} is being verified; wait for the result.`);
         const next = owner ? member(owner) : null;
         if (next === task.owner) return task;
-        const updated = this.bus.updateTask(task.id, next
-          ? { owner: next, state: task.state === 'planning' || task.needsPlan ? 'planning' : 'active' }
-          : { owner: null, state: 'pending' });
+        // claim_task refuses the same: an assignment is a start signal.
+        if (next && task.blockedBy.length) fail(`Task #${task.id} waits on ${task.blockedBy.map((n) => `#${n}`).join(', ')}.`);
+        // An approved plan stays approved, as in reassign_task; only a task
+        // nobody has planned yet starts in planning.
+        const state = task.state === 'planning' || (task.state === 'pending' && task.needsPlan) ? 'planning' : 'active';
+        const updated = this.bus.updateTask(task.id, next ? { owner: next, state } : { owner: null, state: 'pending' });
         tell(next, `Task #${task.id} (${task.title}) was assigned to you by the sovereign.\n\n${task.detail}`, 'assignment');
         tell(task.owner, `Task #${task.id} (${task.title}) was ${next ? `reassigned to ${next}` : 'unassigned'} by the sovereign. Stop work on it.`, 'notice');
         return updated;
@@ -1840,7 +1852,7 @@ export class Kingdom extends EventEmitter {
         tell(task.owner, `Task #${task.id} (${task.title}) was dropped by the sovereign. Stop work on it.`, 'notice');
         return this.bus.updateTask(task.id, { state: 'dropped', owner: null });
       case 'reopen':
-        if (task.state !== 'done' && task.state !== 'dropped') fail(`Task #${task.id} is ${task.state}, not closed.`);
+        if (!TASK_CLOSED.has(task.state)) fail(`Task #${task.id} is ${task.state}, not closed.`);
         return this.bus.updateTask(task.id, { state: 'pending', owner: null, doneTs: null });
       default:
         return fail(`Unknown task operation "${op}".`);
@@ -3054,7 +3066,7 @@ export class Kingdom extends EventEmitter {
     // quietly. Released rather than reassigned — the list exists so an idle
     // peasant can claim the next thing, and picking the claimant is the
     // orchestrator's job, not a side effect of a merge.
-    const stranded = this.bus.tasks().filter((t) => t.owner === name && t.state !== 'done');
+    const stranded = this.bus.tasks().filter((t) => t.owner === name && !TASK_CLOSED.has(t.state));
     const strandedLoss = this.#releaseHeldTasks(stranded);
     if (stranded.length) {
       this.bus.post(CROWN, this.config.orchestrator.name,

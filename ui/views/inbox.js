@@ -48,11 +48,17 @@ export function mountInbox(state, root) {
   const repaint = () => { if (root.isConnected !== false) renderInbox(state, root); };
   renderInbox(state, root);
   void loadInbox(state, repaint);
-  // Approvals, the run and your list all move on the stream; refetch at most
-  // once a second rather than on every event.
+  // Approvals, the run, your list and messages move on the stream. Refetch
+  // only when one of them did, at most once a second: the store notifies on
+  // every frame of member output, and this was a request a second for as long
+  // as anyone was typing.
+  const inputs = () => [state.approvals?.length, state.run?.id, state.run?.state, state.myTasks?.length, state.messageCursor].join('|');
+  let seen = inputs();
   let timer = null;
   const off = subscribe(() => {
-    if (timer) return;
+    const now = inputs();
+    if (timer || now === seen) return;
+    seen = now;
     timer = setTimeout(() => { timer = null; void loadInbox(state, repaint); }, 1000);
   });
   return () => { clearTimeout(timer); requestToken(state, 'inboxRequest'); off?.(); };

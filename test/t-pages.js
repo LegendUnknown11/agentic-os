@@ -580,6 +580,10 @@ a.match(homeSource, /card\.dataset\.lead = 'start-run'/, 'with an objective and 
 a.match(viewSources.tasks, /post\('task', body\)/, 'Tasks edits the queue through the daemon task action');
 a.match(viewSources.tasks, /refresh\?\.\(\)/, 'a change made from a focused select must still repaint');
 a.match(viewSources.tasks, /if \(!editing\(root\)\) renderTasks/, 'live updates must not repaint under someone typing a task');
+a.match(viewSources.tasks, /details\.open = view\[key\]/, 'a stream repaint must not collapse the closed list the sovereign opened');
+a.match(viewSources.tasks, /remembered\(input\('', 'What should the team do\?'\), view, 'team'\)/, 'a half-typed team task survives a stream repaint');
+a.match(viewSources.tasks, /remembered\(input\('', 'Something to remember…'\), view, 'mine'\)/, 'a half-typed task of your own survives a stream repaint');
+a.match(viewSources.inbox, /if \(timer \|\| now === seen\) return;/, 'the inbox refetches only when what it ranks moved, not on every streamed frame');
 {
   // A view registered for rendering but missing from the shell's route set
   // silently falls back to Overview (found live for #tasks, 2026-09-25).
