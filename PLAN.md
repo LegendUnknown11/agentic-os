@@ -659,8 +659,7 @@ interview. All of it landed on `feature-implementation`, PR #82.
 
 - **Source.** 92 suites, 91 passing in the Linux container. `t-electron.js`
   fails there for want of a display. `t-theme-geometry.js` ran in real
-  Chromium. Every push through `97b3282` ran green on `windows-latest` CI.
-  The `6ed25bc` run was pending at the time of writing.
+  Chromium. On `windows-latest` CI, head `49f81ed` passed all 92 suites.
 - **Browser.** Every new view was driven in real Chromium against a real
   daemon with seeded state, at 1440x900 and at 720 wide:
   - team tasks: assigned, reprioritised, added with Enter;
@@ -680,8 +679,8 @@ interview. All of it landed on `feature-implementation`, PR #82.
   - blank run blockers;
   - Tab escaping the 720px drawer.
 - **Electron.** Sections 3-6 were first run verbatim in Chromium and passed
-  there. Their Electron evidence is the `windows-latest` job on PR #82, which
-  was still pending when this was written.
+  there, then passed in a real Electron window on `windows-latest` (PR #82,
+  head `49f81ed`, job 107959284113).
 - **Not held.**
   - A calendar or GitHub connector actually answering. Those two templates
     depend on the orchestrator's setup on the sovereign's machine.

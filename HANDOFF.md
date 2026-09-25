@@ -344,10 +344,10 @@ gate now; PR #71 landed on `main`.
 **Current count, 2026-09-25 (`feature-implementation`, round 2): 92 suites**:
 the round added `t-task-admin.js` and `t-inbox.js`. In this Linux container the
 gate printed "92 suites, 4-wide, 38.0s" with 91 passing; `t-electron.js` failed
-for want of a display. Every push of the round through `97b3282` ran green on
-`windows-latest` CI. The run for `6ed25bc`, the first to include the Electron
-sections 3-6, was still in progress when this was written. Read that result
-before claiming Electron evidence for those sections.
+for want of a display. On `windows-latest` CI, head `49f81ed` (job
+107959284113) passed all 92 suites, 2-wide, in 107.2s. `t-electron.js` printed
+ok for every section, including the new 3-6, and "live interface acceptance
+passed".
 
 Earlier the same day: 90 suites; the new one then was `test/t-notify.js`. In this Linux container the gate printed "90 suites,
 4-wide, 37.9s" with 89 passing; `t-electron.js` failed for want of a display.
@@ -627,8 +627,8 @@ current proof; refresh them before the snapshot.
   ~~Four clause items are still manual-only.~~ Done 2026-09-25: a blocked
   run's recovery, the collapsed rail, the 720px drawer's keyboard path and
   reduced motion are sections 3-6 of that suite. They were proved in real
-  Chromium here, and they run in Electron on Windows CI (PR #82). Check that
-  run's result before treating them as Electron evidence.
+  Chromium here, then passed in Electron on Windows CI (PR #82, head
+  `49f81ed`).
 - ~~Confirm `t-electron.js` runs on the Windows CI runner.~~ Done 2026-09-25:
   the `windows-latest` job for PR #80 ran it to "live interface acceptance
   passed" (shell and run-lifecycle sections), with all 89 suites green.
