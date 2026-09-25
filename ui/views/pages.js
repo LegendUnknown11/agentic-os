@@ -9,13 +9,14 @@ import { renderMemory, mountMemory } from './memory.js';
 import { renderNotes, mountNotes } from './notes.js';
 import { renderDoctor, mountDoctor } from './doctor.js';
 import { renderTasks, mountTasks } from './tasks.js';
+import { renderInbox, mountInbox } from './inbox.js';
 
 // Compatibility exports keep older callers stable while each view owns its implementation.
 export {
   changeStage, mountApprovals, mountChanges, mountActivity, mountAgents, mountDoctor,
-  mountMemory, mountMessages, mountNotes, mountObjective, mountTasks, mountUsage,
+  mountInbox, mountMemory, mountMessages, mountNotes, mountObjective, mountTasks, mountUsage,
   pushState, renderApprovals, renderChanges, renderActivity, renderAgents, renderDoctor,
-  renderMemory, renderMessages, renderNotes, renderObjective, renderTasks, renderUsage,
+  renderInbox, renderMemory, renderMessages, renderNotes, renderObjective, renderTasks, renderUsage,
 };
 
 export const VIEW_RENDERERS = {
@@ -30,6 +31,7 @@ export const VIEW_RENDERERS = {
   notes: renderNotes,
   doctor: renderDoctor,
   tasks: renderTasks,
+  inbox: renderInbox,
 };
 
 export const VIEW_MOUNTS = {
@@ -44,5 +46,6 @@ export const VIEW_MOUNTS = {
   notes: mountNotes,
   doctor: mountDoctor,
   tasks: mountTasks,
+  inbox: mountInbox,
 };
 

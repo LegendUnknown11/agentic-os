@@ -1134,6 +1134,16 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .task-closed { margin-top: var(--space-3); }
 
+.inbox-item { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-ctl); background: var(--raised); }
+
+.inbox-item.attention { border-left: 3px solid var(--danger); }
+
+.inbox-item.live { border-left: 3px solid var(--accent); }
+
+.inbox-item .button { flex: none; }
+
+.inbox-detail { color: var(--muted); font-size: var(--t-sm); overflow-wrap: anywhere; }
+
 .my-task-new { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) auto; }
 
 .my-task-check { display: flex; min-width: 0; min-height: var(--tap-target-min); align-items: center; gap: var(--space-3); cursor: pointer; }
@@ -1434,7 +1444,8 @@ body.sidebar-collapsed .app-identity { display: grid; }
   .usage-toolbar, .usage-recommendation { align-items: stretch; flex-direction: column; }
   .usage-toolbar .button, .usage-recommendation .button { width: 100%; }
   .usage-lead, .usage-columns, .settings-model-grid, .task-new, .my-task-new { grid-template-columns: 1fr; }
-  .task-manage { align-items: stretch; flex-direction: column; }
+  .task-manage, .inbox-item { align-items: stretch; flex-direction: column; }
+  .inbox-item .button { align-self: flex-start; }
   .agent-usage-details { grid-template-columns: 1fr; gap: var(--space-1); }
   .agent-usage-details dd { padding-bottom: var(--space-2); text-align: left; }
   .home-efficiency-warning { grid-template-columns: 1fr; }

@@ -24,6 +24,7 @@ import { Speech } from './stt.js';
 import { deltaOf, hasUsage, totalsOf } from './usage.js';
 import { costClassOf, costOf, tableFrom } from './price.js';
 import { readApproval } from './approval.js';
+import { inboxItems } from './inbox.js';
 import { listWorkflows, saveWorkflow, deleteWorkflow, runWorkflow, tickScheduler, logRun, runHistory, validWorkflowId } from './workflows.js';
 import { runDoctor } from './doctor.js';
 import { registerCourt, unregisterCourt, listCourts, CourtConflictError, firstFreePort } from './courts.js';
@@ -162,6 +163,17 @@ for (const ev of ['agent', 'event', 'delivered', 'approval', 'verified', 'merged
   });
 }
 kingdom.on('error', (e) => push('error', { message: e.message }));
+
+/** The inbox as of now; shared by /api/inbox and the digest workflow node. */
+function inboxNow(now = Date.now()) {
+  const bus = kingdom.bus;
+  const approvals = bus.approvals().flatMap((m) => {
+    const p = readApproval(m.body);
+    return p ? [{ id: m.id, ts: m.ts, from: m.sender, ...p, resolved: bus.get(`resolved:${m.id}`) ?? null }] : [];
+  });
+  const messages = bus.history({ agent: 'sovereign', tail: true, limit: 50 }).filter((m) => m.recipient === 'sovereign');
+  return inboxItems({ approvals, run: bus.currentRun(), myTasks: bus.myTasks({ includeDone: false }), messages, now });
+}
 
 const runIdOf = (body) => body.runId ?? body.run_id ?? body.id ?? null;
 const publishRun = (run) => { push('run', { run }); return { run }; };
@@ -752,6 +764,10 @@ const READS = {
       available: kingdom.bus.availableTasks().length,
     }];
   },
+
+  // Everything waiting on the sovereign inside the app, ranked (src/inbox.js).
+  // Unreadable approvals are skipped here exactly as /api/approvals skips them.
+  '/api/inbox': async (url, req) => [200, { ok: true, items: inboxNow() }],
 
   '/api/myTasks': async (url, req) => [200, { ok: true, tasks: kingdom.bus.myTasks(), due: kingdom.bus.dueMyTasks().length }],
 

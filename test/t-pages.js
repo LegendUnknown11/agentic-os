@@ -7,6 +7,7 @@ import { taskMeta, visibleQueueRows } from '../ui/views/home.js';
 import { courtActionError } from '../ui/views/courts.js';
 import { resolvedOutcome } from '../ui/views/approvals.js';
 import { assignable, dueState, loadMyTasks, orderTasks } from '../ui/views/tasks.js';
+import { loadInbox, waitingCount } from '../ui/views/inbox.js';
 import { cancelMetrics, cancelRunSpend, loadMetrics, loadRunSpend, metricsView, recommendationFor, spendGeometry, warningFor } from '../ui/views/usage.js';
 
 const settingsSource = readFileSync(new URL('../ui/views/settings.js', import.meta.url), 'utf8');
@@ -52,7 +53,7 @@ a.equal(lastMessageIdFor({ messages: [
 const pagesOnlySource = readFileSync(new URL('../ui/views/pages.js', import.meta.url), 'utf8');
 const changesSource = readFileSync(new URL('../ui/views/changes.js', import.meta.url), 'utf8');
 const approvalsSource = readFileSync(new URL('../ui/views/approvals.js', import.meta.url), 'utf8');
-const viewSources = Object.fromEntries(['approvals', 'changes', 'usage', 'activity', 'messages', 'agents', 'objective', 'memory', 'notes', 'doctor', 'tasks']
+const viewSources = Object.fromEntries(['approvals', 'changes', 'usage', 'activity', 'messages', 'agents', 'objective', 'memory', 'notes', 'doctor', 'tasks', 'inbox']
   .map((name) => [name, readFileSync(new URL(`../ui/views/${name}.js`, import.meta.url), 'utf8')]));
 const pagesSource = [pagesOnlySource, ...Object.values(viewSources)].join('\n');
 const visibleCopySource = [homeSource, pagesSource, settingsSource].join('\n');
@@ -345,7 +346,7 @@ a.match(mainSource, /Could not load current work\./, 'task refresh failures must
 a.match(mainSource, /type: 'tasksLoading'/, 'task refreshes must expose their loading state');
 a.match(mainSource, /const tasksRequest = get\('\/api\/tasks'\)\.then/, 'task refreshes must settle independently of changes');
 a.match(mainSource, /const changesRequest = get\('\/api\/changes'\)\.then/, 'change refreshes must settle independently of tasks');
-a.match(mainSource, /Promise\.all\(\[tasksRequest, changesRequest\]\)/, 'the shared refresh must still await both independent requests');
+a.match(mainSource, /Promise\.all\(\[tasksRequest, changesRequest, inboxRequest\]\)/, 'the shared refresh must still await every independent request (tasks, changes, and the inbox count)');
 a.match(mainSource, /let listsRequest = null/, 'the shared list poll must own one in-flight request');
 a.match(mainSource, /if \(listsRequest\) return listsRequest/, 'a second list refresh must reuse the in-flight request');
 a.match(mainSource, /const listsRefresh = refreshLists\(\)/, 'the first list refresh must start before the view paints');
@@ -507,6 +508,30 @@ try {
   } finally { globalThis.fetch = fetchBefore; }
 }
 a.match(viewSources.tasks, /requestToken\(state, 'myTasksRequest'\); off\?\.\(\)/, 'leaving Tasks must invalidate a pending load of your list');
+a.equal(waitingCount([{ tone: 'attention' }, { tone: 'live' }, { tone: 'attention' }, { tone: 'idle' }]), 2, 'only decisions badge, not news or due-soon');
+{
+  const fetchBefore = globalThis.fetch;
+  try {
+    const responses = [];
+    globalThis.fetch = () => new Promise((resolve) => responses.push(resolve));
+    const inboxState = {};
+    const older = loadInbox(inboxState);
+    const newer = loadInbox(inboxState);
+    responses[1](new Response(JSON.stringify({ ok: true, items: [{ id: 'b' }] }), { status: 200 }));
+    await newer;
+    responses[0](new Response(JSON.stringify({ ok: true, items: [{ id: 'a' }] }), { status: 200 }));
+    await older;
+    a.deepEqual(inboxState.inbox, [{ id: 'b' }], 'an older inbox load must not overwrite a newer one');
+    const failing = loadInbox(inboxState);
+    responses[2](new Response(JSON.stringify({ ok: false, error: 'bus locked' }), { status: 500 }));
+    await failing;
+    a.deepEqual(inboxState.inbox, [{ id: 'b' }], 'a failed refresh keeps the last inbox');
+    a.equal(inboxState.inboxError, 'bus locked');
+  } finally { globalThis.fetch = fetchBefore; }
+}
+a.match(viewSources.inbox, /clearTimeout\(timer\); requestToken\(state, 'inboxRequest'\); off\?\.\(\)/, 'leaving the Inbox stops its refetch and drops a pending load');
+a.match(mainSource, /get\('\/api\/inbox'\)[\s\S]*apply\(\{ type: 'inbox'/, 'the rail count is fed on navigation, not only from the Inbox view');
+a.match(sidebarSource, /\['inbox', /, 'Inbox is reachable from the rail');
 a.match(viewSources.tasks, /post\('task', body\)/, 'Tasks edits the queue through the daemon task action');
 a.match(viewSources.tasks, /refresh\?\.\(\)/, 'a change made from a focused select must still repaint');
 a.match(viewSources.tasks, /if \(!editing\(root\)\) renderTasks/, 'live updates must not repaint under someone typing a task');

@@ -28,7 +28,7 @@ const loadUI = () => uiReady ??= Promise.all([
 });
 
 const $ = (id) => document.getElementById(id);
-const VIEWS = new Set(['home', 'thread', 'approvals', 'changes', 'usage', 'activity', 'messages', 'agents', 'objective', 'memory', 'notes', 'automations', 'doctor', 'settings', 'tasks']);
+const VIEWS = new Set(['home', 'thread', 'approvals', 'changes', 'usage', 'activity', 'messages', 'agents', 'objective', 'memory', 'notes', 'automations', 'doctor', 'settings', 'tasks', 'inbox']);
 const KEYS = { a: 'approvals', d: 'changes', m: 'usage', c: 'activity', b: 'messages', e: 'agents', g: 'objective', r: 'memory', v: 'notes', f: 'automations' };
 const decodePart = (value) => {
   try { return decodeURIComponent(value); } catch { return value; }
@@ -214,7 +214,12 @@ async function refreshLists() {
         apply({ type: '__changes-error__' });
       }
     });
-    await Promise.all([tasksRequest, changesRequest]);
+    // Feeds the rail's Inbox count on every navigation, not only after the
+    // Inbox itself has been opened. A failure leaves the last count alone.
+    const inboxRequest = get('/api/inbox').then((inbox) => {
+      if (inbox?.ok !== false) apply({ type: 'inbox', items: inbox.items ?? [] });
+    }).catch(() => {});
+    await Promise.all([tasksRequest, changesRequest, inboxRequest]);
   })();
   listsRequest = run;
   try { return await run; }

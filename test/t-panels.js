@@ -555,6 +555,19 @@ try {
     console.log("  my tasks: add, due, snooze, done over HTTP, kept out of the team queue");
   }
 
+  /* ---------- 9. the inbox over HTTP ---------- */
+  {
+    await post('/api/myTask', { op: 'add', title: 'sign the lease', dueTs: 5 });
+    const inbox = await get('/api/inbox');
+    a.ok(inbox.ok);
+    const ids = inbox.items.map((i) => i.kind);
+    a.ok(inbox.items.some((i) => i.kind === 'approval' && i.title === 'Summon coder'), 'the pending summon is waiting on you');
+    a.ok(inbox.items.some((i) => i.kind === 'task' && i.title === 'sign the lease'), 'an overdue item of yours is there');
+    a.ok(ids.indexOf('approval') < ids.indexOf('task'), 'decisions rank above your own overdue tasks');
+    a.ok(!inbox.items.some((i) => i.title === 'renew passport'), 'a done task is not in the inbox');
+    console.log('  inbox: approvals and your overdue tasks, ranked, over HTTP');
+  }
+
   console.log('t-panels.js OK — metrics take deltas, diffs are real, bad approvals cost one row, the task list is visible');
 } finally {
   daemon.kill();
