@@ -178,6 +178,7 @@ const suites = [
   ['changes review lifecycle', join(HERE, 't-pages.js')],
   ['skill set + observation masking', join(HERE, 't-skills.js')],
   ['state reducer', join(HERE, 't-store.js')],
+  ['run notifications', join(HERE, 't-notify.js')],
   ['flat palette', join(HERE, 't-theme.js')],
   ['flat palette — computed geometry', join(HERE, 't-theme-geometry.js')],
   ['a claude that dies mid-turn', join(HERE, 't-claude-death.js')],

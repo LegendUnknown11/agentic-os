@@ -544,6 +544,7 @@ a.match(settingsSource, /assetUploads/, 'Settings uploads must stay disabled whi
 a.match(settingsSource, /Confirm delete/, 'asset deletion must require a deliberate second click');
 a.match(settingsSource, /async function removeAsset/, 'asset deletion failures must remain visible and retryable');
 a.match(settingsSource, /await Notify\.request\(\)/, 'notification permission changes must refresh Settings');
+a.match(settingsSource, /row\('runBlocked'[\s\S]*row\('runReview'[\s\S]*row\('runCompleted'/, 'Settings must offer the three run notification toggles');
 a.match(settingsSource, /unsupported.*Not supported here/, 'unsupported notification environments must say why toggles are unavailable');
 a.match(settingsSource, /function settingWrite/, 'settings writes share retryable feedback');
 a.match(settingsSource, /showSettingFeedback\(state, feedback, 'Saved\.'\)/, 'successful Settings writes must confirm the change');
