@@ -9,6 +9,7 @@ import { resolvedOutcome } from '../ui/views/approvals.js';
 import { assignable, dueState, loadMyTasks, orderTasks } from '../ui/views/tasks.js';
 import { loadInbox, waitingCount } from '../ui/views/inbox.js';
 import { daysText, parseDays, triggerText } from '../ui/views/automations.js';
+import { draftFrom, loadRunTemplates, runBody } from '../ui/views/start-run.js';
 import { cancelMetrics, cancelRunSpend, loadMetrics, loadRunSpend, metricsView, recommendationFor, spendGeometry, warningFor } from '../ui/views/usage.js';
 
 const settingsSource = readFileSync(new URL('../ui/views/settings.js', import.meta.url), 'utf8');
@@ -546,6 +547,35 @@ a.equal(triggerText({ type: 'daily', at: '08:00', days: [1, 2, 3, 4, 5] }), 'wee
 a.match(automationsSource, /existing\?\.template \? \{ template: existing\.template \}/, 'editing an installed template keeps its template mark');
 a.match(automationsSource, /\.\.\.\(dayList \? \{ days: dayList \} : \{\}\)/, 'editing a weekday automation keeps its days');
 a.match(automationsSource, /post\('workflows\/install', \{ template: template\.id \}\)/, 'templates install through the daemon');
+a.deepEqual(runBody({ objective: '  ship it ', criteria: 'npm test passes\n\n  lint is clean  \n', models: 'codex/gpt-5, , claude/opus' }),
+  { objective: 'ship it', acceptanceCriteria: ['npm test passes', 'lint is clean'], allowedModels: ['codex/gpt-5', 'claude/opus'] },
+  'blank criteria lines and empty model entries are dropped, not sent');
+{
+  const t = { id: 'rt-1', name: 'Release', objective: 'cut 0.4', acceptanceCriteria: ['tests pass', 'changelog'], allowedModels: ['codex/gpt-5'] };
+  a.deepEqual(runBody(draftFrom(t)), { objective: t.objective, acceptanceCriteria: t.acceptanceCriteria, allowedModels: t.allowedModels },
+    'a template round-trips through the form unchanged');
+  a.equal(draftFrom(t).templateId, 'rt-1');
+}
+{
+  const fetchBefore = globalThis.fetch;
+  try {
+    const responses = [];
+    globalThis.fetch = () => new Promise((resolve) => responses.push(resolve));
+    const st = {};
+    const older = loadRunTemplates(st);
+    const newer = loadRunTemplates(st);
+    responses[1](new Response(JSON.stringify({ ok: true, templates: [{ id: 'b' }] }), { status: 200 }));
+    await newer;
+    responses[0](new Response(JSON.stringify({ ok: true, templates: [{ id: 'a' }] }), { status: 200 }));
+    await older;
+    a.deepEqual(st.runTemplates, [{ id: 'b' }], 'an older template load must not overwrite a newer one');
+  } finally { globalThis.fetch = fetchBefore; }
+}
+const startRunSource = readFileSync(new URL('../ui/views/start-run.js', import.meta.url), 'utf8');
+a.match(startRunSource, /post\('runCreate', body\)/, 'the interface can start a run (nothing posted run/create before)');
+a.match(startRunSource, /start\.disabled = Boolean\(active\)/, 'Start run is disabled while another run is active');
+a.match(viewSources.objective, /startRunSection\(state,/, 'the Objective view carries the Start a run form');
+a.match(homeSource, /card\.dataset\.lead = 'start-run'/, 'with an objective and no run, Overview points at starting one');
 a.match(viewSources.tasks, /post\('task', body\)/, 'Tasks edits the queue through the daemon task action');
 a.match(viewSources.tasks, /refresh\?\.\(\)/, 'a change made from a focused select must still repaint');
 a.match(viewSources.tasks, /if \(!editing\(root\)\) renderTasks/, 'live updates must not repaint under someone typing a task');

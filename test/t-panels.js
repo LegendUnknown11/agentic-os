@@ -595,6 +595,33 @@ try {
     console.log('  templates: install, run the brief, the digest and a scheduled team task end to end');
   }
 
+  /* ---------- 11. run templates, and starting a run from one ---------- */
+  {
+    a.deepEqual((await get('/api/runTemplates')).templates, []);
+    const refused = await post('/api/runTemplate', { op: 'save', name: 'Release' });
+    a.equal(refused.ok, false);
+    a.match(refused.error, /needs an objective/);
+    const saved = await post('/api/runTemplate', {
+      op: 'save', name: 'Release', objective: 'cut 0.4', acceptanceCriteria: ['tests pass', ' ', 'changelog'], allowedModels: ['codex/gpt-5'],
+    });
+    a.ok(saved.ok, saved.error);
+    a.deepEqual(saved.template.acceptanceCriteria, ['tests pass', 'changelog'], 'blank criteria are dropped');
+    const updated = await post('/api/runTemplate', { op: 'save', id: saved.template.id, name: 'Release', objective: 'cut 0.5' });
+    a.equal((await get('/api/runTemplates')).templates.length, 1, 'saving with an id updates, not duplicates');
+    a.equal(updated.template.objective, 'cut 0.5');
+    const { template } = saved;
+    const started = await post('/api/runCreate', { objective: template.objective, acceptanceCriteria: template.acceptanceCriteria, allowedModels: template.allowedModels });
+    a.ok(started.ok, started.error);
+    a.equal(started.run.state, 'planning');
+    a.deepEqual(started.run.acceptanceCriteria, ['tests pass', 'changelog'], 'the run carries the template criteria');
+    const second = await post('/api/runCreate', { objective: 'another' });
+    a.equal(second.ok, false, 'a second run is refused while one is active');
+    await post('/api/runStop', { id: started.run.id });
+    await post('/api/runTemplate', { op: 'delete', id: saved.template.id });
+    a.deepEqual((await get('/api/runTemplates')).templates, []);
+    console.log('  run templates: save, update, delete; a run starts from one with its criteria');
+  }
+
   console.log('t-panels.js OK — metrics take deltas, diffs are real, bad approvals cost one row, the task list is visible');
 } finally {
   daemon.kill();

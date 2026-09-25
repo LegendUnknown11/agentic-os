@@ -1134,6 +1134,8 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .task-closed { margin-top: var(--space-3); }
 
+.run-template-save { display: grid; gap: var(--space-2); margin-top: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--line); }
+
 .inbox-item { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-ctl); background: var(--raised); }
 
 .inbox-item.attention { border-left: 3px solid var(--danger); }

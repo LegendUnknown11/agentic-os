@@ -1,4 +1,5 @@
 import { h, page, section, empty, note, button, field, input, textarea, check, meter, post, subscribe, editing } from './util.js';
+import { loadRunTemplates, startRunSection } from './start-run.js';
 
 function bind(state, root, render) {
   const off = subscribe(() => { if (!editing(root)) render(state, root); });
@@ -70,11 +71,13 @@ export function renderObjective(state, root) {
     }, 'danger');
     body.append(clear);
   }
-  shell.append(body); root.append(shell);
+  shell.append(body, startRunSection(state, () => { if (root.isConnected !== false) renderObjective(state, root); }));
+  root.append(shell);
 }
 
 export function mountObjective(state, root) {
   renderObjective(state, root);
+  void loadRunTemplates(state, () => { if (root.isConnected !== false && !editing(root)) renderObjective(state, root); });
   return bind(state, root, renderObjective);
 }
 export const render = renderObjective;

@@ -165,6 +165,16 @@ for (const ev of ['agent', 'event', 'delivered', 'approval', 'verified', 'merged
 }
 kingdom.on('error', (e) => push('error', { message: e.message }));
 
+// Run templates live in the bus's key-value state: a handful of small records,
+// read whole and written whole. An unreadable value reads as no templates.
+function readRunTemplates() {
+  try {
+    const list = JSON.parse(kingdom.bus.get('run-templates') ?? '[]');
+    return Array.isArray(list) ? list.sort((x, y) => String(x.name).localeCompare(String(y.name))) : [];
+  } catch { return []; }
+}
+const writeRunTemplates = (list) => kingdom.bus.set('run-templates', JSON.stringify(list));
+
 /** The inbox as of now; shared by /api/inbox and the digest workflow node. */
 function inboxNow(now = Date.now()) {
   const bus = kingdom.bus;
@@ -349,6 +359,27 @@ const ACTIONS = {
     cli: b.cli, model: b.model, effort: b.effort, auto: b.auto,
   }),
   clearSpend: (b) => kingdom.clearSpend(b.name ?? null),
+  // Saved starting points for a run: {op: save|delete, name, objective,
+  // acceptanceCriteria[], allowedModels[]}. Kept in the bus beside the court.
+  runTemplate: (b) => {
+    const templates = readRunTemplates();
+    if (b.op === 'delete') {
+      writeRunTemplates(templates.filter((t) => t.id !== b.id));
+      return { templates: readRunTemplates() };
+    }
+    if (b.op !== 'save') throw new Error(`Unknown operation "${b.op}".`);
+    const name = String(b.name ?? '').trim();
+    const objective = String(b.objective ?? '').trim();
+    if (!name) throw new Error('A template needs a name.');
+    if (!objective) throw new Error('A template needs an objective.');
+    const clean = (list) => (Array.isArray(list) ? list : []).map((x) => String(x).trim()).filter(Boolean);
+    const template = {
+      id: b.id || `rt-${Date.now().toString(36)}`, name, objective,
+      acceptanceCriteria: clean(b.acceptanceCriteria), allowedModels: clean(b.allowedModels), updatedTs: Date.now(),
+    };
+    writeRunTemplates([...templates.filter((t) => t.id !== template.id), template]);
+    return { template, templates: readRunTemplates() };
+  },
   // The sovereign's own list: {op: add|update|done|undo|snooze|delete, ...}.
   myTask: (b) => {
     const bus = kingdom.bus;
@@ -793,6 +824,8 @@ const READS = {
   // Everything waiting on the sovereign inside the app, ranked (src/inbox.js).
   // Unreadable approvals are skipped here exactly as /api/approvals skips them.
   '/api/inbox': async (url, req) => [200, { ok: true, items: inboxNow() }],
+
+  '/api/runTemplates': async (url, req) => [200, { ok: true, templates: readRunTemplates() }],
 
   '/api/myTasks': async (url, req) => [200, { ok: true, tasks: kingdom.bus.myTasks(), due: kingdom.bus.dueMyTasks().length }],
 
