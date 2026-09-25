@@ -228,6 +228,16 @@ try {
     bus.close();
     a.match(await orchestrator.call('close_task', { id: 5, summary: 'do not steal work' }), /still owned/,
       'an orchestrator may not close a task a member still owns');
+    // The sovereign's Tasks view drops a task; the tools must read that as closed.
+    const dropBus = new Bus(db);
+    const droppedId = dropBus.addTask({ title: 'cancelled by the sovereign', by: 'sovereign' });
+    dropBus.updateTask(droppedId, { state: 'dropped' });
+    dropBus.close();
+    const listing = await orchestrator.call('tasks', {});
+    a.ok(!listing.split(/\n\s*\n/)[0].includes('cancelled by the sovereign'), `a dropped task is not outstanding:\n${listing}`);
+    a.match(await orchestrator.call('reassign_task', { id: droppedId, to: 'coder' }), /already dropped/,
+      'a dropped task is not handed back out without the sovereign reopening it');
+    a.match(await orchestrator.call('close_task', { id: droppedId, summary: 'x' }), /already dropped/);
     console.log('  unowned stale tasks close audibly; active work is never guessed away');
   }
 

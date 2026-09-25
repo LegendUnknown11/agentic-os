@@ -2,6 +2,7 @@
 import {
   ME, bus, str, stateArray, officer,
 } from './ctx.js';
+import { TASK_CLOSED } from '../bus.js';
 
 const runFor = (requested) => {
   const id = requested ?? bus.currentRun()?.id ?? null;
@@ -123,11 +124,11 @@ export const tasks = {
         const wait = t.blockedBy.length ? ` (waits on ${t.blockedBy.map((n) => `#${n}`).join(', ')})` : '';
         return `#${t.id} ${t.state}${who} ${t.title}${wait}`;
       };
-      const open = all.filter((t) => t.state !== 'done');
-      const done = all.filter((t) => t.state === 'done');
+      const open = all.filter((t) => !TASK_CLOSED.has(t.state));
+      const closed = all.filter((t) => TASK_CLOSED.has(t.state));
       return [
         ...(open.length ? ['OPEN', ...open.map(line)] : ['Nothing is outstanding.']),
-        ...(done.length ? ['', `DONE (${done.length})`, ...done.map(line)] : []),
+        ...(closed.length ? ['', `CLOSED (${closed.length})`, ...closed.map(line)] : []),
       ].join('\n');
     },
   },
@@ -184,7 +185,7 @@ export const tasks = {
       bus.updateTask(id, { state: 'done', doneTs: Date.now() });
       const orchestrator = officer('orchestrator', 'orchestrator');
       bus.post(ME, orchestrator, `Task #${id} (${t.title}) done. ${summary}`, 'done');
-      const left = bus.tasks().filter((x) => x.state !== 'done').length;
+      const left = bus.tasks().filter((x) => !TASK_CLOSED.has(x.state)).length;
       return `Task #${id} closed. ${left ? `${left} still open — claim_task for the next.` : 'The list is clear.'}`;
     },
   },
@@ -206,7 +207,7 @@ export const tasks = {
       const t = bus.task(id);
       if (!t) return `No task #${id}.`;
       if (t.owner) return `Task #${id} is still owned by ${t.owner}; do not close someone else's work.`;
-      if (t.state === 'done') return `Task #${id} is already closed.`;
+      if (TASK_CLOSED.has(t.state)) return `Task #${id} is already ${t.state}.`;
       if (typeof summary !== 'string' || !summary.trim()) return 'Say why the unowned task is complete.';
       bus.updateTask(id, { state: 'done', doneTs: Date.now() });
       return `Task #${id} closed. ${summary.trim()}`;
@@ -227,7 +228,7 @@ export const tasks = {
     run: ({ id, to }) => {
       const t = bus.tasks().find((x) => x.id === Number(id));
       if (!t) return `No task #${id}.`;
-      if (t.state === 'done') return `Task #${id} is already done — nothing to reassign.`;
+      if (TASK_CLOSED.has(t.state)) return `Task #${id} is already ${t.state} — nothing to reassign.`;
       // Verification runs against the submitter's worktree; moving the task
       // while that check is in flight would show it as fresh work (#53). Once
       // the controller has recorded its evidence the task is still 'verifying'

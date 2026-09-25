@@ -44,7 +44,13 @@ try {
   a.match(inbox('coder').at(-1)?.body ?? '', /Task #\d+ \(fix the parser\) was assigned to you[\s\S]*nested quotes/,
     'the new owner is told, with the detail');
   a.throws(() => k.manageTask({ op: 'create', title: '   ' }), /needs a title/);
+  const before = k.bus.tasks().length;
   a.throws(() => k.manageTask({ op: 'create', title: 'x', owner: 'nobody' }), /not a member/);
+  a.equal(k.bus.tasks().length, before, 'a refused owner must not leave the task behind, or a retry duplicates it');
+  a.throws(() => k.manageTask({ op: 'create', title: 'x', needs: [9999] }), /No such task: #9999/);
+  a.equal(k.bus.tasks().length, before, 'an unknown dependency adds nothing');
+  a.equal(k.manageTask({ op: 'create', title: 'y'.repeat(500) }).title.length, 200,
+    'titles are capped the same as the orchestrator\'s add_task');
 
   /* ---------- priority orders what an idle member is offered ---------- */
   const urgent = k.manageTask({ op: 'create', title: 'hotfix' });
@@ -73,6 +79,23 @@ try {
   const reopened = k.manageTask({ op: 'reopen', id: loose.id });
   a.equal(reopened.state, 'pending');
   a.throws(() => k.manageTask({ op: 'reopen', id: loose.id }), /not closed/);
+  /* ---------- a task waiting on another cannot be started early ---------- */
+  const first = k.manageTask({ op: 'create', title: 'migrate the schema' });
+  const second = k.manageTask({ op: 'create', title: 'backfill the column', needs: [first.id] });
+  a.throws(() => k.manageTask({ op: 'assign', id: second.id, owner: 'coder' }), new RegExp(`waits on #${first.id}`),
+    'assigning would start work whose dependency is unfinished; claim_task refuses the same');
+  /* ---------- a dropped dependency releases what waited on it ---------- */
+  k.manageTask({ op: 'drop', id: first.id });
+  a.deepEqual(k.bus.task(second.id).blockedBy, [], 'a dropped task will never finish, so it cannot block');
+  a.ok(k.bus.availableTasks().some((t) => t.id === second.id));
+
+  /* ---------- reassigning keeps an approved plan, like reassign_task ---------- */
+  const planned = k.bus.addTask({ title: 'risky refactor', needsPlan: true, by: 'orchestrator' });
+  a.equal(k.manageTask({ op: 'assign', id: planned, owner: 'coder' }).state, 'planning', 'an unplanned task starts in planning');
+  k.bus.updateTask(planned, { state: 'active', plan: 'approved plan' });
+  a.equal(k.manageTask({ op: 'assign', id: planned, owner: 'tester' }).state, 'active',
+    'an approved plan survives a reassignment');
+
   a.throws(() => k.manageTask({ op: 'drop', id: 9999 }), /No task #9999/);
   a.throws(() => k.manageTask({ op: 'teleport', id: loose.id }), /Unknown task operation/);
   console.log('t-task-admin.js OK — the sovereign can create, assign, reprioritise, drop and reopen, and members are told');

@@ -18,6 +18,7 @@ import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { join, dirname, resolve, extname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Kingdom, defaultConfigPath } from './kingdom.js';
+import { TASK_CLOSED } from './bus.js';
 import { kingdomDir, worktreePath, diffOf, statOf } from './worktree.js';
 import { searchVault, recentNotes, readNote } from './vault.js';
 import { Speech } from './stt.js';
@@ -178,9 +179,9 @@ const writeRunTemplates = (list) => kingdom.bus.set('run-templates', JSON.string
 /** The inbox as of now; shared by /api/inbox and the digest workflow node. */
 function inboxNow(now = Date.now()) {
   const bus = kingdom.bus;
-  const approvals = bus.approvals().flatMap((m) => {
+  const approvals = bus.pendingApprovals().flatMap((m) => {
     const p = readApproval(m.body);
-    return p ? [{ id: m.id, ts: m.ts, from: m.sender, ...p, resolved: bus.get(`resolved:${m.id}`) ?? null }] : [];
+    return p ? [{ id: m.id, ts: m.ts, from: m.sender, ...p, resolved: null }] : [];
   });
   const messages = bus.history({ agent: 'sovereign', tail: true, limit: 50 }).filter((m) => m.recipient === 'sovereign');
   return inboxItems({ approvals, run: bus.currentRun(), myTasks: bus.myTasks({ includeDone: false }), messages, now });
@@ -816,7 +817,7 @@ const READS = {
     return [200, {
       ok: true,
       tasks,
-      open: tasks.filter((t) => t.state !== 'done').length,
+      open: tasks.filter((t) => !TASK_CLOSED.has(t.state)).length,
       available: kingdom.bus.availableTasks().length,
     }];
   },
