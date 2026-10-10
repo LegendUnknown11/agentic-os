@@ -102,22 +102,18 @@ const turn = (ag) => new Promise((res) => ag.once('turn_end', res));
   console.log('  resumed turn: --conversation, no repeated persona');
 }
 
-/* ---------- 3. the effort ladder is narrower than codex's ---------- */
+/* ---------- 3. installed agy publishes xhigh and max ---------- */
 {
-  a.deepEqual([...AGY_EFFORTS].sort(), ['high', 'low', 'medium']);
-  a.ok(!AGY_EFFORTS.has('max') && !AGY_EFFORTS.has('xhigh') && !AGY_EFFORTS.has('none'),
-    'agy has none of the codex-only levels');
-
-  // A member moved from codex keeps effort "max", which agy rejects outright.
+  a.deepEqual([...AGY_EFFORTS].sort(), ['high', 'low', 'max', 'medium', 'xhigh']);
+  a.ok(!AGY_EFFORTS.has('none'));
   const ag = new Agent({ name: 'coder', cli: 'agy', effort: 'max' }, { cwd: dir });
   ag.start();
   const done = turn(ag);
   ag.send('go');
   await done;
   const argv = JSON.parse(readFileSync(ARGV, 'utf8'));
-  a.ok(!argv.includes('--effort'),
-    'an effort agy does not publish must be DROPPED, not passed and rejected');
-  console.log('  "max" carried over from codex is dropped rather than passed');
+  a.deepEqual(argv.slice(argv.indexOf('--effort'), argv.indexOf('--effort') + 2), ['--effort', 'max']);
+  console.log('  max reaches agy as advertised by the installed CLI');
 }
 
 /* ---------- 4. silence is reported ---------- */

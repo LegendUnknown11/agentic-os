@@ -37,6 +37,8 @@ if (argv.includes('auth') && argv.includes('status')) {
 `);
 process.env.KINGDOM_CLAUDE_BIN = STUB;
 process.env.KINGDOM_CODEX_BIN = STUB;
+for (const cli of ['AGY', 'OPENCODE', 'CURSOR', 'FREEBUFF']) process.env[`KINGDOM_${cli}_BIN`] = STUB;
+for (const key of ['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN']) delete process.env[key];
 
 /* ---------- 1. runDoctor() returns a structured report, not printed lines */
 {
@@ -51,9 +53,9 @@ process.env.KINGDOM_CODEX_BIN = STUB;
   }
   a.equal(report.failures, report.checks.filter((c) => c.level === 'fail').length);
   a.equal(report.ready, report.failures === 0, 'ready is exactly "no blocking failures"');
-  a.ok(report.checks.some((c) => /claude logged in via stub/.test(c.message)),
+  a.ok(report.checks.some((c) => /claude: authentication status confirmed/.test(c.message)),
     'the stubbed claude CLI must be reported as logged in');
-  a.ok(report.checks.some((c) => /codex: Logged in using Stub Account/.test(c.message)),
+  a.ok(report.checks.some((c) => /codex: authentication status confirmed/.test(c.message)),
     'the stubbed codex CLI must be reported as logged in');
   console.log('  runDoctor(): structured checks, no ANSI, ready matches failure count');
 }
@@ -99,7 +101,7 @@ process.env.KINGDOM_CODEX_BIN = STUB;
     const report = await r.json();
     a.ok(Array.isArray(report.checks));
     a.equal(typeof report.ready, 'boolean');
-    a.ok(report.checks.some((c) => /claude logged in via stub/.test(c.message)),
+    a.ok(report.checks.some((c) => /claude: authentication status confirmed/.test(c.message)),
       'the daemon route must run the real probes, not a canned response');
     console.log('  GET /api/doctor: serves the same structured report as a running daemon');
   } finally {
@@ -121,12 +123,10 @@ rmSync(dir, { recursive: true, force: true });
 // property lives on the spawn() options object, not on anything the child
 // process handle exposes back.
 {
-  const doctorSource = readFileSync(join(HERE, '..', 'src', 'doctor.js'), 'utf8');
-  const spawnCalls = [...doctorSource.matchAll(/spawn\(resolved\.command,[\s\S]*?\);/g)];
-  a.ok(spawnCalls.length >= 2, `expected at least 2 CLI probe spawns, found ${spawnCalls.length}`);
-  for (const [call] of spawnCalls) {
-    a.match(call, /windowsHide:\s*true/, `every doctor CLI probe spawn must set windowsHide: true — got:\n${call}`);
-  }
+  const source = readFileSync(join(HERE, '..', 'src', 'cli-detection.js'), 'utf8');
+  a.match(source, /windowsHide:\s*true/);
+  a.doesNotMatch(source, /reply with|readFileSync|setup-token/,
+    'detection must not call a model or read token files');
   console.log('  every doctor CLI probe spawn sets windowsHide: true');
 }
 

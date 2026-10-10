@@ -31,6 +31,8 @@
       "claude-opus-4-6-thinking",
       "gpt-oss-120b-medium"
     ],
+    "cursor": [],
+    "freebuff": [],
     "opencode": [
       "openrouter/stealth/ox-alpha",
       "anthropic/claude-3-7-sonnet",
@@ -52,6 +54,7 @@
       "xhigh",
       "max"
     ],
+    "cursor": [],
     "byModel": {
       "gpt-5.6-sol": [
         "low",
@@ -97,7 +100,9 @@
     "agy": [
       "low",
       "medium",
-      "high"
+      "high",
+      "xhigh",
+      "max"
     ],
     "opencode": [
       "low",

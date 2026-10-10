@@ -52,7 +52,7 @@ export function badSummon({ names } = {}, { roster = [] } = {}) {
 }
 
 /** The CLIs a role may name. An unknown one silently ran codex. */
-export const ROLE_CLIS = ['claude', 'codex', 'agy', 'opencode'];
+export const ROLE_CLIS = ['claude', 'codex', 'agy', 'opencode', 'cursor', 'cursor-agent', 'agent'];
 
 // A role name is not a label. It becomes a directory under wt/ and a git
 // branch, and it reaches renameSync, `git add -A` and `worktree remove

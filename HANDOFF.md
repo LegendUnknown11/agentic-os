@@ -6,6 +6,35 @@ This is the sole current handoff and operating reference for this repository.
 [CLAUDE.md](CLAUDE.md) holds the standing discipline and points here;
 `AGENTS.md` and `docs/HANDOFF.md` are pointers, not parallel instruction sets.
 
+### CLI adapters (2026-10-10, uncommitted)
+
+`src/cli-adapters.js` now owns argument construction and event normalization
+for Codex, Claude Code, Antigravity, OpenCode and Cursor (`cursor-agent` or
+`agent`). `src/agent.js` retains the shared process lifecycle and Claude's
+persistent stream mode. JSON framing flushes the final unterminated line;
+turn-based completion waits for process close and accumulates OpenCode steps.
+Cursor officers receive isolated workspace MCP configuration. Existing Cursor
+MCP entries are preserved. Configuration options and verified CLI help surfaces
+are documented in [docs/cli-agents.md](docs/cli-agents.md).
+
+`src/cli-detection.js` supplies bounded non-billing version/auth checks.
+Doctor no longer sends model prompts, reads token files, or creates token
+stores. It distinguishes confirmed auth, logged out, and unverified status;
+environment credential presence does not prove validity or available quota.
+Freebuff 0.2.26 was inspected via help and its installed argument parser: it
+has no headless prompt/JSON mode. It is detected, but cannot be a team member.
+
+Source evidence: the adapter fixtures and in-process lifecycle tests pass,
+along with doctor parsing, configuration template, Windows spawn guards and
+approval self-checks. The full Node 24 gate printed **94 suites, 4-wide, 60.0s,
+55 retried alone; 55 suites failed** in this restricted environment. Git child
+spawns fail with `EPERM`, Node children lose stdout (also reproduced with the
+unchanged agent), and dependencies are absent. Installing dependencies fails
+with DNS `EAI_AGAIN`. Node 24.5.0 was found bundled with the installed Cursor
+CLI and used after the shell's Node 20 run failed. A green full gate, real
+provider streams, Electron and Windows validation are still owed. No model
+calls, commits, pushes or remote operations were performed.
+
 On 2026-09-10 the `ui-enhancement` branch was fast-forwarded into `main` and
 deleted locally. It carried five UI fixes: sidebar sections no longer overlap
 under flex pressure, conversation titles truncate correctly, garbled Windows
@@ -232,9 +261,9 @@ Follow-up on the same branch, 2026-09-25:
 
 Left open, noted rather than changed:
 
-- `agent.js` treats an opencode `step_finish` as a turn end. If opencode emits
-  one per model step, turns are overcounted. This needs a real opencode stream
-  to confirm.
+- OpenCode step completion was addressed in the 2026-10-10 adapter change:
+  process close emits one turn end, with step usage accumulated. Offline
+  fixtures cover multiple steps; a real provider stream remains unverified.
 - A bus-triggered workflow ignores only its own output, so two workflows that
   match each other's output ping-pong every 5s tick. Whether to block chaining
   is a product decision.

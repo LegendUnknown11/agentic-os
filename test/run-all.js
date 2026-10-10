@@ -131,6 +131,8 @@ const suites = [
   ['the shipped config template is clean', join(HERE, 't-config-template.js')],
   ['doctor report, structured and served live', join(HERE, 't-doctor-api.js')],
   ['antigravity (agy) backend', join(HERE, 't-agy.js')],
+  ['CLI adapters', join(HERE, 't-cli-adapters.js')],
+  ['cursor backend', join(HERE, 't-cursor.js')],
   ['opencode backend', join(HERE, 't-opencode.js')],
   ['turn summaries', join(HERE, 't-summarize.js')],
   ['the standing goal', join(HERE, 't-goal.js')],

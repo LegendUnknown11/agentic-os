@@ -1,5 +1,5 @@
 // One Agent = one member of the court (orchestrator, briefer, or peasant), backed by
-// either the `claude` or `codex` CLI. Both are normalised to the same events:
+// a CLI adapter. Supported protocols are normalised to the same events:
 //
 //   ready(sessionId)  text(str)  tool({name,input})  turn_end({usage,costUsd})
 //   error(msg)        exit(code)
@@ -8,6 +8,7 @@
 // long-lived process fed turns over stdin, so an injected message interrupts
 // it immediately. A codex agent exits between turns and is resumed by thread
 // id, so an injected message queues until the current turn finishes.
+import { adapterFor, jsonStream, AGY_EFFORTS } from './cli-adapters.js';
 import { spawn } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
@@ -26,9 +27,7 @@ const NPM_ENTRY = {
 const NPM_NATIVE_ENTRY = {
   opencode: IS_WIN ? 'opencode-ai/bin/opencode.exe' : 'opencode-ai/bin/opencode',
 };
-// agy's own ladder. Narrower than codex's, and it has no 'none' or 'max' —
-// passing one borrowed from another member is rejected outright.
-export const AGY_EFFORTS = new Set(['low', 'medium', 'high']);
+export { AGY_EFFORTS };
 // Windows caps a command line at 32,767 chars; leave room for the exe path,
 // the flags, and the model name. Above this an agy or opencode brief goes to a file.
 const BRIEF_ARGV_BUDGET = 24_000;
@@ -77,7 +76,9 @@ function npmNativeEntry(name) {
 export function resolveCli(name) {
   if (cliCache.has(name)) return cliCache.get(name);
 
-  const override = process.env[`KINGDOM_${name.toUpperCase()}_BIN`];
+  const cursor = ['cursor', 'cursor-agent', 'agent'].includes(name);
+  const override = process.env[`KINGDOM_${name.toUpperCase()}_BIN`]
+    ?? (cursor ? process.env.KINGDOM_CURSOR_BIN ?? process.env.KINGDOM_CURSOR_AGENT_BIN : undefined);
   // A .js override runs under our own node — spawn cannot execute a script
   // directly, and this is also what lets the offline tests stub a CLI.
   let out = !override ? null
@@ -103,10 +104,12 @@ export function resolveCli(name) {
     outer: for (const d of dirs) {
       if (!d) continue;
       for (const e of exts) {
-        const p = join(d, name + e);
-        if (existsSync(p)) {
-          out = { command: p, prefixArgs: [] };
-          break outer;
+        for (const binary of (['cursor', 'cursor-agent', 'agent'].includes(name) ? ['cursor-agent', 'agent'] : [name])) {
+          const p = join(d, binary + e);
+          if (existsSync(p)) {
+            out = { command: p, prefixArgs: [] };
+            break outer;
+          }
         }
       }
     }
@@ -118,25 +121,6 @@ export function resolveCli(name) {
   if (!out) throw new Error(`Cannot find the '${name}' CLI. Set KINGDOM_${name.toUpperCase()}_BIN.`);
   cliCache.set(name, out);
   return out;
-}
-
-/** Split a stream into whole JSON lines; chunks split mid-line all the time. */
-function jsonLines(onObj) {
-  let buf = '';
-  return (chunk) => {
-    buf += chunk;
-    let nl;
-    while ((nl = buf.indexOf('\n')) !== -1) {
-      const line = buf.slice(0, nl).trim();
-      buf = buf.slice(nl + 1);
-      if (!line) continue;
-      try {
-        onObj(JSON.parse(line));
-      } catch {
-        // Non-JSON noise on stdout (banners, warnings). Ignore.
-      }
-    }
-  };
 }
 
 // A turn-based CLI that hangs looks exactly like thinking: the process is
@@ -180,6 +164,9 @@ function spawnGuarded(agent, cli, command, args, opts) {
 }
 
 function failedStart(agent, cli, e) {
+  for (const key of ['briefFile', 'sysPromptFile']) {
+    if (agent[key]) { rmSync(agent[key], { force: true }); agent[key] = null; }
+  }
   agent.busy = false;
   agent.proc = null;
   agent.emit('error', `${cli} could not be started: ${e.message}`);
@@ -255,6 +242,8 @@ export class Agent extends EventEmitter {
     this.addDirs = opts.addDirs ?? [];
     this.env = opts.env ?? null; // per-agent auth, so the court can spread quota
     this.sessionId = opts.sessionId ?? null;
+    this.adapter = adapterFor(this.cli);
+    if (this.sessionId && this.cli === 'claude') this.spec = { ...spec, resume: true };
     this.proc = null;
     this.busy = false;
     this.queue = [];
@@ -287,7 +276,7 @@ export class Agent extends EventEmitter {
   }
 
   start() {
-    if (this.cli === 'claude') this.#startClaude();
+    if (this.cli === 'claude' && this.spec.outputFormat !== 'json') this.#startClaude();
     // codex has no persistent process; the first send() spawns a turn.
     else this.alive = true;
     return this;
@@ -295,7 +284,7 @@ export class Agent extends EventEmitter {
 
   /** Deliver a turn. Injected mid-flight for claude, queued for codex. */
   send(text) {
-    if (this.cli === 'claude') {
+    if (this.cli === 'claude' && this.spec.outputFormat !== 'json') {
       if (!this.proc) this.#startClaude();
       if (!this.proc) return;
       this.busy = true;
@@ -314,9 +303,19 @@ export class Agent extends EventEmitter {
 
   /** codex, agy, and opencode all spawn a fresh child per turn; claude holds one open. */
   #runTurn() {
-    if (this.cli === 'agy') return this.#runAgyTurn();
-    if (this.cli === 'opencode') return this.#runOpenCodeTurn();
-    return this.#runCodexTurn();
+    if (this.busy || !this.queue.length || !this.alive) return;
+    this.busy = true;
+    const text = this.queue.shift();
+    const prompt = this.sessionId || this.cli === 'claude' ? text : `${this.spec.prompt ?? ''}\n\n---\n\n${text}`;
+    this.ctxChars += prompt.length;
+    let args;
+    try {
+      args = this.adapter.buildArgs({ spec: this.spec, cwd: this.cwd, sessionId: this.sessionId,
+        prompt: this.adapter.input === 'argv' ? this.#stagedPrompt(this.cli, prompt) : prompt,
+        promptFile: this.cli === 'claude' ? this.#stageSystemPrompt() : undefined,
+        mcp: this.mcp, addDirs: this.addDirs, deny: this.spec.deny ?? DEFAULT_DENY });
+    } catch (e) { failedStart(this, this.cli, e); return; }
+    this.#spawnTurn(this.cli, args, ['stdin', 'stream-json'].includes(this.adapter.input) ? prompt : undefined);
   }
 
   stop(reason = 'stopped') {
@@ -355,61 +354,25 @@ export class Agent extends EventEmitter {
 
   // --- claude: one process, many turns --------------------------------
 
-  #startClaude() {
-    this.sessionId ??= randomUUID();
+  #stageSystemPrompt() {
     // A stale staged file from a previous spawn (a resume after a crash, say)
     // must not linger — it is never read again once this call picks a fresh one.
     if (this.sysPromptFile) { rmSync(this.sysPromptFile, { force: true }); this.sysPromptFile = null; }
     const prompt = this.spec.prompt ?? '';
-    const args = [
-      '--print',
-      '--verbose',
-      '--input-format', 'stream-json',
-      '--output-format', 'stream-json',
-      '--permission-mode', 'bypassPermissions',
-      // Peasants must not inherit the operator's hooks/plugins/CLAUDE.md —
-      // otherwise every peasant gets the user's global prompt injected.
-      '--setting-sources', 'project',
-    ];
-    // append, not --system-prompt: replacing it strips Claude Code's own
-    // tool-use guidance and lobotomises the agent. Inline above the budget
-    // and spawn() throws ENAMETOOLONG synchronously — the file form is real
-    // (verified against the installed CLI), not a documented-only flag.
-    if (prompt.length <= CLAUDE_SYSPROMPT_ARGV_BUDGET) {
-      args.push('--append-system-prompt', prompt);
-    } else {
+    if (prompt.length > CLAUDE_SYSPROMPT_ARGV_BUDGET) {
       const file = join(tmpdir(), `kingdom-sysprompt-${this.name}-${randomUUID().slice(0, 8)}.md`);
-      writeFileSync(file, prompt, 'utf8');
+      writeFileSync(file, prompt, { encoding: 'utf8', mode: 0o600 });
       this.sysPromptFile = file;
-      args.push('--append-system-prompt-file', file);
     }
-    if (this.spec.resume) args.push('--resume', this.sessionId);
-    else args.push('--session-id', this.sessionId);
-    if (this.spec.model) args.push('--model', this.spec.model);
-    // Haiku takes no effort flag; passing one is meaningless at best.
-    if (this.spec.effort && !/haiku/i.test(this.spec.model ?? '')) {
-      args.push('--effort', this.spec.effort);
-    }
-    // Built-in tool schemas are re-sent on EVERY turn. A member that delegates
-    // rather than edits (orchestrator, briefer) needs none of them — `--tools ""`
-    // removes the lot. This also enforces the role boundary for free.
-    if (this.spec.tools !== undefined) args.push('--tools', this.spec.tools);
-    if (this.spec.maxBudgetUsd) args.push('--max-budget-usd', String(this.spec.maxBudgetUsd));
-    // Without this a peasant cannot read its siblings' worktrees to review them.
-    for (const d of this.addDirs) args.push('--add-dir', d);
-    // Claude Code has no OS sandbox on Windows, so confinement here is
-    // mitigation, not a guarantee: deny the commands that escape the worktree
-    // or publish work nobody approved. The sovereign's Merge button is the only
-    // sanctioned way anything leaves a branch.
-    const denied = this.spec.deny ?? DEFAULT_DENY;
-    if (denied.length) args.push('--disallowed-tools', ...denied);
-    if (this.mcp) {
-      args.push(
-        '--mcp-config',
-        JSON.stringify({ mcpServers: { kingdom: this.mcp } }),
-        '--strict-mcp-config'
-      );
-    }
+    return this.sysPromptFile;
+  }
+
+  #startClaude() {
+    this.sessionId ??= randomUUID();
+    const promptFile = this.#stageSystemPrompt();
+    const args = this.adapter.buildArgs({ spec: this.spec, sessionId: this.sessionId,
+      promptFile, mcp: this.mcp, addDirs: this.addDirs,
+      deny: this.spec.deny ?? DEFAULT_DENY });
 
     const resolved = resolveCliGuarded(this, 'claude');
     if (!resolved) return;
@@ -425,7 +388,9 @@ export class Agent extends EventEmitter {
     this.alive = true;
 
     proc.stdout.setEncoding('utf8');
-    proc.stdout.on('data', jsonLines((o) => this.#onClaudeEvent(o)));
+    const stream = jsonStream((o) => this.adapter.parseEvent.call(this, o));
+    proc.stdout.on('data', (d) => stream.write(d));
+    proc.stdout.on('end', () => stream.end());
     proc.stderr.setEncoding('utf8');
     proc.stderr.on('data', (d) => this.emit('stderr', d));
     // A write to a dead pipe emits on the SOCKET, and an 'error' with no
@@ -460,115 +425,13 @@ export class Agent extends EventEmitter {
     proc.on('error', (e) => this.emit('error', e.message));
   }
 
-  #onClaudeEvent(o) {
-    if (o.type === 'system' && o.subtype === 'init') {
-      this.sessionId = o.session_id;
-      this.emit('ready', o.session_id);
-      return;
-    }
-    if (o.type === 'assistant') {
-      const u = o.message?.usage;
-      if (u) {
-        this.ctxExact = (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0)
-          + (u.cache_creation_input_tokens ?? 0);
-      }
-      for (const block of o.message?.content ?? []) {
-        if (block.type === 'text' && block.text) this.emit('text', block.text);
-        else if (block.type === 'tool_use') this.emit('tool', { name: block.name, input: block.input });
-      }
-      if (o.error || o.is_api_error_message) {
-        this.emit('error', o.message?.content?.[0]?.text ?? 'api error');
-      }
-      return;
-    }
-    if (o.type === 'result') {
-      this.busy = false;
-      this.lastUsage = o.usage ?? null;
-      const rawCost = o.total_cost_usd;
-      const cost = Number(rawCost);
-      const reported = rawCost !== undefined && rawCost !== null && Number.isFinite(cost);
-      this.costUsd += reported ? cost : 0;
-      if (o.is_error) this.emit('error', o.result ?? 'turn failed');
-      this.emit('turn_end', {
-        usage: o.usage,
-        costUsd: reported ? cost : 0,
-        costReported: reported,
-        ctx: this.ctxTokens(),
-      });
-    }
-  }
-
-  // --- codex: one process per turn, resumed by thread id --------------
-
-  #runCodexTurn() {
-    const text = this.queue.shift();
-    if (text === undefined) return;
-    this.busy = true;
-
-    // `exec resume` accepts a strict SUBSET of `exec`'s flags. It has no
-    // -C/--cd, no -s/--sandbox, no -p/--profile, no --oss. Passing any of them
-    // is a fatal `unexpected argument` before a single line of output — the
-    // process flashes a console window and dies, and the member simply never
-    // answers. Anything needed on EVERY turn therefore goes through -c, which
-    // both forms accept.
-    //
-    // SANDBOX vs KINGDOM TOOLS — you cannot have both on codex 0.145.0.
-    //
-    // Under ANY confining sandbox, `codex exec` denies every MCP tool call with
-    // "user cancelled MCP tool call". Measured, not assumed: the MCP server
-    // starts and stays alive, so it is a denial, not a connection failure, and
-    // it happens under approval_policy never / on-failure / on-request alike.
-    // `sandbox_workspace_write.writable_roots` does not help because the gate
-    // is approval, not file access. Only danger-full-access lets a tool call
-    // through.
-    //
-    // A court member with no send_message, no declare_done and no vault is not
-    // a court member, so the default is the one that works. The cost is real:
-    // codex members now have the same posture as claude members — prompt and
-    // policy, not an OS boundary. Set "sandbox" per member to take it back, and
-    // accept that member losing every kingdom tool.
-    const sandbox = this.spec.sandbox ?? 'danger-full-access';
-    const args = ['exec', '--json',
-      '-c', `sandbox_mode="${sandbox}"`,
-      '-c', 'approval_policy="never"'];
-    // First turn only. A resumed session keeps its original cwd anyway, and we
-    // set the child's cwd regardless.
-    if (!this.sessionId) args.push('-C', this.cwd);
-    if (this.spec.model) args.push('--model', this.spec.model);
-    // codex has no --effort flag; reasoning effort is a config override.
-    if (this.spec.effort) args.push('-c', `model_reasoning_effort="${this.spec.effort}"`);
-    if (this.mcp) {
-      // codex parses -c values as TOML; args/env need TOML array/inline-table.
-      args.push('-c', `mcp_servers.kingdom.command=${JSON.stringify(this.mcp.command)}`);
-      args.push('-c', `mcp_servers.kingdom.args=${JSON.stringify(this.mcp.args)}`);
-      args.push(
-        '-c',
-        `mcp_servers.kingdom.env={${Object.entries(this.mcp.env ?? {})
-          .map(([k, v]) => `${k}=${JSON.stringify(String(v))}`)
-          .join(',')}}`
-      );
-    }
-    // Persona rides along with the first turn; codex has no --append-system-prompt.
-    const prompt = this.sessionId ? text : `${this.spec.prompt ?? ''}\n\n---\n\n${text}`;
-    this.ctxChars += prompt.length;
-    if (this.sessionId) args.splice(1, 0, 'resume', this.sessionId);
-    // The prompt goes down STDIN, not argv. Windows caps a command line at
-    // 32,767 chars, and a long sovereign brief blows past it: spawn throws
-    // ENAMETOOLONG synchronously, so `exit` never fires, `busy` never clears,
-    // and the member is wedged for the rest of the session with its message
-    // already acked. `-` means "read the prompt from stdin", on both `exec`
-    // and `exec resume`.
-    args.push('-');
-
-    this.#spawnTurn('codex', args, (o) => this.#onCodexEvent(o), prompt);
-  }
 
   /**
    * One child process for one turn, shared by every turn-based CLI: spawn it
-   * guarded, stream its JSON lines to `onEvent`, and make sure the turn ENDS
+   * guarded, stream its JSON to the adapter, and make sure the turn ENDS
    * however the child does. `input`, when given, goes down stdin.
    */
-  #spawnTurn(cli, args, onEvent, input) {
+  #spawnTurn(cli, args, input) {
     const resolved = resolveCliGuarded(this, cli);
     if (!resolved) return;
     const { command, prefixArgs } = resolved;
@@ -577,6 +440,7 @@ export class Agent extends EventEmitter {
       stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'],
       // Otherwise every turn flashes a console window on the sovereign's desktop.
       windowsHide: true,
+      env: cli === 'claude' ? claudeEnv(this.env) : { ...process.env, ...(this.env ?? {}) },
     });
     if (!proc) return;
     if (input !== undefined) {
@@ -586,22 +450,37 @@ export class Agent extends EventEmitter {
     this.proc = proc;
     this.alive = true;
 
+    let completion = null;
+    const originalEmit = this.emit;
+    // Parse through a receiver so completion cannot end a multi-step turn early.
+    const receiver = Object.create(this);
+    receiver.emit = (event, ...values) => {
+      if (event === 'turn_end') completion = values[0];
+      else originalEmit.call(this, event, ...values);
+    };
     let spoke = false;   // did this turn produce ANY protocol output?
     let err = '';
     proc.stdout.setEncoding('utf8');
-    proc.stdout.on('data', jsonLines((o) => { spoke = true; onEvent(o); }));
+    const stream = jsonStream((o) => {
+      spoke = true;
+      this.adapter.parseEvent.call(receiver, o, steps);
+      for (const key of ['sessionId', 'lastUsage', 'ctxChars', 'ctxExact', 'costUsd']) this[key] = receiver[key];
+    });
+    const steps = new Map();
+    proc.stdout.on('data', (d) => stream.write(d));
+    proc.stdout.on('end', () => stream.end());
     proc.stderr.setEncoding('utf8');
     proc.stderr.on('data', (d) => { err = (err + d).slice(-600); this.emit('stderr', d); });
     const dog = armTurnWatchdog(this, cli, proc);
     proc.on('error', (e) => this.emit('error', e.message));
-    proc.on('exit', (code) => {
+    proc.on('close', (code) => {
+      stream.end();
       dog.clear();
       // A staged brief is read once, at the start of the turn it belongs to.
       // Leaving them behind would strew 50kB files through temp for every
       // long order the court ever takes.
-      if (this.briefFile) {
-        rmSync(this.briefFile, { force: true });
-        this.briefFile = null;
+      for (const key of ['briefFile', 'sysPromptFile']) {
+        if (this[key]) { rmSync(this[key], { force: true }); this[key] = null; }
       }
       this.busy = false;
       this.proc = null;
@@ -614,7 +493,10 @@ export class Agent extends EventEmitter {
       }
       // A killed turn never reaches its completion event, so the orchestrator
       // would never see it end — no spend, no context, no recycle, no redelivery.
-      if (!spoke || dog.timedOut()) {
+      if (code && spoke && !dog.timedOut()) this.emit('error', `${cli} exited (${code}). ${err.trim() || 'Turn failed.'}`);
+      if (completion && !dog.timedOut()) this.emit('turn_end', completion);
+      else {
+        if (spoke && !dog.timedOut() && !code) this.emit('error', `${cli} produced no completed turn. Check the CLI session and output format.`);
         this.emit('turn_end', { usage: null, costUsd: 0, ctx: this.ctxTokens() });
       }
       if (this.queue.length) this.#runTurn();
@@ -638,7 +520,7 @@ export class Agent extends EventEmitter {
     if (prompt.length <= BRIEF_ARGV_BUDGET) return prompt;
     try {
       const file = join(tmpdir(), `kingdom-brief-${this.name}-${randomUUID().slice(0, 8)}.md`);
-      writeFileSync(file, prompt, 'utf8');
+      writeFileSync(file, prompt, { encoding: 'utf8', mode: 0o600 });
       this.briefFile = file;   // removed when the turn exits
       return `Your full instructions are in a file — they are too long for this command `
         + `line. Read it and follow it exactly as if it had been typed here:\n\n${file}\n\n`
@@ -651,221 +533,4 @@ export class Agent extends EventEmitter {
     }
   }
 
-  /**
-   * One turn on the Antigravity CLI (`agy`).
-   *
-   * Protocol, measured against agy 1.1.10 rather than taken from the docs:
-   *   {"event":"init","conversation_id":..,"init":{model,cwd,tools[],permission_mode}}
-   *   {"event":"step_update","step_update":{step_index,state,step_type,text_delta,usage}}
-   *   {"event":"result","result":{status,response,num_turns,usage}}
-   *
-   * Three things differ from codex and all three matter:
-   *  - Text arrives as `text_delta` FRAGMENTS. Emitting each one would put a
-   *    token per line in the transcript, so deltas are accumulated per step and
-   *    emitted once the step reports DONE.
-   *  - The session id is `conversation_id` and resuming takes `--conversation`.
-   *  - MCP servers cannot be passed as flags at all; they are read from
-   *    `.agents/mcp_config.json` in the workspace. kingdom.js writes that file.
-   *
-   * The prompt is the VALUE of `--print`, not a trailing positional.
-   * agy 1.1.10 took `--print` as a boolean and the prompt as the last argument;
-   * 1.1.11 (which the CLI installs by itself — there is an agy.exe.*.old lying
-   * beside the binary) made `--print` take the prompt, with `--prompt` as an
-   * alias for it. Under the old form its Go flag parser read the NEXT FLAG as
-   * the prompt: the orchestrator spent its turn answering a chat question about what
-   * `--output-format` means, emitted no JSONL at all, and was reported as
-   * having produced no output and failed.
-   */
-  #runAgyTurn() {
-    if (this.busy || !this.queue.length || !this.alive) return;
-    this.busy = true;
-    const text = this.queue.shift();
-
-    const prompt = this.sessionId ? text : `${this.spec.prompt ?? ''}\n\n---\n\n${text}`;
-    this.ctxChars += prompt.length;
-
-    const args = ['--print', this.#stagedPrompt('agy', prompt), '--output-format', 'stream-json'];
-    if (this.sessionId) args.push('--conversation', this.sessionId);
-    if (this.spec.model) args.push('--model', this.spec.model);
-    // agy's ladder is only low|medium|high — it has no xhigh/max/none, so a
-    // value borrowed from a codex member would be rejected outright.
-    if (this.spec.effort && AGY_EFFORTS.has(this.spec.effort)) {
-      args.push('--effort', this.spec.effort);
-    }
-    // Without this every tool call is soft-denied in print mode, which is the
-    // same trap codex sprang: the member looks alive and can do nothing.
-    if (this.spec.skipPermissions !== false) args.push('--dangerously-skip-permissions');
-    args.push('--print-timeout', this.spec.printTimeout ?? '20m');
-
-    const steps = new Map();   // step_index -> accumulated text
-    this.#spawnTurn('agy', args, (o) => this.#onAgyEvent(o, steps));
-  }
-
-  #onAgyEvent(o, steps) {
-    if (o.event === 'init') {
-      const id = o.conversation_id ?? o.init?.conversation_id;
-      if (id && id !== this.sessionId) {
-        this.sessionId = id;
-        this.emit('ready', id);
-      }
-      return;
-    }
-
-    if (o.event === 'step_update') {
-      const s = o.step_update ?? {};
-      const i = s.step_index;
-      if (s.text_delta) steps.set(i, (steps.get(i) ?? '') + s.text_delta);
-      if (s.state !== 'DONE') return;
-
-      const body = (steps.get(i) ?? '').trim();
-      steps.delete(i);
-      this.ctxChars += JSON.stringify(s).length;
-
-      if (s.step_type === 'agent_response') {
-        if (body) this.emit('text', body);
-      } else if (s.step_type !== 'user_input' && s.step_type !== 'checkpoint'
-                 && s.step_type !== 'unknown') {
-        // Everything else is the model acting: a command, an edit, an MCP call.
-        this.emit('tool', { name: s.step_type, input: s });
-      }
-      return;
-    }
-
-    if (o.event === 'result') {
-      const r = o.result ?? {};
-      if (r.status && r.status !== 'SUCCESS') {
-        this.emit('error', `agy turn ${r.status}${r.error ? `: ${r.error}` : ''}`);
-      }
-      const u = r.usage ?? null;
-      if (u) this.ctxExact = u.total_tokens ?? u.input_tokens ?? this.ctxExact;
-      this.lastUsage = u;
-      // agy reports no price; like codex it bills against a plan, not per call.
-      this.emit('turn_end', { usage: u, costUsd: 0, costReported: false, ctx: this.ctxTokens() });
-    }
-  }
-
-  #onCodexEvent(o) {
-    switch (o.type) {
-      case 'thread.started':
-        this.sessionId = o.thread_id;
-        this.emit('ready', o.thread_id);
-        break;
-      case 'item.completed': {
-        const item = o.item ?? {};
-        // Everything in an item — reasoning, command output, file contents —
-        // stays in the thread, so it is what the context is made of.
-        this.ctxChars += JSON.stringify(item).length;
-        if (item.type === 'agent_message') this.emit('text', item.text ?? '');
-        else this.emit('tool', { name: item.type, input: item });
-        break;
-      }
-      case 'turn.completed':
-        this.lastUsage = o.usage ?? null;
-        // Context stays the chars-in-the-thread estimate. Two alternatives were
-        // tried against real data and both are unsound: input_tokens/calls
-        // needs a call count codex does not report, and `input - cached` is
-        // itself a per-call sum, so a hundred-tool-call turn inflates it just
-        // as badly as the raw aggregate. codex exposes nothing per call, so
-        // there is nothing better to derive it from.
-        // codex reports no cost, and its usage is a turn aggregate — see ctxTokens().
-        this.emit('turn_end', { usage: o.usage, costUsd: 0, costReported: false, ctx: this.ctxTokens() });
-        break;
-      case 'turn.failed':
-      case 'error':
-        this.emit('error', o.error?.message ?? o.message ?? (typeof o === 'string' ? o : JSON.stringify(o)));
-        break;
-    }
-  }
-
-  // --- opencode: turn-based CLI with --format json streaming ----------
-
-  #runOpenCodeTurn() {
-    if (this.busy || !this.queue.length || !this.alive) return;
-    this.busy = true;
-    const text = this.queue.shift();
-
-    const prompt = this.sessionId ? text : `${this.spec.prompt ?? ''}\n\n---\n\n${text}`;
-    this.ctxChars += prompt.length;
-
-    // --title skips opencode's own auto-generated-title turn (a separate,
-    // small-model LLM call on every single run) — measured live: with no
-    // title it ran google/gemini-3.7-flash first and, on this account, that
-    // call errored out on an unrelated credit cap before the real turn ever
-    // started streaming.
-    const args = ['run', this.#stagedPrompt('opencode', prompt), '--format', 'json', '--auto', '--title', this.name];
-    if (this.sessionId) args.push('--session', this.sessionId);
-    if (this.spec.model) args.push('--model', this.spec.model);
-    // Not gated against a local allowlist, unlike agy: opencode's reasoning
-    // flag is --variant, not --effort, and the valid values are per-model
-    // (kingdom.js's effortsFor()/config.efforts.byModel is what already
-    // decides what's offered — trust it, the same way claude/codex do below).
-    if (this.spec.effort) args.push('--variant', this.spec.effort);
-    if (this.spec.agent) args.push('--agent', this.spec.agent);
-
-    this.#spawnTurn('opencode', args, (o) => this.#onOpenCodeEvent(o));
-  }
-
-  #onOpenCodeEvent(o) {
-    // Session tracking
-    const sid = o.sessionID ?? o.sessionId ?? o.session_id ?? (o.type === 'session' ? (o.id ?? o.sessionID) : null);
-    if (sid && sid !== this.sessionId) {
-      this.sessionId = sid;
-      this.emit('ready', sid);
-    }
-
-    // Text messages
-    if (o.type === 'text' && o.text) {
-      this.ctxChars += o.text.length;
-      this.emit('text', o.text);
-    } else if (o.type === 'message' && o.content) {
-      const text = typeof o.content === 'string' ? o.content : JSON.stringify(o.content);
-      this.ctxChars += text.length;
-      this.emit('text', text);
-    } else if (o.part?.type === 'text' && o.part?.text) {
-      this.ctxChars += o.part.text.length;
-      this.emit('text', o.part.text);
-    } else if (o.type === 'assistant') {
-      for (const block of o.message?.content ?? []) {
-        if (block.type === 'text' && block.text) this.emit('text', block.text);
-        else if (block.type === 'tool_use') this.emit('tool', { name: block.name, input: block.input });
-      }
-    }
-
-    // Tool use
-    if (o.type === 'tool_use' || o.type === 'tool') {
-      const name = o.part?.tool ?? o.tool ?? o.name ?? 'tool';
-      const input = o.part?.input ?? o.input ?? {};
-      this.ctxChars += JSON.stringify(input).length;
-      this.emit('tool', { name, input });
-    }
-
-    // Result / turn completion
-    if (o.type === 'result' || o.type === 'step_finish' || o.type === 'done' || o.event === 'result') {
-      if (o.is_error || o.error) {
-        this.emit('error', o.error ?? o.result ?? 'opencode turn failed');
-      }
-      const u = o.usage ?? {
-        input_tokens: o.tokens_in ?? o.input_tokens ?? 0,
-        output_tokens: o.tokens_out ?? o.output_tokens ?? 0,
-        total_tokens: (o.tokens_in ?? o.input_tokens ?? 0) + (o.tokens_out ?? o.output_tokens ?? 0),
-      };
-      this.lastUsage = u;
-      if (u.total_tokens || u.input_tokens) {
-        this.ctxExact = u.total_tokens ?? u.input_tokens;
-      }
-      const rawCost = o.total_cost_usd ?? o.cost;
-      const cost = Number.isFinite(Number(rawCost)) ? Number(rawCost) : 0;
-      this.costUsd += cost;
-      this.emit('turn_end', {
-        usage: u,
-        costUsd: cost,
-        costReported: rawCost !== undefined && rawCost !== null && Number.isFinite(Number(rawCost)),
-        ctx: this.ctxTokens(),
-      });
-    }
-
-    if (o.type === 'error' && !o.is_error) {
-      this.emit('error', o.error?.message ?? o.message ?? (typeof o === 'string' ? o : JSON.stringify(o)));
-    }
-  }
 }
