@@ -152,6 +152,28 @@ a.deepEqual(roster({ activeOnly: true }).map((m) => m.name), ['coder']);
 a.equal(roster({ query: 'specialist', limit: 1 }).length, 1);
 console.log('  MCP surfaces are under budget and roster supports query, activeOnly, detail and limit');
 
+/* ---------- structured results omit replayed formatting, not data -------- */
+{
+  const description = 'writes code\n  preserves spacing, "quotes" and \\paths';
+  const seed = new Bus(db);
+  const members = JSON.parse(seed.get('roster'));
+  members[0].description = description;
+  seed.set('roster', JSON.stringify(members));
+  seed.close();
+  const out = rpc(db, { KINGDOM_MODE: 'code', KINGDOM_AGENT: 'coder', KINGDOM_ROLE: 'peasant' }, {
+    method: 'tools/call', params: { name: 'roster', arguments: { detail: true } },
+  });
+  const text = out.result.content[0].text;
+  const rows = JSON.parse(text);
+  a.equal(rows.length, 3);
+  a.equal(rows[0].description, description, 'whitespace inside string values must survive');
+  a.equal(rows[0].awake, true);
+  a.equal(rows[1].awake, false);
+  a.equal(text, JSON.stringify(rows), 'structured MCP output must not spend context on indentation');
+  const pretty = JSON.stringify(rows, null, 2);
+  console.log(`  roster result: ${pretty.length} -> ${text.length} characters (${pretty.length - text.length} formatting characters removed)`);
+}
+
 /* ---------- high-volume MCP reads stop at their context budgets ---------- */
 {
   const seeded = new Bus(db);
@@ -191,7 +213,9 @@ console.log('  MCP surfaces are under budget and roster supports query, activeOn
   const first = call();
   const second = call();
   a.ok(first.length > 400 && first.includes('durable observation'));
+  a.equal(first, readFileSync(join(vault, 'Notes', 'Big.md'), 'utf8'), 'string results stay verbatim');
   a.match(second, /\[unchanged/);
+  a.equal(call(), first, 'asking again restores the full observation');
   const seen = new Bus(maskDb);
   a.equal(Number(seen.get('mask:calls')), 1);
   a.equal(Number(seen.get('mask:chars')), first.length);

@@ -165,7 +165,8 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
   }
   try {
     const out = await tool.run(req.params.arguments ?? {});
-    let text = typeof out === 'string' ? out : JSON.stringify(out, null, 2);
+    // Formatting whitespace is replayed on every later model call; preserve data, not indentation.
+    let text = typeof out === 'string' ? out : JSON.stringify(out);
     if (alreadyServed(req.params.name, text)) {
       text = `[unchanged — this is byte-for-byte what ${req.params.name} already gave you `
         + `earlier in this session (${text.length} characters), so it is not repeated here. `
