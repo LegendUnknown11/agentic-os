@@ -1,5 +1,22 @@
 # Agentic OS handoff
 
+## Interface direction — 2026-10-16
+
+The user requested a T3 Code inspired redesign after an in-conversation preview.
+The shared stylesheet now uses neutral dark surfaces, local sans headings and
+metadata, 6px controls, 10px panels, and unboxed assistant replies. This
+supersedes the paper/teal and glass direction recorded below. Existing routes,
+team controls, approvals, run guards, wallpaper support, the responsive drawer,
+and 44px tap targets remain. `ui/app.css` owns the tokens; `test/t-theme.js`
+checks their channel twins and AA contrast on all three opaque grounds.
+
+Local evidence: `node test/t-theme.js`, `node test/t-pages.js`, and
+`node test/t-thread.js` passed. The full gate printed 92 suites, 4-wide,
+111.3s, 50 retried alone, and 50 failed. This restricted Windows environment
+denied temporary Git writes and loopback connections; dependency installation
+also failed. No live browser or Electron acceptance is claimed for this change.
+Windows CI and visual acceptance remain required before merging.
+
 ## Current state
 
 This is the sole current handoff and operating reference for this repository.

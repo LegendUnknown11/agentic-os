@@ -1,5 +1,20 @@
 # Rebuild the Agentic OS interface around the run
 
+## Current visual direction — 2026-10-16
+
+At the user's request, a T3 Code inspired conversation workspace replaces the
+paper/teal visual direction below. The preview calls for neutral surfaces,
+compact local sans typography, restrained borders and controls, and assistant
+replies on the conversation ground. Apply this through the existing shared
+stylesheet rather than replacing the renderer or changing run behavior.
+
+Preserve the run lifecycle, approval gates, team tools, navigation, keyboard
+drawer, reduced-motion handling, and 44px targets. Keep all colours in the
+root token block, with channel twins and AA contrast tests. Source checks are
+available; rendered browser and Electron acceptance for this revision is pending.
+
+Earlier design-system sections remain as historical decisions.
+
 ## Status — closed 2026-09-21
 
 Every section below is implemented on `main`. The contract stays here in full
