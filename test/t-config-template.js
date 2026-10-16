@@ -18,6 +18,9 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, '..');
 
 const cfg = JSON.parse(readFileSync(join(ROOT, 'kingdom.config.json'), 'utf8'));
+a.deepEqual(cfg.models.cursor, [], 'Cursor model ids are account-specific; populate from cursor-agent models');
+a.deepEqual(cfg.models.freebuff, [], 'interactive-only Freebuff must not advertise runnable models');
+a.ok(cfg.efforts.agy.includes('max'), 'installed agy publishes max effort');
 
 /* ---------- the template carries no personal path or live session state */
 {

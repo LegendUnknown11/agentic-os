@@ -9,6 +9,7 @@ import { join, dirname, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { Agent, MUTES_KINGDOM_TOOLS } from './agent.js';
+import { adapterFor } from './cli-adapters.js';
 import { brainBlock, brainFingerprint, remember } from './memory.js';
 import { skillsBlock, expandSkillCommand, listSkills } from './skills.js';
 import { engineerPrompt, outputEvidence, pickModels } from './advisor.js';
@@ -545,6 +546,23 @@ export class Kingdom extends EventEmitter {
     }
   }
 
+  // Cursor discovers MCP from its workspace, so each officer needs its own
+  // workspace just like OpenCode; shared files would overwrite member identity.
+  #writeCursorMcp(name, cwd, role) {
+    try {
+      if (this.repo) this.#excludeAgentsDir(['.cursor/mcp.json']);
+      const dir = join(cwd, '.cursor');
+      mkdirSync(dir, { recursive: true });
+      const file = join(dir, 'mcp.json');
+      const current = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : {};
+      const config = adapterFor('cursor').mcpConfig({ command: process.execPath,
+        args: [MCP_PATH], env: this.#mcpEnv(name, role) }, current);
+      writeFileSync(file, JSON.stringify(config, null, 2), 'utf8');
+    } catch (e) {
+      this.#warn(`Could not write Cursor MCP config for "${name}": ${e.message}.`);
+    }
+  }
+
   /**
    * Keep the kingdom's own droppings out of the sovereign's repository.
    *
@@ -559,16 +577,18 @@ export class Kingdom extends EventEmitter {
    * peasant too. Appending to a file the sovereign may also use, so it reads
    * first and only adds the line if it is missing.
    */
-  #excludeAgentsDir() {
+  #excludeAgentsDir(extra = []) {
     const file = join(this.repo, '.git', 'info', 'exclude');
     try {
       let text = '';
       try { text = readFileSync(file, 'utf8'); } catch { /* no exclude file yet */ }
-      if (/^\.agents\/?$/m.test(text)) return;
+      const entries = new Set(text.split('\n'));
+      const missing = ['.agents/', ...extra].filter((entry) => !entries.has(entry));
+      if (!missing.length) return;
       mkdirSync(dirname(file), { recursive: true });
       writeFileSync(file,
         `${text}${text && !text.endsWith('\n') ? '\n' : ''}`
-        + `# written by the kingdom: an agy member's identity file, not project source\n.agents/\n`);
+        + `# written by the kingdom: member identity files, not project source\n${missing.join('\n')}\n`);
     } catch (e) {
       this.#warn(`Could not exclude .agents/ from git in ${this.repo}: ${e.message}. `
         + 'It will show up as untracked.');
@@ -893,7 +913,7 @@ export class Kingdom extends EventEmitter {
     // gives each its own `.opencode.json` with no collision; MCP tools still
     // reach the real repo via KINGDOM_REPO in that file's environment block,
     // unaffected by cwd, so nothing here changes what officers can observe.
-    const officerCwd = (spec.cli ?? 'claude') === 'opencode' && role !== 'peasant'
+    const officerCwd = ['opencode', 'cursor', 'cursor-agent', 'agent'].includes(spec.cli) && role !== 'peasant'
       ? join(kingdomDir(this.repo), 'officers', name)
       : this.#cwd();
     if (officerCwd !== this.#cwd()) mkdirSync(officerCwd, { recursive: true });
@@ -991,6 +1011,7 @@ export class Kingdom extends EventEmitter {
     // failure codex had for weeks, arrived at by a different route.
     if ((spec.cli ?? 'claude') === 'agy') this.#writeAgyMcp(name, cwd, role);
     else if ((spec.cli ?? 'claude') === 'opencode') this.#writeOpenCodeMcp(name, cwd, role);
+    else if (['cursor', 'cursor-agent', 'agent'].includes(spec.cli)) this.#writeCursorMcp(name, cwd, role);
 
     agent.on('ready', (sid) => {
       this.bus.set(`session:${name}:${convId}`, sid);

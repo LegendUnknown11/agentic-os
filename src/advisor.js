@@ -11,6 +11,7 @@
 // stop the court, so every failure here returns null rather than throwing.
 import { spawn } from 'node:child_process';
 import { resolveCli, AGY_EFFORTS } from './agent.js';
+import { adapterFor, FREEBUFF_LIMITATION, cursorUsage } from './cli-adapters.js';
 import { MODE_NAMES } from './modes.js';
 import { deltaOf, hasUsage, totalsOf } from './usage.js';
 import { costClassOf, costOf, PRICES } from './price.js';
@@ -62,11 +63,14 @@ export function ask(spec, prompt, {
   purpose = 'advisor', priceTable = PRICES,
 } = {}) {
   const cli = spec?.cli ?? 'codex';
+  if (cli === 'freebuff') { onFail?.(FREEBUFF_LIMITATION); return Promise.resolve(null); }
   // agy is a natural fit for these two jobs: they are one-shot text calls that
   // need no tools at all, which is exactly the part of agy that works headless.
   // It also bills against a different quota from codex, so moving the
   // per-turn summariser here takes that load off the court's own budget.
-  const args = cli === 'opencode'
+  const args = ['cursor', 'cursor-agent', 'agent'].includes(cli)
+    ? adapterFor(cli).buildArgs({ spec: { ...spec, mode: 'ask', skipPermissions: false }, cwd, prompt })
+    : cli === 'opencode'
     ? ['run', prompt, '--format', 'json', '--auto',
       ...(spec.model ? ['--model', spec.model] : []),
       // opencode's reasoning-effort flag is --variant, not --effort —
@@ -152,7 +156,8 @@ export function ask(spec, prompt, {
         if (!line.trim()) continue;
         let o;
         try { o = JSON.parse(line); } catch { continue; }
-        latestUsage = usageFrom(o) ?? latestUsage;
+        const usage = usageFrom(o);
+        latestUsage = (['cursor', 'cursor-agent', 'agent'].includes(cli) ? cursorUsage(usage) : usage) ?? latestUsage;
         reportedCost = costFrom(o) ?? reportedCost;
         // codex: item.completed / agent_message. claude: assistant / content[].text
         if (o.type === 'item.completed' && o.item?.type === 'agent_message') out += o.item.text ?? '';
@@ -164,6 +169,7 @@ export function ask(spec, prompt, {
         else if (o.type === 'assistant') {
           for (const c of o.message?.content ?? []) if (c.type === 'text') out += c.text ?? '';
         }
+        else if (['cursor', 'cursor-agent', 'agent'].includes(cli) && o.type === 'result' && typeof o.result === 'string') out = o.result;
         // opencode: text, message, or part text
         else if (o.type === 'text' && o.text) out += o.text;
         else if (o.type === 'message' && typeof o.content === 'string') out += o.content;

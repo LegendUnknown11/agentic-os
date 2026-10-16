@@ -31,16 +31,24 @@ note, dies, and is respawned seeded with that note. A session can run all day.
 ## Requirements
 
 - **Node 24+** (uses built-in `node:sqlite`; no native modules anywhere)
-- `claude` and/or `codex` on PATH, both authenticated
+- An authenticated coding CLI: `claude`, `codex`, `agy`, `opencode`, or
+  `cursor-agent` (also named `agent`). Detection includes `~/.local/bin`.
 - The target must be a **git repository**
 
 ## Run
 
 ```bash
 npm install
-npm run doctor                  # check node, git, and that both CLIs authenticate
+npm run doctor                  # non-billing installation and auth status checks
 npm start                       # Electron app; asks which repo
 ```
+
+Agent CLI setup and options are described in [docs/cli-agents.md](docs/cli-agents.md).
+Doctor never sends prompts or reads token files. An environment credential is
+reported as supplied, with validity unverified; status checks do not prove quota.
+Missing optional CLIs are warnings; a configured CLI that is missing or logged
+out blocks readiness. Freebuff is detected, but its installed 0.2.26 release
+has no non-interactive prompt mode and cannot run as a team member.
 
 ### "OAuth session expired and could not be refreshed"
 
@@ -199,13 +207,13 @@ your base branch has uncommitted changes, the merge is refused and nothing is
 touched — the orchestrator is told so it can send the work back. Any surprise
 mid-merge is rolled back with `merge --abort`.
 
-**Agents are confined, to different degrees.** Codex agents run under a
-real OS sandbox (`--sandbox workspace-write`) that physically cannot write
-outside their worktree. Claude Code has no OS sandbox on Windows, so those
-agents are *mitigated*, not confined: `git push`, `remote`, `worktree`,
-`reset --hard`, `rebase` and branch deletion are denied outright. Treat a
-Claude agent as trusted-but-fenced, not jailed. Add more denials per member
-with `"deny": ["Bash(curl:*)"]`.
+**Permission defaults allow automatic tool use.** Codex defaults to
+`danger-full-access` because confining modes have denied its MCP calls in this
+repository's measurements. Claude defaults to `bypassPermissions`, with
+`git push`, `remote`, `worktree`, `reset --hard`, `rebase` and branch deletion
+denied through its tool policy. Choose explicit per-member permission settings
+using the [CLI options](docs/cli-agents.md); enforcement belongs to the CLI.
+Claude denials can be extended with `"deny": ["Bash(curl:*)"]`.
 
 **Spend can be capped — it is not capped by default.** Set `maxBudgetUsd`
 (per member, overridable per member) or `maxKingdomUsd` (whole team) in
@@ -289,17 +297,19 @@ listed them all was 4,179px of scroll in a 580px viewport with 105 rows reading
 ## One behavioural difference between the CLIs
 
 A **claude** agent is one long-lived process fed turns over stdin, so an
-incoming message interrupts it immediately. A **codex** agent exits between
-turns and is resumed by thread id, so a message **queues until its current turn
-ends**. Memory persists identically either way. Put your chattiest roles on
-claude.
+incoming message interrupts it immediately. Codex, Antigravity, OpenCode,
+Cursor, and Claude with `outputFormat: "json"` exit between turns and resume
+using their saved session ids, so a message queues until the current turn ends.
+Memory persists identically either way.
 
 ## Layout
 
 | File | Does |
 |---|---|
 | `src/bus.js` | SQLite message bus + event log + kv state |
-| `src/agent.js` | spawns/streams/injects either CLI, normalised to one event shape |
+| `src/agent.js` | common process lifecycle, queues, timeouts and session persistence |
+| `src/cli-adapters.js` | per-CLI arguments and common ready/text/tool/turn_end/error events |
+| `src/cli-detection.js` | bounded, non-billing status checks with private raw output |
 | `src/mcp.js` | the MCP server every agent gets; toolset varies by role |
 | `src/worktree.js` | git worktrees, test discovery, merging |
 | `src/kingdom.js` | the orchestrator: roster, delivery loop, approvals, briefer recycling |
