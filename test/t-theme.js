@@ -12,110 +12,53 @@ const util = readFileSync(join(import.meta.dirname, '..', 'ui', 'views', 'util.j
 const thread = readFileSync(join(import.meta.dirname, '..', 'ui', 'thread.js'), 'utf8');
 const avatar = readFileSync(join(import.meta.dirname, '..', 'ui', 'avatar.js'), 'utf8');
 const root = /:root\s*\{([\s\S]*?)\n\}/.exec(css)?.[1] ?? '';
-const rules = css.replace(/\/\*[\s\S]*?\*\//g, '').slice(css.indexOf('* { box-sizing'));
+const rules = css.replace(/\/\*[\s\S]*?\*\//g, '').replace(/:root\s*\{[\s\S]*?\n\}/, '');
 
 const token = (name) => new RegExp(`${name}\\s*:\\s*([^;]+);`).exec(root)?.[1].trim();
-// The Cold-Call Workflow system (E:\Prototype.zip), adopted in full at the
-// sovereign's direction 2026-09-21, reversing PLAN.md section 1's retirement
-// of it. Paper, not a dark shell, and the product half of the kit rather than
-// the marketing half. Every value below is read from the kit's tokens/*.css.
-// This app's own token discipline (:root, -rgb twins, no literal colour
-// outside :root, gold identifies the orchestrator alone) is unaffected by
-// which system supplies the values.
-a.equal(token('color-scheme'), 'light');
-a.equal(token('--bg'), '#f7f1e7', 'Smart Tuitions --paper is the page ground');
-a.equal(token('--bg-rgb'), '247 241 231');
-a.equal(token('--surface'), '#ebe1d2', '--paper-deep is the recessed ground');
-a.equal(token('--surface-rgb'), '235 225 210');
-a.equal(token('--raised'), '#fffdf9', '--white is the panel a card is drawn on');
-a.equal(token('--raised-rgb'), '255 253 249');
-a.equal(token('--text'), '#17332f');
-a.equal(token('--text-rgb'), '23 51 47');
-// The one departure from the kit's literal hexes, and the reason is pinned
-// with it: the kit measures every ratio against --paper and never against
-// --paper-deep, which is the ground under the rail and under every section
-// here. Its --ink-soft is 4.28:1 there, under AA. Do not "restore" #5c6c66.
-a.equal(token('--muted'), '#55635e');
-a.equal(token('--muted-rgb'), '85 99 94');
-// The system ships two text values, not three. Metadata separates by type
-// treatment, not by a third grey — one light enough to read as faint on paper
-// would not clear the 4.5:1 AA minimum.
-a.equal(token('--faint'), '#55635e');
-a.equal(token('--faint-rgb'), '85 99 94');
-a.equal(token('--line'), '#cec7ba');
-a.equal(token('--line-rgb'), '206 199 186');
-// Three grounds, one hairline, one accent slot. Tokens the retired palette
-// needed and this one has no counterpart for are deleted, not left declared
-// and unread.
-for (const dead of ['--bg-alt', '--line-soft', '--accent-border', '--radius-icon', '--raised-alpha']) {
-  a.equal(token(dead), undefined, `${dead} has no counterpart in this system and must not survive as a dead declaration`);
+// The neutral workspace replaces the former paper/teal direction (2026-10-16).
+a.equal(token('color-scheme'), 'dark');
+const palette = {
+  '--bg': '#18181b', '--surface': '#202023', '--raised': '#27272b',
+  '--text': '#e5e5eb', '--muted': '#a6a6b0', '--faint': '#a6a6b0',
+  '--line': '#3a3a40', '--accent': '#dedee7', '--accent-hover': '#ffffff',
+  '--accent-ink': '#18181b', '--tone-live': '#8db9f5',
+  '--tone-settled': '#8ecaaa', '--tone-attention': '#f0a49b',
+  '--tone-idle': '#a6a6b0', '--gold': '#d9bd82',
+};
+for (const [name, value] of Object.entries(palette)) {
+  a.equal(token(name), value, name);
+  a.equal(token(name + '-rgb'), value.slice(1).match(/../g).map((v) => parseInt(v, 16)).join(' '), name + ' channel twin');
 }
-a.equal(token('--accent'), '#0d6663', 'teal is the one accent slot, brand and primary interactive together');
-a.equal(token('--accent-rgb'), '13 102 99');
-a.equal(token('--accent-hover'), '#084a4a');
-a.equal(token('--accent-ink'), '#fffdf9');
-// Four genuinely distinct status hues, not one hue split by chroma.
-// Two hue families, four tones. Live and settled share teal and separate by
-// depth plus the pulse; that is the cost of this system and it is pinned here
-// so nobody later "fixes" it by importing a hue the kit does not have.
-a.equal(token('--tone-live'), '#0d6663');
-a.equal(token('--tone-live-rgb'), '13 102 99');
-a.equal(token('--tone-settled'), '#084a4a');
-a.equal(token('--tone-settled-rgb'), '8 74 74');
-// ViniYoga's --due is its own hex and deliberately not marketing's --red;
-// this is that hue taken down until it clears AA on --paper-deep too (4.19:1
-// there as published, 4.93:1 here).
-a.equal(token('--tone-attention'), '#9e4239');
-a.equal(token('--tone-attention-rgb'), '158 66 57');
-a.equal(token('--tone-idle'), '#55635e', 'in this system waiting is not a colour');
-a.equal(token('--tone-idle-rgb'), '85 99 94');
-a.equal(token('--danger'), 'var(--tone-attention)', 'general-purpose danger must agree with the attention status hue');
+const luminance = (hex) => hex.slice(1).match(/../g).map((v) => {
+  const n = parseInt(v, 16) / 255;
+  return n <= .04045 ? n / 12.92 : ((n + .055) / 1.055) ** 2.4;
+}).reduce((sum, n, i) => sum + n * [.2126, .7152, .0722][i], 0);
+const contrast = (fg, bg) => {
+  const a = luminance(fg), b = luminance(bg);
+  return (Math.max(a, b) + .05) / (Math.min(a, b) + .05);
+};
+for (const foreground of ['--text', '--muted', '--faint', '--accent', '--tone-live', '--tone-settled', '--tone-attention', '--tone-idle', '--gold']) {
+  for (const background of ['--bg', '--surface', '--raised']) {
+    a.ok(contrast(token(foreground), token(background)) >= 4.5, foreground + ' on ' + background + ' must clear AA');
+  }
+}
+a.ok(contrast(token('--accent-ink'), token('--accent')) >= 4.5, 'primary button text must clear AA');
+a.equal(token('--danger'), 'var(--tone-attention)');
 a.equal(token('--danger-rgb'), 'var(--tone-attention-rgb)');
-a.equal(token('--ok'), 'var(--tone-settled)', 'general-purpose ok must agree with the settled status hue');
+a.equal(token('--ok'), 'var(--tone-settled)');
 a.equal(token('--ok-rgb'), 'var(--tone-settled-rgb)');
-// Gold is this app's own rule, not the kit's, so it is reintroduced against
-// paper rather than carried over: #d9b25c measures 1.9:1 here and would be a
-// decoration nobody could read.
-a.equal(token('--gold'), '#7f6019');
-a.equal(token('--gold-rgb'), '127 96 25');
-// Shape: the product scale, kept apart from the marketing one. 16px card,
-// 12px control, no pill buttons — pills survive only where the kit pills.
-a.equal(token('--radius-ctl'), '12px');
-a.equal(token('--radius-card'), '16px');
+a.equal(token('--radius-ctl'), '6px');
+a.equal(token('--radius-card'), '10px');
 a.equal(token('--radius-pill'), '999px');
-// Smart Tuitions' real scale, which widens faster than linear on purpose. The
-// kit records that a generic 4px ladder here was a bug it corrected, so a
-// return to 4/8/12/16 is a regression, not a tidy-up.
-a.deepEqual([1, 2, 3, 4, 5, 6, 7, 8].map((n) => token(`--space-${n}`)), ['4px', '8px', '16px', '24px', '32px', '48px', '64px', '88px']);
 a.equal(token('--tap-target-min'), '44px');
-a.equal(token('--ease'), 'cubic-bezier(.2, 0, 0, 1)', "the product easing (Tailwind ease-ui), because this is a product screen");
-a.equal(token('--fast'), '150ms', 'hover/press transitions run at 0.15s per the product source');
-a.match(css, /--display:\s*Georgia, "Times New Roman", serif/, "the display serif must be Playfair Display's own declared fallback, not a webfont this offline shell may fail to fetch");
-a.match(css, /--ui:\s*-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif/, "--ui is the kit's --font-product-body verbatim");
-a.doesNotMatch(css, /--mono:\s*['"]?(IBM Plex Mono|JetBrains Mono)/, 'this app runs offline in Electron — no webfont stack for --mono, including the kit\'s real IBM Plex Mono choice');
-a.doesNotMatch(css, /@import|fonts\.googleapis/, "the kit's token files fetch Playfair, Inter and Plex over the network; this shell must not");
-a.match(index, /<meta name="color-scheme" content="light">/, 'the document chrome must advertise the single paper surface, not a toggle');
-a.doesNotMatch(index, /theme-bootstrap/, 'the light/dark bootstrap script is gone along with the toggle');
-a.doesNotMatch(index, /<script>(?!\s*<\/script>)/, 'the shell must obey the daemon script CSP');
-// The kit ships a light system and an opt-in energetic/editorial theme scope.
-// Only the default paper/teal one is adopted; a second scope here would be the
-// second styling vocabulary this file exists to prevent.
-a.doesNotMatch(css, /:root\[data-theme=|data-palette=|prefers-color-scheme/, 'one ground only — the kit\'s alternate theme scopes are opt-in and are not adopted');
-a.doesNotMatch(css, /--dark-|--ed-/, 'neither the retired --dark- convention nor the kit\'s editorial --ed- namespace belongs in this palette');
-// Paper needs grain or it reads as flat beige. The kit gives two techniques;
-// this shell takes the CSS-generated one, so the gradient is expected — but
-// only as the tokenised grain, and nowhere else.
-a.match(css, /--grain:\s*radial-gradient\(rgb\(var\(--text-rgb\) \/ \.05\)/, 'the paper grain must be a token, so its colour stays inside :root');
-// 2026-09-23: added alongside the glass tokens, for the same defect a live
-// session found — with no wallpaper set (the default state), the header and
-// rail read as fully opaque even with backdrop-filter correctly applied,
-// because blurring a flat colour is indistinguishable from not blurring it.
-// --wash gives the paper itself real tonal variation, tokenised so its
-// colours stay inside :root like every other value here.
-a.match(css, /--wash:\s*radial-gradient\(.*rgb\(var\(--accent-rgb\) \/ \.09\).*radial-gradient\(.*rgb\(var\(--surface-rgb\) \/ \.95\)/, 'the depth wash must be a token built from channel colours, not a literal');
-a.match(css, /body \{[^}]*background:\s*var\(--wash\), var\(--bg\) var\(--grain\);/, 'the page ground must carry both the depth wash and the grain');
-a.doesNotMatch(rules, /linear-gradient/, 'no rule may invent a gradient of its own');
-a.match(css, /\.task-manage-controls select \{ height: var\(--tap-target-min\)/, 'task row controls must meet the 44px tap target, not browser-default selects');
+a.equal(token('--fast'), '150ms');
+a.equal(token('--grain'), 'none');
+a.match(css, /--display:.*"Segoe UI", sans-serif/, 'headings share the local product sans');
+a.match(index, /<meta name="color-scheme" content="dark">/);
+a.doesNotMatch(index, /<script>(?!\s*<\/script>)/, 'the shell obeys the daemon script CSP');
+a.doesNotMatch(css, /@import|fonts\.googleapis/, 'offline UI must not fetch fonts');
+a.match(css, /body \{[^}]*background:\s*var\(--wash\), var\(--bg\);/, 'optional wash stays tokenised');
+a.match(css, /\.task-manage-controls select \{ height: var\(--tap-target-min\)/);
 a.match(css, /\.run-spend-line\s*\{[^}]*stroke:\s*var\(--accent\)/, 'the run spend line wears the accent, the one series colour');
 a.match(css, /\.run-spend-cap\s*\{[^}]*stroke:\s*var\(--tone-attention\)[^}]*stroke-dasharray/, 'the run ceiling is a dashed attention line');
 a.match(css, /\.run-spend-line\s*\{[^}]*vector-effect:\s*non-scaling-stroke/, 'a stretched chart must not stretch its 2px line');
@@ -134,18 +77,15 @@ a.doesNotMatch(css, /content:\s*"AGENTIC OS \/ WORKSPACE"/, 'the page eyebrow ca
 // the one heading every view shares. Pinned at the smaller scale so it does
 // not drift back up either.
 a.match(css, /\.view-heading h1\s*\{[^}]*font-size:\s*clamp\(20px, 2\.4vw, 26px\);/, 'the page heading must stay on the product scale, not the marketing one');
-a.match(css, /\.thread-header\s*\{[^}]*background:\s*var\(--surface\)/, 'threads need the same paper panel primitive as dashboard pages');
+a.match(css, /\.thread-header\s*\{[^}]*background:\s*transparent/, 'thread controls share the conversation ground');
 a.doesNotMatch(css, /--mono:\s*['"]?(IBM Plex Mono|Playfair Display)/, 'this app runs offline in Electron — no webfont stack for --mono');
 
-// This inverts the rule the retired system imposed. The kit is explicit that
-// mono-uppercase-tracked labels carrying metadata is "the one convention every
-// client source shares exactly" — eyebrows, timestamps, board names, form
-// labels. So metadata takes mono here, and the sweep runs the other way.
+// Metadata stays readable and quiet; only code, diffs and logs need monospace.
 for (const sel of ['\\.card-meta', '\\.message-meta', '\\.metric-label', '\\.mode-kicker', '\\.sidebar-heading', '\\.brand-tag', '\\.thread-control-label', '\\.field-label', '\\.data-table th']) {
-  a.match(css, new RegExp(`${sel}\\s*\\{[^}]*var\\(--mono\\)`),
-    `${sel.replace(/\\\\/g, '')} carries metadata — in this system that means mono`);
-  a.match(css, new RegExp(`${sel}\\s*\\{[^}]*text-transform:\\s*uppercase`),
-    `${sel.replace(/\\\\/g, '')} carries metadata — in this system that means uppercase and tracked`);
+  a.match(css, new RegExp(`${sel}\\s*\\{[^}]*var\\(--ui\\)`),
+    `${sel.replace(/\\\\/g, '')} metadata uses product sans`);
+  a.match(css, new RegExp(`${sel}\\s*\\{[^}]*text-transform:\\s*none`),
+    `${sel.replace(/\\\\/g, '')} metadata stays sentence case`);
 }
 // What is NOT metadata stays in the product sans: a status badge states a
 // status, and a control is a control. The kit sets both in its own sans.
@@ -180,8 +120,8 @@ a.doesNotMatch(css, /\.view-section\s*\{[^}]*backdrop-filter/, 'cards at rest st
 // put behind it (a fully black wallpaper image), not the paper default —
 // see the :root comment for the blend arithmetic. Pin the two numbers so a
 // future edit cannot "round them up" without redoing that measurement.
-a.equal(token('--glass-chrome-alpha'), '.90', '.90 keeps --muted at 4.72:1 blended over black — the raised-based glass budget');
-a.equal(token('--glass-panel-alpha'), '.97', '.97 is the highest alpha that still clears 4.5:1 for --muted on --surface blended over black');
+a.equal(token('--glass-chrome-alpha'), '1', 'neutral chrome remains opaque');
+a.equal(token('--glass-panel-alpha'), '1', 'neutral panels remain opaque');
 // A browser without backdrop-filter, or a person who has asked for less
 // transparency, gets the pre-glass opaque paint back — never the thinner
 // alpha uncomposited against whatever sits behind it.
@@ -326,7 +266,7 @@ a.match(css, /\.view-section\s*\{[^}]*background:\s*var\(--surface\);/, 'section
 a.match(css, /\.boot-failure\s*\{[^}]*display:\s*grid;[^}]*max-width:/, 'module-load failures must have a styled recovery surface');
 a.match(css, /\.markdown > \* \+ \*, \.message-body > \* \+ \* \{ margin-top: var\(--space-3\); \}/, 'multi-paragraph content must retain readable separation after the margin reset');
 a.match(css, /\.message-meta\s*\{[^}]*color:\s*var\(--faint\)/, 'thread metadata must recede behind message content');
-a.match(css, /\.thread-message\.theirs \.message-body\s*\{[^}]*background:\s*var\(--raised\)/, 'incoming thread messages need a stable raised surface');
+a.match(css, /\.thread-message\.theirs \.message-body\s*\{[^}]*background:\s*transparent/, 'assistant replies sit directly on the conversation ground');
 a.match(css, /\.message-body > :first-child\s*\{[^}]*margin-top:\s*0;/, 'thread markdown must not keep a browser margin before its first paragraph');
 a.match(css, /\.markdown h1, \.markdown h2, \.markdown h3\s*\{[^}]*margin:\s*0;[^}]*line-height:/, 'markdown headings must use the thread type rhythm');
 a.match(css, /\.markdown blockquote\s*\{[^}]*margin:[^;]+;[^}]*padding:[^;]+;[^}]*border-left:/, 'markdown quotes need a bounded readable treatment');
@@ -434,4 +374,4 @@ a.deepEqual(rgb.filter((v) => {
   return !(n[0] === n[1] && n[1] === n[2]);
 }), [], 'coloured rgb literals must come from channel tokens');
 
-console.log('t-theme.js OK — the Cold-Call Workflow palette is tokenised, paper-only, and has one fixed layout');
+console.log('t-theme.js OK — neutral workspace tokens, AA contrast, layout and accessibility contracts');

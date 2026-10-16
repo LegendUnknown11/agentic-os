@@ -1,226 +1,78 @@
-/* Cold-Call Workflow design system (E:\Prototype.zip, SKILL.md
- * "cold-call-workflow-design"), adopted in full at the sovereign's direction
- * 2026-09-21. This reverses PLAN.md section 1, which retired this same source
- * on 2026-09-17 in favour of Hiveory. The reversal is the sovereign's call,
- * and it is recorded here rather than made quietly.
- *
- * Paper, not a dark shell. Every value below is read from the kit's own
- * tokens/*.css, which trace in turn to three shipped client builds (Smart
- * Tuitions index.html, ViniYoga app/globals.css and tailwind.config.ts,
- * Dance Class styles.css). Where the kit ships two scales this app takes the
- * product one, because it is a dense tool and not a marketing page: 16px
- * card, 12px control, no pill buttons, a real 44px tap target, hairline
- * border plus a 3px left rule on result rows. Marketing supplies display type
- * and the mono-uppercase metadata label, which the kit names as the one
- * convention all three of its sources share exactly.
- *
- * This app's own discipline survives the swap unchanged: no literal colour
- * outside this block, every colour carries an -rgb channel twin, gold
- * identifies the orchestrator alone, 44px is enforced rather than suggested,
- * and type stays local-stack — an offline Electron webfont fetch can fail
- * silently, so Playfair Display, Inter and IBM Plex Mono are taken at their
- * own declared fallbacks (Georgia, a system sans, a local mono) instead of
- * being shipped.
- *
- * Contrast computed here 2026-09-21 (WCAG relative luminance), against this
- * exact palette, on --bg #f7f1e7: --text 9.6:1, --muted/--faint 4.9:1,
- * --accent 6.0:1, --tone-settled 8.9:1, --tone-attention 4.8:1, --gold 5.2:1
- * — all clear the 4.5:1 AA minimum, and --accent-ink on --accent is 6.7:1.
- * The kit's own contrast card claims 12.1:1 for ink on paper; its other five
- * figures reproduce exactly here and that one does not, so this file records
- * 9.6:1, the number computed, not the number quoted. */
+/* T3 Code inspired workspace, requested 2026-10-16.
+ * Neutral dark surfaces, local sans typography, restrained borders.
+ * This supersedes the paper/teal and glass treatment. Existing selectors,
+ * status vocabulary, 44px targets and responsive drawer behavior remain.
+ * All colours and their channel twins stay in this root token block. */
 :root {
-  color-scheme: light;
-
-  /* Ground — three papers, not a dark ladder. --bg is the page, --surface the
-   * recessed one (rail, sections, meter tracks, code), --raised the white
-   * panel a card is drawn on. Smart Tuitions --paper / --paper-deep / --white.
-   * The retired --bg-alt is gone: this system has exactly three grounds, and
-   * that token was declared but never used by any rule. */
-  --bg: #f7f1e7;
-  --bg-rgb: 247 241 231;
-  --surface: #ebe1d2;
-  --surface-rgb: 235 225 210;
-  --raised: #fffdf9;
-  --raised-rgb: 255 253 249;
+  color-scheme: dark;
+  --bg: #18181b;
+  --bg-rgb: 24 24 27;
+  --surface: #202023;
+  --surface-rgb: 32 32 35;
+  --raised: #27272b;
+  --raised-rgb: 39 39 43;
   --shell-alpha: 1;
   --surface-alpha: 1;
-
-  /* Text — the system ships two values, not three. Metadata separates from
-   * body copy by type treatment (mono, uppercase, tracked), which is how all
-   * three client sources do it, so --faint is --ink-soft rather than a third
-   * grey; a lighter one would not clear AA on paper.
-   *
-   * --muted is NOT the kit's --ink-soft #5c6c66, and this is the one place
-   * this palette departs from its source. The kit publishes every ratio
-   * against --paper and never against --paper-deep, but --paper-deep is the
-   * ground under the rail and under every section here. Measured in a live
-   * browser 2026-09-21 at 1440x900: #5c6c66 on #ebe1d2 is 4.28:1, under the
-   * 4.5:1 AA minimum, and it was doing that behind all seventeen rail
-   * controls. Taken down ~8% in lightness, same hue, it measures 4.87:1 on
-   * --surface, 5.4:1 on --bg and 6.1:1 on --raised. */
-  --text: #17332f;
-  --text-rgb: 23 51 47;
-  --muted: #55635e;
-  --muted-rgb: 85 99 94;
-  --faint: #55635e;
-  --faint-rgb: 85 99 94;
-
-  /* One hairline — --line/--border in every source. The kit's --border-strong
-   * is scrollbar-and-strong-dividers only and no rule here needs it, so the
-   * retired --line-soft has no successor. */
-  --line: #cec7ba;
-  --line-rgb: 206 199 186;
-
-  /* Accent — one slot, teal, carrying brand and primary interactive together.
-   * The kit calls swapping this single value the entire reskin step. Hover is
-   * --teal-dark, which is what the kit's own Button mixes toward. */
-  --accent: #0d6663;
-  --accent-rgb: 13 102 99;
-  --accent-hover: #084a4a;
-  --accent-hover-rgb: 8 74 74;
-  --accent-ink: #fffdf9;
-  --accent-ink-rgb: 255 253 249;
-
-  /* Status — this system ships two status hue families and the app needs four
-   * tones, so state the cost instead of papering over it: live and settled now
-   * share teal and separate by depth plus the pulse, where the retired palette
-   * gave them separate hues. A run in flight and a finished one are harder to
-   * tell apart at a glance here; the pulsing dot and the status label carry
-   * the difference. Attention is ViniYoga's --due, which is its own hex and
-   * deliberately not marketing's --red. Idle is ink-soft: in this system
-   * waiting is not a colour, and the kit warns outright against inventing a
-   * third status hue. */
-  --tone-live: #0d6663;
-  --tone-live-rgb: 13 102 99;
-  --tone-settled: #084a4a;
-  --tone-settled-rgb: 8 74 74;
-  /* Same departure, same reason: the kit's --due #af4a3f is 4.8:1 on --paper
-   * and 4.19:1 on --paper-deep, where every blocked run and failed check
-   * actually renders. Down ~10%, it is 4.93:1 there. */
-  --tone-attention: #9e4239;
-  --tone-attention-rgb: 158 66 57;
-  --tone-idle: #55635e;
-  --tone-idle-rgb: 85 99 94;
+  --text: #e5e5eb;
+  --text-rgb: 229 229 235;
+  --muted: #a6a6b0;
+  --muted-rgb: 166 166 176;
+  --faint: #a6a6b0;
+  --faint-rgb: 166 166 176;
+  --line: #3a3a40;
+  --line-rgb: 58 58 64;
+  --accent: #dedee7;
+  --accent-rgb: 222 222 231;
+  --accent-hover: #ffffff;
+  --accent-hover-rgb: 255 255 255;
+  --accent-ink: #18181b;
+  --accent-ink-rgb: 24 24 27;
+  --tone-live: #8db9f5;
+  --tone-live-rgb: 141 185 245;
+  --tone-settled: #8ecaaa;
+  --tone-settled-rgb: 142 202 170;
+  --tone-attention: #f0a49b;
+  --tone-attention-rgb: 240 164 155;
+  --tone-idle: #a6a6b0;
+  --tone-idle-rgb: 166 166 176;
   --danger: var(--tone-attention);
   --danger-rgb: var(--tone-attention-rgb);
   --ok: var(--tone-settled);
   --ok-rgb: var(--tone-settled-rgb);
-
-  /* Identity, not status. The kit has no orchestrator convention to borrow, so
-   * this app's own rule is reintroduced against paper. The dark-ground #d9b25c
-   * is unreadable here (1.9:1), so gold goes down to a depth that clears AA on
-   * both papers and still reads as gold. */
-  --gold: #7f6019;
-  --gold-rgb: 127 96 25;
-
-  /* Paper grain — Dance Class's CSS dot-grain, the kit's second documented
-   * texture technique. Chosen over Smart Tuitions' tiled photograph because it
-   * ships no binary into an offline Electron bundle and tokenises without
-   * putting a literal colour outside this block. */
-  --grain: radial-gradient(rgb(var(--text-rgb) / .05) .65px, transparent .65px);
-
-  /* Depth wash — added 2026-09-23 alongside the glass tokens above, and for
-   * the same reason: without it, backdrop-filter has nothing but a flat
-   * colour to blur, and blurring a flat colour is indistinguishable from not
-   * blurring it at all. A live session confirmed exactly that — with no
-   * wallpaper set (the state most people see), the header and rail read as
-   * plain opaque paper even with the glass rules correctly applied, because
-   * #bg's own fill sits at opacity 0 by default and the grain dots beneath it
-   * are too faint (.05 alpha) for a 20px blur to register. Two soft radial
-   * washes, teal- and paper-tinted at low alpha, painted under the grain on
-   * `body` itself — so they exist regardless of whether a user wallpaper is
-   * ever set — give the chrome something with real tonal variation to show
-   * through. Both stay light enough that no text pairing measured against
-   * --bg elsewhere in this file changes: the wash sits under content, never
-   * behind it, and reads as depth in the paper, not a colour shift. */
-  --wash: radial-gradient(1400px 420px at 28% 0%, rgb(var(--accent-rgb) / .09), transparent 70%), radial-gradient(1200px 460px at 100% 0%, rgb(var(--surface-rgb) / .95), transparent 65%);
-
-  /* Shape — the product scale, kept deliberately apart from the marketing one:
-   * 16px card, 12px control, and no pill buttons. Pills survive only where the
-   * kit pills — the status badge and the segmented control. The retired
-   * --radius-icon is gone; the product source gives icon buttons the same 12px
-   * control radius as everything else, and no rule used it. */
-  --radius-card: 16px;
-  --radius-ctl: 12px;
+  --gold: #d9bd82;
+  --gold-rgb: 217 189 130;
+  --grain: none;
+  --wash: radial-gradient(1400px 420px at 28% 0%, rgb(var(--text-rgb) / .015), transparent 70%);
+  --radius-card: 10px;
+  --radius-ctl: 6px;
   --radius-pill: 999px;
-
-  /* Spacing — Smart Tuitions' real scale, copied verbatim. It widens faster
-   * than linear on purpose (4, 8, 16, 24, 32, 48, 64, 88): tight near the
-   * type, generous at the section level. This is not the 4/8/12/16 ladder it
-   * replaces, so every gap and pad in the app moves one step out. */
   --space-1: 4px;
   --space-2: 8px;
-  --space-3: 16px;
-  --space-4: 24px;
-  --space-5: 32px;
-  --space-6: 48px;
-  --space-7: 64px;
-  --space-8: 88px;
-  --tap-target-min: 44px;      /* a real enforced minimum in the product source, not a suggestion */
+  --space-3: 12px;
+  --space-4: 20px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+  --tap-target-min: 44px;
   --t-xs: 12px;
   --t-sm: 13px;
-  --t-md: 15px;
+  --t-md: 14px;
   --t-lg: 20px;
-
-  /* Typography — local-stack, per the offline-Electron constraint, which is a
-   * fact about this runtime and does not change with the design system. The
-   * substitutes are each face's own declared fallback in the kit's
-   * tokens/typography.css: Playfair Display falls back to Georgia, Inter to a
-   * system sans, IBM Plex Mono to a local mono. --ui is the kit's
-   * --font-product-body verbatim. */
-  --display: Georgia, "Times New Roman", serif;
+  --display: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --ui: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --mono: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
-
-  /* Motion — the product easing (Tailwind ease-ui / --ease-product), since
-   * this is a product screen. Hover and press run at .15s, matching the real
-   * transitions in the product source; route changes take marketing's .3s. */
   --fast: 150ms;
-  --view: 300ms;
+  --view: 180ms;
   --ease: cubic-bezier(.2, 0, 0, 1);
-
-  /* Shadow — the kit's literal ground truth, both values teal-tinted and
-   * single-layer, not its optional layered refinement: that refinement opens
-   * with a 1px ring every card here already draws for itself. Cards at rest
-   * carry a hairline and nothing more, which is the system's own default.
-   * Elevation is for what actually floats — tooltip, toast, drawer — and for
-   * the one marketing-shaped control, the primary button. */
   --shadow-card: none;
   --shadow-small: none;
-  --shadow-panel: 0 24px 64px -38px rgb(8 74 74 / .62);
-  --shadow-button: 0 14px 28px -20px rgb(13 102 99 / .7);
-
-  /* Glass — a translucent, blurred chrome, added 2026-09-23 at the sovereign's
-   * direction (Hiveory-inspired feel, adopted within this paper system rather
-   * than swapping the palette for it — issue #48 is superseded by the paper
-   * kit; this is the part of it that survives). Scoped to what actually
-   * floats over content — #header, #sidebar (rail and 720px drawer),
-   * #composer, .hover-tip, the drawer scrim — never the flat cards this
-   * system already keeps hairline-bordered and shadowless at rest.
-   *
-   * Two alphas, not one, because the two grounds behind them carry different
-   * contrast budgets. Every text pairing must clear 4.5:1 against the worst
-   * ground this app can ever put behind glass: not the paper default, but a
-   * fully black wallpaper image (#bg supports an optional user wallpaper;
-   * black is the true floor, unbounded above). Computed 2026-09-23 (WCAG
-   * relative luminance), blending each surface's colour at its alpha over
-   * rgb(0 0 0):
-   * --raised blended at .90 over black: --text 10.14:1, --muted 4.72:1,
-   * --accent 5.08:1 — comfortable margin, so header and hover-tip read
-   * clearly glass.
-   * --surface already clears --muted at only 4.87:1 opaque (the same
-   * departure recorded above), so its blend budget is thinner: .97 is the
-   * highest alpha that still clears 4.5:1 there (4.57:1 measured) — the
-   * sidebar rail and composer are glass, but only just, and that is the
-   * honest number, not a rounder one that would fail black.
-   * The 720px drawer and its scrim reuse --glass-panel-alpha and a lighter
-   * blur; nothing pins text against the scrim itself, so it carries no
-   * contrast obligation of its own. */
-  --glass-blur: 20px;
-  --glass-saturate: 160%;
-  --glass-chrome-alpha: .90;
-  --glass-panel-alpha: .97;
+  --shadow-panel: 0 12px 32px rgb(0 0 0 / .3);
+  --shadow-button: none;
+  --glass-blur: 0px;
+  --glass-saturate: 100%;
+  --glass-chrome-alpha: 1;
+  --glass-panel-alpha: 1;
 }
 
 * { box-sizing: border-box; }
@@ -231,14 +83,9 @@ body {
   display: grid;
   grid-template: "sidebar main" 1fr / 260px minmax(0, 1fr);
   overflow: hidden;
-  /* The grain is what makes paper read as paper rather than as flat beige.
-   * Dance Class generates it in CSS instead of tiling a photograph, which is
-   * the technique this app takes: no binary in the bundle, and the colour
-   * stays a token. --wash sits above it: see the token comment for why —
-   * without it, the glass chrome above has nothing but a flat colour to
-   * blur. */
-  background: var(--wash), var(--bg) var(--grain);
-  background-size: auto, 4px 4px;
+  /* The shell remains opaque; an optional wallpaper still uses #bg. */
+  background: var(--wash), var(--bg);
+  background-size: auto;
   color: var(--text);
   font: 400 var(--t-md)/1.45 var(--ui);
 }
@@ -306,7 +153,7 @@ a:focus-visible, summary:focus-visible, button:focus-visible, input:focus-visibl
   min-width: 0;
   align-items: center;
   gap: var(--space-3);
-  min-height: 72px;
+  min-height: 56px;
   padding: var(--space-3) var(--space-5);
   border-bottom: 1px solid var(--line);
   background: rgb(var(--raised-rgb) / var(--glass-chrome-alpha));
@@ -361,13 +208,13 @@ a:focus-visible, summary:focus-visible, button:focus-visible, input:focus-visibl
 
 .brand, .repo, .header-title { min-width: 0; }
 
-.brand { color: var(--accent); font-family: var(--display); font-size: 18px; font-weight: 700; letter-spacing: -.01em; }
+.brand { color: var(--accent); font-family: var(--ui); font-size: 15px; font-weight: 600; letter-spacing: -.01em; }
 
 .app-identity { display: none; flex: none; gap: 1px; }
 
 body.sidebar-collapsed .app-identity { display: grid; }
 
-.brand-tag { color: var(--faint); font: 500 10px/1.4 var(--mono); letter-spacing: .1em; text-transform: uppercase; }
+.brand-tag { color: var(--faint); font: 500 var(--t-xs)/1.4 var(--ui); letter-spacing: normal; text-transform: none; }
 
 .repo { flex: none; overflow: hidden; color: var(--text); text-overflow: ellipsis; white-space: nowrap; }
 
@@ -436,7 +283,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .status-dot.idle { background: var(--tone-idle); }
 
-.sidebar-heading { display: flex; align-items: center; gap: var(--space-2); margin: 0; padding: 0 var(--space-2); color: var(--faint); font: 500 10px/1.5 var(--mono); letter-spacing: .1em; text-transform: uppercase; }
+.sidebar-heading { display: flex; align-items: center; gap: var(--space-2); margin: 0; padding: 0 var(--space-2); color: var(--faint); font: 500 var(--t-xs)/1.5 var(--ui); letter-spacing: normal; text-transform: none; }
 
 .sidebar-empty { margin: 0; padding: var(--space-2); color: var(--faint); font-size: var(--t-xs); }
 
@@ -474,14 +321,12 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .button:hover, .icon-button:hover { border-color: var(--accent); background: rgb(var(--accent-rgb) / .12); }
 
-/* Lift 2px on hover, settle 1px on press — the kit's real interaction, and
- * the only control it gives one to. Reduced motion already collapses the
- * transition, so the movement never runs for anyone who asked it not to. */
+/* Stable buttons keep the action under the pointer on hover. */
 .button.primary { border-color: transparent; background: var(--accent); box-shadow: var(--shadow-button); color: var(--accent-ink); transition: border-color var(--fast) var(--ease), background-color var(--fast) var(--ease), transform var(--fast) var(--ease); }
 
-.button.primary:hover { border-color: transparent; background: var(--accent-hover); transform: translateY(-2px); }
+.button.primary:hover { border-color: transparent; background: var(--accent-hover); }
 
-.button.primary:active { transform: translateY(1px); }
+.button.primary:active { opacity: .85; }
 
 .button.danger { border-color: rgb(var(--danger-rgb) / .6); color: var(--danger); }
 
@@ -497,7 +342,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .field { display: grid; gap: var(--space-1); color: var(--muted); font-size: var(--t-sm); }
 
-.field-label { display: flex; min-width: 0; align-items: baseline; justify-content: space-between; gap: var(--space-2); font: 500 10px/1.6 var(--mono); letter-spacing: .1em; text-transform: uppercase; }
+.field-label { display: flex; min-width: 0; align-items: baseline; justify-content: space-between; gap: var(--space-2); font: 500 var(--t-xs)/1.6 var(--ui); letter-spacing: normal; text-transform: none; }
 
 .field-value { flex: none; color: var(--text); font-size: var(--t-xs); }
 
@@ -579,7 +424,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .mobile-menu:hover, .sidebar-mobile-close:hover { border-color: var(--accent); color: var(--text); }
 
-.sidebar-brand { min-width: 0; overflow: hidden; color: var(--text); font-family: var(--display); font-size: 22px; font-weight: 700; letter-spacing: -.01em; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar-brand { min-width: 0; overflow: hidden; color: var(--text); font-family: var(--ui); font-size: 15px; font-weight: 600; letter-spacing: -.01em; text-overflow: ellipsis; white-space: nowrap; }
 
 .sidebar-new { flex: 1; min-width: 0; min-height: var(--tap-target-min); overflow: hidden; padding: 0 var(--space-3); border: 1px solid transparent; border-radius: var(--radius-ctl); background: var(--accent); color: var(--accent-ink); font-weight: 650; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
 
@@ -698,11 +543,11 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .sidebar-spend { color: var(--muted); font-size: var(--t-xs); }
 
-.thread-header { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--surface); box-shadow: var(--shadow-card); }
+.thread-header { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); padding: 0 0 var(--space-3); border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: transparent; box-shadow: none; }
 
 .thread-heading { min-width: 0; flex: 1 1 320px; }
 
-.thread-heading h1 { margin: 0; font-family: var(--display); font-size: clamp(24px, 3vw, 34px); letter-spacing: -.01em; }
+.thread-heading h1 { margin: 0; font-family: var(--display); font-size: clamp(18px, 2vw, 22px); letter-spacing: -.01em; }
 
 .thread-heading.sovereign h1 { color: var(--gold); }
 
@@ -712,7 +557,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .thread-control { display: grid; min-width: 0; gap: 2px; color: var(--faint); font-size: var(--t-xs); }
 
-.thread-control-label { padding-inline: var(--space-1); font: 500 10px/1.5 var(--mono); letter-spacing: .1em; text-transform: uppercase; }
+.thread-control-label { padding-inline: var(--space-1); font: 500 var(--t-xs)/1.5 var(--ui); letter-spacing: normal; text-transform: none; }
 
 .thread-model, .thread-effort { width: 18ch; min-width: 0; max-width: 100%; height: var(--tap-target-min); padding: 0 var(--space-2); border: 1px solid var(--line); border-radius: var(--radius-ctl); background: var(--raised); color: var(--muted); }
 
@@ -722,15 +567,15 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .thread-messages { display: grid; align-content: start; gap: var(--space-3); min-height: 200px; padding-bottom: var(--space-4); }
 
-.thread-message { display: grid; max-width: 85%; gap: var(--space-1); }
+.thread-message { display: grid; min-width: 0; max-width: 100%; gap: var(--space-2); }
 
-.thread-message.mine { justify-self: end; }
+.thread-message.mine { justify-self: end; max-width: 85%; }
 
-.message-meta { padding: 0 var(--space-2); color: var(--faint); font: 500 10px/1.5 var(--mono); letter-spacing: .1em; text-transform: uppercase; }
+.message-meta { padding: 0 var(--space-2); color: var(--faint); font: 500 var(--t-xs)/1.5 var(--ui); letter-spacing: normal; text-transform: none; }
 
 .thread-message.mine .message-meta { text-align: right; }
 
-.message-body { padding: var(--space-3) var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-card); overflow-wrap: anywhere; }
+.message-body { min-width: 0; padding: var(--space-3) var(--space-3); border: 1px solid transparent; border-radius: var(--radius-card); overflow-wrap: anywhere; }
 
 .message-body > :first-child { margin-top: 0; }
 
@@ -744,9 +589,9 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .message-body ul, .message-body ol { margin: 0; padding-left: 1.4em; }
 
-.thread-message.mine .message-body { border-color: transparent; background: var(--accent); color: var(--accent-ink); }
+.thread-message.mine .message-body { border-color: var(--line); background: var(--surface); color: var(--text); }
 
-.thread-message.theirs .message-body { background: var(--raised); }
+.thread-message.theirs .message-body { padding-inline: 0; border-radius: 0; background: transparent; }
 
 .thread-message.failed .message-body { border-color: rgb(var(--danger-rgb) / .65); }
 
@@ -818,7 +663,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .view-section { display: grid; align-content: start; gap: var(--space-3); padding: var(--space-4); border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--surface); box-shadow: var(--shadow-card); }
 
-.view-section h2 { margin: 0; font-family: var(--display); font-size: 22px; letter-spacing: -.01em; }
+.view-section h2 { margin: 0; font-family: var(--ui); font-size: 16px; letter-spacing: -.01em; }
 
 .view-page h3, .view-page h4 { font-family: var(--display); letter-spacing: -.015em; }
 
@@ -844,12 +689,8 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .stat span { color: var(--muted); font-size: var(--t-xs); }
 
-/* Mono, uppercase, tracked, small. The kit is explicit that this treatment is
- * what carries metadata — eyebrows, timestamps, board names, form labels — in
- * all three of its client sources, and that ordinary sans is what carries
- * everything else. Status badges are not in this family: the kit sets those
- * in its product sans, and they stay there. */
-.card-meta { color: var(--muted); font: 500 10px/1.5 var(--mono); letter-spacing: .1em; text-transform: uppercase; }
+/* Metadata uses readable product sans; code and diffs retain the mono face. */
+.card-meta { color: var(--muted); font: 500 var(--t-xs)/1.5 var(--ui); letter-spacing: normal; text-transform: none; }
 
 .usage-dashboard { display: grid; align-content: start; gap: var(--space-4); }
 
@@ -861,7 +702,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .metric-card { display: grid; min-width: 0; align-content: start; gap: var(--space-1); padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--raised); box-shadow: var(--shadow-card); }
 
-.metric-label { color: var(--muted); font: 500 10px/1.4 var(--mono); letter-spacing: .1em; text-transform: uppercase; }
+.metric-label { color: var(--muted); font: 500 var(--t-xs)/1.4 var(--ui); letter-spacing: normal; text-transform: none; }
 
 .metric-value { color: var(--text); font-size: clamp(20px, 3vw, 28px); overflow-wrap: anywhere; }
 
@@ -992,7 +833,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .data-table th, .data-table td { padding: var(--space-2); border-bottom: 1px solid var(--line); text-align: left; }
 
-.data-table th { color: var(--muted); font: 500 10px/1.5 var(--mono); letter-spacing: .1em; text-transform: uppercase; }
+.data-table th { color: var(--muted); font: 500 var(--t-xs)/1.5 var(--ui); letter-spacing: normal; text-transform: none; }
 
 /* 420px, not the 240px this carried: auto-fit only collapses tracks that are
    empty, and .run-summary spans 1 / -1, so every track stays occupied. At
@@ -1096,7 +937,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .home-efficiency-warning .button { justify-self: end; }
 
-.mode-kicker { margin: 0; color: var(--accent); font: 500 10px/1.4 var(--mono); letter-spacing: .12em; text-transform: uppercase; }
+.mode-kicker { margin: 0; color: var(--accent); font: 500 var(--t-xs)/1.4 var(--ui); letter-spacing: normal; text-transform: none; }
 
 .home-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 
