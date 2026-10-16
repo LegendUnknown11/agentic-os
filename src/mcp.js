@@ -38,9 +38,10 @@ const TOOLS = {
 };
 
 
-const visible = () =>
-  Object.entries(TOOLS).filter(([name, t]) =>
-    t.roles.includes(ROLE) && toolAllowed(modeNow(), name));
+const visible = () => {
+  const mode = modeNow();
+  return toolListings.filter((t) => toolAllowed(mode, t.name));
+};
 
 const compactText = (text, limit) => {
   const clean = String(text ?? '').replace(/\s+/g, ' ').trim();
@@ -64,6 +65,11 @@ const listed = (name, t) => ({
   inputSchema: compactSchema(t.schema),
 });
 
+// Schemas and roles are static; only the mode is live between requests.
+const toolListings = bus ? Object.entries(TOOLS)
+  .filter(([, t]) => t.roles.includes(ROLE))
+  .map(([name, t]) => listed(name, t)) : [];
+
 const server = new Server(
   { name: 'kingdom', version: '0.1.0' },
   { capabilities: { tools: {} } }
@@ -71,7 +77,7 @@ const server = new Server(
 
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
   // No court here means no court tools — an empty list, not a broken server.
-  tools: bus ? visible().map(([name, t]) => listed(name, t)) : [],
+  tools: bus ? visible() : [],
 }));
 
 /**
@@ -151,10 +157,11 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
   // the tool list it was given at connect, so after a flip it will reach for a
   // tool this mode has withheld — and it must be told why, in a sentence it can
   // act on, rather than have the call quietly succeed.
-  if (!toolAllowed(modeNow(), req.params.name)) {
+  const mode = modeNow();
+  if (!toolAllowed(mode, req.params.name)) {
     return { isError: true, content: [{ type: 'text', text:
-      `"${req.params.name}" is not available in ${modeOf(modeNow()).label} mode, so nothing `
-      + `happened. ${modeOf(modeNow()).blurb}` }] };
+      `"${req.params.name}" is not available in ${modeOf(mode).label} mode, so nothing `
+      + `happened. ${modeOf(mode).blurb}` }] };
   }
   try {
     const out = await tool.run(req.params.arguments ?? {});
