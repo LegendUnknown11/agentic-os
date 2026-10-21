@@ -1023,9 +1023,8 @@ body.sidebar-collapsed .app-identity { display: grid; }
  * colour signal for "how is this going", replacing what used to be a
  * different treatment (border colour here, text colour there, badge colour
  * elsewhere) per view. */
-.run-summary.live { border-color: rgb(var(--accent-rgb) / .65); }
-.run-summary.attention { border-color: rgb(var(--tone-attention-rgb) / .65); }
-.run-summary.settled { border-color: rgb(var(--ok-rgb) / .65); }
+/* The badge carries the run's tone; the panel stays a neutral hairline box,
+ * as every box in the canvas does. */
 
 .run-badge.live { background: rgb(var(--accent-rgb) / .12); color: var(--accent); }
 .run-badge.attention { background: rgb(var(--tone-attention-rgb) / .1); color: var(--tone-attention); }
@@ -1042,7 +1041,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
    as a 200px hole beside a three-item list. */
 .run-grid { display: grid; align-items: start; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: var(--space-3); margin-top: var(--space-3); }
 
-.run-grid .view-section { min-width: 0; padding: var(--space-3); }
+.run-grid .view-section { min-width: 0; padding: 0; border: 0; border-radius: 0; background: transparent; }
 
 .run-item { display: flex; min-width: 0; align-items: baseline; justify-content: space-between; gap: var(--space-2); padding: var(--space-2) 0 var(--space-2) var(--space-2); border-bottom: 1px solid var(--line); color: var(--muted); }
 
@@ -1106,6 +1105,14 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .row-title { color: var(--text); font-weight: 500; }
 
+/* Inside a list row the title and detail sit on one line, as the canvas's
+ * Needs you rows, not the stacked label-over-text a bare .task-row gives. */
+.home-card > .task-row > .row-text { display: flex; }
+
+.home-card > .task-row .row-title { color: var(--text); font-size: var(--t-sm); font-weight: 500; }
+
+.home-card > .task-row .row-detail { font-weight: 400; }
+
 .row-detail { min-width: 0; overflow-wrap: anywhere; color: var(--muted); }
 
 /* The Runs table reads as the canvas draws it: sentence-case column heads, and
@@ -1125,7 +1132,9 @@ body.sidebar-collapsed .app-identity { display: grid; }
 .home-runs td:last-child { white-space: nowrap; }
 
 /* A list card is rows divided by hairlines, not boxes inside a box. */
-.home-card > .task-row { margin-top: 0; border: 0; border-top: 1px solid var(--line-soft); border-radius: 0; background: transparent; }
+.home-card > .task-row { justify-content: flex-start; min-height: 48px; margin-top: 0; padding: var(--space-2) 0; border: 0; border-top: 1px solid var(--line-soft); border-radius: 0; background: transparent; color: var(--text); font-weight: 500; }
+
+.home-needs { grid-column: 1 / -1; }
 
 .home-card > h2 + .task-row { border-top: 0; }
 

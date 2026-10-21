@@ -84,6 +84,9 @@ export function loadHomeRuns(state, render) {
 }
 
 /** "PUSH · builder" reads as a bold title and a muted detail, as in the canvas's rows. */
+const inboxTitle = (state, approval) => (Array.isArray(state.inbox) ? state.inbox : [])
+  .find((item) => item.id === `approval:${approval.id}`)?.title;
+
 function rowText(text) {
   const [title, ...rest] = String(text).split(' · ');
   return h('span', { class: 'row-text' }, h('b', { class: 'row-title', text: title }), rest.length ? h('span', { class: 'row-detail', text: rest.join(' · ') }) : null);
@@ -195,7 +198,9 @@ export function render(state, root, actions = {}, queueExpanded = false) {
   // intervention, a blocked task is usually waiting on one of the above.
   const urgent = [
     ...(crewVisible ? approvals.map((a) => ({
-      text: `${String(a.kind ?? 'request').toUpperCase()} · ${a.from ?? 'team'}`, open: open('approvals'),
+      // The inbox already words each approval for a person ("Add tester,
+      // reviewer"); the bare kind is the fallback before it has loaded.
+      text: `${inboxTitle(state, a) ?? String(a.kind ?? 'request').toUpperCase()} · ${a.from ?? 'team'}`, open: open('approvals'),
       tone: tone('blocked'),
     })) : []),
     ...(crewVisible ? attention.map(([name, member]) => {
@@ -210,19 +215,10 @@ export function render(state, root, actions = {}, queueExpanded = false) {
     })) : []),
   ];
 
-  const runSummary = renderRunOverview(state, { post: actions.post, toast: actions.toast });
-  const next = runSummary ? null : nextStepFor({ urgent, changesVisible, changes, goal, actions });
-  if (runSummary) grid.append(runSummary);
-  else if (next) grid.append(next);
-  const leadAsksForObjective = next?.dataset?.lead === 'objective';
-
-  const efficiencyWarning = state.metrics?.ok === false ? null : warningFor(state.metrics);
-  if (efficiencyWarning) grid.append(h('aside', { class: 'home-card home-efficiency-warning attention' },
-    h('p', { text: efficiencyWarning.text }),
-    h('a', { class: 'button link', href: efficiencyWarning.href, text: efficiencyWarning.action })));
-
+  // The canvas's order: what needs you, then every run, then the open run's
+  // detail and the rest of the work.
   if (urgent.length) {
-    const needs = h('div', { class: 'home-card' }, h('h2', { text: `Needs you · ${urgent.length}` }));
+    const needs = h('div', { class: 'home-card home-needs' }, h('h2', { text: `Needs you · ${urgent.length}` }));
     for (const item of urgent) {
       const cls = `task-row ${item.tone ?? ''}`.trim();
       const dot = statusDot();
@@ -236,6 +232,22 @@ export function render(state, root, actions = {}, queueExpanded = false) {
     }
     grid.append(needs);
   }
+
+  const runsCard = runsTable(state);
+  if (runsCard) grid.append(runsCard);
+
+  const runSummary = renderRunOverview(state, { post: actions.post, toast: actions.toast });
+  const next = runSummary ? null : nextStepFor({ urgent, changesVisible, changes, goal, actions });
+  if (runSummary) grid.append(runSummary);
+  else if (next) grid.append(next);
+  const leadAsksForObjective = next?.dataset?.lead === 'objective';
+
+  const efficiencyWarning = state.metrics?.ok === false ? null : warningFor(state.metrics);
+  if (efficiencyWarning) grid.append(h('aside', { class: 'home-card home-efficiency-warning attention' },
+    h('p', { text: efficiencyWarning.text }),
+    h('a', { class: 'button link', href: efficiencyWarning.href, text: efficiencyWarning.action })));
+
+
 
   if (taskLoading) {
     grid.append(h('section', { class: 'home-card' },
@@ -281,10 +293,7 @@ export function render(state, root, actions = {}, queueExpanded = false) {
     grid.append(card);
   }
 
-  // Runs, then the objective's start-a-run form when asked for, then worktree
-  // changes: the rest of the page the canvas draws under "Needs you".
-  const runsCard = runsTable(state);
-  if (runsCard) grid.append(runsCard);
+  // The objective's start-a-run form, when asked for.
   const startable = goal?.text && !runSummary;
   if (state.homeStartRun && startable) grid.append(startRunSection(state, () => actions.rerender?.()));
 
