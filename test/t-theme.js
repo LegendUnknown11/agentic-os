@@ -1,7 +1,7 @@
 // The new shell is intentionally one flat material. This test keeps palette
 // changes cheap: colours belong in :root and selectors consume variables.
 import { strict as a } from 'node:assert';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const css = readFileSync(join(import.meta.dirname, '..', 'ui', 'app.css'), 'utf8');
@@ -90,10 +90,19 @@ a.deepEqual([1, 2, 3, 4, 5, 6, 7, 8].map((n) => token(`--space-${n}`)), ['4px', 
 a.equal(token('--tap-target-min'), '44px');
 a.equal(token('--ease'), 'cubic-bezier(.2, 0, 0, 1)', "the product easing (Tailwind ease-ui), because this is a product screen");
 a.equal(token('--fast'), '150ms', 'hover/press transitions run at 0.15s per the product source');
-a.match(css, /--display:\s*Georgia, "Times New Roman", serif/, "the display serif must be Playfair Display's own declared fallback, not a webfont this offline shell may fail to fetch");
-a.match(css, /--ui:\s*-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif/, "--ui is the kit's --font-product-body verbatim");
-a.doesNotMatch(css, /--mono:\s*['"]?(IBM Plex Mono|JetBrains Mono)/, 'this app runs offline in Electron — no webfont stack for --mono, including the kit\'s real IBM Plex Mono choice');
-a.doesNotMatch(css, /@import|fonts\.googleapis/, "the kit's token files fetch Playfair, Inter and Plex over the network; this shell must not");
+// 2026-10-21 (T3-code redesign): type is bundled, not local-stack. Inter and
+// JetBrains Mono ship in ui/fonts and load same-origin, so the offline-Electron
+// reason for system stacks (a webfont fetch fails silently) no longer applies.
+// What still must not exist is a network fetch.
+a.match(css, /--display:\s*Inter, system-ui, -apple-system, "Segoe UI", sans-serif/, 'the T3 look has no serif: headings take the UI face');
+a.match(css, /--ui:\s*Inter, system-ui, -apple-system, "Segoe UI", sans-serif/, 'Inter leads the UI stack, with system fallbacks');
+a.match(css, /--mono:\s*"JetBrains Mono", ui-monospace/, 'JetBrains Mono leads the mono stack');
+a.match(css, /@font-face\s*\{[^}]*font-family:\s*"Inter";[^}]*src:\s*url\("\.\/fonts\/inter-latin-wght-normal\.woff2"\)/, 'Inter must load from the bundled same-origin file');
+a.match(css, /@font-face\s*\{[^}]*font-family:\s*"JetBrains Mono";[^}]*src:\s*url\("\.\/fonts\/jetbrains-mono-latin-wght-normal\.woff2"\)/, 'JetBrains Mono must load from the bundled same-origin file');
+for (const f of ['inter-latin-wght-normal.woff2', 'jetbrains-mono-latin-wght-normal.woff2', 'LICENSE-Inter.txt', 'LICENSE-JetBrains-Mono.txt']) {
+  a.ok(existsSync(join(import.meta.dirname, '..', 'ui', 'fonts', f)), `ui/fonts/${f} must ship with the app (the OFL requires the licence beside the font)`);
+}
+a.doesNotMatch(css, /@import|fonts\.googleapis|https?:\/\//, 'the shell must not fetch type or anything else over the network');
 a.match(index, /<meta name="color-scheme" content="light">/, 'the document chrome must advertise the single paper surface, not a toggle');
 a.doesNotMatch(index, /theme-bootstrap/, 'the light/dark bootstrap script is gone along with the toggle');
 a.doesNotMatch(index, /<script>(?!\s*<\/script>)/, 'the shell must obey the daemon script CSP');
@@ -135,7 +144,7 @@ a.doesNotMatch(css, /content:\s*"AGENTIC OS \/ WORKSPACE"/, 'the page eyebrow ca
 // not drift back up either.
 a.match(css, /\.view-heading h1\s*\{[^}]*font-size:\s*clamp\(20px, 2\.4vw, 26px\);/, 'the page heading must stay on the product scale, not the marketing one');
 a.match(css, /\.thread-header\s*\{[^}]*background:\s*var\(--surface\)/, 'threads need the same paper panel primitive as dashboard pages');
-a.doesNotMatch(css, /--mono:\s*['"]?(IBM Plex Mono|Playfair Display)/, 'this app runs offline in Electron — no webfont stack for --mono');
+a.doesNotMatch(css, /--mono:\s*['"]?(IBM Plex Mono|Playfair Display)/, 'the retired kit faces must not return to the mono stack');
 
 // This inverts the rule the retired system imposed. The kit is explicit that
 // mono-uppercase-tracked labels carrying metadata is "the one convention every

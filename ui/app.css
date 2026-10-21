@@ -29,6 +29,27 @@
  * The kit's own contrast card claims 12.1:1 for ink on paper; its other five
  * figures reproduce exactly here and that one does not, so this file records
  * 9.6:1, the number computed, not the number quoted. */
+/* Bundled type (2026-10-21, T3-code redesign). Inter and JetBrains Mono ship in
+ * ui/fonts as variable woff2 (SIL OFL, licences beside them), served same-origin
+ * by the daemon, so there is no network fetch to fail silently in an offline
+ * Electron window. latin subset only; the stacks below fall back to the system
+ * faces for anything outside it. */
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("./fonts/inter-latin-wght-normal.woff2") format("woff2-variations");
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 100 800;
+  font-display: swap;
+  src: url("./fonts/jetbrains-mono-latin-wght-normal.woff2") format("woff2-variations");
+}
+
 :root {
   color-scheme: light;
 
@@ -163,15 +184,14 @@
   --t-md: 15px;
   --t-lg: 20px;
 
-  /* Typography — local-stack, per the offline-Electron constraint, which is a
-   * fact about this runtime and does not change with the design system. The
-   * substitutes are each face's own declared fallback in the kit's
-   * tokens/typography.css: Playfair Display falls back to Georgia, Inter to a
-   * system sans, IBM Plex Mono to a local mono. --ui is the kit's
-   * --font-product-body verbatim. */
-  --display: Georgia, "Times New Roman", serif;
-  --ui: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --mono: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  /* Typography — Inter for everything, JetBrains Mono for code and metadata.
+   * Both are bundled (see the @font-face blocks above), so this is no longer
+   * the local-stack-only rule the paper theme carried. --display is kept as a
+   * token for the headings that already use it, but the T3 look has no serif:
+   * it resolves to the UI face. */
+  --display: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --ui: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
 
   /* Motion — the product easing (Tailwind ease-ui / --ease-product), since
    * this is a product screen. Hover and press run at .15s, matching the real

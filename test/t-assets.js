@@ -217,6 +217,19 @@ try {
     console.log('  81MB refused at the 80MB cap');
   }
 
+  /* ---------- 8. the bundled interface fonts are served as fonts ---------- */
+  {
+    // A woff2 served as text/plain is dropped by Chromium's font loader, which
+    // falls back to the system face without any visible error.
+    for (const [file, bytes] of [['inter-latin-wght-normal.woff2', 1000], ['jetbrains-mono-latin-wght-normal.woff2', 1000]]) {
+      const r = await fetch(`${base}/fonts/${file}`);
+      a.equal(r.status, 200, `${file} must be served`);
+      a.equal(r.headers.get('content-type'), 'font/woff2', `${file} must carry the font MIME type`);
+      a.ok((await r.arrayBuffer()).byteLength > bytes, `${file} must not be an empty stub`);
+    }
+    console.log('  Inter and JetBrains Mono woff2 are served as font/woff2');
+  }
+
   console.log('t-assets.js OK — uploads stay inside the assets directory, by every route');
 } finally {
   daemon.kill();

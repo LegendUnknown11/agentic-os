@@ -238,6 +238,7 @@ const MIME = {
   '.wav': 'audio/wav', '.flac': 'audio/flac', '.webm': 'video/webm', '.mp4': 'video/mp4',
   '.pdf': 'application/pdf', '.txt': 'text/plain', '.md': 'text/markdown',
   '.csv': 'text/csv', '.json': 'application/json',
+  '.woff2': 'font/woff2', '.woff': 'font/woff',
 };
 
 /**
