@@ -1,5 +1,31 @@
 # Agentic OS handoff
 
+## Current state (T3-code, 2026-10-21)
+
+The `T3-code` branch (nine commits on `main` at `62561d3`, the last being these docs) carries the redesign
+the sovereign asked for from the Claude design canvas "Agentic OS - T3 Code
+style". It is **not merged**; no PR has been opened. [PLAN.md](PLAN.md)'s "T3
+Code redesign" section is the contract, the decisions made without asking, the
+commit table and the evidence. In short:
+
+- Dark, flat, neutral tokens replace the paper theme; the glass layer is gone.
+  Inter and JetBrains Mono are bundled in `ui/fonts`.
+- The rail is the brand plus Inbox, Team, Knowledge and Automations, then the
+  runs list. Everything else is a tab (`ui/routes.js`, `ui/views/tabs.js`), a
+  Settings section, a run chip, or one Ctrl K away (`ui/palette.js`). A retired
+  address is an alias; `test/t-routes.js` fails if one lands on Overview.
+- A run is the orchestrator's thread: Session, Diff and Tasks chips, and a
+  session inspector (`ui/inspector.js`) read only from state the daemon streams.
+- **Not built, by decision:** the canvas's Browser preview, Design canvas,
+  context-window meter, Compact session and Remote control.
+- **Held:** 95 suites in the Linux container, all passing but `t-electron.js`
+  (no display); a seeded-court audit of every route at three viewports in real
+  Chromium. **Not held:** Electron and Windows (push the branch and read the
+  `windows-latest` job), and the sovereign's acceptance of the look.
+
+Where this file below still says paper, glass or More tools, it describes what
+`main` was; those paragraphs are history, marked where they are false.
+
 ## Current state
 
 This is the sole current handoff and operating reference for this repository.
@@ -38,8 +64,9 @@ holds its contract and acceptance criteria.
 
 **Its design system source reversed on 2026-09-21.** The sovereign supplied
 `Prototype.zip` — the Cold-Call Workflow kit that PLAN.md section 1 had retired
-on 2026-09-17 — and asked for the app redesigned on it outright. That is the
-system the app runs now: paper, not a dark shell. Three grounds (`#f7f1e7`,
+on 2026-09-17 — and asked for the app redesigned on it outright. That was the
+system the app ran until 2026-10-21 (paper, not a dark shell); the `T3-code`
+branch replaces it. Three grounds (`#f7f1e7`,
 `#ebe1d2`, `#fffdf9`), one teal accent doing brand and primary interactive
 together, the kit's product scale rather than its marketing one (16px card,
 12px control, no pill buttons), and metadata set in mono, uppercase and tracked
@@ -82,7 +109,8 @@ row stood 165px tall with 49px left for its title. `align-content: start` at eac
 shared declaration fixed all six; `fix/live-layout-defects` carries them with
 tests that pin the measured numbers.
 
-**2026-09-23: a glass layer was added on top of the paper palette**, on the
+**2026-09-23: a glass layer was added on top of the paper palette (removed on
+`T3-code`, 2026-10-21)**, on the
 `ui-revamp` branch, since merged to `main`. PLAN.md's new "UI revamp —
 paper with glass (2026-09-23)" section is the contract and its acceptance
 evidence; the summary: `#header`, `#sidebar` (rail and drawer), `#composer`,
@@ -345,7 +373,14 @@ suite count is the contract.
 `test/t-electron.js` (the recovered Electron acceptance harness) is in the
 gate now; PR #71 landed on `main`.
 
-**Current count, 2026-09-25 (`feature-implementation`, round 2): 92 suites**:
+**Current count, 2026-10-21 (`T3-code`): 95 suites**: three new, `t-routes.js`,
+`t-palette.js` and `t-inspector.js`, plus new cases in `t-assets.js`, `t-pages.js`,
+`t-thread.js` and `t-theme-geometry.js`. In this Linux container the gate printed
+"95 suites, 4-wide" with 94 passing; `t-electron.js` failed for want of a display,
+the same single failure as on the unchanged base. `t-theme-geometry.js` ran in
+real Chromium. Windows CI has not run this branch.
+
+Previous count, 2026-09-25 (`feature-implementation`, round 2): 92 suites:
 the round added `t-task-admin.js` and `t-inbox.js`. In this Linux container the
 gate printed "92 suites, 4-wide, 38.0s" with 91 passing; `t-electron.js` failed
 for want of a display. On `windows-latest` CI, head `49f81ed` (job
@@ -493,6 +528,11 @@ stateDiagram-v2
 | [ui/views/usage.js](ui/views/usage.js) | Usage, including Run spend: one run's ledger from `/api/runSpend` against `maxRunUsd`. |
 | [ui/notify.js](ui/notify.js) | Desktop notifications, including run state changes; covered by `test/t-notify.js`. |
 | [ui/app.css](ui/app.css) | The whole design system. Tokens in `:root`; no literal colours outside it. |
+| [ui/routes.js](ui/routes.js) | The pure route table: pages, tabs, and the aliases that send a retired address to its new home. `test/t-routes.js`. |
+| [ui/views/tabs.js](ui/views/tabs.js) | The tab host for Inbox, Team and Knowledge: each body keeps its own mount and cleanup. |
+| [ui/palette.js](ui/palette.js) | Ctrl K: every page and run, with a pure matcher. `test/t-palette.js`. |
+| [ui/inspector.js](ui/inspector.js) | The run's session inspector; `progressSteps` is pure. `test/t-inspector.js`. |
+| [ui/fonts](ui/fonts) | Inter and JetBrains Mono (variable woff2, latin) and their OFL licences. |
 | [ui/views/util.js](ui/views/util.js) | The shared view primitives every view composes from. |
 | [ui/run.js](ui/run.js) | Run status, controls, final-review evidence, and rendering helpers. |
 | [ui/store.js](ui/store.js) | Shared live run state. |
@@ -541,8 +581,8 @@ spend real subscription quota.
    framework-free renderer, and one shared stream/poll lifecycle.
 6. Edit each selector at its declaration in `ui/app.css`; do not append override
    blocks. Colour lives only in the `:root` token block, as channel triples where
-   alpha is needed. Keep the `#bg` wash. The removed drawn hall and avatars stay
-   removed.
+   alpha is needed. Keep the `#bg` wallpaper layer. The removed drawn hall and
+   avatars stay removed.
 7. Never expose credentials in tracked configuration, UI output, logs, or this
    handoff. Codex needs `danger-full-access` to retain MCP tools; a confining
    Codex sandbox makes a member unable to report back.
@@ -617,6 +657,13 @@ current proof; refresh them before the snapshot.
   defect in the subordinate document, and this file wins without argument.
 
 ## Remaining acceptance work
+
+- **T3-code (2026-10-21).** Push the branch and read the `windows-latest` job: the
+  Electron suite has never run against it, and it touches the rail, header and
+  Overview that `t-electron.js` drives. Then the sovereign's own look at the
+  result. The two Electron checks most likely to move are the collapsed rail
+  (it needs at least four nav buttons at 44px; there are exactly four) and the
+  run lifecycle's `onScreen` text checks, which now also see the Runs table.
 
 - ~~Exercise the interface in a visible browser or Electron session.~~ Done
   2026-09-21; `PLAN.md` records what each clause item demonstrated. Method worth
