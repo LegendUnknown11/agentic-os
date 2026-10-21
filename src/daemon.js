@@ -642,6 +642,8 @@ function metrics() {
     })),
     // Every member's session against its model's window, orchestrator first.
     context,
+    // Spend per local day (named zone) from the ledger clearSpend leaves alone.
+    spendByDay: kingdom.spendByDay(),
     spent: Number(kingdom.bus.get('spentUsd') ?? 0),
     cap: kingdom.config.maxKingdomUsd ?? 0,
     perMemberCap: kingdom.config.maxBudgetUsd ?? 0,
@@ -1133,6 +1135,7 @@ const handle = async (req, res) => {
       spend: {
         turns: kingdom.turnsThisSession(), lifetimeTurns: kingdom.turnsLifetime(),
         turnBudget: kingdom.sessionTurnCap(),
+        today: kingdom.spendToday(),
       },
       // The context meter: every member's session against its model's window.
       context: kingdom.contextAll(),

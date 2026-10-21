@@ -161,6 +161,29 @@ k.bus.set('base', 'master');
   k.bus.updateRun(stranger.id, { state: 'cancelled', cancelledTs: Date.now() });
 }
 
+/* ---------- 4. spend by day ---------- */
+{
+  const local = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  a.equal(k.spendTimeZone(), local, 'no configured zone is the daemon\'s own local zone, by name');
+  k.config.timeZone = 'Not/AZone';
+  a.equal(k.spendTimeZone(), local, 'an invalid zone falls back rather than throwing');
+  k.config.timeZone = 'Asia/Kolkata';
+  a.equal(k.spendTimeZone(), 'Asia/Kolkata');
+
+  // 20:00 UTC is already the next day in Kolkata (UTC+5:30).
+  const now = Date.UTC(2026, 9, 21, 20, 0);
+  k.bus.recordSpend('coder', 0.4, 1000, Date.UTC(2026, 9, 21, 19, 0));  // 00:30 IST on the 22nd
+  k.bus.recordSpend('coder', 0.6, 2000, Date.UTC(2026, 9, 21, 10, 0));  // 15:30 IST on the 21st
+  const today = k.spendToday(now);
+  a.deepEqual(today, { day: '2026-10-22', usd: 0.4, turns: 1, tokens: 1000, timeZone: 'Asia/Kolkata' });
+  const week = k.spendByDay({ days: 7, now });
+  a.equal(week.days.length, 7);
+  a.deepEqual(week.days.slice(0, 2).map((d) => [d.day, d.usd]), [['2026-10-22', 0.4], ['2026-10-21', 0.6]]);
+  k.clearSpend();
+  a.deepEqual(k.spendToday(now), today, 'clearSpend() leaves the ledger alone');
+  delete k.config.timeZone;
+}
+
 await k.stop();
 for (const d of [repo, kingdomDir(repo)]) { try { rmSync(d, { recursive: true, force: true }); } catch {} }
-console.log('t-session.js OK — context meter, compact session, run lead');
+console.log('t-session.js OK — context meter, compact session, run lead, spend by day');

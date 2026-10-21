@@ -187,6 +187,11 @@ try {
     const compactBody = await compact.json();
     if (compact.status === 409) a.ok(['asleep', 'busy', 'recycling'].includes(compactBody.reason), compactBody.error);
     else a.equal(compactBody.ok, true, `compactSession answered ${compact.status}: ${compactBody.error}`);
+    // Spend by day, from the ledger: the zone is named, today is always there.
+    a.ok(m.spendByDay?.timeZone, 'spendByDay names its time zone');
+    a.equal(m.spendByDay.days.length, 14, 'two weeks of local days, empty ones included');
+    a.equal(m.spendByDay.today.day, m.spendByDay.days[0].day, 'newest first, starting today');
+
     const missing = await post('/api/compactSession', { name: 'nobody' });
     a.equal(missing.ok, false);
     a.match(missing.error, /No such team member/);

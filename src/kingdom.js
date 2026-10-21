@@ -1103,6 +1103,8 @@ export class Kingdom extends EventEmitter {
       this.bus.set('spentUsd', String(spent));
       const currentRun = this.#activeRun();
       if (currentRun) this.bus.recordRunSpend(currentRun.id, name, cost);
+      // The monotonic ledger "spend today" reads; clearSpend() never touches it.
+      this.bus.recordSpend(name, cost, d.in + d.out);
       const mine = Number(this.bus.get(`spent:${name}`) ?? 0) + cost;
       this.bus.set(`spent:${name}`, String(mine));
 
@@ -1128,6 +1130,7 @@ export class Kingdom extends EventEmitter {
         // The context meter's other half: this member's model window, or null
         // when kingdom.config.json's `contextWindows` does not name the model.
         window: this.contextWindowOf(agent.spec?.model ?? spec.model ?? null),
+        today: this.spendToday(),
       });
       this.#enforceTurnBudget();
 
@@ -1360,6 +1363,33 @@ export class Kingdom extends EventEmitter {
   }
 
   /** Reset a member's cumulative spend — the sovereign lifting a ceiling. */
+  /**
+   * The zone "a day" means for spend: `timeZone` in kingdom.config.json when it
+   * names a real IANA zone, else the daemon process's own local zone. Always
+   * returned by name, so a reader never has to guess which midnight it was.
+   */
+  spendTimeZone() {
+    const want = this.config.timeZone;
+    if (want) {
+      // Validated, but returned as written: ICU canonicalises some names
+      // (Asia/Kolkata -> Asia/Calcutta), and the sovereign should read back
+      // the zone they typed.
+      try { new Intl.DateTimeFormat('en-US', { timeZone: want }); return String(want); } catch { /* fall through */ }
+    }
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  }
+
+  /** Spend per local day from the monotonic ledger, newest first. */
+  spendByDay({ days = 14, now = Date.now() } = {}) {
+    return this.bus.spendByDay({ timeZone: this.spendTimeZone(), days, now });
+  }
+
+  /** Today's spend: {day, usd, turns, tokens, timeZone}. */
+  spendToday(now = Date.now()) {
+    const { today, timeZone } = this.spendByDay({ days: 1, now });
+    return { ...today, timeZone };
+  }
+
   clearSpend(name) {
     if (name) this.bus.set(`spent:${name}`, '0');
     else {

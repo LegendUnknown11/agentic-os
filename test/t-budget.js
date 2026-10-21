@@ -122,6 +122,19 @@ a.equal(Number(k2.bus.get('tokens')) - tokensBefore, 107_000,
   'a claude turn must count its cache read too, not just the uncached remainder');
 a.equal(Number(k2.bus.get('tokens:orchestrator')) > 0, true, 'and to the member who spent them');
 
+// Every priced turn also lands in the monotonic spend ledger, which is what
+// "spend today" reads — and clearSpend() must not be able to reach it.
+{
+  const today = k2.spendToday();
+  a.ok(today.turns >= 1, 'the turn is in today\'s ledger');
+  a.ok(today.usd >= 0.01 - 1e-9, `today carries the turn's cost (got ${today.usd})`);
+  a.ok(today.tokens >= 107_000, 'and its tokens');
+  a.ok(today.timeZone, 'the day is always stated with its zone');
+  k2.clearSpend();
+  a.equal(Number(k2.bus.get('spentUsd')), 0, 'clearSpend zeroes the running counter');
+  a.deepEqual(k2.spendToday(), today, 'and leaves the day\'s ledger exactly as it was');
+}
+
 bigTurn();
 await wait(600);
 
