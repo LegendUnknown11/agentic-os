@@ -20,12 +20,13 @@ import {
   planRosterMigration, COVERED_BY, NEW_IN_V2, SHIPPED, ROSTER_VERSION,
 } from '../src/roster.js';
 import { transformText } from '../scripts/rename/transform.mjs';
+import { migrateConfig } from '../src/legacy.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-// The fixture is byte-exact v1 data, so it still carries the pre-rename keys; // rename-keep
-// a launch renames them (src/legacy.js) before the roster runs.
-const legacy = JSON.parse(readFileSync(join(HERE, 'fixtures', 'roster-v1.json'), 'utf8'));
-const v1 = { agentDefaults: legacy['peasant' + 'Defaults'], agents: legacy['peasant' + 's'] }; // rename-keep
+// The fixture is byte-exact v1 data, so it still carries the pre-rename keys;
+// a launch renames them (src/legacy.js migrateConfig) before the roster runs.
+const v1 = JSON.parse(readFileSync(join(HERE, 'fixtures', 'roster-v1.json'), 'utf8'));
+migrateConfig(v1);
 const library = JSON.parse(readFileSync(join(HERE, '..', 'roles.json'), 'utf8')).agents;
 const renamed = (text) => transformText('roles-library.json', text);
 const clone = (o) => JSON.parse(JSON.stringify(o));

@@ -17,6 +17,7 @@
 // bounded, non-billing status commands (src/cli-detection.js). The cost: an
 // authenticated CLI that is OUT OF QUOTA is no longer caught here; it surfaces
 // on the member's first turn as a rate/usage-limit error instead.
+import './legacy-boot.js'; // first: legacy env fallback and home migration, before any module reads env
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { readFileSync, existsSync } from 'node:fs';

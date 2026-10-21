@@ -5,17 +5,25 @@
 // closing a window must not kill work in progress. This window is a viewer.
 // Launching again re-attaches to the team that is already running; to end it
 // for real, use "end team" in the dashboard.
+import '../src/legacy-boot.js'; // first: legacy env fallback and home migration, before any module reads env
 import { app, BrowserWindow, dialog, session, ipcMain, screen, shell } from 'electron';
 import { spawn, execFileSync } from 'node:child_process';
 import { openSync, existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { assertRepo } from '../src/worktree.js';
+import { migrateUserData } from '../src/legacy.js';
 import { switchRepo } from './switch-repo.js';
 import { listTeams } from '../src/teams.js';
 import { routeLaunch, requestShutdown, firstLaunchPlan, teamPortOf } from './teams-launch.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
+
+// userData is named after package.json's name, which the rename changed, so
+// pet.json and daemon.log move with it once. Top level, before anything
+// (requestSingleInstanceLock, the ready event) makes Electron create the new
+// folder: an existing new folder wins and the old one is left alone.
+try { migrateUserData(app.getPath('appData'), app.getPath('userData')); } catch (e) { console.warn(`[agenticos] app data migration skipped: ${e.message}`); }
 const PORT = Number(process.env.AGENTICOS_PORT ?? 7777);
 const ORIGIN = `http://127.0.0.1:${PORT}`;
 

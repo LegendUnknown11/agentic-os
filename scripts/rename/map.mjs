@@ -15,6 +15,7 @@ export const EXCLUDE = [
   /^scripts\/rename\//,            // the codemod and this map: they must name the old words
   /^docs\/RENAME\.md$/,            // the old -> new map itself, maintained by hand
   /^test\/fixtures\/roster-v1\.json$/, // a byte-exact v1 roster: src/roster.js fingerprints it
+  /^test\/fixtures\/config-pre-rename\.json$/, // the shipped config as it was the day before: src/legacy.js fingerprints it
   /^src\/legacy\.js$/,             // the one-time migration: reads the legacy names on purpose
   /^test\/t-legacy-migrate\.js$/,  // and its suite, which has to plant them
   /\.(woff2?|ttf|otf|png|jpe?g|gif|webp|ico|icns|mp3|wav|ogg|zip|pdf)$/i,
@@ -28,6 +29,8 @@ export const EXCLUDE = [
 export const KEEP_LINES = [
   [/^src\/roster\.js$/, /scout -> researcher and scribe -> writer/],
   [/^plans\/functionality\/f2-design\.md$/, /scout\/scribe are named researcher\/writer/],
+  // Ignore patterns for the pre-rename names, kept until src/legacy.js has moved them.
+  [/^\.gitignore$/, /^\.?kingdom[./-]/],
   // Guards that the OLD vocabulary never comes back: renaming them would ban the new words.
   [/^test\/t-pages\.js$/, /must use the team vocabulary/],
   [/^test\/t-theme\.js$/, /the old gold role color must not survive/],

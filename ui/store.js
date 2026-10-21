@@ -3,13 +3,16 @@ import { STICKY, verbFor } from './status.js';
 // The renderer's one state owner. DOM modules consume this state; they do not
 // keep their own copies of the stream or start their own timers.
 
-const PREFS_KEY = 'kd.prefs';
+const PREFS_KEY = 'agenticos.prefs';
+// Where the same prefs lived before the de-theming rename; read once, never written.
+const LEGACY_PREFS_KEY = 'kd.prefs';
 const LOG_CAP = 400;
 const MESSAGE_CAP = 300;
 
 const readPrefs = () => {
   try {
-    const value = JSON.parse(globalThis.localStorage?.getItem(PREFS_KEY) ?? '{}');
+    const store = globalThis.localStorage;
+    const value = JSON.parse(store?.getItem(PREFS_KEY) ?? store?.getItem(LEGACY_PREFS_KEY) ?? '{}');
     return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
   } catch { return {}; }
 };

@@ -118,6 +118,7 @@ const suites = [
   ['MCP listing overhead and live gates', join(HERE, 't-mcp-listing.js')],
   ['standing team roles', join(HERE, 't-roles.js')],
   ['roster v1 -> v2 migration', join(HERE, 't-roster-migrate.js')],
+  ['pre-rename state carries over once', join(HERE, 't-legacy-migrate.js')],
   ['cached prefix is byte-stable', join(HERE, 't-prompt.js')],
   ['approvals and resting crew', join(HERE, 't-approvals.js')],
   ['real MCP approval chain', join(HERE, 't-mcp-chain.js')],
@@ -242,7 +243,9 @@ const run = ([label, file]) => new Promise((resolve) => {
   try {
     p = spawn(process.execPath, [file], {
       stdio: ['ignore', 'pipe', 'pipe'],
-      env: { ...process.env, AGENTICOS_TEAMS_REGISTRY: isolatedRegistryFor(file) },
+      // AGENTICOS_SKIP_LEGACY_MIGRATION: a suite run on the user's own machine must
+      // never move their real pre-rename state (test/t-legacy-migrate.js covers the move).
+      env: { ...process.env, AGENTICOS_TEAMS_REGISTRY: isolatedRegistryFor(file), AGENTICOS_SKIP_LEGACY_MIGRATION: '1' },
     });
   } catch (e) {
     return done(false, `could not start ${label}: ${e.message}\n`);

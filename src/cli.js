@@ -6,6 +6,7 @@
 //
 // Type at the prompt to speak to the orchestrator. `@name text` speaks to one member.
 // `/approve <id>`, `/reject <id>`, `/roster`, `/quit`.
+import './legacy-boot.js'; // first: legacy env fallback and home migration, before any module reads env
 import { createInterface } from 'node:readline';
 import { resolve } from 'node:path';
 import { AgenticOS, defaultConfigPath } from './agenticos.js';

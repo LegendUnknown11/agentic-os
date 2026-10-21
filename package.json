@@ -33,6 +33,7 @@
       "target": "nsis"
     },
     "nsis": {
+      "guid": "6c7037ed-7f85-5bb1-9fca-3e0fc4e409eb",
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createStartMenuShortcut": true

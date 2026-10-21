@@ -1,6 +1,11 @@
 node_modules/
 dist/
 .agenticos/
+# Pre-rename names (src/legacy.js moves them on first launch). rename-keep
+.kingdom/
+.kingdom-daemon-*.log
+kingdom.config.json.tmp
+kingdom.config.json.broken
 
 # Daemon stdout/stderr from `electron/main.js` spawning the daemon detached —
 # written next to the repo root on every launch, and each one names the repo

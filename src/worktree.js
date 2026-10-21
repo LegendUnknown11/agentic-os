@@ -7,6 +7,7 @@ import { promisify } from 'node:util';
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, realpathSync } from 'node:fs';
 import { join, basename, dirname, resolve } from 'node:path';
 import { homedir } from 'node:os';
+import { LEGACY, SKIP_ENV, legacyStateDir, migrateRepoState, stateFile, legacyBranch, legacyRunBranch } from './legacy.js';
 
 /**
  * Token store shared by every repo. Per-repo stores override it.
@@ -77,12 +78,49 @@ export async function pushBase(repo, base) {
 export function stateDir(repo) {
   if (!repo) return join(homedir(), '.agenticos', 'workspace');
   const r = resolve(repo);
-  return join(dirname(r), '.agenticos', basename(r));
+  return migratedDirs.get(r) ?? migrateOnce(r);
 }
 
-export const dbPath = (repo) => join(stateDir(repo), 'agenticos.db');
+// The first time a repo's state is asked for in this process, its
+// pre-rename folder (if any) moves to the current name (src/legacy.js).
+// A move that could not happen keeps the old folder in use.
+const migratedDirs = new Map();
+function migrateOnce(r) {
+  const current = join(dirname(r), '.agenticos', basename(r));
+  let dir = current;
+  if (process.env[SKIP_ENV] !== '1' && existsSync(legacyStateDir(r))) {
+    try { dir = migrateRepoState(r).dir; } catch (e) { console.warn(`[agenticos] state migration skipped for ${r}: ${e.message}`); }
+  }
+  migratedDirs.set(r, dir);
+  return dir;
+}
+
+/** The db, under its pre-rename file name only while a rename could not happen. */
+export const dbPath = (repo) => stateFile(stateDir(repo), 'agenticos.db', LEGACY.db);
 export const worktreePath = (repo, agent) => join(stateDir(repo), 'wt', agent);
-const branchOf = (agent) => `agenticos/${agent}`;
+
+const hasBranch = async (repo, branch) => {
+  try { await git(repo, 'show-ref', '--verify', '--quiet', `refs/heads/${branch}`); return true; } catch { return false; }
+};
+
+/**
+ * An agent's branch: agenticos/<name>, unless only the pre-rename branch
+ * exists. A worktree cut before the rename stays on its old branch and keeps
+ * merging from it; every new one gets the current prefix.
+ */
+export async function branchFor(repo, agent) {
+  const current = `agenticos/${agent}`;
+  if (await hasBranch(repo, current)) return current;
+  return (await hasBranch(repo, legacyBranch(agent))) ? legacyBranch(agent) : current;
+}
+
+/** The same for a run's integration branch. */
+async function runBranchFor(repo, runId) {
+  const current = runBranch(runId);
+  if (await hasBranch(repo, current)) return current;
+  const old = legacyRunBranch(safeRunId(runId));
+  return (await hasBranch(repo, old)) ? old : current;
+}
 
 const safeRunId = (runId) => {
   const value = String(runId ?? '').trim();
@@ -225,7 +263,7 @@ async function reuseWorktree(repo, path, branch, base) {
  */
 export async function createWorktree(repo, agent, base) {
   const path = worktreePath(repo, agent);
-  const branch = branchOf(agent);
+  const branch = await branchFor(repo, agent);
   if (await reuseWorktree(repo, path, branch, base)) return path;
 
   const { stdout } = await git(repo, 'branch', '--list', branch);
@@ -267,7 +305,7 @@ export async function createWorktree(repo, agent, base) {
  */
 export async function createRunWorktree(repo, runId, base) {
   const path = runWorktreePath(repo, runId);
-  const branch = runBranch(runId);
+  const branch = await runBranchFor(repo, runId);
   mkdirSync(dirname(path), { recursive: true });
   if (await reuseWorktree(repo, path, branch, base)) return path;
   const { stdout } = await git(repo, 'branch', '--list', branch);
@@ -291,7 +329,7 @@ export async function createRunWorktree(repo, runId, base) {
  */
 export async function behindBase(repo, agent, base) {
   try {
-    const { stdout } = await git(repo, 'rev-list', '--count', `${branchOf(agent)}..${base}`);
+    const { stdout } = await git(repo, 'rev-list', '--count', `${await branchFor(repo, agent)}..${base}`);
     return Number(stdout.trim()) || 0;
   } catch {
     return 0; // no branch yet: it will be cut from base anyway
@@ -361,14 +399,14 @@ export async function commitAll(repo, agent, message) {
 
 /** Unified diff of an agent's branch against the base. */
 export async function diffOf(repo, agent, base, file = null) {
-  const args = ['diff', `${base}...${branchOf(agent)}`];
+  const args = ['diff', `${base}...${await branchFor(repo, agent)}`];
   if (file) args.push('--', file);
   const { stdout } = await git(repo, ...args);
   return stdout;
 }
 
 export async function statOf(repo, agent, base) {
-  const { stdout } = await git(repo, 'diff', '--stat', `${base}...${branchOf(agent)}`);
+  const { stdout } = await git(repo, 'diff', '--stat', `${base}...${await branchFor(repo, agent)}`);
   return stdout;
 }
 
@@ -377,7 +415,7 @@ export async function statOf(repo, agent, base) {
  * tree — `merge-tree --write-tree` computes the merge in memory (git 2.38+).
  * Returns the conflicted paths, empty when clean.
  */
-export const conflictsWith = (repo, agent, base) => conflictsBetween(repo, base, branchOf(agent));
+export const conflictsWith = async (repo, agent, base) => conflictsBetween(repo, base, await branchFor(repo, agent));
 
 /** The same in-memory check for two arbitrary refs. */
 export async function conflictsBetween(repo, left, right) {
@@ -403,7 +441,7 @@ export async function conflictsBetween(repo, left, right) {
  */
 export async function mergeIntoRun(repo, agent, runId, { expectedRevision = null } = {}) {
   const path = runWorktreePath(repo, runId);
-  const source = branchOf(agent);
+  const source = await branchFor(repo, agent);
   const actual = await revisionOf(repo, source);
   if (expectedRevision && actual !== expectedRevision) {
     throw new Error(
@@ -453,7 +491,7 @@ export async function mergeWorktree(repo, agent, base) {
     );
   }
 
-  return mergeOntoBase(repo, base, branchOf(agent), `agenticos: merge work of ${agent}`, 'Merge');
+  return mergeOntoBase(repo, base, await branchFor(repo, agent), `agenticos: merge work of ${agent}`, 'Merge');
 }
 
 /**
@@ -476,7 +514,7 @@ async function mergeOntoBase(repo, base, branch, message, what) {
 
 /** Apply a reviewed run branch through the same clean-tree and conflict checks as a member merge. */
 export async function mergeRunBranch(repo, runId, base) {
-  const branch = runBranch(runId);
+  const branch = await runBranchFor(repo, runId);
   const { stdout: dirty } = await git(repo, 'status', '--porcelain');
   if (dirty.trim()) throw new Error(`Refusing to apply run ${runId}: ${base} has uncommitted changes.`);
   const conflicts = await conflictsBetween(repo, base, branch);
