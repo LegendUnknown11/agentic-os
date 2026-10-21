@@ -624,6 +624,10 @@ function metrics() {
   const mark = `${kingdom.bus.lastEventId()}:${kingdom.lastPrune ?? 0}`;
   if (metricsCache.mark !== mark) metricsCache = { mark, value: buildMetrics() };
   const base = metricsCache.value;
+  // Live, not cached: a recycle or compaction zeroes a session without
+  // logging a turn, so the event mark above would not move for it.
+  const context = kingdom.contextAll();
+  const contextBy = new Map(context.map((c) => [c.name, c]));
   return {
     ...base,
     members: base.members.map((m) => ({
@@ -631,7 +635,10 @@ function metrics() {
       role: kingdom.roleOf(m.name),
       spent: Number(kingdom.bus.get(`spent:${m.name}`) ?? 0),
       awake: kingdom.agents.has(m.name),
+      context: contextBy.get(m.name) ?? null,
     })),
+    // Every member's session against its model's window, orchestrator first.
+    context,
     spent: Number(kingdom.bus.get('spentUsd') ?? 0),
     cap: kingdom.config.maxKingdomUsd ?? 0,
     perMemberCap: kingdom.config.maxBudgetUsd ?? 0,
@@ -1119,6 +1126,8 @@ const handle = async (req, res) => {
         turns: kingdom.turnsThisSession(), lifetimeTurns: kingdom.turnsLifetime(),
         turnBudget: kingdom.sessionTurnCap(),
       },
+      // The context meter: every member's session against its model's window.
+      context: kingdom.contextAll(),
       paused: kingdom.paused ?? false,
       pausedWhy: kingdom.paused ? (kingdom.bus.get('pausedWhy') ?? '') : '',
       mode: kingdom.mode(),

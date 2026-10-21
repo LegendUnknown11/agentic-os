@@ -74,6 +74,7 @@ writeFileSync(cfg, JSON.stringify({
   bus.logEvent('coder', 'summoned', { by: 'orchestrator', approvalId: 1 });
   bus.set('spentUsd', '3.50');
   bus.set('spent:orchestrator', '2.00');
+  bus.set('ctx:orchestrator:default', '14000');   // what #record writes after a turn
   bus.logEvent('aux', 'aux_call', {
     purpose: 'summary', success: true, elapsedMs: 10,
     input: 100, cached: 60, written: 5, fresh: 35, output: 4,
@@ -163,6 +164,20 @@ try {
     a.equal(m.spent, 3.5);
     a.equal(m.cap, 75);
     a.equal(m.perMemberCap, 5);
+
+    // The context meter, served additively: every member's current session
+    // against its model's window, orchestrator first. No model is named in
+    // this config and so no window — null, never a guessed one.
+    a.ok(Array.isArray(m.context), '/api/metrics carries the context meter');
+    a.equal(m.context[0].name, 'orchestrator', 'the orchestrator is first');
+    // Asleep, the figure is the ctx: key #record wrote. Awake on a FRESH
+    // session (no saved session id here), the live agent's own measurement
+    // wins, and a fresh session holds nothing yet.
+    a.equal(m.context[0].tokens, m.context[0].awake ? 0 : 14_000,
+      'tokens in the session now: the live measurement, else the ctx: key');
+    a.equal(m.context[0].window, null, 'an unknown model has no window');
+    a.equal(m.context[0].pct, null);
+    a.deepEqual(orchestrator.context, m.context[0], 'and per member, beside the existing fields');
 
     // codex has no $/token in this config — quota tracks its real ceiling
     // (the plan's token allowance) instead of inventing a dollar figure.

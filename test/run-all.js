@@ -95,6 +95,9 @@ const suites = [
   // blocked cleanly on missing tooling — see src/pilot-evidence.js.
   ['pilot evidence gate', join(HERE, 't-pilot-evidence.js')],
   ['briefer recycle', join(HERE, 't-recycle.js')],
+  // The T3 session surfaces: context meter, Compact session, a run's agent,
+  // and spend by day.
+  ['session surfaces', join(HERE, 't-session.js')],
   ['compaction window', join(HERE, '..', 'src', 'compact.js')],
   ['/autocompact', join(HERE, 't-compact.js')],
   ['argument panel', join(HERE, '..', 'src', 'argue.js')],

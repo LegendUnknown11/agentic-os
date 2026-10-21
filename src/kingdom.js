@@ -1125,6 +1125,9 @@ export class Kingdom extends EventEmitter {
       this.emit('spend', {
         total: spent, tokens, turns: this.turnsThisSession(), lifetimeTurns: this.turnsLifetime(),
         name, ctx, spentByAgent: mine,
+        // The context meter's other half: this member's model window, or null
+        // when kingdom.config.json's `contextWindows` does not name the model.
+        window: this.contextWindowOf(agent.spec?.model ?? spec.model ?? null),
       });
       this.#enforceTurnBudget();
 
@@ -2927,6 +2930,52 @@ export class Kingdom extends EventEmitter {
     target.recycleAtTokens = tokens;
     this.#persistConfig();
     return tokens;
+  }
+
+  /**
+   * A model's context window, from `contextWindows` in kingdom.config.json.
+   * Unknown model, or one the table does not name, is null: a meter drawn
+   * against a guessed window is worse than no meter.
+   */
+  contextWindowOf(model) {
+    if (!model) return null;
+    const n = Number((this.config.contextWindows ?? {})[model]);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }
+
+  /**
+   * How full one member's CURRENT session is: tokens in it now against its
+   * model's window. Tokens come from the live agent's own measurement
+   * (Agent#ctxTokens) when it is awake, else from the per-conversation `ctx:`
+   * key #record writes after every turn and recycleAgent zeroes — the same
+   * figure the recycle threshold is compared against.
+   */
+  contextOf(name) {
+    const spec = this.specOf(name);
+    if (!spec) return null;
+    const live = this.agents.get(name);
+    const conv = live?.conversationId ?? this.#activeConv(name);
+    const measured = live && typeof live.ctxTokens === 'function' ? live.ctxTokens() : null;
+    const tokens = Math.max(0, Math.round(Number(measured ?? this.bus.get(`ctx:${name}:${conv}`) ?? 0) || 0));
+    const model = live?.spec?.model ?? spec.model ?? this.config.peasantDefaults?.model ?? null;
+    const window = this.contextWindowOf(model);
+    return {
+      name,
+      role: this.roleOf(name),
+      model,
+      tokens,
+      window,
+      pct: window ? Math.min(100, Math.round((tokens / window) * 1000) / 10) : null,
+      recycleAt: this.#recycleThreshold(name),
+      awake: Boolean(live),
+      busy: Boolean(live?.busy),
+      conversationId: conv,
+    };
+  }
+
+  /** Every member's context, the orchestrator first. */
+  contextAll() {
+    return this.#members().map((s) => this.contextOf(s.name)).filter(Boolean);
   }
 
   #recycleThreshold(name) {
