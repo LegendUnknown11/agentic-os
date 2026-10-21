@@ -6,7 +6,10 @@
 // authored paths on a 16-box at stroke 1.5, currentColor, so they inherit text
 // colour and align with the text they sit beside.
 const P = {
-  system: 'M2 12h12M2.5 12 2 5l3.2 2.6L8 3l2.8 4.6L14 5l-.5 7',
+  // A processor chip: a die with two pins per side. The system's own voice,
+  // drawn as machinery, not as the crown it replaced.
+  system: 'M4.6 4.6h6.8v6.8H4.6zM6.6 2.4v2.2M9.4 2.4v2.2M6.6 11.4v2.2M9.4 11.4v2.2'
+    + 'M2.4 6.6h2.2M2.4 9.4h2.2M11.4 6.6h2.2M11.4 9.4h2.2',
   bus: 'M2.5 4.5h11M2.5 8h11M2.5 11.5h7',
   command: 'M5.5 5.5h5v5h-5zM5.5 5.5a2 2 0 1 0-2-2v2m2 0v5m0 0a2 2 0 1 0 2 2v-2'
     + 'm3-5a2 2 0 1 1 2-2v2m-2 0v5m0 0a2 2 0 1 1 2 2v-2',

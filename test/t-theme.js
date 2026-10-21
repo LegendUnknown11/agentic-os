@@ -197,6 +197,9 @@ a.match(thread, /`Team \$\{awake\}\/\$\{members\.length\} awake`/, 'the header w
 a.match(css, /\.thread-heading\.user h1\s*\{[^}]*var\(--gold\)/, 'the orchestrator must use the dedicated gold identity token, never a status colour');
 a.doesNotMatch(css, /\.thread-heading\.user h1\s*\{[^}]*var\(--accent\)/, 'the orchestrator heading must not reuse the live-status accent');
 a.doesNotMatch(css, /#d8ac54|--crown/, 'the old gold role color must not survive the prototype reskin');
+const icons = readFileSync(join(import.meta.dirname, '..', 'ui', 'icons.js'), 'utf8');
+a.doesNotMatch(icons, /M2 12h12M2\.5 12 2 5l3\.2 2\.6L8 3/, 'the system icon must not draw the old crown');
+a.match(icons, /system: 'M4\.6 4\.6h6\.8v6\.8H4\.6z/, 'the system icon is the neutral processor chip');
 a.match(util, /class: `button \$\{cls\}`/, 'page controls inherit the shared button treatment');
 a.match(util, /role: 'progressbar'[\s\S]*?'aria-valuenow'/, 'visual meters must expose their value without relying on geometry or colour');
 a.match(css, /\.button, \.icon-button \{[^}]*transition:/, 'primary controls need a restrained interaction transition');
