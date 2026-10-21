@@ -141,7 +141,7 @@ function templateShelf(state, root, workflows) {
         ? { text: `Not installed: ${response.error ?? 'unknown error'}`, failed: true }
         : { text: `Installed as “${response.workflow?.name ?? template.name}”. Edit it to change the time or recipient.` };
       await reload(state, root);
-    }, installed ? '' : 'primary');
+    }, 'chip');
     install.disabled = installed;
     install.dataset.template = template.id;
     shelf.append(h('article', { class: 'workflow-row workflow-template' },

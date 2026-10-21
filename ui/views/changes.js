@@ -22,7 +22,7 @@ function bind(state, root, render) {
 }
 
 /* Changes ---------------------------------------------------------------- */
-const changeFlow = 'Work in progress -> Ready for review -> Merge requested -> Result.';
+const changeFlow = 'Work in progress -> Ready for review -> Merge requested -> Result';
 const idleStatuses = new Set(['idle', 'turn_end', 'ready', 'awake', 'exited', 'idle-slept']);
 
 export function pushState(state, unmerged = false) {

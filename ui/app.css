@@ -853,6 +853,10 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .view-section h2 { margin: 0; font-family: var(--display); font-size: var(--t-sm); font-weight: 500; letter-spacing: -.01em; }
 
+/* A section inside a section is a group, not a second box: the canvas never
+ * draws a card within a card. */
+.view-section .view-section { padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+
 .view-page h3, .view-page h4 { font-family: var(--display); font-size: var(--t-sm); font-weight: 600; letter-spacing: -.01em; }
 
 .button-row, .search-row, .form-grid, .stats { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
@@ -1014,6 +1018,13 @@ body.sidebar-collapsed .app-identity { display: grid; }
  * app from 16px of padding to 24px at once. */
 .approval-card, .agent-card, .home-card { display: grid; align-content: start; gap: var(--space-2); padding: var(--space-3); border: 1px solid var(--line-soft); border-radius: var(--radius-card); background: var(--surface); box-shadow: var(--shadow-card); }
 
+/* A template is one row: what it does on the left, its switch on the right. */
+.workflow-template { grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: var(--space-3); }
+
+.workflow-template h3 { font-size: var(--t-sm); font-weight: 500; }
+
+.workflow-template p { font-size: var(--t-xs); }
+
 /* Lists inside a section are rows divided by hairlines, as the canvas draws
  * them, not a card per item. */
 .workflow-row, .activity-row, .message-row { display: grid; align-content: start; gap: var(--space-1); padding: 12px 0; border: 0; border-top: 1px solid var(--line-soft); border-radius: 0; background: transparent; }
@@ -1128,7 +1139,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .run-review { grid-column: 1 / -1; }
 
-.run-review > .view-section { padding: var(--space-3); }
+.run-review > .view-section { padding: 0; }
 
 .review-comparison { display: flex; flex-wrap: wrap; gap: var(--space-3); color: var(--muted); font-size: var(--t-sm); }
 
