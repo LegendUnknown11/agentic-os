@@ -452,11 +452,27 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .field-value { flex: none; color: var(--text); font-size: var(--t-xs); }
 
-.field-check { grid-template-columns: 18px minmax(0, 1fr); align-items: center; column-gap: var(--space-2); }
+/* A toggle row, as the canvas's Settings draws it: label and description on
+ * the left, a switch on the right, rows divided by hairlines. */
+.field-check { grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: var(--space-3); padding: 12px 0; border-top: 1px solid var(--line-soft); }
 
-.field-check > input { grid-column: 1; grid-row: 1 / span 2; }
+.field-check > input { grid-column: 2; grid-row: 1 / span 2; }
 
-.field-check > .field-label, .field-check > small { grid-column: 2; }
+.field-check > .field-label, .field-check > small { grid-column: 1; }
+
+.field-check > .field-label { color: var(--text); font: 400 13.5px/1.4 var(--ui); letter-spacing: 0; text-transform: none; }
+
+.field-check > small { color: var(--faint); font-size: var(--t-xs); }
+
+/* Toggle rows sit flush, divided by their own hairlines, not the section gap. */
+.view-section:has(> .field-check), .settings-group:has(> .field-check) { row-gap: 0; }
+
+/* A lone action in a section keeps its own width, as the canvas's buttons do. */
+.view-section > .button { justify-self: start; }
+
+.view-section:has(> .field-check) > .button { margin-bottom: 12px; }
+
+.view-section:has(> .field-check) > h2 { margin-bottom: 12px; }
 
 .field input:not([type="checkbox"]):not([type="range"]), .field select, .field textarea, .task-manage-controls select {
   min-width: 0;
@@ -470,7 +486,13 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .field textarea { min-height: 100px; padding: var(--space-3); resize: vertical; }
 
-.field input[type="checkbox"] { width: 18px; height: 18px; margin: 2px 0; accent-color: var(--accent); }
+.field input[type="checkbox"] { position: relative; width: 36px; height: 20px; margin: 0; border-radius: var(--radius-pill); background: var(--line); cursor: pointer; appearance: none; transition: background-color var(--fast) var(--ease); }
+
+.field input[type="checkbox"]::after { position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--muted); content: ""; transition: left var(--fast) var(--ease); }
+
+.field input[type="checkbox"]:checked { background: var(--fill); }
+
+.field input[type="checkbox"]:checked::after { left: 18px; background: var(--fill-ink); }
 
 .field input[type="range"] { width: 100%; height: 24px; padding: 0; border: 0; border-radius: 0; background: transparent; accent-color: var(--accent); cursor: pointer; }
 
@@ -824,7 +846,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .view-section h2 { margin: 0; font-family: var(--display); font-size: var(--t-sm); font-weight: 500; letter-spacing: -.01em; }
 
-.view-page h3, .view-page h4 { font-family: var(--display); font-weight: 600; letter-spacing: -.01em; }
+.view-page h3, .view-page h4 { font-family: var(--display); font-size: var(--t-sm); font-weight: 600; letter-spacing: -.01em; }
 
 .button-row, .search-row, .form-grid, .stats { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
 
@@ -1316,6 +1338,18 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .settings-tabs button:hover { color: var(--text); }
 
+/* Settings, as the canvas draws it: a column of sections on the left and the
+ * open section beside it. Under 900px it folds back to the segmented strip. */
+@media (min-width: 900px) {
+  .settings-shell { grid-template-columns: 180px minmax(0, 720px); justify-content: center; align-items: start; column-gap: var(--space-5); max-width: none; }
+
+  .settings-shell > .settings-tabs { position: sticky; top: 0; flex-direction: column; justify-self: stretch; gap: 2px; padding: 0; overflow: visible; border: 0; background: transparent; }
+
+  .settings-shell > .settings-tabs button { min-height: var(--tap-target-min); justify-content: flex-start; padding: 0 10px; font-size: var(--t-sm); text-align: left; }
+
+  .settings-shell > .settings-tabs button.selected { background: var(--hover); }
+}
+
 /* Tabbed pages (Inbox, Team, Knowledge) and the embedded Settings tabs mount a
  * view that was a page of its own; its heading would repeat the host's h1. */
 .tab-panel .view-heading, .settings-embed .view-heading { display: none; }
@@ -1338,7 +1372,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .team-port { color: var(--muted); font-family: var(--mono); font-size: var(--t-xs); letter-spacing: .04em; text-transform: uppercase; }
 
-.settings-group legend { padding-inline: var(--space-1); color: var(--text); font-weight: 650; }
+.settings-group legend { padding-inline: var(--space-1); color: var(--text); font-size: var(--t-sm); font-weight: 500; }
 
 /* A card nested inside a panel: read directly on the Models & efficiency and
  * Notifications tabs, whose section() wraps one or more of the bordered

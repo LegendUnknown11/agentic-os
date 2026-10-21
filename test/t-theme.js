@@ -307,9 +307,10 @@ a.match(css, /@media \(forced-colors: active\)/, 'forced-colors users must retai
 a.match(css, /\.form-grid > label input/, 'nested workflow form controls must inherit the shell field treatment');
 a.match(css, /\.form-grid > label:last-child\s*\{[^}]*grid-column:\s*1 \/ -1;/, 'conditional form details must span the full form measure');
 a.match(css, /\.field input:not\(\[type="checkbox"\]\):not\(\[type="range"\]\), \.field select, \.field textarea/, 'text fields must not style native checkbox and range controls as text boxes');
-a.match(css, /\.field input\[type="checkbox"\]\s*\{[^}]*accent-color:\s*var\(--accent\)/, 'checkboxes need a compact native control treatment');
-a.match(css, /\.field-check\s*\{[^}]*grid-template-columns:\s*18px minmax\(0, 1fr\)/, 'checkbox fields must align the control beside its label');
-a.match(css, /\.field-check > input\s*\{[^}]*grid-column:\s*1;[^}]*grid-row:\s*1 \/ span 2;/, 'checkbox fields must keep the control beside both label lines');
+a.match(css, /\.field input\[type="checkbox"\]\s*\{[^}]*appearance:\s*none/, 'a settings checkbox draws as the canvas switch');
+a.match(css, /\.field input\[type="checkbox"\]:checked\s*\{[^}]*background:\s*var\(--fill\)/, 'an on switch is the white fill, as in the canvas');
+a.match(css, /\.field-check\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) auto/, 'toggle rows put the switch beside its label, as the canvas Settings draws them');
+a.match(css, /\.field-check > input\s*\{[^}]*grid-column:\s*2;[^}]*grid-row:\s*1 \/ span 2;/, 'checkbox fields must keep the control beside both label lines');
 a.match(css, /\.field input\[type="range"\]\s*\{[^}]*border:\s*0;[^}]*background:\s*transparent;[^}]*accent-color:\s*var\(--accent\)/, 'range controls need a compact native control treatment');
 a.match(css, /\.field-label\s*\{[^}]*display:\s*flex;[^}]*justify-content:\s*space-between;/, 'field labels must make room for live range values');
 a.doesNotMatch(css, /\.field-value\s*\{[^}]*font-family:\s*var\(--mono\)/, 'range values are ordinary UI metadata, not code — mono is reserved for code/terminal/diff/log content');
