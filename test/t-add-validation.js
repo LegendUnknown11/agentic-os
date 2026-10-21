@@ -1,6 +1,6 @@
-// Invalid summon requests must not become approval records.
+// Invalid add requests must not become approval records.
 //
-//   node test/t-summon-validation.js
+//   node test/t-add-validation.js
 import { strict as a } from 'node:assert';
 import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -8,25 +8,25 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Bus } from '../src/bus.js';
-import { badSummon } from '../src/approval.js';
+import { badAdd } from '../src/approval.js';
 
-a.match(badSummon({ names: ['ghost'] }, { roster: [{ name: 'coder' }] }), /unknown roster names/,
-  'the shared summon guard must reject names outside the roster');
+a.match(badAdd({ names: ['ghost'] }, { roster: [{ name: 'coder' }] }), /unknown roster names/,
+  'the shared add guard must reject names outside the roster');
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const dir = mkdtempSync(join(tmpdir(), 'kingdom-summon-'));
+const dir = mkdtempSync(join(tmpdir(), 'agenticos-add-'));
 const db = join(dir, 'bus.db');
 const seed = new Bus(db);
 seed.set('roster', JSON.stringify([
   { name: 'orchestrator', role: 'orchestrator' },
-  { name: 'coder', role: 'peasant' },
-  { name: 'tester', role: 'peasant' },
+  { name: 'coder', role: 'agent' },
+  { name: 'tester', role: 'agent' },
 ]));
 seed.close();
 
 const child = spawn(process.execPath, [join(HERE, '..', 'src', 'mcp.js')], {
   cwd: join(HERE, '..'),
-  env: { ...process.env, KINGDOM_AGENT: 'orchestrator', KINGDOM_ROLE: 'orchestrator', KINGDOM_DB: db },
+  env: { ...process.env, AGENTICOS_AGENT: 'orchestrator', AGENTICOS_ROLE: 'orchestrator', AGENTICOS_DB: db },
   stdio: ['pipe', 'pipe', 'ignore'],
 });
 let buffer = '';
@@ -56,7 +56,7 @@ try {
   child.stdin.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized', params: {} }) + '\n');
 
   const call = (id, names) => request({
-    jsonrpc: '2.0', id, method: 'tools/call', params: { name: 'summon', arguments: { names, reason: 'validation' } },
+    jsonrpc: '2.0', id, method: 'tools/call', params: { name: 'add_agent', arguments: { names, reason: 'validation' } },
   });
   a.match(resultText(await call(2, [])), /non-empty array/);
   a.match(resultText(await call(3, [''])), /non-empty strings/);
@@ -83,7 +83,7 @@ try {
     /Did you mean: coder/, 'a near miss must suggest the real name');
 
   // send_back is the orchestrator's other addressed tool and had the same hole.
-  a.match(resultText(await tool(10, 'send_back', { peasant: 'ghost', notes: 'redo it' })),
+  a.match(resultText(await tool(10, 'send_back', { agent: 'ghost', notes: 'redo it' })),
     /No member named "ghost"/, 'send_back must validate too');
 
   // A real name still goes through untouched.
@@ -94,7 +94,7 @@ try {
   await new Promise((resolve) => child.once('exit', resolve));
   const check = new Bus(db);
   const approvals = check.history({ limit: 20 }).filter((m) => m.kind === 'approval');
-  a.equal(approvals.length, 1, 'only the valid summon may post an approval');
+  a.equal(approvals.length, 1, 'only the valid add may post an approval');
   a.deepEqual(JSON.parse(approvals[0].body).names, ['coder', 'tester']);
   // Exactly one message left the orchestrator: the one addressed to a real member.
   const sent = check.history({ limit: 50 }).filter((m) => m.sender === 'orchestrator' && m.kind !== 'approval');
@@ -106,18 +106,18 @@ try {
 
 // --- the orchestrator is whoever the roster says, not the string "orchestrator" ---------
 // declare_done and brief_orchestrator posted to the literal name "orchestrator". The orchestrator's
-// name is configuration (`kingdom.config.json` orchestrator.name), delivery is by
-// recipient, and kingdom.js only treats a `done` as a completion when it
+// name is configuration (`agenticos.config.json` orchestrator.name), delivery is by
+// recipient, and agenticos.js only treats a `done` as a completion when it
 // reaches the orchestrator — so renaming the orchestrator silently threw every completion
 // and every briefing away while the tool answered that it had been notified.
 {
-  const dir2 = mkdtempSync(join(tmpdir(), 'kingdom-office-'));
+  const dir2 = mkdtempSync(join(tmpdir(), 'agenticos-office-'));
   const db2 = join(dir2, 'bus.db');
   const seed2 = new Bus(db2);
   seed2.set('roster', JSON.stringify([
-    { name: 'sovereign-regent', role: 'orchestrator' },
+    { name: 'lead-orchestrator', role: 'orchestrator' },
     { name: 'fool', role: 'briefer' },
-    { name: 'coder', role: 'peasant' },
+    { name: 'coder', role: 'agent' },
   ]));
   seed2.close();
 
@@ -130,7 +130,7 @@ try {
     ].map((m) => JSON.stringify(m)).join('\n') + '\n';
     const r = spawnSync(process.execPath, [join(HERE, '..', 'src', 'mcp.js')], {
       input: rpc, encoding: 'utf8',
-      env: { ...process.env, KINGDOM_AGENT: agent, KINGDOM_ROLE: role, KINGDOM_DB: db2 },
+      env: { ...process.env, AGENTICOS_AGENT: agent, AGENTICOS_ROLE: role, AGENTICOS_DB: db2 },
     });
     const reply = r.stdout.split('\n').filter(Boolean)
       .map((l) => { try { return JSON.parse(l); } catch { return null; } })
@@ -139,17 +139,17 @@ try {
     return reply.result?.content?.[0]?.text ?? '';
   };
 
-  a.match(once('coder', 'peasant', 'declare_done', { summary: 'built it' }),
-    /sovereign-regent has been notified/, 'declare_done must name the real orchestrator');
+  a.match(once('coder', 'agent', 'declare_done', { summary: 'built it' }),
+    /lead-orchestrator has been notified/, 'declare_done must name the real orchestrator');
   once('fool', 'briefer', 'brief_orchestrator', { summary: 'all quiet' });
 
   const check2 = new Bus(db2);
   const done = check2.history({ limit: 20 }).find((m) => m.kind === 'done');
-  a.equal(done.recipient, 'sovereign-regent', 'a completion must be addressed to the real orchestrator');
+  a.equal(done.recipient, 'lead-orchestrator', 'a completion must be addressed to the real orchestrator');
   const brief = check2.history({ limit: 20 }).find((m) => m.kind === 'brief');
-  a.equal(brief.recipient, 'sovereign-regent', 'a briefing must be addressed to the real orchestrator');
+  a.equal(brief.recipient, 'lead-orchestrator', 'a briefing must be addressed to the real orchestrator');
   check2.close();
   try { rmSync(dir2, { recursive: true, force: true }); } catch {}
 }
 
-console.log('t-summon-validation.js OK — invalid payloads rejected, messages reach a real member');
+console.log('t-add-validation.js OK — invalid payloads rejected, messages reach a real member');

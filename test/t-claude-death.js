@@ -7,7 +7,7 @@
 //   - `busy` stayed TRUE forever. Only the `result` event clears it, and a
 //     process that died never sends one. The ripeness gate skips a busy member
 //     until the backstop fires, at which point every later batch is handed to a
-//     corpse and acked. The sovereign's orders vanished with nothing logged.
+//     corpse and acked. The user's orders vanished with nothing logged.
 //   - `spec.resume` kept its construction-time value, so the next #startClaude
 //     passed `--session-id <an id the CLI has already created>` instead of
 //     `--resume`. claude refuses that, so the member was permanently dead while
@@ -24,7 +24,7 @@ import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from 'no
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-const dir = mkdtempSync(join(tmpdir(), 'kingdom-claudedeath-'));
+const dir = mkdtempSync(join(tmpdir(), 'agenticos-claudedeath-'));
 const argvPath = (n) => join(dir, `argv${n}.json`);
 
 // Turn 1 announces its session (so sessionId is the CLI's, as in real life) and
@@ -44,11 +44,11 @@ if (n === 1) {
   setInterval(() => {}, 1000);   // alive, waiting for input
 }
 `);
-process.env.KINGDOM_CLAUDE_BIN = stub;
+process.env.AGENTICOS_CLAUDE_BIN = stub;
 
-const { Agent } = await import('../src/agent.js');
+const { AgentProcess } = await import('../src/agent.js');
 
-const agent = new Agent({ name: 'coder', cli: 'claude', model: 'haiku' }, { cwd: dir });
+const agent = new AgentProcess({ name: 'coder', cli: 'claude', model: 'haiku' }, { cwd: dir });
 const errors = [];
 const turnEnds = [];
 agent.on('error', (e) => errors.push(String(e)));

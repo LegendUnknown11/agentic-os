@@ -1,6 +1,6 @@
-// The court dog.
+// The team dog.
 //
-// HappyDog, lifted from the sovereign's own Codex pets
+// HappyDog, lifted from the user's own Codex pets
 // (~/.codex/pets/happydog). Codex ships a plain sprite sheet and no manifest
 // beyond a name, so the geometry below was measured off the image rather than
 // read from anywhere: 1536x1872, an 8-column grid of 192x208 cells, nine rows,
@@ -8,7 +8,7 @@
 // cells of a short row are transparent — playing them would show a blank patch
 // for a third of a second, which is why FRAMES exists.
 //
-// He is not decoration. He reports the court: asleep when nobody is working,
+// He is not decoration. He reports the team: asleep when nobody is working,
 // running while a member has a turn in flight, cheering on a merge. That makes
 // him the one thing on screen you can read from across the room.
 const SHEET = 'pet/happydog.webp';
@@ -31,14 +31,14 @@ const CLIP = {
 };
 
 /**
- * What the court is doing -> what the dog is doing. One indirection so callers
- * talk about the kingdom, not about sprite rows.
+ * What the team is doing -> what the dog is doing. One indirection so callers
+ * talk about the team, not about sprite rows.
  */
 const MOOD = { working: 'run', idle: 'idle', asleep: 'sleep', cheer: 'cheer', upset: 'groom' };
 
 /**
  * The rule for turning a roster into a mood, in one place because two windows
- * ask it: the throne room's rail dog and the floating desktop dog.
+ * ask it: the dashboard's rail dog and the floating desktop dog.
  * @param {Iterable<{awake:boolean, busy:boolean}>} members
  */
 export function moodOf(members) {
@@ -113,7 +113,7 @@ function tick() {
     if (frame >= FRAMES[row]) {
       frame = 0;
       if (!loops) {
-        // A one-shot ends by going back to whatever the court is doing.
+        // A one-shot ends by going back to whatever the team is doing.
         once = null;
         clip = mood;
       } else if (clip === mood && mood === 'idle' && ++sinceFidget >= 3) {

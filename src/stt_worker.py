@@ -1,5 +1,5 @@
-# Warm dictation worker, run inside SpeechBird's own virtualenv so the kingdom
-# borrows the model the sovereign already downloaded and tuned rather than
+# Warm dictation worker, run inside SpeechBird's own virtualenv so the team
+# borrows the model the user already downloaded and tuned rather than
 # shipping a second copy of Whisper.
 #
 # Protocol: one JSON object per line each way.

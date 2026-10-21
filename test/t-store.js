@@ -12,35 +12,35 @@ resetForTest();
 apply({
   type: 'snapshot',
   roster: [
-    { name: 'orchestrator', role: 'orchestrator', summoned: true, awake: true },
-    { name: 'coder', role: 'peasant', summoned: true, awake: false },
+    { name: 'orchestrator', role: 'orchestrator', added: true, awake: true },
+    { name: 'coder', role: 'agent', added: true, awake: false },
   ],
   events: [], messages: [], approvals: [],
 });
-apply({ type: 'roster', roster: [{ name: 'orchestrator', role: 'orchestrator', summoned: true, awake: true }] });
+apply({ type: 'roster', roster: [{ name: 'orchestrator', role: 'orchestrator', added: true, awake: true }] });
 apply({
   type: 'snapshot',
-  roster: [{ name: 'orchestrator', role: 'orchestrator', summoned: true, awake: true }],
+  roster: [{ name: 'orchestrator', role: 'orchestrator', added: true, awake: true }],
   events: [{ id: 1, agent: 'coder', type: 'text', payload: { text: 'old transcript' } }],
   messages: [{ id: 1, sender: 'coder', body: 'old message' }], approvals: [],
 });
-a.equal(state.dismissed.has('coder'), true, 'roster removal is remembered');
-a.equal(state.members.has('coder'), false, 'replay cannot resurrect a dismissed member');
+a.equal(state.removed.has('coder'), true, 'roster removal is remembered');
+a.equal(state.members.has('coder'), false, 'replay cannot resurrect a removed member');
 
 // Role defaults apply on create only. An agent lifecycle event may omit role,
 // or carry a generic one, but neither is allowed to demote the orchestrator.
 resetForTest();
-apply({ type: 'snapshot', roster: [{ name: 'orchestrator', role: 'orchestrator', summoned: true, awake: true }] });
-apply({ type: 'agent', name: 'orchestrator', role: 'peasant', state: 'ready' });
+apply({ type: 'snapshot', roster: [{ name: 'orchestrator', role: 'orchestrator', added: true, awake: true }] });
+apply({ type: 'agent', name: 'orchestrator', role: 'agent', state: 'ready' });
 a.equal(state.members.get('orchestrator').role, 'orchestrator');
 
 resetForTest();
 apply({
   type: 'snapshot',
   roster: [
-    { name: 'awake', role: 'peasant', summoned: true, awake: true },
-    { name: 'resting', role: 'peasant', summoned: true, awake: false },
-    { name: 'off', role: 'peasant', summoned: false, awake: false },
+    { name: 'awake', role: 'agent', added: true, awake: true },
+    { name: 'resting', role: 'agent', added: true, awake: false },
+    { name: 'off', role: 'agent', added: false, awake: false },
   ],
 });
 a.equal(state.members.get('awake').state, 'awake');
@@ -51,7 +51,7 @@ a.equal(state.members.get('off').state, 'off');
 // the rail must not flatten its live work into the quiet awake state; a quota
 // limit must remain visibly unhealthy until the member is restarted.
 resetForTest();
-apply({ type: 'snapshot', roster: [{ name: 'coder', role: 'peasant', summoned: true, awake: true }] });
+apply({ type: 'snapshot', roster: [{ name: 'coder', role: 'agent', added: true, awake: true }] });
 apply({ type: 'agent', name: 'coder', state: 'verifying' });
 a.equal(state.members.get('coder').status, 'verifying', 'agent activity must survive reducer normalisation');
 a.equal(displayStatus(state.members.get('coder')), 'busy', 'verification must render as busy');
@@ -70,7 +70,7 @@ a.equal(statusLabel('mcp_tool_call'), 'working', 'unknown backend activity must 
 resetForTest();
 apply({
   type: 'snapshot',
-  roster: [{ name: 'orchestrator', role: 'orchestrator', summoned: true, awake: true }],
+  roster: [{ name: 'orchestrator', role: 'orchestrator', added: true, awake: true }],
   events: [
     { id: 1, agent: 'orchestrator', type: 'text', conversation_id: 'branch-a', payload: { text: 'A' } },
     { id: 2, agent: 'orchestrator', type: 'text', conversation_id: 'branch-b', payload: { text: 'B' } },
@@ -90,7 +90,7 @@ a.ok(state.conversations.some((conversation) => sameId(conversation.id, 'new-thr
   'a live conversation switch must add the new thread to the sidebar list');
 resetForTest();
 
-apply({ type: 'snapshot', roster: [{ name: 'orchestrator', role: 'orchestrator', summoned: true, awake: true }] });
+apply({ type: 'snapshot', roster: [{ name: 'orchestrator', role: 'orchestrator', added: true, awake: true }] });
 apply({ type: 'conversations', conversations: [{ id: 'default' }, { id: 'branch-a' }], active: 'branch-a' });
 a.equal(state.members.get('orchestrator').conversationId, 'branch-a',
   'the active conversation from the list response must survive the store boundary');
@@ -176,8 +176,34 @@ try {
 
 state.myTasksError = 'stale';
 apply({ type: 'myTasks', tasks: [{ id: 7, title: 'call the bank' }] });
-a.deepEqual(state.myTasks, [{ id: 7, title: 'call the bank' }], "a broadcast of the sovereign's list replaces it whole");
+a.deepEqual(state.myTasks, [{ id: 7, title: 'call the bank' }], "a broadcast of the user's list replaces it whole");
 a.equal(state.myTasksError, null, 'and clears a stale load error');
 apply({ type: 'inbox', items: [{ id: 'run:r1', tone: 'attention' }] });
 a.deepEqual(state.inbox, [{ id: 'run:r1', tone: 'attention' }], 'the inbox broadcast feeds the rail count');
-console.log('t-store.js OK — reducer keeps dismissal, roles, three states, and money semantics');
+
+// The context meter's state: seeded by the snapshot, moved by each 'spend'
+// event for that member, zeroed by a recycle or a compaction — which still
+// reach the notice list as they always did.
+resetForTest();
+apply({
+  type: 'snapshot',
+  roster: [{ name: 'orchestrator', role: 'orchestrator', added: true, awake: true }],
+  context: [{ name: 'orchestrator', tokens: 100_000, window: 400_000, pct: 25 }, { name: 'coder', tokens: 5, window: null, pct: null }],
+  spend: { today: { day: '2026-10-21', usd: 1.5, turns: 3, tokens: 9, timeZone: 'UTC' } },
+});
+a.equal(state.context.orchestrator.tokens, 100_000, 'the snapshot seeds the context meter');
+a.equal(state.spend.today.usd, 1.5, 'and today\'s spend rides in spend');
+apply({ type: 'spend', name: 'orchestrator', ctx: 200_000, window: 400_000, total: 2, today: { day: '2026-10-21', usd: 2, turns: 4, tokens: 10, timeZone: 'UTC' } });
+a.deepEqual([state.context.orchestrator.tokens, state.context.orchestrator.pct], [200_000, 50], 'a spend event moves its member\'s meter');
+a.equal(state.spend.today.usd, 2, 'and replaces today');
+apply({ type: 'spend', name: 'coder', ctx: 800 });
+a.equal(state.context.coder.window, null, 'an unknown window stays unknown');
+const noticesBefore = state.notices.length;
+apply({ type: 'compacted', name: 'orchestrator', before: 200_000, after: 0 });
+a.deepEqual([state.context.orchestrator.tokens, state.context.orchestrator.pct], [0, 0], 'a compaction empties the meter');
+a.equal(state.notices.length, noticesBefore + 1, 'and is still a notice');
+apply({ type: 'spend', name: 'orchestrator', ctx: 300 });
+apply({ type: 'recycled', name: 'orchestrator', note: 'n' });
+a.equal(state.context.orchestrator.tokens, 0, 'a threshold recycle empties it too');
+
+console.log('t-store.js OK — reducer keeps removal, roles, three states, money semantics, and the context meter');

@@ -1,15 +1,15 @@
-// What shape the court is in.
+// What shape the team is in.
 //
-// The court had exactly one shape: decompose, summon a crew, put every
+// The team had exactly one shape: decompose, add a crew, put every
 // specialist in an isolated git worktree, test what comes back, merge it. That
 // is right for writing code and wrong for the other three things this
 // application is actually used for. Asking a question spent an advisor call, an
-// orchestrator turn, a summon approval, a `git worktree add` and a peasant
+// orchestrator turn, an add approval, a `git worktree add` and an agent
 // carrying four thousand tokens of test doctrine — to produce a paragraph.
 //
 // A mode answers five questions, and they are the questions that differ:
 //
-//   crew        who may be summoned at all
+//   crew        who may be added at all
 //   worktrees   does a member get an isolated checkout
 //   merge       can work ever reach the base branch
 //   tasks       is there a shared task list
@@ -28,7 +28,7 @@
 
 /**
  * `crew: 'all'` is the whole configured bench; an array is a shortlist; an
- * empty array means this mode summons nobody at all.
+ * empty array means this mode adds nobody at all.
  */
 const LEGACY_MODES = {
   code: {
@@ -52,7 +52,7 @@ const LEGACY_MODES = {
       `Before you write the note, run contestable claims — numbers, named ` +
       `standards, citations, specific facts — past the fact-checker rather than ` +
       `trusting how confident they sound. If a finding is worth recording but ` +
-      `genuinely contestable, summon a defendant and a critic to argue it out ` +
+      `genuinely contestable, add a defendant and a critic to argue it out ` +
       `before you commit to it.`,
   },
   chat: {
@@ -66,7 +66,7 @@ const LEGACY_MODES = {
   },
   build: {
     label: 'Build',
-    blurb: 'Extend the court itself — skills, notes, instructions. Vault writes land; code stays on the branch.',
+    blurb: 'Extend the team itself — skills, notes, instructions. Vault writes land; code stays on the branch.',
     crew: ['writer', 'architect', 'strategist'],
     worktrees: true,
     merge: false,
@@ -84,11 +84,11 @@ const LEGACY_MODES = {
     workflows: true,
     pipeline:
       `You build and edit automations by calling workflow_save — translate what the ` +
-      `sovereign describes into a small JSON node graph plus a trigger, and save it ` +
+      `user describes into a small JSON node graph plus a trigger, and save it ` +
       `yourself; do not make them write the JSON. Node types: http (call a URL), ` +
       `delay (wait ms), log (record a line), set (write literal values into the ` +
       `run's context), condition (branch next to "then" or "else" on a value), bus ` +
-      `(post a message onto the court's own bus), transform (filter+pick over an ` +
+      `(post a message onto the team's own bus), transform (filter+pick over an ` +
       `array), foreach (repeat a small sub-chain over an array). Each node has an ` +
       `id, a type, a config, and next (another node's id, or {then,else} after a ` +
       `condition). Use "{{path.into.ctx}}" inside any config string to read a value ` +
@@ -117,8 +117,8 @@ export const MODES = {
 
 export const MODE_NAMES = Object.keys(MODES);
 export const DEFAULT_MODE = 'code';
-// Existing courts may still have one of these persisted. They continue as
-// Cowork, then Kingdom#start rewrites the config to the canonical key.
+// Existing teams may still have one of these persisted. They continue as
+// Cowork, then AgenticOS#start rewrites the config to the canonical key.
 export const MODE_ALIASES = Object.freeze({ research: 'cowork', build: 'cowork', automate: 'cowork' });
 
 /**
@@ -127,7 +127,7 @@ export const MODE_ALIASES = Object.freeze({ research: 'cowork', build: 'cowork',
  * This is read on every spawn, every tool call and every delivery. A typo in a
  * config file, a mode from a newer build, or a bus row written before modes
  * existed must all land somewhere sensible — and the sensible place is the
- * behaviour the court had before this file existed.
+ * behaviour the team had before this file existed.
  */
 export function modeOf(name) {
   return MODES[MODE_ALIASES[name] ?? name] ?? MODES[DEFAULT_MODE];
@@ -140,14 +140,14 @@ export const modeName = (name) => {
 };
 
 /**
- * Can this member be summoned in this mode?
+ * Can this member be added in this mode?
  *
- * The orchestrator and the briefer are exempt: they are the court's officers, they are
+ * The orchestrator and the briefer are exempt: they are the team's officers, they are
  * started with it, and a mode that could not talk to its own orchestrator would
  * be a mode with nothing to say. Only the bench is filtered.
  */
-export function canSummon(mode, name, role = 'peasant') {
-  if (role !== 'peasant') return true;
+export function canAdd(mode, name, role = 'agent') {
+  if (role !== 'agent') return true;
   const crew = modeOf(mode).crew;
   return crew === 'all' ? true : crew.includes(name);
 }
@@ -168,7 +168,7 @@ export function crewFor(mode, allNames = []) {
  * withhold is the step AFTER the report — the merge itself.
  */
 const GATED = {
-  crew:  ['summon', 'assign', 'propose_role', 'wake_member', 'dismiss_member'],
+  crew:  ['add_agent', 'assign', 'propose_role', 'wake_agent', 'remove_agent'],
   tasks: ['add_task', 'tasks', 'claim_task', 'finish_task', 'submit_plan', 'rule_on_plan'],
   merge: ['request_merge', 'send_back'],
   workflows: ['workflow_list', 'workflow_get', 'workflow_save', 'workflow_delete', 'workflow_run'],
@@ -189,12 +189,12 @@ export function toolAllowed(mode, tool) {
  * Baked in at spawn and cached with the rest of the prompt, which is correct
  * here: each mode has its own bench, so a member spawned under one mode is not
  * reused under another. A LIVE mode change is carried by a bus notice instead —
- * see kingdom.js, and the measurement beside it about what rewriting a cached
+ * see agenticos.js, and the measurement beside it about what rewriting a cached
  * prompt costs.
  */
 export function modeBlock(mode) {
   const m = modeOf(mode);
-  const lines = [`\n\n--- THIS COURT IS IN ${m.label.toUpperCase()} MODE ---`, m.blurb];
+  const lines = [`\n\n--- THIS TEAM IS IN ${m.label.toUpperCase()} MODE ---`, m.blurb];
   if (!m.merge) {
     lines.push(
       `NOTHING MERGES IN THIS MODE. Your worktree is yours and it stays on its ` +
@@ -204,7 +204,7 @@ export function modeBlock(mode) {
   if (!m.tasks) lines.push(`There is no shared task list in this mode.`);
   if (m.crew !== 'all' && !m.crew.length) {
     lines.push(
-      `There is no crew. Answer the sovereign yourself rather than proposing ` +
+      `There is no crew. Answer the user yourself rather than proposing ` +
       `anyone to do it for you — there is nobody to propose.`);
   }
   if (m.vaultDir) {
@@ -212,7 +212,7 @@ export function modeBlock(mode) {
       `THE DELIVERABLE IS A NOTE. Call vault_write with your findings — it lands ` +
       `under "${m.vaultDir}/" automatically in this mode, you do not need to put ` +
       `that in the title. Then say where you put it. A finding that lives only ` +
-      `in this transcript is one the court pays to discover again next month.`);
+      `in this transcript is one the team pays to discover again next month.`);
   }
   if (m.pipeline) lines.push(m.pipeline);
   return lines.join('\n') + '\n';
@@ -232,7 +232,7 @@ if (typeof process !== 'undefined' && process.argv?.[1]?.endsWith('modes.js')) {
     a.ok(m.label && m.blurb, `${n} needs a label and a blurb — both reach the UI`);
     a.ok(m.crew === 'all' || Array.isArray(m.crew), `${n}.crew must be 'all' or a list`);
   }
-  // The two the sovereign chose deliberately, asserted rather than assumed.
+  // The two the user chose deliberately, asserted rather than assumed.
   a.equal(MODES.code.merge, true);
   a.equal(MODES.cowork.merge, false, 'cowork never merges');
   a.equal(MODES.cowork.worktrees, true, 'isolation still protects delegated work');
@@ -250,17 +250,17 @@ if (typeof process !== 'undefined' && process.argv?.[1]?.endsWith('modes.js')) {
   a.equal(modeName('research'), 'cowork', 'legacy modes migrate to Cowork');
   a.equal(modeName('nonsense'), 'code');
 
-  // --- who may be summoned ---
-  a.equal(canSummon('code', 'compiler-engineer'), true, 'code offers the whole bench');
-  a.equal(canSummon('cowork', 'researcher'), true);
-  a.equal(canSummon('cowork', 'compiler-engineer'), false, 'not on the Cowork bench');
-  a.equal(canSummon('chat', 'researcher'), false, 'chat summons nobody');
+  // --- who may be added ---
+  a.equal(canAdd('code', 'tester'), true, 'code offers the whole bench');
+  a.equal(canAdd('cowork', 'researcher'), true);
+  a.equal(canAdd('cowork', 'tester'), false, 'not on the Cowork bench');
+  a.equal(canAdd('chat', 'researcher'), false, 'chat adds nobody');
   // The officers are never filtered: a mode that could not reach its own
   // orchestrator would have nothing to say.
-  a.equal(canSummon('chat', 'orchestrator', 'orchestrator'), true);
-  a.equal(canSummon('chat', 'briefer', 'briefer'), true);
+  a.equal(canAdd('chat', 'orchestrator', 'orchestrator'), true);
+  a.equal(canAdd('chat', 'briefer', 'briefer'), true);
 
-  const bench = ['researcher', 'coder', 'writer', 'compiler-engineer'];
+  const bench = ['researcher', 'coder', 'writer', 'tester'];
   a.deepEqual(crewFor('code', bench), bench);
   a.deepEqual(crewFor('cowork', bench), ['researcher', 'writer']);
   a.deepEqual(crewFor('chat', bench), []);
@@ -268,12 +268,12 @@ if (typeof process !== 'undefined' && process.argv?.[1]?.endsWith('modes.js')) {
   // --- the tool gate agrees with the table ---
   a.equal(toolAllowed('code', 'request_merge'), true);
   a.equal(toolAllowed('cowork', 'request_merge'), false);
-  a.equal(toolAllowed('chat', 'summon'), false, 'nobody to summon');
+  a.equal(toolAllowed('chat', 'add_agent'), false, 'nobody to add');
   a.equal(toolAllowed('chat', 'add_task'), false, 'no task list in chat');
   a.equal(toolAllowed('cowork', 'add_task'), true);
   a.equal(toolAllowed('cowork', 'workflow_save'), true);
   a.equal(toolAllowed('code', 'workflow_save'), false, 'workflow tools are Cowork-only');
-  a.equal(toolAllowed('cowork', 'summon'), true, 'Cowork has a crew');
+  a.equal(toolAllowed('cowork', 'add_agent'), true, 'Cowork has a crew');
   // The report survives everywhere; only the merge after it is withheld.
   for (const n of MODE_NAMES) {
     a.equal(toolAllowed(n, 'declare_done'), true, `${n} must still be able to report work`);

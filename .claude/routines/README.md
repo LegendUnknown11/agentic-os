@@ -7,7 +7,7 @@ Two files, and the split matters: [run.cmd](run.cmd) holds what each routine
 *does*, and [register.ps1](register.ps1) only decides *when*. Editing a routine's
 command means editing `run.cmd` and nothing else — no re-registration.
 
-Logs are written to `.kingdom/routines/`, which is gitignored. Routine output is
+Logs are written to `.agenticos/routines/`, which is gitignored. Routine output is
 per-machine evidence, not project state.
 
 | Routine | When | Does |
@@ -59,7 +59,7 @@ than exiting clean.
 A routine that fails should fail loudly. Check its log before assuming it ran:
 
 ```powershell
-Get-Content .kingdom\routines\handoff-sweep.log -Tail 40
+Get-Content .agenticos\routines\handoff-sweep.log -Tail 40
 ```
 
 ## A cloud runner
@@ -68,9 +68,9 @@ There is no cloud runner for this workspace today, and these three do not need
 one: `gate-log` needs this machine's Node and repository, and `handoff-sweep`
 edits tracked files that would then need merging back.
 
-If one is added, sync only the repository directory and leave `.kingdom/`
+If one is added, sync only the repository directory and leave `.agenticos/`
 unsynced — it holds per-machine paths, the SQLite bus, and the token store. In
-Syncthing terms that is one folder at the repository root with `.kingdom/`,
+Syncthing terms that is one folder at the repository root with `.agenticos/`,
 `node_modules/`, `dist/` and `.tmp-*` in its ignore patterns, which is the same
 set `.gitignore` already names. Point the remote runner's routines at the synced
 copy and keep `gate-log` local, since a shared log written from two machines

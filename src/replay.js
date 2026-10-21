@@ -3,27 +3,28 @@
 //
 //   node src/replay.js <repo> [settleMs] [backstopMs]
 //
-// Turn count drives this court's bill, and the settle window is the main knob
+// Turn count drives this team's bill, and the settle window is the main knob
 // over it. The temptation is to justify a change by grouping message timestamps
 // and counting clusters — that is easy, and it was 4× wrong: clustering said a
 // 60s window would cut the orchestrator from 131 turns to 85, while replaying the same
 // traffic through the REAL rule gave 7.6%. The gap is everything clustering
-// leaves out — the sovereign bypasses the window entirely, a busy member's
+// leaves out — the user bypasses the window entirely, a busy member's
 // queue already drains as one batch, and all-notice batches wait on their own
 // hold. So this replays the actual decision instead of approximating it.
 //
-// Read-only. Safe to run while the court is working.
+// Read-only. Safe to run while the team is working.
+import './legacy-boot.js'; // first: legacy env fallback and home migration, before any module reads env
 import { DatabaseSync } from 'node:sqlite';
 import { resolve } from 'node:path';
 import { dbPath } from './worktree.js';
-import { settleMs, BATCH_MAX_WAIT_MS, NOTICE_HOLD_MS } from './kingdom.js';
+import { settleMs, BATCH_MAX_WAIT_MS, NOTICE_HOLD_MS } from './agenticos.js';
 
 // The RULE below is a deliberate mirror (see replay() ). The NUMBERS are not:
 // they are imported, because a hand-kept copy of them had already drifted —
-// this read `settle: 45_000, backstop: 150_000` while the court had been
+// this read `settle: 45_000, backstop: 150_000` while the team had been
 // running 90s/180s for some time, so the tool the windows are tuned with was
 // sweeping against a baseline that no longer existed. Defaults are read lazily
-// so KINGDOM_SETTLE_MS still works.
+// so AGENTICOS_SETTLE_MS still works.
 export const DEFAULTS = {
   get settle() { return settleMs(); },
   get backstop() { return BATCH_MAX_WAIT_MS; },
@@ -32,7 +33,7 @@ export const DEFAULTS = {
 };
 
 /**
- * Replay a message log through the ripeness rule in Kingdom#deliver.
+ * Replay a message log through the ripeness rule in AgenticOS#deliver.
  *
  * Kept deliberately as a mirror rather than importing the real function: the
  * real one is a private method that also spawns agents and writes to the bus.
@@ -45,7 +46,7 @@ export function replay(msgs, opts = {}) {
 
   const queues = new Map();
   const busyUntil = new Map();
-  // Mirrors kingdom.js's `hadReal:` bus flag (see ripeness.js's `hadRealTurn`):
+  // Mirrors agenticos.js's `hadReal:` bus flag (see ripeness.js's `hadRealTurn`):
   // a lone notice may only ripen on its own once this recipient has actually
   // been delivered a real turn — otherwise a member's very first "turn" would
   // be manufactured from housekeeping traffic nobody sent it (#40).
@@ -75,7 +76,7 @@ export function replay(msgs, opts = {}) {
       const oldest = q[0].ts;
       const newest = q[q.length - 1].ts;
       const allNotices = q.every((m) => m.kind === 'notice');
-      const urgent = q.some((m) => m.sender === 'sovereign');
+      const urgent = q.some((m) => m.sender === 'user');
       const ripe = allNotices
         ? hadReal.has(name) && t - oldest > noticeHold
         : (urgent || t - newest >= settle) || t - oldest > backstop;
@@ -96,7 +97,7 @@ export function replay(msgs, opts = {}) {
   return {
     turns,
     delivered,
-    // Mean wait is the number that matters for a court working for hours; max
+    // Mean wait is the number that matters for a team working for hours; max
     // is the one that matters for the member sitting blocked on an answer.
     waitMeanMs: delivered ? Math.round(waitTotal / delivered) : 0,
     waitMaxMs: waitMax,
@@ -150,7 +151,7 @@ export function report(msgs, a, b) {
 if (process.argv[1]?.endsWith('replay.js') && !process.argv[2]) {
   const { strict: a } = await import('node:assert');
 
-  // The drift guard. A sweep is only meaningful against what the court is
+  // The drift guard. A sweep is only meaningful against what the team is
   // actually running, and this file used to hard-code a baseline that had gone
   // stale (45s/150s against a live 90s/180s) — silently, because nothing
   // compared them. Now they are the same numbers by construction, and this
@@ -160,7 +161,7 @@ if (process.argv[1]?.endsWith('replay.js') && !process.argv[2]) {
   a.equal(DEFAULTS.noticeHold, NOTICE_HOLD_MS, 'and the live notice hold');
   a.ok(DEFAULTS.backstop > DEFAULTS.settle,
     'a backstop at or below the window silently clamps it — the same invariant '
-    + 'kingdom.js asserts at delivery time');
+    + 'agenticos.js asserts at delivery time');
 
   // A quiet log: messages far apart, so no window folds anything and both
   // settings cost one turn each.
@@ -175,10 +176,10 @@ if (process.argv[1]?.endsWith('replay.js') && !process.argv[2]) {
   const wide = replay(burst, { settle: 45_000, turnMs: 1_000 }).turns;
   a.ok(wide < narrow, `a wider window must fold a burst it covers (${wide} vs ${narrow})`);
 
-  // The sovereign must never wait, at any window.
-  const human = [{ ts: 0, sender: 'sovereign', recipient: 'orchestrator', kind: 'assignment' }];
+  // The user must never wait, at any window.
+  const human = [{ ts: 0, sender: 'user', recipient: 'orchestrator', kind: 'assignment' }];
   a.equal(replay(human, { settle: 600_000 }).turns, 1,
-    "the sovereign's mail must be delivered regardless of the window");
+    "the user's mail must be delivered regardless of the window");
 
   // A notice must RIDE ALONG rather than buy its own turn. Stating it as "a
   // lone notice costs 0 turns" is untestable here — the replay runs past any
@@ -201,11 +202,11 @@ if (process.argv[1]?.endsWith('replay.js') && !process.argv[2]) {
     'mean wait must sit between zero and the max');
   const nowait = replay(human, { settle: 600_000, turnMs: 1_000 });
   a.ok(nowait.waitMaxMs < 1_000,
-    `the sovereign must not be recorded as waiting, got ${nowait.waitMaxMs}ms`);
+    `the user must not be recorded as waiting, got ${nowait.waitMaxMs}ms`);
 
   // issue #40 — a member with NO real turn behind it must never be given one
-  // by a lone notice, however long it waits: that is a turn the sovereign
-  // never asked for, answered by a member the sovereign never addressed.
+  // by a lone notice, however long it waits: that is a turn the user
+  // never asked for, answered by a member the user never addressed.
   const alone = [{ ts: 0, sender: 'orchestrator', recipient: 'orchestrator', kind: 'notice' }];
   a.equal(replay(alone, { noticeHold: 5_000 }).turns, 0,
     'a lone notice with no real history behind it must never manufacture a turn');
@@ -213,7 +214,7 @@ if (process.argv[1]?.endsWith('replay.js') && !process.argv[2]) {
   // Once a real turn HAS happened, a later lone notice still rides the
   // original rule: delayed, never dropped.
   const realThenAlone = [
-    { ts: 0, sender: 'sovereign', recipient: 'orchestrator', kind: 'assignment' },
+    { ts: 0, sender: 'user', recipient: 'orchestrator', kind: 'assignment' },
     { ts: 10_000, sender: 'orchestrator', recipient: 'orchestrator', kind: 'notice' },
   ];
   a.equal(replay(realThenAlone, { settle: 1_000, noticeHold: 5_000, turnMs: 1_000 }).turns, 2,
@@ -228,7 +229,7 @@ if (process.argv[1]?.endsWith('replay.js') && !process.argv[2]) {
 
   a.match(report(spaced, { settle: 15_000, backstop: 45_000 }, { settle: 45_000, backstop: 150_000 }),
     /messages replayed/);
-  console.log('replay.js self-check OK — folding, sovereign bypass, notice hold, backstop');
+  console.log('replay.js self-check OK — folding, user bypass, notice hold, backstop');
 }
 
 if (process.argv[1]?.endsWith('replay.js') && process.argv[2]) {

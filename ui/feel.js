@@ -24,8 +24,8 @@ function note(freq, { at = 0, len = 0.16, gain = 0.055, type = 'sine' } = {}) {
 }
 
 const CUES = {
-  summon: () => { note(392, { type: 'triangle' }); note(587.33, { at: 0.09, len: 0.24, type: 'triangle' }); },
-  dismiss: () => { note(392, { type: 'triangle', gain: 0.04 }); note(261.63, { at: 0.08, len: 0.2, type: 'triangle', gain: 0.04 }); },
+  add: () => { note(392, { type: 'triangle' }); note(587.33, { at: 0.09, len: 0.24, type: 'triangle' }); },
+  remove: () => { note(392, { type: 'triangle', gain: 0.04 }); note(261.63, { at: 0.08, len: 0.2, type: 'triangle', gain: 0.04 }); },
   approve: () => { note(523.25, { len: 0.12 }); note(783.99, { at: 0.07, len: 0.3 }); },
   reject: () => note(174.61, { len: 0.22, gain: 0.05, type: 'triangle' }),
 };

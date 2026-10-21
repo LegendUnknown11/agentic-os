@@ -22,7 +22,7 @@ Reduce model-call, token, prompt-cache, and MCP overhead without weakening corre
 ## Your ownership
 
 - `src/**`
-- `kingdom.config.json` only if an essential repository default must change
+- `agenticos.config.json` only if an essential repository default must change
 - `test/t-efficiency.js`
 - `test/t-advisor.js`
 - `test/t-summarize.js`
@@ -125,7 +125,7 @@ The following evidence is from 2026-09-10; refresh it before editing:
   - `activeOnly: boolean`
   - `detail: boolean`
   - `limit: number`
-- With no arguments, `roster` returns every member as compact `{name, role, title, awake, summoned}`.
+- With no arguments, `roster` returns every member as compact `{name, role, title, awake, added}`.
 - A query returns at most 20 matches by default.
 - `detail:true` additionally returns description, CLI, model, effort, and auto state.
 - Compress verbose descriptions and property help while retaining constraints and recovery instructions.

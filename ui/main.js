@@ -3,6 +3,8 @@ import { modeOf } from '/modes.js';
 import { attachHoverTips, modePermissionText } from './views/util.js';
 import * as Assets from './assets.js';
 import * as Notify from './notify.js';
+import { canonicalHash, hashFor, parseHash } from './routes.js';
+import { icon } from './icons.js';
 
 // The public and backend vocabulary are the same three choices.
 export const USER_MODES = Object.freeze([
@@ -28,29 +30,15 @@ const loadUI = () => uiReady ??= Promise.all([
 });
 
 const $ = (id) => document.getElementById(id);
-const VIEWS = new Set(['home', 'thread', 'approvals', 'changes', 'usage', 'activity', 'messages', 'agents', 'objective', 'memory', 'notes', 'automations', 'doctor', 'settings', 'tasks', 'inbox']);
 const KEYS = { a: 'approvals', d: 'changes', m: 'usage', c: 'activity', b: 'messages', e: 'agents', g: 'objective', r: 'memory', v: 'notes', f: 'automations' };
-const decodePart = (value) => {
-  try { return decodeURIComponent(value); } catch { return value; }
-};
-function routeOf() {
-  const parts = location.hash.slice(1).replace(/^\/+/, '').split('/');
-  const page = decodePart(parts.shift() ?? '');
-  if (page.startsWith('agent:')) return {
-    page: 'thread', member: decodePart(page.slice(6)), conversation: decodePart(parts.join('/') || 'default'),
-  };
-  if (page === 'thread') return {
-    page,
-    member: decodePart(parts.shift() || 'orchestrator'),
-    conversation: decodePart(parts.join('/') || 'default'),
-  };
-  return { page: VIEWS.has(page) ? page : 'home' };
-}
+// The route table lives in routes.js so the suite can exercise it without a
+// DOM. A retired id (approvals, agents, usage, ...) is an alias there.
+const routeOf = () => parseHash(location.hash);
 const viewName = () => routeOf().page;
 function routeFor(view) {
   const value = typeof view === 'object' && view ? view : { page: view };
   const page = String(value.page || 'home').replace(/^#?\/?/, '');
-  if (page !== 'thread') return page;
+  if (page !== 'thread') return canonicalHash(typeof view === 'object' && view ? { ...value, page } : page);
   return ['thread', encodeURIComponent(value.member ?? state.view?.member ?? 'orchestrator'),
     encodeURIComponent(value.conversation ?? state.view?.conversation ?? 'default')].join('/');
 }
@@ -157,14 +145,14 @@ function connect() {
     try {
       const event = JSON.parse(message.data);
       const firstSnapshot = event.type === 'snapshot' && !state.ready;
-      // The advisor can flip the court's mode on its own reading of one plain
-      // message (Kingdom#queueMode, by: 'advisor') — Chat becomes Cowork or
-      // Code with no sovereign click on the mode switcher at all. That is how
+      // The advisor can flip the team's mode on its own reading of one plain
+      // message (AgenticOS#queueMode, by: 'advisor') — Chat becomes Cowork or
+      // Code with no user click on the mode switcher at all. That is how
       // "I thought it was only one prompt" turns into unexplained delegation:
       // the header text updated, but nothing said why or that it wasn't the
-      // sovereign's own choice. A mode change the sovereign clicked already
+      // user's own choice. A mode change the user clicked already
       // gets its own notice from chooseMode(); this covers every other one.
-      if (event.type === 'mode' && event.by && event.by !== 'sovereign') {
+      if (event.type === 'mode' && event.by && event.by !== 'user') {
         const target = event.pending ?? event.mode;
         const label = USER_MODE_BY_ID.get(userModeOf(target))?.label ?? target;
         const reason = event.why ? ` — ${event.why}` : '';
@@ -227,25 +215,44 @@ async function refreshLists() {
 }
 
 async function maybeOpenDoctor(firstSnapshot) {
-  if (!firstSnapshot || doctorProbe || location.hash.slice(1)) return;
+  if (!firstSnapshot || doctorProbe) return;
   doctorProbe = true;
+  // Doctor is a Settings tab now, so a failing check must reach you without a
+  // visit: the report is kept (state.doctor) and the rail and Inbox read it.
+  const openAtBoot = !location.hash.slice(1);
   const bootEventCount = eventsApplied;
   const report = await get('/api/doctor');
+  if (report && report.ok !== false) { state.doctor = report; apply({ type: '__doctor__' }); }
   // The probe is async and can resolve well after boot. Anything that
   // happened while it was in flight — a run created, an event streamed in —
-  // means the sovereign is already mid-task, and grabbing the screen for a
+  // means the user is already mid-task, and grabbing the screen for a
   // first-run health check at that point isn't a greeting, it's an
   // interruption. eventsApplied mirrors the connectionAttempt staleness
   // check above: if it moved since the probe started, the probe's result no
   // longer describes "nothing has happened yet" and must not act.
-  if (report?.ready === false && !location.hash.slice(1) && eventsApplied === bootEventCount) navigate('doctor');
+  if (openAtBoot && report?.ready === false && !location.hash.slice(1) && eventsApplied === bootEventCount) navigate('doctor');
+}
+
+// What the header names: the page, or for a run its conversation's title. The
+// view's own h1 stays for assistive tech but is not drawn twice.
+const PAGE_TITLES = { home: 'Overview', inbox: 'Inbox', team: 'Team', knowledge: 'Knowledge', automations: 'Automations', settings: 'Settings', changes: 'Changes', tasks: 'Tasks' };
+function headerTitle() {
+  const view = state.view ?? {};
+  if (view.page !== 'thread') return PAGE_TITLES[view.page] ?? 'Overview';
+  const list = Array.isArray(state.conversations) ? state.conversations : state.conversations?.conversations ?? state.conversations?.items ?? [];
+  const id = view.conversation ?? state.conversations?.active;
+  const row = list.find((item) => String(item?.id ?? item?.conversationId) === String(id));
+  return view.member && view.member !== 'orchestrator' ? view.member : (row?.title || 'New chat');
 }
 
 function renderShell() {
   const header = $('header');
   if (header && !header.dataset.foundation) {
     header.dataset.foundation = '1';
-    header.innerHTML = '<div class="app-identity"><span class="brand">Agentic OS</span><span class="brand-tag">your team, in one place</span></div><span class="repo"></span><span class="header-sep" aria-hidden="true">·</span><span class="goal-context"></span><nav class="mode-switcher" aria-label="Work mode"></nav><button class="mobile-menu" type="button" aria-controls="sidebar" aria-expanded="false">Menu</button><span class="connection" aria-label="Connection"></span>';
+    header.innerHTML = '<div class="app-identity"><span class="brand">Agentic OS</span><span class="brand-tag">your team, in one place</span></div><span class="header-title"></span><span class="repo"></span><span class="connection" aria-label="Connection"></span><span class="goal-context"></span><nav class="mode-switcher" aria-label="Work mode"></nav><button class="header-search" type="button" aria-keyshortcuts="Control+K" aria-label="Search"><span class="header-search-box"><span class="header-search-label">Search</span><span class="header-search-hint">Ctrl K</span></span></button><button class="mobile-menu" type="button" aria-controls="sidebar" aria-expanded="false">Menu</button>';
+    const search = header.querySelector('.header-search-box');
+    search.prepend(icon('search', 13));
+    header.querySelector('.header-search').addEventListener('click', openSearch);
     const switcher = header.querySelector('.mode-switcher');
     for (const choice of USER_MODES) {
       const button = document.createElement('button');
@@ -278,6 +285,8 @@ function renderShell() {
     button.setAttribute('aria-pressed', String(selected));
     button.disabled = modeRequest > 0 || !ready;
   }
+  const title = header?.querySelector('.header-title');
+  if (title) title.textContent = headerTitle();
   const repo = header?.querySelector('.repo');
   if (repo) repo.textContent = ready ? (state.repo ? `${String(state.repo).split(/[\\/]/).pop()}${state.base ? ` · ${state.base}` : ''}` : 'no repository') : 'Connecting…';
   const goal = header?.querySelector('.goal-context');
@@ -293,6 +302,10 @@ function renderShell() {
 }
 
 function renderCurrent() { renderShell(); }
+
+function openSearch() {
+  import('./palette.js').then((palette) => palette.openPalette({ state, navigate }));
+}
 
 function openMobileNav() {
   document.body.classList.add('sidebar-open');
@@ -375,7 +388,7 @@ async function chooseMode(id) {
   const request = ++modeRequest;
   modeNotice = `Switching to ${choice.label}… ${choice.action}`;
   renderShell();
-  const result = await post('mode', { mode: backend, why: `sovereign chose ${choice.label}` });
+  const result = await post('mode', { mode: backend, why: `you chose ${choice.label}` });
   if (request !== modeRequest) return;
   modeRequest = 0;
   if (!result?.ok) {
@@ -411,6 +424,12 @@ export async function mount(name = viewName()) {
   const route = routeOf();
   setView(route.page === 'thread' && name === 'thread' ? route : name);
   syncStreamScope();
+  if (route.tab) state.tabs = { ...state.tabs, [route.page]: route.tab };
+  if (route.section) state.settingsSection = route.section;
+  if (route.open === 'objective') state.homeEdit = true;
+  // A retired id (#usage, #approvals) is rewritten to the address of the page
+  // that hosts it, so a reload or a copied link names where the view lives now.
+  if (route.page !== 'thread' && location.hash.slice(1) !== hashFor(route)) history.replaceState(null, '', `#${hashFor(route)}`);
   state.modeDef = modeOf(state.mode);
   const host = $('view');
   if (!host) return;
@@ -425,7 +444,8 @@ export async function mount(name = viewName()) {
   else globalThis.setTimeout?.(reveal, 0);
   const context = {
     state, root, header: $('header'), composer: $('composer'), post, get, navigate, toast, refreshLists,
-    sovereign: !state.view?.member || state.view.member === 'orchestrator',
+    user: !state.view?.member || state.view.member === 'orchestrator',
+    tab: route.tab,
   };
   const listsRefresh = refreshLists();
   const mounted = name === 'thread'
@@ -445,7 +465,10 @@ export async function mount(name = viewName()) {
 }
 
 function mountRoute(name = viewName()) {
-  if (name !== 'notes') noteRequest++;
+  // Opening a vault note navigates to Knowledge > Notes and starts its own
+  // load first; any other landing invalidates a note load still in flight.
+  const route = routeOf();
+  if (!(route.page === 'knowledge' && route.tab === 'notes')) noteRequest++;
   const sequence = mountSequence + 1;
   return mount(name).catch((error) => showViewFailure(error, sequence));
 }
@@ -495,6 +518,17 @@ function onKeydown(event) {
       focusable[event.shiftKey ? last : 0].focus();
     }
     return;
+  }
+  // Ctrl/Cmd K searches; Ctrl/Cmd N starts a run. A modified key types nothing,
+  // so both work from inside a text field too.
+  if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey) {
+    const key = event.key.toLowerCase();
+    if (key === 'k') { event.preventDefault(); openSearch(); return; }
+    if (key === 'n' && !document.body.classList.contains('sidebar-open')) {
+      event.preventDefault();
+      $('sidebar')?.querySelector('[data-action="new"]')?.click();
+      return;
+    }
   }
   if (!event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
   const view = KEYS[event.key.toLowerCase()];

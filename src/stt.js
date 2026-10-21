@@ -1,7 +1,7 @@
 // Dictation, borrowed from SpeechBird.
 //
 // SpeechBird already has faster-whisper, `av` (so it decodes the browser's
-// webm/opus with no ffmpeg), and a model the sovereign has downloaded and
+// webm/opus with no ffmpeg), and a model the user has downloaded and
 // tuned. Rather than ship a second Whisper or pay a cloud API, we run one warm
 // worker inside its virtualenv — see stt_worker.py.
 //
@@ -46,7 +46,7 @@ export class Speech {
 
   #start() {
     const py = this.python();
-    if (!py) throw new Error('SpeechBird not found — set "speechbird" in kingdom.config.json.');
+    if (!py) throw new Error('SpeechBird not found — set "speechbird" in agenticos.config.json.');
 
     const proc = spawn(py, [WORKER], {
       cwd: this.dir, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true,
@@ -96,7 +96,7 @@ export class Speech {
     this.pending = null;
     clearTimeout(p.timer);
     // The decoder quotes the temp file it failed on; nobody wants to read that.
-    if (o.error) p.reject(new Error(String(o.error).replace(/'[^']*kingdom-stt-[^']*'/g, 'the recording')));
+    if (o.error) p.reject(new Error(String(o.error).replace(/'[^']*agenticos-stt-[^']*'/g, 'the recording')));
     else p.resolve(o.text ?? '');
   }
 
@@ -110,7 +110,7 @@ export class Speech {
     const fresh = !this.proc;
     if (fresh) this.#start();
 
-    const dir = mkdtempSync(join(tmpdir(), 'kingdom-stt-'));
+    const dir = mkdtempSync(join(tmpdir(), 'agenticos-stt-'));
     const file = join(dir, `clip.${ext.replace(/[^a-z0-9]/gi, '') || 'webm'}`);
     writeFileSync(file, audio);
 

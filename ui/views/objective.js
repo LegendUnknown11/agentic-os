@@ -6,11 +6,13 @@ function bind(state, root, render) {
   return () => off?.();
 }
 
-export function renderObjective(state, root) {
-  root.replaceChildren();
+/**
+ * The objective editor: outcome, milestones, clear. It used to be the whole
+ * Objective page; Overview now hosts it inline (2026-10-21), and the page
+ * keeps rendering it for the retired #objective address.
+ */
+export function objectiveSection(state, rerender) {
   const goal = state.goal;
-  const shell = page('Objective', 'The standing outcome every new member is told about.');
-  if (state.ready === false) { shell.append(section('Outcome', empty('Loading the objective…'))); root.append(shell); return; }
   const text = textarea(goal?.text ?? '', 'What is the team working towards?');
   const feedback = note('', 'danger');
   feedback.hidden = true;
@@ -23,6 +25,7 @@ export function renderObjective(state, root) {
     try {
       const result = await post('goal', { text: value });
       if (result?.ok === false) showFailure(result.error ?? 'Could not save the objective.');
+      else rerender?.();
     } catch (error) { showFailure(error?.message ?? 'Could not save the objective.'); }
     finally { save.disabled = false; }
   }, 'primary');
@@ -66,12 +69,20 @@ export function renderObjective(state, root) {
       try {
         const result = await post('goal', { text: null });
         if (result?.ok === false) showFailure(result.error ?? 'Could not clear the objective.');
+        else rerender?.();
       } catch (error) { showFailure(error?.message ?? 'Could not clear the objective.'); }
       finally { clear.disabled = false; }
     }, 'danger');
     body.append(clear);
   }
-  shell.append(body, startRunSection(state, () => { if (root.isConnected !== false) renderObjective(state, root); }));
+  return body;
+}
+
+export function renderObjective(state, root) {
+  root.replaceChildren();
+  const shell = page('Objective', 'The standing outcome every new member is told about.');
+  if (state.ready === false) { shell.append(section('Outcome', empty('Loading the objective…'))); root.append(shell); return; }
+  shell.append(objectiveSection(state), startRunSection(state, () => { if (root.isConnected !== false) renderObjective(state, root); }));
   root.append(shell);
 }
 

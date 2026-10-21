@@ -1,13 +1,13 @@
 import { strict as a } from 'node:assert';
 import { readFileSync } from 'node:fs';
 import { changeStage, pushState } from '../ui/views/pages.js';
-import { modelLabel, turnsText } from '../ui/views/util.js';
+import { modelLabel, money, turnsText } from '../ui/views/util.js';
 import { lastMessageIdFor } from '../ui/sidebar.js';
-import { taskMeta, visibleQueueRows } from '../ui/views/home.js';
-import { courtActionError } from '../ui/views/courts.js';
+import { runAgent, spendToday, taskMeta, visibleQueueRows } from '../ui/views/home.js';
+import { teamActionError } from '../ui/views/teams.js';
 import { resolvedOutcome } from '../ui/views/approvals.js';
 import { assignable, dueState, loadMyTasks, orderTasks } from '../ui/views/tasks.js';
-import { loadInbox, waitingCount } from '../ui/views/inbox.js';
+import { doctorItem, loadInbox, waitingCount } from '../ui/views/inbox.js';
 import { daysText, parseDays, triggerText } from '../ui/views/automations.js';
 import { draftFrom, loadRunTemplates, runBody } from '../ui/views/start-run.js';
 import { cancelMetrics, cancelRunSpend, loadMetrics, loadRunSpend, metricsView, recommendationFor, spendGeometry, warningFor } from '../ui/views/usage.js';
@@ -21,7 +21,7 @@ const sidebarSource = readFileSync(new URL('../ui/sidebar.js', import.meta.url),
 const assetsSource = readFileSync(new URL('../ui/assets.js', import.meta.url), 'utf8');
 const graphSource = readFileSync(new URL('../ui/graph.js', import.meta.url), 'utf8');
 const petSource = readFileSync(new URL('../ui/pet.js', import.meta.url), 'utf8');
-const courtPreloadSource = readFileSync(new URL('../electron/court-preload.cjs', import.meta.url), 'utf8');
+const teamPreloadSource = readFileSync(new URL('../electron/team-preload.cjs', import.meta.url), 'utf8');
 const electronMainSource = readFileSync(new URL('../electron/main.js', import.meta.url), 'utf8');
 const threadSource = readFileSync(new URL('../ui/thread.js', import.meta.url), 'utf8');
 const utilSource = readFileSync(new URL('../ui/views/util.js', import.meta.url), 'utf8');
@@ -40,7 +40,7 @@ a.equal(changeStage(state, 'coder', '1 file | 2 ++').status, 'merged', 'a succes
 a.equal(changeStage(state, 'coder', '2 files | 3 ++').status, 'review', 'new work resets the prior result to review');
 
 state.changeLifecycle.coder = { status: 'review', stat: '2 files | 3 ++' };
-state.notices.push({ type: 'mergeFailed', peasant: 'coder', message: 'conflict' });
+state.notices.push({ type: 'mergeFailed', agent: 'coder', message: 'conflict' });
 a.equal(changeStage(state, 'coder', '2 files | 3 ++').status, 'failed', 'a refused merge keeps a retryable result');
 
 const code = { modeDef: { worktrees: true, merge: true }, approvals: [] };
@@ -73,7 +73,7 @@ for (const [name, source] of Object.entries(viewSources)) {
   a.match(source, new RegExp(`export function render${title}`), `${name} must own its renderer`);
   a.doesNotMatch(pagesOnlySource, new RegExp(`/\\* ${title} -{4,}`), `the page registry must not absorb ${name}`);
 }
-a.match(pagesSource, /post\('summon'/, 'the Team page must request a summon approval');
+a.match(pagesSource, /post\('add'/, 'the Team page must request an add approval');
 a.doesNotMatch(pagesSource, /on && member\.awake \? 'sleep' : 'wake'/, 'adding an agent must not bypass approval with wake');
 a.match(settingsSource, /picked\.path/, 'the native repository picker result must use its returned path');
 a.match(settingsSource, /aria-label': 'Settings sections'/, 'Settings navigation must have a spoken region name');
@@ -84,45 +84,45 @@ a.doesNotMatch(settingsSource, /\['summary', 'Summaries'\]|\['advisor', 'Advisor
 a.match(settingsSource, /type: 'button', style: \{ backgroundImage/, 'Settings asset tiles must never submit a surrounding form');
 a.match(settingsSource, /tab\.setAttribute\('aria-current', 'page'\)/, 'Settings must expose its active section to assistive technology');
 a.match(settingsSource, /picked\.error/, 'a rejected native repository pick must be visible in Settings');
-a.match(settingsSource, /try \{\s*const picked = await window\.kingdomShell\.chooseRepo\(\);[\s\S]*?catch \(error\)/, 'a native repository picker rejection must be visible in Settings');
+a.match(settingsSource, /try \{\s*const picked = await window\.agenticosShell\.chooseRepo\(\);[\s\S]*?catch \(error\)/, 'a native repository picker rejection must be visible in Settings');
 a.match(settingsSource, /Could not attach that repository\./, 'a failed repository attach must be visible in Settings');
 a.match(settingsSource, /attach\.disabled = false/, 'a failed repository attach must be retryable');
 a.match(settingsSource, /Attached: \$\{result\.repo \?\? value\}/, 'a successful repository attach must be confirmed immediately');
-a.match(settingsSource, /window\.kingdomShell\?\.openPet \? window\.kingdomShell\.openPet\(\) : window\.open/, 'the native desk-pet control must use its IPC bridge');
-a.match(courtPreloadSource, /openPet: \(\) => ipcRenderer\.send\('pet:open'\)/, 'the court preload must expose the desk-pet command');
+a.match(settingsSource, /window\.agenticosShell\?\.openPet \? window\.agenticosShell\.openPet\(\) : window\.open/, 'the native desk-pet control must use its IPC bridge');
+a.match(teamPreloadSource, /openPet: \(\) => ipcRenderer\.send\('pet:open'\)/, 'the team preload must expose the desk-pet command');
 a.match(electronMainSource, /ipcMain\.on\('pet:open', openPet\)/, 'the native main process must reopen the desk pet');
 a.match(electronMainSource, /spawn\(node, \[[\s\S]*?windowsHide: true/, 'the daemon spawn must not flash a console window on Windows startup');
 
 // Issue #42: attachRepo still refuses a live repo swap on purpose
-// (src/kingdom.js, locked in by test/t-control.js's "requires a fresh
-// court" pin) — but the app no longer makes the sovereign hit that wall
-// before offering a fix. The fail-first gating that used to hide "End court
+// (src/agenticos.js, locked in by test/t-control.js's "requires a fresh
+// team" pin) — but the app no longer makes the user hit that wall
+// before offering a fix. The fail-first gating that used to hide "End team
 // and switch…" until attachRepo actually failed is gone: it is offered up
-// front, alongside the non-destructive courts switcher (open that repo's OWN
-// court instead of ending this one) — see ui/views/courts.js.
+// front, alongside the non-destructive teams switcher (open that repo's OWN
+// team instead of ending this one) — see ui/views/teams.js.
 a.doesNotMatch(settingsSource, /switchRepo\.hidden = false/, 'the repository switcher must no longer be revealed conditionally after a failed attach — it is offered up front');
-a.match(settingsSource, /const switchRepo = window\.kingdomShell\?\.switchRepo \? button\('End workspace and switch to this repository…', async \(\) => \{/, 'the repository switcher must be offered whenever the shell bridge exists, not gated behind a prior failure');
-a.match(settingsSource, /const result = await window\.kingdomShell\.switchRepo\(path\.value\.trim\(\)\);/, 'switching repositories must go through the dedicated shell bridge, not attachRepo');
-a.match(settingsSource, /import \{ courtsSwitcher, refreshCourts \} from '\.\/courts\.js';/, 'the Repository panel must draw its live court list from the courts switcher module');
-a.match(settingsSource, /courtsSwitcher\(state, rerender\)\);/, 'the Repository panel must render the courts switcher');
+a.match(settingsSource, /const switchRepo = window\.agenticosShell\?\.switchRepo \? button\('End workspace and switch to this repository…', async \(\) => \{/, 'the repository switcher must be offered whenever the shell bridge exists, not gated behind a prior failure');
+a.match(settingsSource, /const result = await window\.agenticosShell\.switchRepo\(path\.value\.trim\(\)\);/, 'switching repositories must go through the dedicated shell bridge, not attachRepo');
+a.match(settingsSource, /import \{ teamsSwitcher, refreshTeams \} from '\.\/teams\.js';/, 'the Repository panel must draw its live team list from the teams switcher module');
+a.match(settingsSource, /teamsSwitcher\(state, rerender\)\);/, 'the Repository panel must render the teams switcher');
 a.match(settingsSource, /if \(result\?\.canceled\)/, 'a cancelled repository switch must leave the control usable again, not stuck disabled');
-// Court switcher rows are addressed by PORT: a repo-less court has no path,
-// several can run at once, and passing null used to focus the wrong court.
-const courtsSource = readFileSync(new URL('../ui/views/courts.js', import.meta.url), 'utf8');
-a.match(courtsSource, /focusCourt\(court\.port\)/, 'Open/Focus must target the selected court by its port');
-a.match(courtsSource, /endCourt\(court\.port\)/, 'End must target the selected court by its port');
-a.doesNotMatch(courtsSource, /openCourt\(court\.repo\)|endCourt\(court\.repo\)/, 'no row action may name a court by its (possibly null) repo');
-a.match(courtPreloadSource, /focusCourt: \(port\) => ipcRenderer\.invoke\('courts:focus', port\)/, 'the preload must expose focus-by-port');
-a.match(courtPreloadSource, /endCourt: \(port\) => ipcRenderer\.invoke\('courts:end', port\)/, 'the preload must expose end-by-port');
-a.match(electronMainSource, /ipcMain\.handle\('courts:focus'/, 'Electron must handle focus-by-port');
+// Team switcher rows are addressed by PORT: a repo-less team has no path,
+// several can run at once, and passing null used to focus the wrong team.
+const teamsSource = readFileSync(new URL('../ui/views/teams.js', import.meta.url), 'utf8');
+a.match(teamsSource, /focusTeam\(team\.port\)/, 'Open/Focus must target the selected team by its port');
+a.match(teamsSource, /endTeam\(team\.port\)/, 'End must target the selected team by its port');
+a.doesNotMatch(teamsSource, /openTeam\(team\.repo\)|endTeam\(team\.repo\)/, 'no row action may name a team by its (possibly null) repo');
+a.match(teamPreloadSource, /focusTeam: \(port\) => ipcRenderer\.invoke\('teams:focus', port\)/, 'the preload must expose focus-by-port');
+a.match(teamPreloadSource, /endTeam: \(port\) => ipcRenderer\.invoke\('teams:end', port\)/, 'the preload must expose end-by-port');
+a.match(electronMainSource, /ipcMain\.handle\('teams:focus'/, 'Electron must handle focus-by-port');
 // A failed start, open or end must say why instead of just resetting.
-a.equal(courtActionError({ ok: false, error: 'the workspace refused to end (HTTP 415)' }, 'x'), 'the workspace refused to end (HTTP 415)');
-a.equal(courtActionError({ ok: false }, 'Could not end that workspace.'), 'Could not end that workspace.', 'a failure with no message uses the fallback');
-a.equal(courtActionError({ ok: true }, 'x'), null);
-a.equal(courtActionError({ canceled: true }, 'x'), null, 'a cancelled confirmation is not an error');
-a.match(courtsSource, /state\.courtsError \? \[note\(state\.courtsError, 'danger'\)\]/, 'a switcher failure must render as a visible danger note');
-a.match(courtPreloadSource, /switchRepo: \(path\) => ipcRenderer\.invoke\('court:switchRepo', path\)/, 'the court preload must expose the repository-switch command');
-a.match(electronMainSource, /ipcMain\.handle\('court:switchRepo', async \(event, rawPath\) => \{\s*\n\s*const port = courtPortOf\(event\.sender\.getURL\(\), PORT\);\s*\n\s*const origin = originFor\(port\);\s*\n\s*return switchRepo\(rawPath, \{/, 'the native main process must own ending and respawning the court — the one the requesting window shows, not always the default port');
+a.equal(teamActionError({ ok: false, error: 'the workspace refused to end (HTTP 415)' }, 'x'), 'the workspace refused to end (HTTP 415)');
+a.equal(teamActionError({ ok: false }, 'Could not end that workspace.'), 'Could not end that workspace.', 'a failure with no message uses the fallback');
+a.equal(teamActionError({ ok: true }, 'x'), null);
+a.equal(teamActionError({ canceled: true }, 'x'), null, 'a cancelled confirmation is not an error');
+a.match(teamsSource, /state\.teamsError \? \[note\(state\.teamsError, 'danger'\)\]/, 'a switcher failure must render as a visible danger note');
+a.match(teamPreloadSource, /switchRepo: \(path\) => ipcRenderer\.invoke\('team:switchRepo', path\)/, 'the team preload must expose the repository-switch command');
+a.match(electronMainSource, /ipcMain\.handle\('team:switchRepo', async \(event, rawPath\) => \{\s*\n\s*const port = teamPortOf\(event\.sender\.getURL\(\), PORT\);\s*\n\s*const origin = originFor\(port\);\s*\n\s*return switchRepo\(rawPath, \{/, 'the native main process must own ending and respawning the team — the one the requesting window shows, not always the default port');
 // The step sequence itself (validate before confirm, confirm before
 // shutdown, shutdown before startDaemon, reload only after it answers) is a
 // plain function in electron/switch-repo.js, exercised end-to-end without
@@ -131,16 +131,16 @@ a.match(electronMainSource, /ipcMain\.handle\('court:switchRepo', async \(event,
 // This suite only has to pin that main.js wires REAL dependencies into it.
 a.match(electronMainSource, /import \{ assertRepo \} from '\.\.\/src\/worktree\.js'/, 'a repository switch must validate the target with a real git check (assertRepo), not an existsSync(.git) peek a corrupt or empty entry would pass');
 a.match(electronMainSource, /assertRepo,\s*\n\s*confirm: async \(repo\) => \{/, 'a repository switch must use the real git validator, not a bespoke check');
-a.match(electronMainSource, /buttons: \['Cancel', 'End workspace and switch'\][\s\S]*?return response === 1;/, 'ending a court is destructive — it must be confirmed natively before anything is torn down');
-a.match(electronMainSource, /firstLaunchPlan\(repo, repo \? await listCourts\(\) : \[\], running\)/,
-  'the first launch must consult the court registry before falling back to the pinned port');
-a.match(electronMainSource, /openWindow\(targetPort\);/, 'the first window must open the court the launch plan chose');
-a.match(electronMainSource, /shutdown: \(\) => requestShutdown\(origin\)/, 'a repository switch must end the requesting window\'s court through its own shutdown endpoint');
+a.match(electronMainSource, /buttons: \['Cancel', 'End workspace and switch'\][\s\S]*?return response === 1;/, 'ending a team is destructive — it must be confirmed natively before anything is torn down');
+a.match(electronMainSource, /firstLaunchPlan\(repo, repo \? await listTeams\(\) : \[\], running\)/,
+  'the first launch must consult the team registry before falling back to the pinned port');
+a.match(electronMainSource, /openWindow\(targetPort\);/, 'the first window must open the team the launch plan chose');
+a.match(electronMainSource, /shutdown: \(\) => requestShutdown\(origin\)/, 'a repository switch must end the requesting window\'s team through its own shutdown endpoint');
 // A bare POST is 415'd by the daemon's JSON gate while fetch() still resolves,
-// so it looked like success and the court kept running.
+// so it looked like success and the team kept running.
 a.doesNotMatch(electronMainSource, /fetch\([^)]*\/api\/shutdown`, \{ method: 'POST' \}\)/,
   'no shutdown POST may omit the JSON content type the daemon requires');
-a.match(electronMainSource, /courtOnPort: \(\) => courtOnPort\(origin\),\s*\n\s*startDaemon: \(repo, logPath\) => startDaemon\(repo, logPath, port\),/, 'a repository switch must poll that court\'s real port and start the fresh court on it through the same path the app itself boots with');
+a.match(electronMainSource, /teamOnPort: \(\) => teamOnPort\(origin\),\s*\n\s*startDaemon: \(repo, logPath\) => startDaemon\(repo, logPath, port\),/, 'a repository switch must poll that team\'s real port and start the fresh team on it through the same path the app itself boots with');
 a.match(electronMainSource, /reload: \(\) => BrowserWindow\.fromWebContents\(event\.sender\)\?\.loadURL\(`\$\{origin\}\/`\)/, 'a successful repository switch must reload the window instead of resuming a stale event cursor from the old repo');
 a.match(automationsSource, /workflow-run-message/, 'a manual workflow run must leave visible feedback');
 a.match(automationsSource, /result\?\.steps/, 'workflow feedback must report the returned run trace');
@@ -188,19 +188,31 @@ a.match(homeSource, /if \(next === snapshot\) return;/, 'unrelated stream events
 a.match(homeSource, /let queueExpanded = false/, 'Home queue disclosure must survive live store repaints');
 a.match(homeSource, /visibleQueueRows\(queueRows, queueExpanded\)/, 'Home must render the full queue when its disclosure is expanded');
 a.match(homeSource, /setQueueExpanded/, 'Home queue disclosure must have a local toggle action');
-a.match(homeSource, /state\.ready === false/, 'Home must not present empty data before the first court snapshot');
+a.match(homeSource, /state\.ready === false/, 'Home must not present empty data before the first team snapshot');
 a.doesNotMatch(homeSource, /home-card-empty/, 'sparse Home must not render empty secondary cards');
 a.match(homeSource, /class: 'home-empty'/, 'an empty Home must keep one quiet next-step cue');
 a.match(homeSource, /!taskFailure && !queueVisible && !workingVisible && !changesVisible/, 'Home must only show secondary blocks when they contain work');
 a.doesNotMatch(homeSource, /home-mode-card|modeCard/, 'Overview must not carry a mode card — mode lives in the header and drawer only');
-a.match(homeSource, /home-objective/, 'Home must keep the objective as an ambient card');
-a.match(homeSource, /grid\.append\(ambient\);[\s\S]*?if \(!runSummary && !next && !urgent\.length/, 'the objective must render last, after every urgent and secondary card');
-// Seen live 2026-09-21 on a fresh court: the lead "Next step" card and the
+a.match(homeSource, /home-objective-block/, 'Overview leads with the objective as its headline');
+a.match(homeSource, /objectiveSection\(state, /, 'the objective editor is on Overview now, not a page of its own');
+a.match(homeSource, /startRunSection\(state, /, 'Start a run is on Overview now');
+a.match(homeSource, /get\('\/api\/runSpend'\)/, 'the Runs table reads every run and what it spent from the daemon');
+// The canvas's Agent column and "Spend today", now that the daemon records both.
+a.equal(runAgent({ lead: 'orchestrator', agents: ['coder'] }), 'orchestrator', 'a run\'s recorded lead is its agent');
+a.equal(runAgent({ lead: null, agents: ['coder', 'reviewer'] }), 'coder', 'else whoever spent most on it');
+a.equal(runAgent({ lead: null, agents: [] }), '—', 'and nothing invented for a run with neither');
+a.equal(spendToday({ today: { day: '2026-10-21', usd: 1.25 } }), money(1.25));
+a.equal(spendToday({ total: 9 }), '—', 'lifetime spend is never shown as today\'s');
+a.match(homeSource, /stat\('Spend today', spend, 'mono'\)/, 'Overview counts today\'s spend, labelled as such');
+a.match(homeSource, /h\('th', \{ scope: 'col', text: 'Agent' \}\)/, 'the Runs table has the canvas\'s Agent column');
+a.match(threadSource, /action === 'compact-session'/, 'the inspector\'s Compact session button is wired');
+a.match(threadSource, /post\('compactSession', \{ name: member \}\)/, 'it posts the daemon action, not a parallel path');
+a.match(threadSource, /if \(!mounted \|\| root\.isConnected === false\) return;\s*if \(result\?\.ok\)/, 'a late compaction reply never writes to a view that has gone');
+a.match(homeSource, /requestToken\(state, 'homeRunsRequest'\);\s*requestToken\(state, 'runTemplatesRequest'\);/, 'leaving Overview must drop its pending run loads');
+// Seen live 2026-09-21 on a fresh team: the lead "Next step" card and the
 // ambient "Start here" card rendered the same sentence and the same two
 // buttons, one above the other, and the empty-state line said it a third time.
 a.match(homeSource, /card\.dataset\.lead = 'objective';/, 'the lead card must say when it is already the objective prompt');
-a.match(homeSource, /else if \(!leadAsksForObjective\) ambient\.append/, 'the ambient card must not repeat a prompt the lead card is already making');
-a.match(homeSource, /if \(ambient\.children\.length > 1\) grid\.append\(ambient\);/, 'an ambient card reduced to its heading must not render at all');
 a.match(homeSource, /const urgent = \[/, 'Home must rank approvals, failed members, and blocked tasks into one urgency list');
 a.match(homeSource, /approvals\.map\(\(a\) => \(\{[\s\S]*?tone: tone\('blocked'\),/, 'pending approvals must carry the shared attention tone, not render as a plain nav row');
 a.match(homeSource, /attention\.map\(\(\[name, member\]\) => \{[\s\S]*?tone: tone\(label\),/, 'failed or rate-limited members must carry their real status tone, not render as a plain nav row');
@@ -208,14 +220,15 @@ a.doesNotMatch(homeSource, /button\(item\.text, item\.open, 'list-row'\)/, 'urge
 a.match(homeSource, /const cls = `task-row \$\{item\.tone \?\? ''\}`\.trim\(\);/, 'every urgent row must resolve to the shared task-row tone treatment, whether clickable or not');
 a.match(homeSource, /h\('button', \{ class: `button \$\{cls\}`,/, 'a clickable urgent row must also carry the shared button class, or it has no hover affordance and no enforced tap target');
 a.match(homeSource, /import \{ statusDot \} from '\.\.\/avatar\.js'/, 'Home rows must use the shared status-dot surface, not a bespoke indicator');
-a.match(homeSource, /h\('button', \{ class: `button \$\{cls\}`, type: 'button', on: \{ click: item\.open \} \}, dot, h\('span'/, 'an urgent row must lead with the shared status dot now that the left-rule is gone');
+a.match(homeSource, /h\('button', \{ class: `button \$\{cls\}`, type: 'button', on: \{ click: item\.open \} \}, dot, rowText\(item\.text\)\)/, 'an urgent row must lead with the shared status dot now that the left-rule is gone, then a title and its detail');
 a.match(homeSource, /queue\.append\(h\('div', \{ class: `task-row task-\$\{task\.shown\} \$\{tone\(task\.shown\)\}`\.trim\(\) \},\s*dot, h\('b'/, 'a queue row must lead with the shared status dot now that the left-rule is gone');
-a.match(homeSource, /nextStepFor\(\{ urgent, changesVisible, changes, goal \}\)/, 'with no active run, Home must lead with the single most urgent next step');
+a.match(homeSource, /nextStepFor\(\{ urgent, changesVisible, changes, goal, actions \}\)/, 'with no active run, Home must lead with the single most urgent next step');
 // Every run the daemon creates carries no title, so the heading falls back to
 // the objective and the body printed the same sentence again. Seen live
 // 2026-09-21 in the run panel at every lifecycle state.
 a.match(runSource, /heading === objective \? null : h\('p', \{ class: 'run-objective'/, 'the run panel must not print its objective twice when the heading already is it');
-a.match(homeSource, /const shell = page\('Overview', mode\.blurb\)/, 'Home must not repeat mode and repository context in its page heading');
+a.match(homeSource, /h\('h1', \{ class: 'visually-hidden', text: 'Overview' \}\)/, 'Overview keeps an h1 named Overview for focus and assistive tech, without repeating mode or repository context');
+a.doesNotMatch(homeSource, /MODE_COPY|mode\.blurb/, 'Overview carries no mode copy; mode lives in the header and drawer');
 a.match(homeSource, /const attention =/, 'Home must separate terminal member states from active work');
 a.match(homeSource, /home-attention/, 'Home must give terminal member states a direct attention surface');
 a.match(homeSource, /statusLabel\(currentStatus\(name, member\)\)/, 'Home working rows must use human activity copy');
@@ -245,16 +258,16 @@ a.match(mainSource, /state\.view\?\.page === 'thread'[\s\S]*?setView\(previousVi
 a.match(mainSource, /event\.target\?\.closest\?\.\('\.vault-link'\)/, 'vault citations must be intercepted before the hash changes');
 a.match(mainSource, /\/api\/vault\?path=\$\{encodeURIComponent\(notePath\)\}/, 'vault citations must load the selected note by path');
 a.match(mainSource, /detail\?\.ok === false/, 'vault citation failures must stay distinct from note content');
-a.match(mainSource, /if \(name !== 'notes'\) noteRequest\+\+/, 'leaving Notes must invalidate a slow vault detail request');
-// Issue #43: the advisor can flip the court from Chat into Cowork or Code on
-// its own reading of one plain message (Kingdom#queueMode, by: 'advisor'),
-// which is how a sovereign who typed a single line ends up with delegation,
+a.match(mainSource, /if \(!\(route\.page === 'knowledge' && route\.tab === 'notes'\)\) noteRequest\+\+/, 'leaving Knowledge > Notes must invalidate a slow vault detail request, and opening a note must not');
+// Issue #43: the advisor can flip the team from Chat into Cowork or Code on
+// its own reading of one plain message (AgenticOS#queueMode, by: 'advisor'),
+// which is how a user who typed a single line ends up with delegation,
 // a task list and a crew they never asked to start. The stream event carries
 // exactly who did it, so the shell must not apply it as silently as a mode
-// change the sovereign picked themself.
-a.match(mainSource, /event\.type === 'mode' && event\.by && event\.by !== 'sovereign'/,
-  'a mode change the sovereign did not choose must be handled differently from one they clicked');
-a.match(mainSource, /event\.type === 'mode' && event\.by && event\.by !== 'sovereign'[\s\S]{0,400}toast\(/,
+// change the user picked themself.
+a.match(mainSource, /event\.type === 'mode' && event\.by && event\.by !== 'user'/,
+  'a mode change the user did not choose must be handled differently from one they clicked');
+a.match(mainSource, /event\.type === 'mode' && event\.by && event\.by !== 'user'[\s\S]{0,400}toast\(/,
   'an advisor-driven mode switch must raise a visible toast — "just one prompt" silently becoming autonomous delegation is the bug in #43');
 a.match(viewSources.memory, /vault-link/, 'Memory note results must open the selected note');
 a.match(viewSources.memory, /return \(\) => \{[\s\S]*?requestToken\(state, 'memoryRequest'\)/, 'leaving Memory must invalidate an in-flight search');
@@ -295,7 +308,13 @@ a.match(mainSource, /state\.changesError = null/, 'a successful background chang
 a.match(mainSource, /data\?\.ok !== false\) apply\(\{ type: 'conversations'/, 'a failed conversation refresh must preserve the roster');
 a.match(mainSource, /onRepository: \(\) => \{ state\.settingsSection = 'repo'; navigate\('settings'\); \}/, 'the sidebar repository control must open the repository settings');
 a.match(mainSource, /function toast\(message, danger = false\)/, 'shell errors need a visible toast callback');
-a.match(mainSource, /toast, refreshLists,\n\s+sovereign/, 'Thread must receive the shell toast callback');
+a.match(mainSource, /toast, refreshLists,\n\s+user/, 'Thread must receive the shell toast callback');
+a.match(threadSource, /const RUN_TABS = \[\['session', 'Session'\], \['diff', 'Diff'\], \['tasks', 'Tasks'\]\]/, 'a run has exactly Session, Diff and Tasks chips: Changes and Tasks left the rail for the run');
+a.match(threadSource, /\(tab === 'diff' \? mountChanges : mountTasks\)\(currentState, embedHost, options\)/, 'Diff mounts the Changes view and Tasks the queue, each into the thread');
+a.match(threadSource, /root\.querySelector\('\.thread-header'\)\?\.replaceWith\(header\)/, 'a streamed event must repaint the header and inspector only, never the mounted Diff or Tasks view (it would drop focus from a field being typed in)');
+a.match(threadSource, /mounted = false;\s*stopEmbed\(\);/, 'leaving a thread must run the mounted Diff or Tasks view\'s cleanup');
+a.match(threadSource, /user \? \(currentState\.runTab \?\? 'session'\) : 'session'/, 'only the orchestrator thread has run chips; a member thread stays a transcript');
+a.match(threadSource, /action === 'inspector-toggle'/, 'inspector cards must collapse');
 a.match(threadSource, /const body = node\('div', 'message-body markdown'\)/, 'thread Markdown must use the shared message typography');
 a.match(threadSource, /const markdown = !entry\.mine && \(entry\.kind === 'text'/, 'untyped assistant messages must remain Markdown instead of being overwritten as plain text');
 a.match(mainSource, /encodeURIComponent\(value\.member/, 'thread routes must preserve the selected member');
@@ -312,15 +331,15 @@ a.match(sidebarSource, /active && root\.contains\(active\)/, 'live Sidebar updat
 a.match(sidebarSource, /options\.onConversation\?\.\(active\)/, 'a successful branch must open its new conversation');
 a.match(sidebarSource, /form\.querySelector\('input'\)\?\.blur\(\)/, 'saving a rename must close its editor immediately');
 a.match(sidebarSource, /event\.key === 'Escape'[\s\S]*?input\.blur\(\)[\s\S]*?render\(\)/, 'conversation rename must have a keyboard cancel path');
-a.match(sidebarSource, /let moreOpen = false/, 'More tools must retain its user-controlled disclosure state');
-a.match(sidebarSource, /more\.addEventListener\('toggle'/, 'More tools must record disclosure changes');
-a.match(sidebarSource, /moreOpen \|\| items\.some/, 'More tools must stay open for its active page without collapsing on live updates');
+a.doesNotMatch(sidebarSource, /moreOpen|sidebar-more|More tools/, 'the rail is four destinations; the More tools disclosure is gone (2026-10-21), its views are tabs or Settings sections');
+a.match(sidebarSource, /\['inbox', 'Inbox', waiting\],\s*\['team', 'Team'\],\s*\['knowledge', 'Knowledge'\],\s*\['automations', 'Automations'\],/, 'the rail is exactly Inbox, Team, Knowledge and Automations');
 a.match(sidebarSource, /from '\.\/icons\.js'/, 'navigation should reuse the shipped icon set');
 a.match(sidebarSource, /NAV_ICONS/, 'navigation icons must have one explicit view mapping');
 a.match(sidebarSource, /button\.dataset\.tip = label/, 'collapsed navigation icons must retain a visible custom hover label');
-a.match(sidebarSource, /moreTitle\.dataset\.tip = 'More tools'/, 'collapsed More tools must retain a visible custom hover label');
+a.match(sidebarSource, /brand\.dataset\.view = 'home'/, 'Overview is the brand: the way home is the logo, not a rail row');
+a.match(sidebarSource, /aria-keyshortcuts', 'Control\+N'/, 'New run advertises its shortcut to assistive tech');
 a.match(sidebarSource, /collapse\.dataset\.tip = collapsed \? 'Expand sidebar' : 'Collapse sidebar'/, 'the collapsed rail control must describe its current action');
-a.match(sidebarSource, /import \{ spendText, turnsText \} from '\.\/views\/util\.js'/,
+a.match(sidebarSource, /import \{ spendText, turnsText, tone \} from '\.\/views\/util\.js'/,
   'Sidebar spend must use the shared money formatter, and now the shared turn-count formatter beside it (#41)');
 a.doesNotMatch(sidebarSource, /data-member|memberOfView|attachHoverTips/, 'Team moved out of the rail — the sidebar must not keep member-click wiring for a list it no longer renders');
 a.match(pagesSource, /actionMessage\.textContent = error\?\.message/, 'failed Team actions must leave visible retryable feedback');
@@ -338,9 +357,9 @@ a.match(changesSource, /if \(!state\.changes \|\| state\.changes\?\.ok === false
 a.match(changesSource, /button\('Retry'/, 'change refresh failures must offer a direct retry');
 a.match(changesSource, /const refreshChanges = .*options\.refreshLists/, 'Changes must reuse the shell-owned list refresh');
 a.doesNotMatch(changesSource, /void get\('\/api\/changes'\)/, 'Changes must not issue a duplicate initial list request');
-a.match(changesSource, /button\('Retry', \(\) => diffDetail\(state, root, peasant, file\)/, 'failed file diffs must offer a local retry');
+a.match(changesSource, /button\('Retry', \(\) => diffDetail\(state, root, agent, file\)/, 'failed file diffs must offer a local retry');
 a.doesNotMatch(changesSource, /const body = root\.querySelector\('\.view-page'\);\s*body\?\.replaceChildren\(page/, 'diff loading must not nest a second page shell');
-a.match(changesSource, /root\.replaceChildren\(page\('Changes', `\$\{displayName\(peasant\)\} .*reading worktree/, 'diff loading must replace the route root cleanly');
+a.match(changesSource, /root\.replaceChildren\(page\('Changes', `\$\{displayName\(agent\)\} .*reading worktree/, 'diff loading must replace the route root cleanly');
 a.doesNotMatch(changesSource, /state\.changes = data;\s*renderChanges\(state, root\);/, 'a failed change refresh must not overwrite the last-known worktree data');
 a.match(pagesSource, /state\.changesLoading/, 'Changes must not expose push or merge actions before the worktree load finishes');
 a.match(storeSource, /case 'tasks': state\.tasks = d\.tasks \?\? \[\]; state\.tasksLoading = false; state\.tasksError = null/, 'successful task refreshes must clear the prior load error');
@@ -476,7 +495,7 @@ try {
   ]);
   a.deepEqual(open.map((t) => t.id), [3, 4, 1], 'open tasks: highest priority first, then oldest');
   a.deepEqual(closed.map((t) => t.id), [5, 2], 'closed tasks: newest first, never mixed into the open list');
-  a.deepEqual(assignable({ members: new Map([['orchestrator', { role: 'orchestrator' }], ['briefer', { role: 'briefer' }], ['coder', { role: 'peasant' }]]) }),
+  a.deepEqual(assignable({ members: new Map([['orchestrator', { role: 'orchestrator' }], ['briefer', { role: 'briefer' }], ['coder', { role: 'agent' }]]) }),
     ['orchestrator', 'coder'], 'the briefer only watches, so tasks cannot be assigned to it');
 }
 {
@@ -533,7 +552,7 @@ a.equal(waitingCount([{ tone: 'attention' }, { tone: 'live' }, { tone: 'attentio
 }
 a.match(viewSources.inbox, /clearTimeout\(timer\); requestToken\(state, 'inboxRequest'\); off\?\.\(\)/, 'leaving the Inbox stops its refetch and drops a pending load');
 a.match(mainSource, /get\('\/api\/inbox'\)[\s\S]*apply\(\{ type: 'inbox'/, 'the rail count is fed on navigation, not only from the Inbox view');
-a.match(sidebarSource, /\['inbox', /, 'Inbox is reachable from the rail');
+a.match(sidebarSource, /\['inbox', 'Inbox', waiting\]/, 'Inbox is reachable from the rail, with the count of what waits on you');
 a.match(mainSource, /!element\.hidden && element\.getClientRects\(\)\.length > 0\)/, 'the drawer focus trap counts only rendered elements, or Tab escapes past a display:none last button');
 a.deepEqual(parseDays('1-5'), [1, 2, 3, 4, 5]);
 a.deepEqual(parseDays(' 1, 3 ,5 '), [1, 3, 5]);
@@ -580,18 +599,43 @@ a.match(homeSource, /card\.dataset\.lead = 'start-run'/, 'with an objective and 
 a.match(viewSources.tasks, /post\('task', body\)/, 'Tasks edits the queue through the daemon task action');
 a.match(viewSources.tasks, /refresh\?\.\(\)/, 'a change made from a focused select must still repaint');
 a.match(viewSources.tasks, /if \(!editing\(root\)\) renderTasks/, 'live updates must not repaint under someone typing a task');
-a.match(viewSources.tasks, /details\.open = view\[key\]/, 'a stream repaint must not collapse the closed list the sovereign opened');
+a.match(viewSources.tasks, /details\.open = view\[key\]/, 'a stream repaint must not collapse the closed list the user opened');
 a.match(viewSources.tasks, /remembered\(input\('', 'What should the team do\?'\), view, 'team'\)/, 'a half-typed team task survives a stream repaint');
 a.match(viewSources.tasks, /remembered\(input\('', 'Something to remember…'\), view, 'mine'\)/, 'a half-typed task of your own survives a stream repaint');
+// Doctor left the rail for a Settings tab (2026-10-21). A failing environment
+// check must still reach you without a visit: it is an inbox row and it counts
+// on the rail's Inbox badge.
+a.equal(doctorItem(null), null, 'no report, no row');
+a.equal(doctorItem({ ok: true, ready: true, checks: [{ level: 'ok', message: 'git found' }] }), null, 'a passing report adds nothing');
+a.equal(doctorItem({ ok: false, error: 'offline' }), null, 'a failed request is not a failed check');
+{
+  const item = doctorItem({ ready: false, checks: [{ level: 'ok', message: 'git found' }, { level: 'fail', message: 'codex not found on PATH' }, { level: 'warn', message: 'no emulator' }] });
+  a.equal(item.tone, 'attention', 'a failing check needs you');
+  a.equal(item.href, '#doctor', 'the row opens Doctor');
+  a.equal(item.detail, 'codex not found on PATH', 'the row names the first failure');
+  a.equal(item.title, 'The environment check found a problem');
+  a.match(doctorItem({ ready: false, checks: [{ level: 'fail', message: 'a' }, { level: 'fail', message: 'b' }] }).title, /2 problems/);
+}
+a.match(mainSource, /state\.doctor = report; apply\(\{ type: '__doctor__' \}\)/, 'the boot probe keeps its report so the rail and Inbox can read it');
+a.match(sidebarSource, /currentState\.doctor\?\.ready === false/, 'a failing check counts on the rail Inbox badge');
+a.match(viewSources.inbox, /doctorItem\(state\.doctor\)/, 'the Inbox lists a failing check');
 a.match(viewSources.inbox, /if \(timer \|\| now === seen\) return;/, 'the inbox refetches only when what it ranks moved, not on every streamed frame');
 {
   // A view registered for rendering but missing from the shell's route set
-  // silently falls back to Overview (found live for #tasks, 2026-09-25).
-  const routes = new Set(JSON.parse(/const VIEWS = new Set\((\[[^\]]*\])\)/.exec(mainSource)[1].replace(/'/g, '"')));
+  // silently falls back to Overview (found live for #tasks, 2026-09-25). The
+  // route table moved to ui/routes.js on 2026-10-21 so it can be exercised
+  // without a DOM (test/t-routes.js); this keeps the original guard on it.
+  const { PAGES } = await import('../ui/routes.js');
   const { renderers } = await import('../ui/views/index.js');
-  for (const name of Object.keys(renderers)) a.ok(routes.has(name), `the shell must route #${name}, or it silently shows Overview`);
+  for (const name of Object.keys(renderers)) a.ok(PAGES.includes(name), `the shell must route #${name}, or it silently shows Overview`);
+  a.match(mainSource, /import \{ canonicalHash, hashFor, parseHash \} from '\.\/routes\.js'/, 'the shell must route through the shared route table');
 }
-a.match(sidebarSource, /\['tasks', 'Tasks'\]/, 'Tasks is reachable from the rail');
+{
+  // Tasks left the rail on 2026-10-21. Until it is a run chip it is reached by
+  // search (Ctrl K) and by its route; both are pinned so it is never orphaned.
+  const paletteSource = readFileSync(new URL('../ui/palette.js', import.meta.url), 'utf8');
+  a.match(paletteSource, /\['Tasks', /, 'Tasks is reachable from search');
+}
 a.match(usageSource, /dashboard\.append\(runSpendSection\(state\)\)/, 'Usage must show the run spend section');
 a.match(usageSource, /cancelRunSpend\(state\); \}/, 'leaving Usage must cancel a pending run spend request');
 a.match(usageSource, /No run ceiling is set/, 'a missing maxRunUsd must be said, not drawn as an empty meter');
@@ -778,7 +822,7 @@ a.equal(resolvedOutcome({ kind: 'merge', resolved: 'blocked', merge: { status: '
 a.equal(resolvedOutcome({ kind: 'push', resolved: 'blocked', push: { status: 'blocked', message: 'no remote configured' } }),
   ': no remote configured', 'a blocked push card must carry the recorded failure message');
 a.equal(resolvedOutcome({ kind: 'merge', resolved: 'approved' }), '', 'a merge with no outcome record adds nothing');
-a.equal(resolvedOutcome({ kind: 'summon', resolved: 'approved', summon: { message: 'x' } }), '', 'only push and merge carry an outcome record');
+a.equal(resolvedOutcome({ kind: 'add', resolved: 'approved', add: { message: 'x' } }), '', 'only push and merge carry an outcome record');
 a.match(approvalsSource, /resolvedStatus\(approval\.resolved, resolvedOutcome\(approval\)\)/,
   'the resolved card must render the outcome through resolvedOutcome()');
 a.match(approvalsSource, /const resolvedStatus = \(resolved/, 'resolved approvals must render through one shared status helper, not a bare note');
@@ -833,7 +877,7 @@ a.deepEqual(assets.state().queue, ['after-reload.mp3'], 'refresh must seed the m
   a.match(sidebarSource, /raiseButton\.hidden = !isTurnBudget/,
     'the raise action must only show for a turn-budget pause, not every manual pause');
   // #41 follow-up: the raise asks the daemon for "100 more from right now"
-  // (Kingdom#raiseTurnBudget adds them to the session's own count), never a
+  // (AgenticOS#raiseTurnBudget adds them to the session's own count), never a
   // client-computed absolute cap that would be written over the configured
   // budget and outlive the session.
   a.match(sidebarSource, /send\(post, 'raiseTurnBudget', \{ by: 100 \}\)/,
@@ -843,12 +887,12 @@ a.deepEqual(assets.state().queue, ['after-reload.mp3'], 'refresh must seed the m
 
   // The daemon must offer the UI SESSION turns (what the budget and the raise
   // button both use), not the lifetime count, in the same snapshot it already
-  // seeds spend from — a reconnect must show session progress, not a court's
+  // seeds spend from — a reconnect must show session progress, not a team's
   // whole-life turn history.
   const daemonSource = readFileSync(new URL('../src/daemon.js', import.meta.url), 'utf8');
-  a.match(daemonSource, /turns: kingdom\.turnsThisSession\(\)/,
+  a.match(daemonSource, /turns: agenticos\.turnsThisSession\(\)/,
     'the snapshot must expose SESSION turns under spend.turns, not the lifetime count');
-  a.match(daemonSource, /lifetimeTurns: kingdom\.turnsLifetime\(\)/,
+  a.match(daemonSource, /lifetimeTurns: agenticos\.turnsLifetime\(\)/,
     'the lifetime count must still be offered alongside it, per #41\'s "lifetime turns available if needed"');
   console.log('  the sidebar shows a live SESSION turn count beside spend, raises relative to session usage, '
     + 'and the snapshot seeds both session and lifetime turns');

@@ -16,7 +16,7 @@ Write for someone with your task and none of your context.
 6. **Traps**: the thing that will bite them that you only learned by being bitten.
 
 File paths with line numbers. No status theatre — "blocked on a keystore only
-the sovereign can make" is useful, "90% complete" is not.
+the user can make" is useful, "90% complete" is not.
 
 If something durable was learned, record it with `remember` too — a handover is
 read once, a memory is read forever.

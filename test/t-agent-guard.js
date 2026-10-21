@@ -12,12 +12,12 @@
 //   node test/t-agent-guard.js
 import { strict as a } from 'node:assert';
 
-process.env.KINGDOM_CLAUDE_BIN = process.execPath;
+process.env.AGENTICOS_CLAUDE_BIN = process.execPath;
 
-const { Agent } = await import('../src/agent.js');
+const { AgentProcess } = await import('../src/agent.js');
 
 const errors = [];
-const agent = new Agent(
+const agent = new AgentProcess(
   { name: 'coder', cli: 'claude' },
   { mcp: { command: 'x', args: [], env: { HUGE: 'x'.repeat(200_000) } } }
 );

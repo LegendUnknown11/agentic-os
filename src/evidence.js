@@ -3,8 +3,8 @@
 // timeline — everything HANDOFF.md's "Implemented run behavior" says a run
 // record already carries, minus the SQLite file it lives in.
 //
-// Layout: <kingdomDir>/evidence/<run-id>/ — a sibling of wt/ and runs/, which
-// is where worktree.js already keeps per-repo state under .kingdom/<repo>/.
+// Layout: <stateDir>/evidence/<run-id>/ — a sibling of wt/ and runs/, which
+// is where worktree.js already keeps per-repo state under .agenticos/<repo>/.
 // One file per section rather than one combined document, so "is section X
 // present" is an fs.existsSync away and a human can open just the diff
 // without parsing JSON. manifest.json is the index every section is listed
@@ -16,19 +16,19 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { join } from 'node:path';
-import { kingdomDir, runBranch } from './worktree.js';
+import { stateDir, runBranch } from './worktree.js';
 import { rates } from './forecast.js';
 
 const exec = promisify(execFile);
 const git = (cwd, ...args) => exec('git', args, { cwd, maxBuffer: 64 * 1024 * 1024, windowsHide: true });
 
-export const evidenceDir = (repo, runId) => join(kingdomDir(repo), 'evidence', String(runId));
+export const evidenceDir = (repo, runId) => join(stateDir(repo), 'evidence', String(runId));
 
 /**
  * Unified diff + stat of the run's own branch against its captured baseline —
  * the same `base...branch` shape worktree.js's diffOf/statOf use for a
- * peasant, reimplemented for a run branch (`kingdom/run/<id>`, not
- * `kingdom/<peasant>`) rather than widening diffOf's signature for one caller.
+ * agent, reimplemented for a run branch (`agenticos/run/<id>`, not
+ * `agenticos/<agent>`) rather than widening diffOf's signature for one caller.
  *
  * Never throws: a repo that is gone or a branch that was never created is a
  * visible "unavailable" reason in the bundle, not a failed export (operating

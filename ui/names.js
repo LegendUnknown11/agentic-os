@@ -1,11 +1,11 @@
-// What the sovereign's court is called on screen.
+// What the user's team is called on screen.
 //
-// The orchestrator's model is a kingdom and the code says so everywhere: roles
-// are `orchestrator`/`briefer`/`peasant`, the config keys are those words, and so are
+// The orchestrator's model is a team and the code says so everywhere: roles
+// are `orchestrator`/`briefer`/`agent`, the config keys are those words, and so are
 // the CSS classes, the localStorage keys and the /api paths. None of that
 // changes here. This module is the DISPLAY layer only, for the same reason
 // app.js:887 keeps `board`/`flow` as internal names: renaming a label is not
-// renaming a state, and renaming state logs every sovereign out of their
+// renaming a state, and renaming state logs every user out of their
 // layout to change a word they never see.
 //
 // So: `role-orchestrator` stays in the CSS, `config.orchestrator.name` stays in the config,
@@ -15,14 +15,14 @@
 const ROLE_WORD = {
   orchestrator: 'Orchestrator',
   briefer: 'Monitor',
-  peasant: 'Agent',
+  agent: 'Agent',
 };
 
 /** The role, as a group heading over a list of them. */
 const ROLE_GROUP = {
   orchestrator: 'Orchestrator',
   briefer: 'Monitor',
-  peasant: 'Agents',
+  agent: 'Agents',
 };
 
 export const roleWord = (role) => ROLE_WORD[role] ?? 'Agent';
@@ -36,13 +36,13 @@ export const roleGroup = (role) => ROLE_GROUP[role] ?? 'Agents';
  * group heading reading "Orchestrator" undercuts the whole rename, so the two
  * generic names are substituted.
  *
- * Only the generic ones. A sovereign who names their orchestrator "Rex" gets Rex: that
+ * Only the generic ones. A user who names their orchestrator "Rex" gets Rex: that
  * is a choice they made and this has no business overriding it.
  *
  * `role` is optional because two callers genuinely do not have it: the Activity
  * panel renders `bus.events`, which carry an agent name and no role, and so
  * does the message feed. With a role, it is trusted — an agent that happens to
- * be called "orchestrator" is not the throne. Without one, the generic name is taken at
+ * be called "orchestrator" is not the orchestrator. Without one, the generic name is taken at
  * face value, which is right in every real config and wrong only for a roster
  * that named an agent after the role it is not.
  */
@@ -64,9 +64,9 @@ if (typeof process !== 'undefined' && process.argv?.[1]?.endsWith('names.js')) {
   const a = assert.default ?? assert;
 
   // Every role the orchestrator can hand the UI resolves to a word. `roleOf`
-  // in src/kingdom.js returns exactly these three, and upsertNode defaults an
-  // unknown one to 'peasant'.
-  for (const role of ['orchestrator', 'briefer', 'peasant']) {
+  // in src/agenticos.js returns exactly these three, and upsertNode defaults an
+  // unknown one to 'agent'.
+  for (const role of ['orchestrator', 'briefer', 'agent']) {
     a.ok(ROLE_WORD[role], `${role} has a word`);
     a.ok(ROLE_GROUP[role], `${role} has a group heading`);
   }
@@ -78,10 +78,10 @@ if (typeof process !== 'undefined' && process.argv?.[1]?.endsWith('names.js')) {
   a.equal(displayName('orchestrator', 'orchestrator'), 'Orchestrator');
   a.equal(displayName('briefer', 'briefer'), 'Monitor');
   a.equal(displayName('Rex', 'orchestrator'), 'Rex', 'a named orchestrator keeps its name');
-  a.equal(displayName('coder', 'peasant'), 'coder', 'agents are never renamed');
-  // A peasant that happens to be called "orchestrator" is not the throne — a KNOWN
+  a.equal(displayName('coder', 'agent'), 'coder', 'agents are never renamed');
+  // An agent that happens to be called "orchestrator" is not the orchestrator — a KNOWN
   // role always wins over the name.
-  a.equal(displayName('orchestrator', 'peasant'), 'orchestrator');
+  a.equal(displayName('orchestrator', 'agent'), 'orchestrator');
   // No role: the Activity panel and the message feed both render bus rows,
   // which carry a name and nothing else.
   a.equal(displayName('orchestrator'), 'Orchestrator');

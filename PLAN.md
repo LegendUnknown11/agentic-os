@@ -8,14 +8,14 @@ from. What closed each one:
 
 | Section | Closed by |
 |---|---|
-| 1. One design system | Reversed to the Cold-Call Workflow kit 2026-09-21 at the sovereign's direction — see section 1. The Hiveory work it replaced was `c4c6573`, `9524d3f`, `b67ed9e`. |
+| 1. One design system | Reversed to the Cold-Call Workflow kit 2026-09-21 at the user's direction — see section 1. The Hiveory work it replaced was `c4c6573`, `9524d3f`, `b67ed9e`. |
 | 2. One status vocabulary | `tone()` in `ui/views/util.js`; the last private vocabulary, Approvals, folded in by `b310960` |
 | 3. Rebuild the shell | Header carries repository, branch, objective, mode with its permissions, and connection; the rail is down to two lists; mode has one home |
 | 4. Overview as mission control | `ui/views/home.js` ranks by urgency at render time and leads with the run, or the next-step surface when there is none |
 | 5. Rebuild the views | `b310960`; `ui/thread.js`, `ui/views/settings.js` and `ui/views/automations.js` were verified against the system and needed no change |
 
 **Acceptance met 2026-09-21, and it cost eight defects.** The clause below was
-satisfied in one live session against a demo court on `127.0.0.1:7788`, driven
+satisfied in one live session against a demo team on `127.0.0.1:7788`, driven
 first in a real browser and then confirmed in the Electron shell
 (`navigator.userAgent` contains "Electron"). Every item in the clause was
 demonstrated by clicking the interface's own controls, not by writing state
@@ -60,7 +60,7 @@ The daemon's spine is the run: a durable record moving through `planning`,
 `running`, `verifying`, `ready_for_review`, and `completed`, carrying recovery
 history and revision-bound evidence. The interface has not followed. Make the run
 the primary surface, give every state one visual vocabulary, and put the visual
-system on the design language shared with the sovereign's other builds.
+system on the design language shared with the user's other builds.
 
 - Rebuild all fourteen views, the shell, and the design system. This supersedes
   the previous contract's deferral of a visual redesign.
@@ -91,7 +91,9 @@ Each was read directly in the source, not inferred.
 
 ## 1. Establish one design system
 
-**Reversed 2026-09-21.** The sovereign supplied `Prototype.zip` — the
+**Reversed again 2026-10-21** to the dark T3 Code system; see the section at the end of this file. What follows is the record of the two earlier systems, neither of which the app implements now.
+
+**Reversed 2026-09-21.** The user supplied `Prototype.zip` — the
 Cold-Call Workflow kit, the same prototype-derived "paper and ink" source this
 section retired four days earlier — and asked for the app redesigned on it
 outright. That instruction supersedes the Hiveory adoption spelled out below,
@@ -149,7 +151,7 @@ ink on paper; its other five figures reproduce exactly and that one gives
 Everything from here to the end of this section is what was agreed on
 2026-09-17 and is no longer what the app implements. It read, in full:
 
-The sovereign asked for Hiveory's (github.com/raktim-yoddha/hiveory)
+The user asked for Hiveory's (github.com/raktim-yoddha/hiveory)
 actual visual language adopted in full, not as loose inspiration — its literal
 values, read from its shipped `app.css`, not a paraphrase. This app keeps its
 own token architecture (`:root`, `-rgb` twins, no literal colour outside
@@ -299,7 +301,7 @@ superseded by the paper kit adopted 2026-09-21; the glass/translucent feel it
 asked for is adopted within that paper system rather than swapping the
 palette for Hiveory's dark one.
 
-**Method**: started a demo court (`node src/daemon.js <throwaway-repo>
+**Method**: started a demo team (`node src/daemon.js <throwaway-repo>
 --port 7811`), drove it with Playwright/Chromium, screenshotted all 14 views
 at 1440x900 and 720x900 before and after. Findings are in
 `/home/user/wt-ui-shots/AUDIT.md` (outside the repo, per the session's
@@ -313,7 +315,7 @@ card grid sits inside an already-`start`-pinned parent. The one concrete gap,
 read directly rather than assumed: `--shell-alpha`/`--surface-alpha` existed
 but were 1 (opaque) by default and only left their default for the optional
 user-wallpaper feature, so the interface most people see had no
-translucency or blur anywhere the sovereign's direction named.
+translucency or blur anywhere the user's direction named.
 
 **What shipped**: a translucent, blurred glass on `#header`, `#sidebar`
 (rail and the 720px drawer), `#composer`, `.hover-tip`, and the drawer scrim.
@@ -355,26 +357,26 @@ blur without a wallpaper behind it. This is browser evidence, not Electron
 or Windows evidence — neither was exercised this session.
 
 **Superseded below**: the "Not done" conclusion above — that an empty demo
-court's audit found nothing further to fix — was wrong, and is corrected in
+team's audit found nothing further to fix — was wrong, and is corrected in
 the next section rather than edited in place, so the mistake and the
 correction both stay on the record.
 
-## UI revamp round 2 — populated-court audit and defect sweep (2026-09-23)
+## UI revamp round 2 — populated-team audit and defect sweep (2026-09-23)
 
-The round above audited an **empty** demo court: no objective, no run, no
+The round above audited an **empty** demo team: no objective, no run, no
 tasks, no approvals, one conversation, no diff. That hid real defects the
 same way the 2026-09-21 session's 73 green suites hid the `align-content`
 grid-leak class — an empty state cannot show a rail that overflows once it
 has content, a heading block whose weight only matters against a real page
 below it, or a code block with nothing in it to render badly. Corrected by
-seeding the same demo court with real state — an objective, a run that
+seeding the same demo team with real state — an objective, a run that
 travelled planning → running → blocked with recovery history plus a second,
 completed run in history, five tasks across pending/claimed/done/blocked-on-
-deps, three approvals (push, summon, question), twelve conversations, a
+deps, three approvals (push, add, question), twelve conversations, a
 multi-turn thread with a fenced code block and a deliberately long unbroken
-URL, and a real git diff (three files) from a summoned peasant's worktree —
+URL, and a real git diff (three files) from an added agent's worktree —
 via `/home/user/wt-ui-shots/seed.mjs`, which writes directly through
-`src/bus.js` (and, for the worktree, the daemon's own `summon`/`approve` HTTP
+`src/bus.js` (and, for the worktree, the daemon's own `add`/`approve` HTTP
 actions) rather than approximating the app's own state shapes by hand.
 Re-audited at 1440x900, 1280x720, and 720x900;
 `/home/user/wt-ui-shots/populated-before/` and `populated-after/` hold the
@@ -424,7 +426,7 @@ failing-before assertion:
    always-visible copy loses no information. The ban is widened to cover
    both tag names.
 
-Also fixed, found on the *first*, empty-court pass but not reported then
+Also fixed, found on the *first*, empty-team pass but not reported then
 because it was misdiagnosed mid-session as a UI bug before being traced to a
 seeding mistake and correctly attributed: **fenced/inline code in thread
 messages had no styling** (`<pre><code>`/`<code>` on bare browser defaults, no
@@ -449,7 +451,7 @@ audit surfaced a concrete defect there beyond what is already fixed above.
 **Acceptance evidence**: `npm test` — 77 suites, 4-wide, ~37-40s across these
 commits' individual runs, all suites passed, no flaky retries, run before
 every commit in this round. `test/t-theme-geometry.js` ran against real
-Chromium throughout (never skipped). Visual evidence: the populated-court
+Chromium throughout (never skipped). Visual evidence: the populated-team
 screenshots above, plus a live Chromium read-back of
 `getComputedStyle(#header).backdropFilter` confirming the boosted `--wash`
 still renders. This is browser evidence, not Electron or Windows evidence —
@@ -462,77 +464,77 @@ text remains in Git history. Two of its obligations are still open and are
 restated in `HANDOFF.md`: the Habitable pilot has not begun, and live
 subscription-pool behaviour without paid API fallback is unproven.
 
-## Functional revamp — multiple courts and pilot readiness (2026-09-23)
+## Functional revamp — multiple teams and pilot readiness (2026-09-23)
 
 Two independent pieces of work, landed on `functional-revamp`. Neither touches
 the interface contract in sections 1-5 above.
 
-### A. Multiple courts at once (closes GitHub issue #42)
+### A. Multiple teams at once (closes GitHub issue #42)
 
 **Contract.** One daemon process per repository, each on its own port, tracked
-in a shared registry at `~/.kingdom/courts.json` (`src/courts.js`) alongside the
+in a shared registry at `~/.agenticos/teams.json` (`src/teams.js`) alongside the
 existing `tokens.json` convention. A daemon refuses to start for a repository
-that already has a live court and names the port it is on; a busy pinned port
-(`--port` or `KINGDOM_PORT`) is a clean, visible error, never a silent
+that already has a live team and names the port it is on; a busy pinned port
+(`--port` or `AGENTICOS_PORT`) is a clean, visible error, never a silent
 rebind. With neither given, the port is picked automatically starting at 7777.
 `app.requestSingleInstanceLock()` means a second launch focuses or opens the
-right court instead of starting a stray daemon. Settings' Repository panel
-gains a switcher — list running courts, open one, start a court for another
+right team instead of starting a stray daemon. Settings' Repository panel
+gains a switcher — list running teams, open one, start a team for another
 repository, end one with confirmation — reachable without ending the current
-court, and "End court and switch…" is no longer gated behind attachRepo's
+team, and "End team and switch…" is no longer gated behind attachRepo's
 failure (the fail-first dance issue #42 complained about is gone; attachRepo's
-own refusal to move a live court onto a different repo, `src/kingdom.js`, is
+own refusal to move a live team onto a different repo, `src/agenticos.js`, is
 unchanged and still correct).
 
 **This reverses the 2026-09-22 decision** recorded in the previous revision of
-`HANDOFF.md`, where the sovereign declined multiple courts for that round
-("Not even using it"). The sovereign asked for it explicitly on 2026-09-23.
+`HANDOFF.md`, where the user declined multiple teams for that round
+("Not even using it"). The user asked for it explicitly on 2026-09-23.
 
 **What closed it.**
 
 | Piece | File |
 |---|---|
-| Registry core: register/list/prune/pick-port, lockfile + atomic write | `src/courts.js` |
+| Registry core: register/list/prune/pick-port, lockfile + atomic write | `src/teams.js` |
 | Daemon wiring: auto/pinned port, conflict refusal, register/unregister | `src/daemon.js` |
 | Live-attach registry claim (POST /api/attachRepo, saved-repo re-attach) | `src/daemon.js` |
-| Launch routing (single-instance, focus-vs-start), pure and fakeable | `electron/courts-launch.js` |
-| Electron: single-instance lock, per-port windows, courts IPC | `electron/main.js`, `electron/court-preload.cjs` |
-| Switcher UI, degrades visibly outside Electron | `ui/views/courts.js`, `ui/views/settings.js` |
+| Launch routing (single-instance, focus-vs-start), pure and fakeable | `electron/teams-launch.js` |
+| Electron: single-instance lock, per-port windows, teams IPC | `electron/main.js`, `electron/team-preload.cjs` |
+| Switcher UI, degrades visibly outside Electron | `ui/views/teams.js`, `ui/views/settings.js` |
 
 **Review fix (2026-09-23, post-implementation): live attach bypassed the
-registry.** `registerCourt` ran once, at listen time, with the boot-time repo —
+registry.** `registerTeam` ran once, at listen time, with the boot-time repo —
 a repo-less daemon that later got a LIVE attach (`POST /api/attachRepo`, or the
 saved-repo re-attach at boot) never updated or conflict-checked the registry.
 That let two daemons end up serving the SAME repository with no refusal, and
-left the registry showing `repo: null` for a court that had since attached
+left the registry showing `repo: null` for a team that had since attached
 one. Fixed: the attach handler now claims the repo in the registry (under its
-lock, via the same `registerCourt`) BEFORE `kingdom.attachRepo` does any real
-work, refuses with the other court's port on conflict, and rolls back the
+lock, via the same `registerTeam`) BEFORE `agenticos.attachRepo` does any real
+work, refuses with the other team's port on conflict, and rolls back the
 claim if the attach itself then fails for an unrelated reason. Covered by
 `test/t-registry-attach.js` (two real daemons, confirmed to fail without the
 fix).
 
 **Acceptance evidence.**
-- Source: `test/t-courts.js` (registry unit behaviour), `test/t-multi-court.js`
+- Source: `test/t-teams.js` (registry unit behaviour), `test/t-multi-team.js`
   (two real daemon processes, real conflict/port-busy refusals),
-  `test/t-courts-launch.js` (launch-routing decisions, fakes),
+  `test/t-teams-launch.js` (launch-routing decisions, fakes),
   `test/t-registry-attach.js` (live-attach registry claim, above), plus
   `test/t-pages.js` updates pinning the new Settings source. Suite count: see
   `HANDOFF.md`'s Evidence section for the number printed this round.
 - Browser: the Settings > Repository panel was driven in a real Chromium tab
-  (Playwright, throwaway repo on port 7823) and confirmed to render the courts
+  (Playwright, throwaway repo on port 7823) and confirmed to render the teams
   switcher with no fail-first gating, and to degrade to a plain note (no
-  destructive controls) when `window.kingdomShell` is absent — i.e. a plain
+  destructive controls) when `window.agenticosShell` is absent — i.e. a plain
   browser tab, not Electron.
 - **Not held**: Electron itself (the single-instance lock, multi-window
   behaviour, the native confirmation dialogs, media-permission scoping per
   window) was never run — this environment cannot launch Electron. Windows
   behaviour (the platform every real user runs on) is likewise unverified here.
-  Both are real acceptance work still owed before this ships to the sovereign.
+  Both are real acceptance work still owed before this ships to the user.
 - **Test-gate hygiene (2026-09-23, post-implementation)**: several suites that
   spawn a real daemon were found to register into the REAL
-  `~/.kingdom/courts.json` on whatever machine runs `npm test`, which on the
-  sovereign's machine would mutate their live registry. Fixed at the test
+  `~/.agenticos/teams.json` on whatever machine runs `npm test`, which on the
+  user's machine would mutate their live registry. Fixed at the test
   runner: every suite now gets its own isolated registry file
   (`test/run-all.js`, `test/isolate-registry.js`); `test/t-registry-isolation.js`
   guards it end to end. See `HANDOFF.md` for the mechanism.
@@ -566,7 +568,7 @@ approved) before implementation on Habitable itself can start.
 
 ## Run visibility — blocker, spend, notifications (2026-09-25)
 
-Asked for by the sovereign on 2026-09-25 after an interview. It is three
+Asked for by the user on 2026-09-25 after an interview. It is three
 features on `feature-implementation`, each its own commit. None of them
 touches the interface contract in sections 1-5 beyond adding one section to
 Usage.
@@ -606,7 +608,7 @@ Usage.
   fails there for want of a display, the same as on the unchanged base.
   `t-theme-geometry.js` ran in real Chromium.
 - Browser: the Run spend section was rendered by a real daemon against a seeded
-  court and inspected in Chromium at 1440x900 and 720x900. The hover readout
+  team and inspected in Chromium at 1440x900 and 720x900. The hover readout
   was exercised, no page errors occurred, and there was no horizontal overflow.
   This found three defects, all fixed before commit:
   - the round marks stretched into ellipses under the stretched viewBox;
@@ -617,20 +619,20 @@ Usage.
 
 ## Assistant features — tasks, inbox, templates, run templates (2026-09-25)
 
-Asked for by the sovereign on 2026-09-25 ("actual functional features, like
+Asked for by the user on 2026-09-25 ("actual functional features, like
 managing your tasks, briefing your inboxes … prebuilt in"), then scoped in an
 interview. All of it landed on `feature-implementation`, PR #82.
 
-**Contract, as the sovereign chose it.**
+**Contract, as the user chose it.**
 
-1. **Tasks, both kinds.** The sovereign manages the team's queue from the
+1. **Tasks, both kinds.** The user manages the team's queue from the
    interface, and keeps a list of their own. The two stay separate: nothing on
    the personal list is claimable or wakes a member. The orchestrator can read
    the personal list, and add to it only when asked.
-2. **Inbox, in-app only.** It holds what is waiting on the sovereign inside the
+2. **Inbox, in-app only.** It holds what is waiting on the user inside the
    app: a blocked run, pending requests and questions, overdue and due-today
    personal tasks, a run ready for final review, and messages addressed to the
-   sovereign. There is no email, and no mail credentials anywhere.
+   user. There is no email, and no mail credentials anywhere.
 3. **Built-in assistants, shipped as automation templates.** "Switch on"
    installs an ordinary, editable workflow. There are five:
    - the morning inbox brief;
@@ -683,6 +685,99 @@ interview. All of it landed on `feature-implementation`, PR #82.
   head `49f81ed`, job 107959284113).
 - **Not held.**
   - A calendar or GitHub connector actually answering. Those two templates
-    depend on the orchestrator's setup on the sovereign's machine.
+    depend on the orchestrator's setup on the user's machine.
   - A desktop notification actually shown by an operating system.
   - Any provider or model behaviour.
+
+## T3 Code redesign (2026-10-21)
+
+Asked for by the user on 2026-10-21: implement the Claude design canvas
+"Agentic OS - T3 Code style" exactly, on a `T3-code` branch, with the navigation
+simplified further, and ask questions where unsure. It was scoped in an
+interview before any code. It is a third reversal of section 1: the dark,
+neutral T3 system replaces the Cold-Call Workflow paper theme (itself a reversal
+of Hiveory), and the 2026-09-23 glass layer goes with it.
+
+**Contract, as the user chose it.**
+
+1. **Theme.** Dark T3 replaces paper outright. Kept: 44px tap targets, an
+   `-rgb` twin on every colour, no literal colour outside `:root`.
+2. **Scope.** All fourteen existing views, the run thread, and a session
+   inspector fed only from state the daemon already streams. Not built: the
+   canvas's Browser preview and Design canvas boards, and the inspector's
+   context-window meter, Compact session and Remote control toggle (nothing
+   measures or does them).
+3. **Type.** Inter and JetBrains Mono are bundled in `ui/fonts` and loaded
+   same-origin. This ends the local-stack-only rule, whose reason was an offline
+   webfont fetch failing silently.
+4. **Navigation**, decided destination by destination. Fifteen destinations
+   became the brand plus four:
+
+   | Was | Now |
+   |---|---|
+   | Overview | the logo (the way home) |
+   | Objective | Overview: the objective is its headline; the editor and Start a run open inline. `#objective` opens it |
+   | Approvals, Inbox, Messages | one Inbox, tabs All, Approvals, Messages, My tasks |
+   | Changes, Tasks | the run's Diff and Tasks chips; `#changes` and `#tasks` stay routable, and worktree changes with no run are on Overview |
+   | Agents, Activity | Team, tabs Agents, Activity |
+   | Memory, Notes | Knowledge, tabs Memory, Notes |
+   | Usage, Doctor | Settings tabs |
+   | Automations | stays in the rail |
+
+   Rail order: brand, New run (Ctrl N), Inbox with a waiting count, Team,
+   Knowledge, Automations, the runs list, footer. Ctrl K reaches every page and
+   run. A retired address is an alias that lands on the page and tab that now
+   hosts it (`ui/routes.js`), never on Overview by accident.
+
+**Decisions made without asking, and why.** Each is a deviation to revisit.
+
+- The mode switcher stays in the header, compact. The canvas draws none, but
+  mode is global state and needs a home.
+- "New run" opens a fresh conversation: a run is the orchestrator's thread, and
+  the runs list is the conversations list.
+- Where the canvas fails this app's rules the rule wins: its #737373 metadata is
+  4.10:1 on `--surface`, so `--faint` is #8a8a8a (5.63:1); its 26-32px rows and
+  chips keep their look inside 44px hit areas.
+- The canvas's Runs table has an Agent column; a run records none, so it shows
+  Spend. "Spend today" is Spend: the daemon does not track a day.
+- Doctor leaving the rail would hide a failing check, so a failing check is the
+  first Inbox row and counts on the rail's Inbox badge.
+- `--danger` (red) is separate from `--tone-attention` (amber): a blocked run is
+  waiting on you, not broken, and the canvas draws both.
+
+**What closed it** (branch `T3-code`; every commit ran the full gate first).
+
+| Piece | Commit | Test that fails without it |
+|---|---|---|
+| Bundled fonts, `font/woff2` MIME | `401c4f0` | `t-assets` section 8 |
+| Dark tokens, flat chrome, no glass | `9e7985d` | `t-theme` (every token re-pinned) |
+| Route table, tab host, Settings tabs | `58157cb` | new `t-routes` |
+| Four-item rail, header, Ctrl K | `cc4a91d` | new `t-palette`; `t-theme-geometry` |
+| Overview | `ab7dc08` | `t-pages` Overview pins; `t-routes` |
+| Run chips and session inspector | `6fa38fb` | new `t-inspector`; `t-pages` thread pins |
+| Doctor in Inbox, copy, tap targets | `6339075` | `t-pages` (`doctorItem`) |
+| Canvas fidelity pass | `47d2a2b` | `t-theme` pins |
+
+**Acceptance evidence.**
+
+- **Source.** `npm test`: 95 suites in the Linux container, all passing but
+  `t-electron.js`, which cannot launch Electron without a display (the baseline
+  was 92 with the same single failure). `t-theme-geometry` ran in real Chromium.
+- **Browser.** A seeded team (a blocked run with recovery history and a
+  completed run in history, five tasks, three approvals, twelve conversations, a
+  thread with a code block and a long unbroken URL) was audited route by route at
+  1440x900, 1280x720 and 720x900 in real Chromium: horizontal overflow, targets
+  under 44px, and WCAG contrast of every rendered text node with alpha-blended
+  backgrounds. Clean at all three after fixes, no console errors. Also driven by
+  hand: Ctrl K with Enter and Escape, Ctrl N, the four rail targets, the
+  collapsed rail (47x44 buttons), the 720px drawer (0 of 30 Tab presses
+  escaped), the inline objective editor, the run chips, and typing into the Tasks
+  chip's form while four stream events arrived.
+- **Fidelity.** The canvas's Overview and Run thread boards were rendered as
+  static HTML and compared with the app; the gaps found were closed in the last
+  commit. The Inbox, Team, Knowledge, Automations and Settings pages have no
+  board of their own in the canvas that was read, so they follow the system, not
+  a drawing.
+- **Not held.** Electron and Windows (`t-electron.js` runs on `windows-latest`
+  CI only); a desktop notification on a real OS; the user's own acceptance
+  of how it looks.

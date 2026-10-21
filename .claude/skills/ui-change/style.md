@@ -20,27 +20,22 @@ written nowhere else.
 
 ## Which system this is
 
-The Cold-Call Workflow kit, adopted in full at the sovereign's direction on
-2026-09-21. It **reverses** PLAN.md section 1, which had retired that same
-source on 2026-09-17 in favour of Hiveory. Hiveory's spec stays in PLAN.md as
-the record of what was agreed then; it is not what the app implements. Paper,
-not a dark shell.
+The T3 Code canvas ("Agentic OS - T3 Code style"), adopted at the user's
+direction on 2026-10-21. It **reverses** the Cold-Call Workflow paper theme of
+2026-09-21, which had itself reversed Hiveory on 2026-09-17. PLAN.md section 1
+keeps the two earlier specs and its last section is the contract for this one.
+Dark, neutral and flat; no glass, grain or wash.
 
 Read the values from `ui/app.css`'s `:root` comment and the pins in
 `test/t-theme.js`. This file deliberately names none of them, because a cached
-palette is exactly what went stale when the system reversed.
+palette is exactly what went stale each time the system reversed.
 
-Two traps that neither file shouts, both from HANDOFF.md:
-
-- **The kit's own contrast figures are measured against `--paper`**, and this
-  app's rail and every section sit on `--paper-deep`. Two tokens are
-  deliberately darker than the kit ships so they clear 4.5:1 on the ground they
-  actually sit on. The suite fails if either is "restored" to the kit value, so
-  a well-meaning correction toward the source is a regression here.
-- **One of the kit's published ratios does not reproduce.** Its contrast card
-  claims 12.1:1 for ink on paper; `ui/app.css` records the number computed
-  instead. Five of its six figures reproduce exactly and that one does not.
-  Compute, do not quote — HANDOFF.md operating rule 2.
+One trap, from HANDOFF.md: **the canvas fails this app's own rules in places,
+and the rule wins.** Its metadata grey is under 4.5:1 on the ground the rail and
+every section sit on, so `--faint` is lighter than the canvas ships; its small
+chips keep their look inside 44px hit areas. The suite fails if `--faint` is
+"restored" to the canvas value. Compute contrast, do not quote it (HANDOFF.md
+operating rule 2), and measure it on the ground the text actually sits on.
 
 ## Status vocabulary
 
@@ -53,16 +48,16 @@ A new status string joins a tone set in `util.js`. It does not get a new colour.
 
 ## Type and motion
 
-Local font stacks only. This is an offline Electron app where a webfont fetch
-can fail silently, so the kit's faces are taken at their own declared fallbacks
-rather than shipped. Motion honours reduced motion, which the 2026-09-21 live
-session verified at both `reduce` and `no-preference`.
+Inter and JetBrains Mono are bundled in `ui/fonts` and loaded same-origin, so
+there is no network fetch to fail in an offline Electron window; the stylesheet
+may not `@import` or name a remote URL. The daemon must serve a font with a font
+MIME type or Chromium drops it silently (`test/t-assets.js`). Motion honours
+reduced motion.
 
 ## Scale
 
-The kit ships two scales and this app takes the **product** one, not the
-marketing one: it is a dense tool, not a landing page. Pills survive only where
-the kit itself pills. Marketing supplies display type and the mono, uppercase,
-tracked metadata label, which is the one convention all three of the kit's
-source builds share exactly — and the exact inverse of the Hiveory rule it
-replaced.
+12px card, 6px control, pill only for the status badge and the segmented
+control. Metadata (eyebrows, board names, table heads, form labels) is 11px,
+tracked, uppercase in the UI face; mono is for code, diff and log content.
+Status is a dot plus a label. The one primary action is the white fill, not the
+accent, which is reserved for live work, links and focus.

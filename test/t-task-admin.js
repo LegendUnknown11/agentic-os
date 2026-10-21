@@ -1,4 +1,4 @@
-// The sovereign managing the team's task list directly (Kingdom.manageTask).
+// The user managing the team's task list directly (AgenticOS.manageTask).
 //
 // Before this the UI could only watch the queue. Every change here must reach
 // the member it affects as a message, or a reassigned member keeps working a
@@ -10,33 +10,34 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Kingdom } from '../src/kingdom.js';
+import { AgenticOS } from '../src/agenticos.js';
+import { removeRepo } from './cleanup.js';
 
-const repo = mkdtempSync(join(tmpdir(), 'kingdom-taskadmin-'));
+const repo = mkdtempSync(join(tmpdir(), 'agenticos-taskadmin-'));
 const git = (...x) => execFileSync('git', x, { cwd: repo, stdio: 'pipe' });
 git('init', '-q');
-git('config', 'user.email', 'k@kingdom');
-git('config', 'user.name', 'kingdom');
+git('config', 'user.email', 'k@agenticos');
+git('config', 'user.name', 'agenticos');
 writeFileSync(join(repo, 'README.md'), '# t\n');
 git('add', '-A');
 git('commit', '-qm', 'init');
-const configPath = join(repo, 'kingdom.config.json');
+const configPath = join(repo, 'agenticos.config.json');
 writeFileSync(configPath, JSON.stringify({
   orchestrator: { name: 'orchestrator', cli: 'codex' },
   briefer: { name: 'briefer', cli: 'codex' },
-  peasants: [{ name: 'coder', cli: 'codex' }, { name: 'tester', cli: 'codex' }],
+  agents: [{ name: 'coder', cli: 'codex' }, { name: 'tester', cli: 'codex' }],
 }));
 
-const k = new Kingdom(repo, configPath);
+const k = new AgenticOS(repo, configPath);
 k.on('error', () => {});
 await k.start();
-const inbox = (name) => k.bus.history({ limit: 400 }).filter((m) => m.recipient === name && m.sender === 'sovereign');
+const inbox = (name) => k.bus.history({ limit: 400 }).filter((m) => m.recipient === name && m.sender === 'user');
 
 try {
   /* ---------- create, with and without an owner ---------- */
   const loose = k.manageTask({ op: 'create', title: 'write the changelog' });
   a.equal(loose.state, 'pending');
-  a.equal(loose.by, 'sovereign', 'the task records who asked for it');
+  a.equal(loose.by, 'user', 'the task records who asked for it');
   const owned = k.manageTask({ op: 'create', title: 'fix the parser', detail: 'nested quotes', owner: 'coder', priority: 2 });
   a.equal(owned.owner, 'coder');
   a.equal(owned.state, 'active');
@@ -61,19 +62,19 @@ try {
   const moved = k.manageTask({ op: 'assign', id: owned.id, owner: 'tester' });
   a.equal(moved.owner, 'tester');
   a.match(inbox('tester').at(-1)?.body ?? '', /assigned to you/);
-  a.match(inbox('coder').at(-1)?.body ?? '', /reassigned to tester by the sovereign\. Stop work on it\./,
+  a.match(inbox('coder').at(-1)?.body ?? '', /reassigned to tester by the user\. Stop work on it\./,
     'the previous owner must be told to stop');
   const freed = k.manageTask({ op: 'assign', id: owned.id, owner: null });
   a.equal(freed.owner, null);
   a.equal(freed.state, 'pending');
-  a.match(inbox('tester').at(-1)?.body ?? '', /unassigned by the sovereign/);
+  a.match(inbox('tester').at(-1)?.body ?? '', /unassigned by the user/);
 
   /* ---------- drop and reopen ---------- */
   k.manageTask({ op: 'assign', id: loose.id, owner: 'coder' });
   const dropped = k.manageTask({ op: 'drop', id: loose.id });
   a.equal(dropped.state, 'dropped');
   a.equal(dropped.owner, null);
-  a.match(inbox('coder').at(-1)?.body ?? '', /dropped by the sovereign/);
+  a.match(inbox('coder').at(-1)?.body ?? '', /dropped by the user/);
   a.throws(() => k.manageTask({ op: 'assign', id: loose.id, owner: 'coder' }), /reopen it first/,
     'a dropped task cannot be handed out without reopening it');
   const reopened = k.manageTask({ op: 'reopen', id: loose.id });
@@ -98,8 +99,8 @@ try {
 
   a.throws(() => k.manageTask({ op: 'drop', id: 9999 }), /No task #9999/);
   a.throws(() => k.manageTask({ op: 'teleport', id: loose.id }), /Unknown task operation/);
-  console.log('t-task-admin.js OK — the sovereign can create, assign, reprioritise, drop and reopen, and members are told');
+  console.log('t-task-admin.js OK — the user can create, assign, reprioritise, drop and reopen, and members are told');
 } finally {
   await k.stop();
-  rmSync(repo, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  removeRepo(repo);
 }

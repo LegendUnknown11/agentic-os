@@ -1,6 +1,8 @@
 import { h, page, section, empty, note, button, field, input, textarea, select, check, modelLabel, post, subscribe, editing } from './util.js';
 import { setPrefs } from '../store.js';
-import { courtsSwitcher, refreshCourts } from './courts.js';
+import { teamsSwitcher, refreshTeams } from './teams.js';
+import { mountUsage } from './usage.js';
+import { mountDoctor } from './doctor.js';
 
 let Assets, Notify, soundOn, setSound, cue;
 let dependencies;
@@ -18,6 +20,7 @@ const loadDependencies = () => dependencies ??= Promise.all([
 const TABS = [
   ['repo', 'Repository'], ['efficiency', 'Models & efficiency'], ['appearance', 'Appearance'],
   ['music', 'Music'], ['documents', 'Documents'], ['notifications', 'Notifications'], ['sounds', 'Sounds'], ['pet', 'Desk pet'],
+  ['usage', 'Usage'], ['doctor', 'Doctor'],
 ];
 const models = (state) => Object.entries(state.models ?? {}).flatMap(([cli, list]) => (list ?? []).map((model) => [`${cli}:${model}`, `${cli} · ${modelLabel(model)}`]));
 const fileList = (kind) => Assets.list().filter((asset) => asset.kind === kind);
@@ -147,12 +150,12 @@ function repository(state, root) {
       attach.disabled = false;
       pickerMessage.textContent = result.error ?? 'Could not attach that repository.';
       pickerMessage.hidden = false;
-      // attachRepo still refuses to move a LIVE court onto a different repo
-      // (src/kingdom.js) — that message is unchanged. The fix for it no
-      // longer waits for this exact failure to surface: "End court and
+      // attachRepo still refuses to move a LIVE team onto a different repo
+      // (src/agenticos.js) — that message is unchanged. The fix for it no
+      // longer waits for this exact failure to surface: "End team and
       // switch…" is always available below when the shell bridge exists,
-      // and the courts switcher offers the non-destructive alternative
-      // (open that repo's OWN court instead) without hitting this wall at all.
+      // and the teams switcher offers the non-destructive alternative
+      // (open that repo's OWN team instead) without hitting this wall at all.
     } else {
       attach.disabled = false;
       pickerMessage.className = 'note success';
@@ -160,9 +163,9 @@ function repository(state, root) {
       pickerMessage.hidden = false;
     }
   }, 'primary');
-  const choose = window.kingdomShell?.chooseRepo ? button('Choose folder…', async () => {
+  const choose = window.agenticosShell?.chooseRepo ? button('Choose folder…', async () => {
     try {
-      const picked = await window.kingdomShell.chooseRepo();
+      const picked = await window.agenticosShell.chooseRepo();
       if (picked?.path) { path.value = picked.path; attach.click(); }
       else if (picked?.error) { pickerMessage.textContent = picked.error; pickerMessage.hidden = false; }
     } catch (error) {
@@ -170,15 +173,15 @@ function repository(state, root) {
       pickerMessage.hidden = false;
     }
   }) : null;
-  // Ends the CURRENT court. Kept for the case the courts switcher below does
+  // Ends the CURRENT team. Kept for the case the teams switcher below does
   // not cover: replacing this window's own repo in place rather than opening
-  // a second court alongside it. window-open removed the fail-first gating
+  // a second team alongside it. window-open removed the fail-first gating
   // this used to have (issue #42) — it no longer waits for attachRepo to hit
-  // its "fresh court" wall before offering the real fix.
-  const switchRepo = window.kingdomShell?.switchRepo ? button('End workspace and switch to this repository…', async () => {
+  // its "fresh team" wall before offering the real fix.
+  const switchRepo = window.agenticosShell?.switchRepo ? button('End workspace and switch to this repository…', async () => {
     switchRepo.disabled = true;
     try {
-      const result = await window.kingdomShell.switchRepo(path.value.trim());
+      const result = await window.agenticosShell.switchRepo(path.value.trim());
       if (result?.canceled) { switchRepo.disabled = false; return; }
       if (result?.ok === false) {
         pickerMessage.className = 'note danger';
@@ -195,9 +198,9 @@ function repository(state, root) {
     }
   }) : null;
 
-  if (root && state.courts === undefined) {
-    state.courts = [];
-    refreshCourts(state, () => { if (root.isConnected) renderSettings(state, root); });
+  if (root && state.teams === undefined) {
+    state.teams = [];
+    refreshTeams(state, () => { if (root.isConnected) renderSettings(state, root); });
   }
   const rerender = () => { if (root?.isConnected) renderSettings(state, root); };
 
@@ -208,7 +211,7 @@ function repository(state, root) {
     pickerMessage,
     h('h3', { text: 'Other workspaces' }),
     note('Open or start a workspace for another repository without ending this one, or end one that is no longer needed.'),
-    courtsSwitcher(state, rerender));
+    teamsSwitcher(state, rerender));
 }
 
 function efficiency(state) {
@@ -321,10 +324,17 @@ function sounds() {
 function pet(state) {
   const enabled = check(state.prefs.pet !== false);
   enabled.addEventListener('change', () => setPrefs({ pet: enabled.checked }));
-  return section('Desk pet', field('Show the desk pet', enabled), button('Open desk pet', () => window.kingdomShell?.openPet ? window.kingdomShell.openPet() : window.open('/pet.html', 'kingdom-pet')), note('Close the pet window with its own shoo button.'));
+  return section('Desk pet', field('Show the desk pet', enabled), button('Open desk pet', () => window.agenticosShell?.openPet ? window.agenticosShell.openPet() : window.open('/pet.html', 'agenticos-pet')), note('Close the pet window with its own shoo button.'));
 }
 
-const BUILDERS = { repo: repository, efficiency, appearance, music, documents, notifications, sounds, pet };
+// Usage and Doctor left the rail and live here. Each keeps its own view, mounted
+// into a panel after the page is drawn, so its subscriptions and request tokens
+// are its own; the embed's cleanup runs before every repaint and on unmount.
+const EMBEDS = { usage: mountUsage, doctor: mountDoctor };
+let stopEmbed = () => {};
+const embedPanel = (key) => () => h('div', { class: 'settings-embed', 'data-embed': key });
+
+const BUILDERS = { repo: repository, efficiency, appearance, music, documents, notifications, sounds, pet, usage: embedPanel('usage'), doctor: embedPanel('doctor') };
 
 export function renderSettings(state, root) {
   if (dependencyError) {
@@ -339,6 +349,8 @@ export function renderSettings(state, root) {
     });
     return;
   }
+  stopEmbed();
+  stopEmbed = () => {};
   root.replaceChildren();
   const requested = state.settingsSection ?? 'repo';
   const active = requested === 'summary' || requested === 'advisor' ? 'efficiency' : requested;
@@ -360,6 +372,8 @@ export function renderSettings(state, root) {
   }
   shell.append(nav, BUILDERS[active]?.(state, root) ?? empty('Unknown settings section.'));
   root.append(shell);
+  const panel = shell.querySelector('[data-embed]');
+  if (panel && EMBEDS[panel.dataset.embed]) stopEmbed = EMBEDS[panel.dataset.embed](state, panel) ?? (() => {});
 }
 
 export function mountSettings(state, root) {
@@ -406,6 +420,8 @@ export function mountSettings(state, root) {
   void start();
   return () => {
     active = false;
+    stopEmbed();
+    stopEmbed = () => {};
     offStore?.();
     offAssets?.();
     offMusic?.();

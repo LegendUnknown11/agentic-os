@@ -1,4 +1,4 @@
-// Peek at a kingdom's bus:  node test/dump.js <repo> [msgs|events]
+// Peek at a team's bus:  node test/dump.js <repo> [msgs|events]
 import { resolve } from 'node:path';
 import { Bus } from '../src/bus.js';
 import { dbPath } from '../src/worktree.js';

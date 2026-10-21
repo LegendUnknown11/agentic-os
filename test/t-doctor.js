@@ -1,4 +1,4 @@
-// The doctor's job is to tell the sovereign the truth about their setup. A
+// The doctor's job is to tell the user the truth about their setup. A
 // false BLOCKING failure is the worst outcome it can produce: it sends them to
 // fix something that is not broken, and it trains them to disbelieve the next
 // one — which will be real.
@@ -7,7 +7,7 @@
 // because that is the part that changes without warning. It did: agy started
 // printing `id<TAB>Display Name` and the whole-line matcher rejected every
 // model, so a signed-in CLI with 11 models was reported as "probably not
-// signed in" and the doctor declared the kingdom unusable.
+// signed in" and the doctor declared the team unusable.
 //
 //   node test/t-doctor.js
 import { strict as a } from 'node:assert';

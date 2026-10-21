@@ -24,7 +24,7 @@
 //
 //     T* = c0 + sqrt( 2·g·c0·(1 + 12.5b) )
 //
-// Note what is NOT in it: the price level cancels. A luna peasant and a terra
+// Note what is NOT in it: the price level cancels. A luna agent and a terra
 // orchestrator have the same optimal threshold. Only c0, g, and whether writes are
 // billed matter — which also means this cannot be tuned per-model, only
 // per-growth-rate.
@@ -37,7 +37,9 @@
 // and deliberately not guessed at. Read T* as "below this, recycling loses
 // money even if catching up were free."
 //
-// Read-only. Safe to run while the court is working.
+// Read-only, apart from the one-time move of pre-rename state (src/legacy.js)
+// on first use. Safe to run while the team is working.
+import './legacy-boot.js'; // first: legacy env fallback and home migration, before any module reads env
 import { DatabaseSync } from 'node:sqlite';
 import { resolve } from 'node:path';
 import { dbPath } from './worktree.js';
@@ -132,7 +134,7 @@ export function report(seq, { cli, model, current, table } = {}) {
     out.push('');
 
     // The decisive local fact is not the optimum — it is whether the threshold
-    // is reached at all. A setting the court never touches cannot be costing
+    // is reached at all. A setting the team never touches cannot be costing
     // anything, and "tune it" would be advice about a branch that never runs.
     const peak = Math.max(...s);
     if (current && peak < current) {
@@ -208,7 +210,7 @@ if (process.argv[1]?.endsWith('recycle.js') && !process.argv[2]) {
     'and the floor must be cheaper than the current setting, or it is misnamed');
   a.ok(costPerTurn(160_000, p) / costPerTurn(20_000, p) > 3,
     'the range must be a LARGE proportional difference — a report calling it '
-    + 'negligible would be talking the sovereign out of a real lever');
+    + 'negligible would be talking the user out of a real lever');
 
   a.equal(costPerTurn(1000, { c0: 5000, growth: 100, cli: 'codex', model: 'gpt-5.6-luna' }), null,
     'a threshold below the starting context is not a setting, it is a bug');
@@ -222,14 +224,16 @@ if (process.argv[1]?.endsWith('recycle.js') && !process.argv[2]) {
 if (process.argv[1]?.endsWith('recycle.js') && process.argv[2]) {
   const repo = resolve(process.argv[2]);
   const db = new DatabaseSync(dbPath(repo), { readOnly: true });
-  // A worked repo usually has NO kingdom.config.json of its own — the court is
+  // A worked repo usually has NO agenticos.config.json of its own — the team is
   // driven from the orchestrator's. Falling back to it is what makes `current`
   // land, and without `current` the report cannot say the one thing that
   // matters most: whether the threshold was ever reached.
   const { readFileSync } = await import('node:fs');
-  const { defaultConfigPath } = await import('./kingdom.js');
+  const { defaultConfigPath } = await import('./agenticos.js');
   let cfg = {};
-  for (const p of [resolve(repo, 'kingdom.config.json'), defaultConfigPath(repo)]) {
+  const { LEGACY } = await import('./legacy.js');
+  // A repo's own config may still carry its pre-rename name: read, never moved, it is the user's file.
+  for (const p of [resolve(repo, 'agenticos.config.json'), resolve(repo, LEGACY.config), defaultConfigPath(repo)]) {
     try { cfg = JSON.parse(readFileSync(p, 'utf8')); break; } catch { /* try the next */ }
   }
   const cli = process.argv[3] ?? cfg.orchestrator?.cli ?? 'codex';

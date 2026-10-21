@@ -1,30 +1,31 @@
-// The court registry: one row per live daemon, so more than one repository
+// The team registry: one row per live daemon, so more than one repository
 // can be open at once (issue #42) without two daemons ever colliding on a
-// port or a sovereign losing track of which court is which.
+// port or a user losing track of which team is which.
 //
-// One daemon PROCESS per repository is unchanged — Kingdom#attachRepo still
-// refuses a second repo inside a live process (src/kingdom.js:1546), and
+// One daemon PROCESS per repository is unchanged — AgenticOS#attachRepo still
+// refuses a second repo inside a live process (src/agenticos.js:1546), and
 // that stays true. What changes is that starting a NEW process for a
 // DIFFERENT repository is now supported: this module is how each daemon
 // announces itself, how a launcher finds a free port, and how a stale entry
 // (crashed daemon, killed -9, reused pid) gets pruned instead of haunting
 // the registry forever.
 //
-// Convention match: `~/.kingdom/tokens.json` is the existing out-of-tree,
+// Convention match: `~/.agenticos/tokens.json` is the existing out-of-tree,
 // global (not per-repo) file — see src/worktree.js's globalTokenStore(). This
 // registry sits right beside it, same directory, same "never inside a
 // tracked repo" rule.
 import { mkdirSync, readFileSync, writeFileSync, rmSync, renameSync, statSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
+import { LEGACY } from './legacy.js';
 import { join, dirname, basename, resolve } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { createServer, request as httpRequest } from 'node:http';
 
-/** Overridable for tests, the same way KINGDOM_TOKEN_STORE overrides the
- *  token file — never read by real callers, only by test/t-courts.js. */
+/** Overridable for tests, the same way AGENTICOS_TOKEN_STORE overrides the
+ *  token file — never read by real callers, only by test/t-teams.js. */
 export function registryPath() {
-  return process.env.KINGDOM_COURTS_REGISTRY
-    ?? join(homedir(), '.kingdom', 'courts.json');
+  return process.env.AGENTICOS_TEAMS_REGISTRY
+    ?? join(homedir(), '.agenticos', 'teams.json');
 }
 
 const LOCK_STALE_MS = 5_000; // a crashed holder's lock dir older than this is stolen, not waited on
@@ -55,7 +56,7 @@ async function withLock(path, fn) {
       if (age > LOCK_STALE_MS) {
         try { rmSync(lockDir, { recursive: true, force: true }); continue; } catch { /* raced; loop */ }
       }
-      if (Date.now() > deadline) throw new Error('courts registry: lock held too long, giving up');
+      if (Date.now() > deadline) throw new Error('teams registry: lock held too long, giving up');
       await new Promise((r) => setTimeout(r, LOCK_RETRY_MS));
     }
   }
@@ -69,7 +70,9 @@ async function withLock(path, fn) {
 function readRegistryRaw(path) {
   try {
     const parsed = JSON.parse(readFileSync(path, 'utf8'));
-    return Array.isArray(parsed?.courts) ? parsed.courts : [];
+    // A registry written before the rename keeps its rows under the old key.
+    const rows = parsed?.teams ?? parsed?.[LEGACY.registryKey];
+    return Array.isArray(rows) ? rows : [];
   } catch {
     return [];
   }
@@ -78,10 +81,10 @@ function readRegistryRaw(path) {
 /** Atomic write: write to a sibling temp file, then rename over the target.
  *  `rename` is atomic on the same filesystem on every OS this app ships to,
  *  so a reader never observes a half-written registry. */
-function writeRegistryRaw(path, courts) {
+function writeRegistryRaw(path, teams) {
   mkdirSync(dirname(path), { recursive: true });
-  const tmp = join(dirname(path), `.courts.${randomBytes(6).toString('hex')}.tmp`);
-  writeFileSync(tmp, JSON.stringify({ courts }, null, 2));
+  const tmp = join(dirname(path), `.teams.${randomBytes(6).toString('hex')}.tmp`);
+  writeFileSync(tmp, JSON.stringify({ teams }, null, 2));
   renameSync(tmp, path);
 }
 
@@ -90,12 +93,12 @@ function writeRegistryRaw(path, courts) {
 /**
  * The identity of a checkout, not of the string naming it. One checkout can
  * be reached as `C:\\Repo`, `c:\\repo`, an 8.3 short name, or through a
- * junction or symlink — and one-court-per-repo only holds if all of those
+ * junction or symlink — and one-team-per-repo only holds if all of those
  * compare equal. realpath (native, as src/worktree.js already uses) resolves
  * links and short names for a path that exists; Windows and macOS file
  * systems are case-insensitive by default, so their keys are case-folded.
  * A path that does not exist falls back to resolve(), so a pure caller (the
- * self-check below, or a court whose repo was deleted) still compares sanely.
+ * self-check below, or a team whose repo was deleted) still compares sanely.
  */
 export function repoKey(p, platform = process.platform) {
   if (p == null || p === '') return '';
@@ -114,8 +117,8 @@ export function sameRepo(a, b, platform = process.platform) {
 /** First free port at or after `start`, skipping every port already
  *  occupied by a live entry. `isFree` is injected so the self-check never
  *  binds a real socket; real callers pass tryBindPort below. */
-export async function pickFreePort(start, liveCourts, isFree) {
-  const taken = new Set(liveCourts.map((c) => c.port));
+export async function pickFreePort(start, liveTeams, isFree) {
+  const taken = new Set(liveTeams.map((c) => c.port));
   for (let port = start; port < start + 500; port++) {
     if (taken.has(port)) continue;
     if (await isFree(port)) return port;
@@ -123,8 +126,8 @@ export async function pickFreePort(start, liveCourts, isFree) {
   throw new Error(`no free port found starting from ${start}`);
 }
 
-export function findCourtForRepo(courts, repo) {
-  return courts.find((c) => sameRepo(c.repo, repo)) ?? null;
+export function findTeamForRepo(teams, repo) {
+  return teams.find((c) => sameRepo(c.repo, repo)) ?? null;
 }
 
 // ---- I/O (real pid liveness, real ping, real socket bind) ------------------
@@ -148,9 +151,9 @@ export function isPidAlive(pid) {
 // pool (test/run-all.js), a stub HTTP server that answers instantly when run
 // alone was seen timing out at 800ms under real CPU contention from
 // neighbouring suites — the same class of flakiness test/run-all.js already
-// documents for `court self-control`, not a bug in this module. Measured:
+// documents for `team self-control`, not a bug in this module. Measured:
 // the retry-alone run that exposed it took under 40ms once the pool drained.
-export function pingCourt(port, repo, { timeoutMs = 1500 } = {}) {
+export function pingTeam(port, repo, { timeoutMs = 1500 } = {}) {
   return new Promise((resolvePromise) => {
     const req = httpRequest({ host: '127.0.0.1', port, path: '/api/ping', method: 'GET', timeout: timeoutMs }, (res) => {
       let body = '';
@@ -181,7 +184,7 @@ export function tryBindPort(port) {
 }
 
 /** Ping every row in parallel, OUTSIDE the registry lock. A lock held across
- *  network waits can outlive LOCK_STALE_MS (a few unresponsive courts at
+ *  network waits can outlive LOCK_STALE_MS (a few unresponsive teams at
  *  1.5s each) and be stolen mid read-modify-write; the lock now only ever
  *  covers a file read and write. Keyed by port+pid+repo so a verdict can only
  *  ever apply to the exact row it was taken for. The repository claim is part
@@ -189,33 +192,33 @@ export function tryBindPort(port) {
  *  keeping its port and pid, and a verdict pinged for the old claim must not
  *  be applied to the new one. */
 export const rowKey = (c) => `${c.port}:${c.pid}:${c.repo ?? ''}`;
-async function verdictsFor(courts, isOwnRow = () => false) {
+async function verdictsFor(teams, isOwnRow = () => false) {
   const verdicts = new Map();
-  await Promise.all(courts.map(async (c) => {
-    verdicts.set(rowKey(c), isOwnRow(c) ? false : isPidAlive(c.pid) && await pingCourt(c.port, c.repo));
+  await Promise.all(teams.map(async (c) => {
+    verdicts.set(rowKey(c), isOwnRow(c) ? false : isPidAlive(c.pid) && await pingTeam(c.port, c.repo));
   }));
   return verdicts;
 }
 /** Rows the snapshot proved dead are dropped; rows written after the
  *  snapshot (another launch registering meanwhile) have no verdict and are
  *  kept — a fresh claim is never discarded for not having been pinged yet. */
-export const keepLive = (courts, verdicts) => courts.filter((c) => verdicts.get(rowKey(c)) !== false);
+export const keepLive = (teams, verdicts) => teams.filter((c) => verdicts.get(rowKey(c)) !== false);
 
-/** Read the registry and drop every entry that is no longer a live court:
+/** Read the registry and drop every entry that is no longer a live team:
  *  dead pid, or a port that does not answer /api/ping for that repo. The
  *  pruned list is written back so the file self-heals on every read rather
  *  than accreting corpses. */
-export async function listCourts() {
+export async function listTeams() {
   const verdicts = await verdictsFor(readRegistryRaw(registryPath()));
   return withLock(registryPath(), async () => {
-    const courts = readRegistryRaw(registryPath());
-    const live = keepLive(courts, verdicts);
-    if (live.length !== courts.length) writeRegistryRaw(registryPath(), live);
+    const teams = readRegistryRaw(registryPath());
+    const live = keepLive(teams, verdicts);
+    if (live.length !== teams.length) writeRegistryRaw(registryPath(), live);
     return live;
   });
 }
 
-export class CourtConflictError extends Error {
+export class TeamConflictError extends Error {
   constructor(existing) {
     super(`${existing.repo} already has a live workspace on port ${existing.port}.`);
     this.existing = existing;
@@ -224,19 +227,19 @@ export class CourtConflictError extends Error {
 
 /**
  * Called by a daemon right after it binds its port, before it starts doing
- * real work. Refuses (CourtConflictError) if this repository already has a
- * live court elsewhere — the caller (daemon.js) must then exit rather than
+ * real work. Refuses (TeamConflictError) if this repository already has a
+ * live team elsewhere — the caller (daemon.js) must then exit rather than
  * serve a second, conflicting daemon for the same repo. Safe against two
  * launches racing: both take the same lock, so only one wins the register
  * and the loser sees the winner's entry in `existing`.
  */
-export async function registerCourt({ repo, port, pid, startedAt = new Date().toISOString() }) {
+export async function registerTeam({ repo, port, pid, startedAt = new Date().toISOString() }) {
   // never trust our own stale row: it is about to be replaced
   const verdicts = await verdictsFor(readRegistryRaw(registryPath()), (c) => c.pid === pid && c.port === port);
   return withLock(registryPath(), async () => {
     const live = keepLive(readRegistryRaw(registryPath()), verdicts);
-    const existing = findCourtForRepo(live, repo);
-    if (existing && existing.port !== port) throw new CourtConflictError(existing);
+    const existing = findTeamForRepo(live, repo);
+    if (existing && existing.port !== port) throw new TeamConflictError(existing);
     const next = [...live.filter((c) => c.port !== port), { repo, port, pid, startedAt }];
     writeRegistryRaw(registryPath(), next);
     return { repo, port, pid, startedAt };
@@ -244,25 +247,25 @@ export async function registerCourt({ repo, port, pid, startedAt = new Date().to
 }
 
 /** Called on daemon shutdown so a clean exit leaves no corpse for the next
- *  listCourts() to have to detect and prune itself. Best-effort: shutdown
+ *  listTeams() to have to detect and prune itself. Best-effort: shutdown
  *  paths (SIGTERM, uncaughtException) must not be blocked by this. */
-export async function unregisterCourt({ port, pid }) {
+export async function unregisterTeam({ port, pid }) {
   return withLock(registryPath(), async () => {
-    const courts = readRegistryRaw(registryPath());
-    const next = courts.filter((c) => !(c.port === port && c.pid === pid));
-    if (next.length !== courts.length) writeRegistryRaw(registryPath(), next);
+    const teams = readRegistryRaw(registryPath());
+    const next = teams.filter((c) => !(c.port === port && c.pid === pid));
+    if (next.length !== teams.length) writeRegistryRaw(registryPath(), next);
   });
 }
 
-/** First free port from `start` upward that no live court occupies AND that
+/** First free port from `start` upward that no live team occupies AND that
  *  a real socket can actually bind — the two-step real callers need. */
-export async function firstFreePort(start, liveCourts) {
-  return pickFreePort(start, liveCourts, tryBindPort);
+export async function firstFreePort(start, liveTeams) {
+  return pickFreePort(start, liveTeams, tryBindPort);
 }
 
 // ---- self-check -------------------------------------------------------------
-if (basename(process.argv[1] ?? '') === 'courts.js') {
-  const assert = (cond, msg) => { if (!cond) throw new Error(`courts.js self-check failed: ${msg}`); };
+if (basename(process.argv[1] ?? '') === 'teams.js') {
+  const assert = (cond, msg) => { if (!cond) throw new Error(`teams.js self-check failed: ${msg}`); };
 
   assert(sameRepo('/a/b', '/a/b/'), 'trailing slash should still match');
   assert(sameRepo('/a/b', '/a/b'), 'identical paths should match');
@@ -271,19 +274,19 @@ if (basename(process.argv[1] ?? '') === 'courts.js') {
   assert(sameRepo('C:\\Repo\\App', 'c:\\repo\\app', 'win32'), 'Windows paths differing only in case are one checkout');
   assert(!sameRepo('/Repo/App', '/repo/app', 'linux'), 'Linux paths differing in case are different checkouts');
 
-  const courts = [{ repo: '/r1', port: 7777 }, { repo: '/r2', port: 7778 }, { repo: '/r3', port: 7779 }];
-  const rows = courts.map((c) => ({ ...c, pid: 1 }));
+  const teams = [{ repo: '/r1', port: 7777 }, { repo: '/r2', port: 7778 }, { repo: '/r3', port: 7779 }];
+  const rows = teams.map((c) => ({ ...c, pid: 1 }));
   const verdicts = new Map([[rowKey(rows[0]), true], [rowKey(rows[1]), false]]);
   const kept = keepLive(rows, verdicts);
   assert(kept.length === 2 && kept.every((c) => c.port !== 7778),
     'a row proved dead is dropped; a row with no verdict (registered after the snapshot) is kept');
 
-  assert(findCourtForRepo(courts, '/r2').port === 7778, 'findCourtForRepo should find an exact match');
-  assert(findCourtForRepo(courts, '/nope') === null, 'findCourtForRepo should return null for a miss');
+  assert(findTeamForRepo(teams, '/r2').port === 7778, 'findTeamForRepo should find an exact match');
+  assert(findTeamForRepo(teams, '/nope') === null, 'findTeamForRepo should return null for a miss');
 
   const busy = new Set([7777, 7778]);
   await (async () => {
-    const port = await pickFreePort(7777, courts, async (p) => !busy.has(p) && p !== 7779);
+    const port = await pickFreePort(7777, teams, async (p) => !busy.has(p) && p !== 7779);
     assert(port === 7780, `expected 7780, got ${port}`);
   })();
 
@@ -299,12 +302,12 @@ if (basename(process.argv[1] ?? '') === 'courts.js') {
   await (async () => {
     const { mkdtempSync, rmSync: rm } = await import('node:fs');
     const { tmpdir } = await import('node:os');
-    const dir = mkdtempSync(join(tmpdir(), 'courts-selfcheck-'));
-    const prevOverride = process.env.KINGDOM_COURTS_REGISTRY;
-    process.env.KINGDOM_COURTS_REGISTRY = join(dir, 'courts.json');
-    // registerCourt re-verifies every existing row by actually pinging it
+    const dir = mkdtempSync(join(tmpdir(), 'teams-selfcheck-'));
+    const prevOverride = process.env.AGENTICOS_TEAMS_REGISTRY;
+    process.env.AGENTICOS_TEAMS_REGISTRY = join(dir, 'teams.json');
+    // registerTeam re-verifies every existing row by actually pinging it
     // (a dead entry must not block a real conflict check), so the self-check
-    // needs a real listener standing in for "the other court" to be honest
+    // needs a real listener standing in for "the other team" to be honest
     // about what production does.
     const stub = createServer((req, res) => {
       res.writeHead(200, { 'content-type': 'application/json' });
@@ -312,30 +315,30 @@ if (basename(process.argv[1] ?? '') === 'courts.js') {
     });
     await new Promise((r) => stub.listen(19001, '127.0.0.1', r));
     try {
-      const a = await registerCourt({ repo: '/selfcheck/repo-a', port: 19001, pid: process.pid });
-      assert(a.port === 19001, 'registerCourt should echo back the port it stored');
+      const a = await registerTeam({ repo: '/selfcheck/repo-a', port: 19001, pid: process.pid });
+      assert(a.port === 19001, 'registerTeam should echo back the port it stored');
 
       let conflict = null;
-      try { await registerCourt({ repo: '/selfcheck/repo-a', port: 19002, pid: process.pid }); }
+      try { await registerTeam({ repo: '/selfcheck/repo-a', port: 19002, pid: process.pid }); }
       catch (e) { conflict = e; }
-      assert(conflict instanceof CourtConflictError, 'a second port for the same live repo must be refused');
+      assert(conflict instanceof TeamConflictError, 'a second port for the same live repo must be refused');
       assert(conflict.existing.port === 19001, 'the refusal should name the existing port');
 
       // Same port re-registering (a restart claiming the port back) must not
       // conflict with itself.
-      const again = await registerCourt({ repo: '/selfcheck/repo-a', port: 19001, pid: process.pid });
+      const again = await registerTeam({ repo: '/selfcheck/repo-a', port: 19001, pid: process.pid });
       assert(again.port === 19001, 're-registering the same repo/port should succeed');
 
-      await unregisterCourt({ port: 19001, pid: process.pid });
-      const after = JSON.parse(readFileSync(process.env.KINGDOM_COURTS_REGISTRY, 'utf8'));
-      assert(after.courts.length === 0, 'unregisterCourt should remove the entry');
+      await unregisterTeam({ port: 19001, pid: process.pid });
+      const after = JSON.parse(readFileSync(process.env.AGENTICOS_TEAMS_REGISTRY, 'utf8'));
+      assert(after.teams.length === 0, 'unregisterTeam should remove the entry');
     } finally {
       await new Promise((r) => stub.close(r));
-      if (prevOverride === undefined) delete process.env.KINGDOM_COURTS_REGISTRY;
-      else process.env.KINGDOM_COURTS_REGISTRY = prevOverride;
+      if (prevOverride === undefined) delete process.env.AGENTICOS_TEAMS_REGISTRY;
+      else process.env.AGENTICOS_TEAMS_REGISTRY = prevOverride;
       rm(dir, { recursive: true, force: true });
     }
   })();
 
-  console.log('courts.js: self-check passed');
+  console.log('teams.js: self-check passed');
 }

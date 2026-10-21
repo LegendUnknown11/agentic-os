@@ -1,4 +1,4 @@
-// The three panels that report on the court: metrics, diff/merge, vault.
+// The three panels that report on the team: metrics, diff/merge, vault.
 //
 // The one with teeth is metrics. Codex reports `usage` CUMULATIVELY PER THREAD
 // in turn.completed, so a naive sum counts every earlier turn again — on a real
@@ -7,7 +7,7 @@
 // including the session restart that makes the counter drop.
 //
 //   node test/t-panels.js
-// Never let a daemon this suite spawns touch the real ~/.kingdom/courts.json
+// Never let a daemon this suite spawns touch the real ~/.agenticos/teams.json
 // on the machine running the tests — see test/t-registry-isolation.js.
 import './isolate-registry.js';
 import { strict as a } from 'node:assert';
@@ -17,16 +17,16 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Bus } from '../src/bus.js';
-import { dbPath, kingdomDir, createWorktree, worktreePath } from '../src/worktree.js';
+import { dbPath, stateDir, createWorktree, worktreePath } from '../src/worktree.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const repo = realpathSync.native(mkdtempSync(join(tmpdir(), 'kingdom-panels-')));
+const repo = realpathSync.native(mkdtempSync(join(tmpdir(), 'agenticos-panels-')));
 const git = (...x) => execFileSync('git', x, { cwd: repo, stdio: 'pipe' });
 git('init', '-q');
-git('config', 'user.email', 'k@kingdom');
-git('config', 'user.name', 'kingdom');
+git('config', 'user.email', 'k@agenticos');
+git('config', 'user.name', 'agenticos');
 writeFileSync(join(repo, 'README.md'), '# t\n');
 writeFileSync(join(repo, 'app.js'), 'const a = 1;\nconst b = 2;\n');
 git('add', '-A');
@@ -35,21 +35,21 @@ git('commit', '-qm', 'init');
 const BASE = execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim();
 
 // A vault to browse, with a note that only matches by filename.
-const vault = realpathSync.native(mkdtempSync(join(tmpdir(), 'kingdom-panelvault-')));
+const vault = realpathSync.native(mkdtempSync(join(tmpdir(), 'agenticos-panelvault-')));
 mkdirSync(join(vault, 'References'), { recursive: true });
 mkdirSync(join(vault, '.obsidian'), { recursive: true });
 writeFileSync(join(vault, 'References', 'Effort Levels.md'), '# Effort\nluna goes to max\n');
 writeFileSync(join(vault, 'Roster.md'), '# Roster\nthe coder runs on luna\n');
 writeFileSync(join(vault, '.obsidian', 'workspace.md'), 'luna luna luna\n');
 
-const cfg = join(repo, 'kingdom.config.json');
+const cfg = join(repo, 'agenticos.config.json');
 writeFileSync(cfg, JSON.stringify({
   vault,
-  maxKingdomUsd: 75,
+  maxTotalUsd: 75,
   maxBudgetUsd: 5,
   orchestrator: { name: 'orchestrator', cli: 'codex' },
   briefer: { name: 'briefer', cli: 'codex' },
-  peasants: [{ name: 'coder', cli: 'codex' }],
+  agents: [{ name: 'coder', cli: 'codex' }],
   rolesSeeded: true,
   advisor: { promptEngineer: false, autoModel: false },
   // codex here has no $/token — it runs against a subscription plan's own
@@ -71,9 +71,10 @@ writeFileSync(cfg, JSON.stringify({
   turn('orchestrator', 25_000, 8_000);     // <- recycled: a fresh thread, counter resets
   turn('orchestrator', 50_000, 14_000);
   turn('coder', 40_000, 12_000);
-  bus.logEvent('coder', 'summoned', { by: 'orchestrator', approvalId: 1 });
+  bus.logEvent('coder', 'added', { by: 'orchestrator', approvalId: 1 });
   bus.set('spentUsd', '3.50');
   bus.set('spent:orchestrator', '2.00');
+  bus.set('ctx:orchestrator:default', '14000');   // what #record writes after a turn
   bus.logEvent('aux', 'aux_call', {
     purpose: 'summary', success: true, elapsedMs: 10,
     input: 100, cached: 60, written: 5, fresh: 35, output: 4,
@@ -84,29 +85,29 @@ writeFileSync(cfg, JSON.stringify({
   });
   bus.set('mask:calls', '2');
   bus.set('mask:chars', '800');
-  // One good approval and two the throne room cannot render. The UI does
+  // One good approval and two the dashboard cannot render. The UI does
   // `TITLES[a.kind] ?? a.kind.toUpperCase()`, so an entry with no `kind` threw
   // and took the whole approvals pass down with it — including the pending one
-  // the sovereign was waiting on. A bad row must cost only itself.
-  bus.post('orchestrator', null, JSON.stringify({ kind: 'summon', names: ['coder'], reason: 'work' }), 'approval');
+  // the user was waiting on. A bad row must cost only itself.
+  bus.post('orchestrator', null, JSON.stringify({ kind: 'add', names: ['coder'], reason: 'work' }), 'approval');
   bus.post('orchestrator', null, 'this is not json at all', 'approval');
   bus.post('orchestrator', null, JSON.stringify({ reason: 'parses, but has no kind' }), 'approval');
-  // A task list the sovereign can see. #2 waits on #1, so the panel must be
+  // A task list the user can see. #2 waits on #1, so the panel must be
   // able to distinguish "nobody has taken this" from "nobody CAN take it yet".
   const t1 = bus.addTask({ title: 'write the parser', by: 'orchestrator' });
   bus.addTask({ title: 'test the parser', needs: [t1], by: 'orchestrator' });
   bus.claimTask('coder', t1);
-  // In service, because only a summoned member can reach claim_task at all —
+  // In service, because only an added member can reach claim_task at all —
   // the MCP server that carries it runs per spawned agent. Without this the
-  // fixture describes a task held by somebody the court does not have, which
-  // start() now releases on sight (a dismissed or config-dropped member used
+  // fixture describes a task held by somebody the team does not have, which
+  // start() now releases on sight (a removed or config-dropped member used
   // to strand its claims forever). That is a different scenario than the one
   // this fixture is for.
-  bus.set('summoned', JSON.stringify(['coder']));
+  bus.set('added', JSON.stringify(['coder']));
   // Two finished runs with ledgers, so the run spend panel has a history.
   bus.createRun({ id: 'run-a', objective: 'first run', state: 'completed' });
   bus.recordRunSpend('run-a', 'coder', 0.25, 1);
-  bus.createRun({ id: 'run-b', objective: 'second run', state: 'cancelled' });
+  bus.createRun({ id: 'run-b', objective: 'second run', state: 'cancelled', lead: 'orchestrator' });
   bus.recordRunSpend('run-b', 'coder', 0.5, 2);
   bus.recordRunSpend('run-b', 'orchestrator', 0.75, 3);
   bus.close();
@@ -114,7 +115,7 @@ writeFileSync(cfg, JSON.stringify({
 
 const PORT = 7960 + (process.pid % 30);
 const base = `http://127.0.0.1:${PORT}`;
-process.env.KINGDOM_CODEX_BIN = process.execPath;
+process.env.AGENTICOS_CODEX_BIN = process.execPath;
 
 const daemon = spawn(process.execPath,
   [join(HERE, '..', 'src', 'daemon.js'), repo, '--port', String(PORT), '--config', cfg],
@@ -149,13 +150,13 @@ try {
     a.equal(orchestrator.role, 'orchestrator');
     a.equal(orchestrator.spent, 2);
     const coder = m.members.find((x) => x.name === 'coder');
-    a.equal(coder.summons, 1, 'summons are durable history, not inferred from the current roster set');
+    a.equal(coder.adds, 1, 'adds are durable history, not inferred from the current roster set');
 
     a.equal(m.total.turns, 6, 'orchestrator 5 + coder 1');
-    a.equal(m.total.summons, 1, 'the usage report exposes the court-wide summon count');
+    a.equal(m.total.adds, 1, 'the usage report exposes the team-wide add count');
     a.equal(m.total.in, 180_000, '140k + 40k');
     a.equal(orchestrator.fresh, 140_000, 'fresh input is exposed beside cache reads');
-    a.equal(m.total.fresh, 180_000, 'court-wide fresh input is additive');
+    a.equal(m.total.fresh, 180_000, 'team-wide fresh input is additive');
     a.equal(m.total.cacheRate, 0, 'cache rate is a ratio, not a token total');
     a.equal(m.total.cost.classification, 'unpriced', 'unknown model prices are named, not reported as free');
     a.equal(m.total.cost.total, 0, 'unpriced turns do not invent dollars');
@@ -163,6 +164,37 @@ try {
     a.equal(m.spent, 3.5);
     a.equal(m.cap, 75);
     a.equal(m.perMemberCap, 5);
+
+    // The context meter, served additively: every member's current session
+    // against its model's window, orchestrator first. No model is named in
+    // this config and so no window — null, never a guessed one.
+    a.ok(Array.isArray(m.context), '/api/metrics carries the context meter');
+    a.equal(m.context[0].name, 'orchestrator', 'the orchestrator is first');
+    // Asleep, the figure is the ctx: key #record wrote. Awake on a FRESH
+    // session (no saved session id here), the live agent's own measurement
+    // wins, and a fresh session holds nothing yet.
+    a.equal(m.context[0].tokens, m.context[0].awake ? 0 : 14_000,
+      'tokens in the session now: the live measurement, else the ctx: key');
+    a.equal(m.context[0].window, null, 'an unknown model has no window');
+    a.equal(m.context[0].pct, null);
+    a.deepEqual(orchestrator.context, m.context[0], 'and per member, beside the existing fields');
+
+    // Compact session is an action. A member that cannot be compacted right
+    // now answers 409 with a reason, not a 500 that reads as a crash.
+    const compact = await fetch(`${base}/api/compactSession`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: 'briefer' }),
+    });
+    const compactBody = await compact.json();
+    if (compact.status === 409) a.ok(['asleep', 'busy', 'recycling'].includes(compactBody.reason), compactBody.error);
+    else a.equal(compactBody.ok, true, `compactSession answered ${compact.status}: ${compactBody.error}`);
+    // Spend by day, from the ledger: the zone is named, today is always there.
+    a.ok(m.spendByDay?.timeZone, 'spendByDay names its time zone');
+    a.equal(m.spendByDay.days.length, 14, 'two weeks of local days, empty ones included');
+    a.equal(m.spendByDay.today.day, m.spendByDay.days[0].day, 'newest first, starting today');
+
+    const missing = await post('/api/compactSession', { name: 'nobody' });
+    a.equal(missing.ok, false);
+    a.match(missing.error, /No such team member/);
 
     // codex has no $/token in this config — quota tracks its real ceiling
     // (the plan's token allowance) instead of inventing a dollar figure.
@@ -204,8 +236,8 @@ try {
 
   /* ---------- 2. diff of real work ---------- */
   {
-    // A peasant with no worktree is a normal state, not an error.
-    let d = await get('/api/diff?peasant=coder');
+    // An agent with no worktree is a normal state, not an error.
+    let d = await get('/api/diff?agent=coder');
     a.equal(d.ok, true);
     a.equal(d.none, true, 'no worktree yet is reported, not thrown');
 
@@ -216,7 +248,7 @@ try {
     execFileSync('git', ['add', '-A'], { cwd: wt, stdio: 'pipe' });
     execFileSync('git', ['commit', '-qm', 'work'], { cwd: wt, stdio: 'pipe' });
 
-    d = await get('/api/diff?peasant=coder');
+    d = await get('/api/diff?agent=coder');
     a.equal(d.ok, true);
     a.equal(d.base, BASE);
     a.match(d.stat, /app\.js/, 'the stat must name the changed file');
@@ -226,14 +258,14 @@ try {
     a.equal(d.truncated, false);
 
     // One file at a time, for when the whole diff is too big to read.
-    const one = await get('/api/diff?peasant=coder&file=new.js');
+    const one = await get('/api/diff?agent=coder&file=new.js');
     a.match(one.diff, /new\.js/);
     a.ok(!one.diff.includes('const c = 3'), 'a single-file diff must not carry other files');
 
-    // Only peasants have worktrees; the orchestrator must not be diffable.
-    const k = await get('/api/diff?peasant=orchestrator');
+    // Only agents have worktrees; the orchestrator must not be diffable.
+    const k = await get('/api/diff?agent=orchestrator');
     a.equal(k.ok, false);
-    const ghost = await get('/api/diff?peasant=nobody');
+    const ghost = await get('/api/diff?agent=nobody');
     a.equal(ghost.ok, false);
     console.log('  diff: stat + patch, per-file view, orchestrator and unknowns refused');
   }
@@ -289,7 +321,7 @@ try {
   {
     const r = await fetch(base + '/api/workflows', {
       method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ id: '..\\..\\kingdom.config', name: 'escape', nodes: [] }),
+      body: JSON.stringify({ id: '..\\..\\agenticos.config', name: 'escape', nodes: [] }),
     });
     a.equal(r.status, 400, 'workflow IDs must not escape the workflow directory');
     a.deepEqual(await r.json(), { ok: false, error: 'invalid workflow id' });
@@ -352,7 +384,7 @@ try {
     bus.post('coder', 'tester', 'Try the suite again now.');
     bus.post('coder', 'orchestrator', 'Webhook work is finished.', 'done');
     bus.post('orchestrator', null, 'ignore me', 'notice');        // machinery, not narrative
-    bus.post('orchestrator', null, '{"kind":"summon"}', 'approval');
+    bus.post('orchestrator', null, '{"kind":"add"}', 'approval');
     bus.close();
 
     const all = await get('/api/log');
@@ -391,21 +423,21 @@ try {
     console.log('  log: two tables merged, newest first, filtered and searchable');
   }
 
-  /* ---------- 2c. campaigns: one sovereign order, one bounded interval ---- */
+  /* ---------- 2c. campaigns: one user order, one bounded interval ---- */
   {
     const { Bus: B } = await import('../src/bus.js');
     const bus = new B(dbPath(repo));
     bus.set('spentUsd', '4');
     bus.set('tokens', '100');
     const first = bus.beginCampaign('ship the parser');
-    bus.post('sovereign', 'orchestrator', 'ship the parser', 'assignment');
+    bus.post('user', 'orchestrator', 'ship the parser', 'assignment');
     bus.logEvent('coder', 'summary', { text: 'Parser campaign finished.' });
     bus.set('spentUsd', '4.5');
     bus.set('tokens', '150');
     bus.close();
 
     a.ok((await post('/api/command', { text: 'ship the formatter' })).ok,
-      'a real sovereign command must start the next campaign');
+      'a real user command must start the next campaign');
     await wait(20);
 
     const fresh = new B(dbPath(repo));
@@ -416,7 +448,7 @@ try {
 
     const campaigns = await get('/api/campaigns');
     a.equal(campaigns.ok, true);
-    a.equal(campaigns.campaigns.length, 2, 'two sovereign orders make two durable intervals');
+    a.equal(campaigns.campaigns.length, 2, 'two user orders make two durable intervals');
     const second = campaigns.campaigns.find((c) => c.title === 'ship the formatter');
     a.ok(second, 'the real command names the current campaign');
     a.equal(second.spentUsd, 0.5, 'current spend is the measured state delta, not a forecast');
@@ -452,7 +484,7 @@ try {
     a.match(note.body, /luna goes to max/);
 
     // The containment rule is the same one the agents get, from vault.js.
-    for (const bad of ['../../../etc/passwd', '..\\..\\secret.md', '/etc/hosts', '../kingdom.config.json']) {
+    for (const bad of ['../../../etc/passwd', '..\\..\\secret.md', '/etc/hosts', '../agenticos.config.json']) {
       const r = await get(`/api/vault?path=${encodeURIComponent(bad)}`);
       a.equal(r.ok, false, `${bad} must not be readable`);
     }
@@ -465,14 +497,14 @@ try {
     a.ok(r.ok);
     a.equal(r.approvals.length, 1,
       'the two unrenderable approvals must be dropped, not passed through as {}');
-    a.equal(r.approvals[0].kind, 'summon',
+    a.equal(r.approvals[0].kind, 'add',
       'and the readable one must still arrive — a bad row must not hide a good one');
     a.deepEqual(r.approvals[0].names, ['coder']);
     a.ok(r.approvals.every((x) => typeof x.kind === 'string'),
       'every row handed to the UI must carry the field the UI renders on');
     console.log('  approvals: unreadable rows dropped, the readable one survives');
 
-    // The summon card carries what the crew costs per turn. Hand-derived
+    // The add card carries what the crew costs per turn. Hand-derived
     // from the seeded events above: coder took ONE turn of 40,000 input and
     // 400 output. codex is named in config.quotas here, so it is billed
     // against a plan and not a metered key — the card must therefore report
@@ -480,7 +512,7 @@ try {
     // have a row for it. Inventing a price for a subscription is the exact
     // failure the quota feature exists to prevent.
     const f = r.approvals[0].forecast;
-    a.ok(f, 'a pending summon must carry the cost of the crew it proposes');
+    a.ok(f, 'a pending add must carry the cost of the crew it proposes');
     a.equal(f.members.length, 1, 'one proposed name, one line on the card');
     a.equal(f.members[0].name, 'coder');
     a.equal(f.members[0].turns, 1, 'one seeded turn_end for coder');
@@ -492,10 +524,10 @@ try {
       'and the card names WHICH member has no dollar figure, not just how many');
     a.equal(f.crew.perTurnUsd, null,
       'a wholly unpriced crew has no rate — never $0.00, which would read as free');
-    console.log('  approvals: the summon card carries a measured burn rate for the crew');
+    console.log('  approvals: the add card carries a measured burn rate for the crew');
   }
 
-  /* ---------- 5. the task list is visible to the sovereign ---------- */
+  /* ---------- 5. the task list is visible to the user ---------- */
   {
     const r = await get('/api/tasks');
     a.ok(r.ok);
@@ -518,6 +550,10 @@ try {
     a.deepEqual(r.spend.members.map((m) => m.name), ['orchestrator', 'coder'], 'members rank by spend');
     a.deepEqual(r.runs.map((x) => [x.id, x.usd, x.turns]), [['run-b', 1.25, 2], ['run-a', 0.25, 1]],
       'history lists newest first with each run\'s own total');
+    // The Runs table's Agent column: the recorded lead, and who spent.
+    a.deepEqual(r.runs.map((x) => [x.id, x.lead, x.agents]),
+      [['run-b', 'orchestrator', ['orchestrator', 'coder']], ['run-a', null, ['coder']]],
+      'each run serves its lead (null when never recorded) and its spenders by spend');
     const one = await get('/api/runSpend?id=run-a');
     a.equal(one.spend.usd, 0.25, 'a named run reads its own ledger');
     const missing = await fetch(`${base}/api/runSpend?id=run-none`);
@@ -525,20 +561,20 @@ try {
     console.log('  run spend: per-run ledger, ceiling, and newest-first history');
   }
 
-  /* ---------- 7. the sovereign edits the queue over HTTP ---------- */
+  /* ---------- 7. the user edits the queue over HTTP ---------- */
   {
     const created = await post('/api/task', { op: 'create', title: 'from the panel', priority: 3 });
     a.ok(created.ok, created.error);
-    a.equal(created.task.by, 'sovereign');
+    a.equal(created.task.by, 'user');
     const listed = await get('/api/tasks');
     a.ok(listed.tasks.some((t) => t.id === created.task.id && t.priority === 3), 'the new task is in the list with its priority');
     const refused = await post('/api/task', { op: 'assign', id: created.task.id, owner: 'nobody' });
     a.equal(refused.ok, false, 'an unknown member is a visible refusal, not a silent no-op');
     a.match(refused.error, /not a member/);
-    console.log('  tasks: the sovereign creates and assigns over HTTP, and bad input is refused');
+    console.log('  tasks: the user creates and assigns over HTTP, and bad input is refused');
   }
 
-  /* ---------- 8. the sovereign's own list over HTTP ---------- */
+  /* ---------- 8. the user's own list over HTTP ---------- */
   {
     const added = await post('/api/myTask', { op: 'add', title: 'renew passport', dueTs: 1 });
     a.ok(added.ok, added.error);
@@ -551,7 +587,7 @@ try {
     const missing = await post('/api/myTask', { op: 'done', id: 9999 });
     a.equal(missing.ok, false);
     a.match(missing.error, /No task #9999 on your list/);
-    a.ok(!(await get('/api/tasks')).tasks.some((t) => t.title === 'renew passport'), "the sovereign's list never enters the team queue");
+    a.ok(!(await get('/api/tasks')).tasks.some((t) => t.title === 'renew passport'), "the user's list never enters the team queue");
     console.log("  my tasks: add, due, snooze, done over HTTP, kept out of the team queue");
   }
 
@@ -561,7 +597,7 @@ try {
     const inbox = await get('/api/inbox');
     a.ok(inbox.ok);
     const ids = inbox.items.map((i) => i.kind);
-    a.ok(inbox.items.some((i) => i.kind === 'approval' && i.title === 'Summon coder'), 'the pending summon is waiting on you');
+    a.ok(inbox.items.some((i) => i.kind === 'approval' && i.title === 'Add coder'), 'the pending add is waiting on you');
     a.ok(inbox.items.some((i) => i.kind === 'task' && i.title === 'sign the lease'), 'an overdue item of yours is there');
     a.ok(ids.indexOf('approval') < ids.indexOf('task'), 'decisions rank above your own overdue tasks');
     a.ok(!inbox.items.some((i) => i.title === 'renew passport'), 'a done task is not in the inbox');
@@ -581,14 +617,14 @@ try {
     a.equal(ran.result.ok, true, JSON.stringify(ran.result.steps));
     a.match(ran.result.ctx.brief.text, /things? need(s)? you|Nothing is waiting/, 'the brief is built from live state');
     const inbox = await get('/api/inbox');
-    a.ok(inbox.items.some((i) => i.kind === 'message' && i.title === `From workflow:${brief.workflow.id}`), 'the brief lands where the sovereign reads it');
+    a.ok(inbox.items.some((i) => i.kind === 'message' && i.title === `From workflow:${brief.workflow.id}`), 'the brief lands where the user reads it');
     const digest = await post('/api/workflows/install', { template: 'team-digest' });
     const digestRun = await post('/api/workflows/run', { id: digest.workflow.id });
     a.match(digestRun.result.ctx.digest.text, /^Team digest \(/);
     const weekly = await post('/api/workflows/install', { template: 'weekly-dependencies' });
     const weeklyRun = await post('/api/workflows/run', { id: weekly.workflow.id });
     a.equal(weeklyRun.result.ok, true, JSON.stringify(weeklyRun.result.steps));
-    a.ok((await get('/api/tasks')).tasks.some((t) => t.title === 'Check dependencies for updates' && t.by === 'sovereign'),
+    a.ok((await get('/api/tasks')).tasks.some((t) => t.title === 'Check dependencies for updates' && t.by === 'user'),
       'a scheduled task lands on the team queue');
     const missing = await post('/api/workflows/install', { template: 'nope' });
     a.equal(missing.ok, false);
@@ -626,7 +662,7 @@ try {
 } finally {
   daemon.kill();
   await wait(300);
-  for (const d of [repo, vault, kingdomDir(repo)]) {
+  for (const d of [repo, vault, stateDir(repo)]) {
     try { rmSync(d, { recursive: true, force: true, maxRetries: 10, retryDelay: 150 }); } catch {}
   }
 }

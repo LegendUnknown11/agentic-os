@@ -1,11 +1,11 @@
 // Every suite that spawns a real src/daemon.js process must never let it
-// touch the REAL ~/.kingdom/courts.json on the machine running the tests —
+// touch the REAL ~/.agenticos/teams.json on the machine running the tests —
 // see test/t-registry-isolation.js for the guard that proves this. On the
-// sovereign's own machine, `npm test` running while the real app is open
+// user's own machine, `npm test` running while the real app is open
 // would otherwise mutate their live registry and influence auto-port
-// selection next to real courts.
+// selection next to real teams.
 //
-// test/run-all.js sets KINGDOM_COURTS_REGISTRY in the env it spawns each
+// test/run-all.js sets AGENTICOS_TEAMS_REGISTRY in the env it spawns each
 // suite with (a fresh, unique path per suite, so concurrent suites never
 // share — and never race over — one file). This module covers the OTHER
 // way a suite runs: standalone, `node test/t-x.js`, where nothing upstream
@@ -18,7 +18,11 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-if (!process.env.KINGDOM_COURTS_REGISTRY) {
-  const dir = mkdtempSync(join(tmpdir(), 'kingdom-test-registry-'));
-  process.env.KINGDOM_COURTS_REGISTRY = join(dir, 'courts.json');
+if (!process.env.AGENTICOS_TEAMS_REGISTRY) {
+  const dir = mkdtempSync(join(tmpdir(), 'agenticos-test-registry-'));
+  process.env.AGENTICOS_TEAMS_REGISTRY = join(dir, 'teams.json');
 }
+
+// Same reason, for the one-time move of pre-rename state (src/legacy.js): a
+// spawned daemon must not move the real home-folder state of whoever runs it.
+process.env.AGENTICOS_SKIP_LEGACY_MIGRATION ??= '1';

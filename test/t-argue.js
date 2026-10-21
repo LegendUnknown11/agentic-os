@@ -1,12 +1,12 @@
-// `/argue` in the throne room.
+// `/argue` in the dashboard.
 //
 // The argument mechanics — cross-vendor panel, judge that never argued,
 // compulsory dissent — are pinned by src/argue.js's own self-check. What this
 // covers is the WIRING, which is where a settings-shaped command goes wrong:
-// it must answer the sovereign directly, never post itself to the court as
-// work, and refuse cleanly when the kingdom cannot staff a panel.
+// it must answer the user directly, never post itself to the team as
+// work, and refuse cleanly when the team cannot staff a panel.
 //
-// Deliberately never reaches a real model: every path here is one the court
+// Deliberately never reaches a real model: every path here is one the team
 // takes BEFORE spawning anything.
 //
 //   node test/t-argue.js
@@ -17,23 +17,24 @@ import { mkdtempSync, writeFileSync, readFileSync, existsSync, rmSync } from 'no
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Kingdom } from '../src/kingdom.js';
+import { AgenticOS } from '../src/agenticos.js';
+import { removeRepo } from './cleanup.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const repo = mkdtempSync(join(tmpdir(), 'kingdom-argue-'));
+const repo = mkdtempSync(join(tmpdir(), 'agenticos-argue-'));
 const git = (...x) => execFileSync('git', x, { cwd: repo, stdio: 'pipe' });
 git('init', '-q');
-git('config', 'user.email', 'k@kingdom');
-git('config', 'user.name', 'kingdom');
+git('config', 'user.email', 'k@agenticos');
+git('config', 'user.name', 'agenticos');
 writeFileSync(join(repo, 'README.md'), '# t\n');
 git('add', '-A');
 git('commit', '-qm', 'init');
 
-/** A real MCP peer, so court-only tools cannot be accidentally tested in-process. */
+/** A real MCP peer, so team-only tools cannot be accidentally tested in-process. */
 function member(name, role, db) {
   const child = spawn(process.execPath, [join(HERE, '..', 'src', 'mcp.js')], {
     cwd: join(HERE, '..'),
-    env: { ...process.env, KINGDOM_AGENT: name, KINGDOM_ROLE: role, KINGDOM_DB: db },
+    env: { ...process.env, AGENTICOS_AGENT: name, AGENTICOS_ROLE: role, AGENTICOS_DB: db },
     stdio: ['pipe', 'pipe', 'ignore'],
   });
   let buffer = '';
@@ -71,17 +72,17 @@ function member(name, role, db) {
   };
 }
 
-const configPath = join(repo, 'kingdom.config.json');
+const configPath = join(repo, 'agenticos.config.json');
 const write = (models) => writeFileSync(configPath, JSON.stringify({
   models,
   orchestrator: { name: 'orchestrator', cli: 'codex' },
   briefer: { name: 'briefer', cli: 'codex' },
-  peasants: [{ name: 'coder', cli: 'codex' }],
+  agents: [{ name: 'coder', cli: 'codex' }],
 }));
 
 /* ---------- one model cannot argue with itself -------------------------- */
 write({ codex: ['gpt-5.6-luna'] });
-const solo = new Kingdom(repo, configPath);
+const solo = new AgenticOS(repo, configPath);
 solo.config.advisor = { autoModel: false, promptEngineer: false };
 const said = [];
 solo.on('compact', (d) => said.push(d.message));
@@ -89,14 +90,14 @@ const posted = () => solo.bus.history({ limit: 1000 }).length;
 
 const before = posted();
 const r1 = await solo.command('/argue should the settle window be longer?');
-a.ok(r1.local, 'a refusal must answer the sovereign, not be posted to the court');
+a.ok(r1.local, 'a refusal must answer the user, not be posted to the team');
 a.match(said.at(-1), /two different models/,
   'a single model arguing with itself is corroboration theatre — it must be refused, not faked');
 a.equal(posted(), before, 'and nothing may reach the bus');
 
 /* ---------- a question is required -------------------------------------- */
 write({ claude: ['opus'], codex: ['gpt-5.6-luna'], agy: ['gemini-3.6-flash-high'] });
-const k = new Kingdom(repo, configPath);
+const k = new AgenticOS(repo, configPath);
 k.config.advisor = { autoModel: false, promptEngineer: false };
 const heard = [];
 k.on('compact', (d) => heard.push(d.message));
@@ -111,9 +112,9 @@ a.equal(argued.length, 0, 'an empty question must not start a panel');
 // Stand in for the three model calls. Everything AFTER the argument — the vault
 // note, the orchestrator's notice, the completion event — is what this exercises, and
 // spawning three real CLIs to reach it would make the suite cost money.
-const vault = mkdtempSync(join(tmpdir(), 'kingdom-vault-'));
+const vault = mkdtempSync(join(tmpdir(), 'agenticos-vault-'));
 k.config.vault = vault;
-k.config.vaultWriteDir = 'Kingdom';
+k.config.vaultWriteDir = 'AgenticOS';
 let sawCwd = null;
 k.argueImpl = async (question, opts) => {
   sawCwd = opts.cwd;
@@ -129,13 +130,13 @@ k.argueImpl = async (question, opts) => {
 const n = k.bus.history({ limit: 1000 }).length;
 const r2 = await k.command('/argue is the 90s settle window too long?');
 a.ok(r2.local, 'the command answers immediately — an argument is 3+ model calls, never awaited');
-a.match(heard.at(-1), /judged by/, 'the sovereign must see who is arguing and who judges');
+a.match(heard.at(-1), /judged by/, 'the user must see who is arguing and who judges');
 a.match(heard.at(-1), /three vendors/, 'and how strong that panel is');
 // Nothing an argument produces may be WORK. The verdict notice below is
 // allowed — it rides along with real traffic — but an assignment would buy the
 // orchestrator a full context replay for a question it never asked.
 a.equal(k.bus.history({ since: n, limit: 1000 }).filter((x) => x.kind !== 'notice').length, 0,
-  'an argument must never post work to the court — only a notice that rides along');
+  'an argument must never post work to the team — only a notice that rides along');
 
 // The panel it announced must be the cross-vendor one, or the whole point is
 // lost: two samples of one model agree for reasons unrelated to the question.
@@ -185,8 +186,8 @@ a.match(after[0].body, /is not a command/, 'and the whole message must survive i
 
 rmSync(vault, { recursive: true, force: true });
 
-/* ---------- the COURT can convene one, not just the sovereign ---------- */
-// argue.js was built, tested, and reachable only by the sovereign typing
+/* ---------- the TEAM can convene one, not just the user ---------- */
+// argue.js was built, tested, and reachable only by the user typing
 // /argue. The orchestrator that actually hits a contested decision could not call
 // for one. Three things have to hold once it can:
 //
@@ -197,16 +198,16 @@ rmSync(vault, { recursive: true, force: true });
 //      by whatever happened to land in the same window.
 //   3. the request must never be DELIVERED. It is posted with a null
 //      recipient so the sweep can find it, and a null recipient matches every
-//      summoned member in bus.pending() — the trap a milestone notice already
-//      fell into, where one FYI bought the whole court a context replay.
-process.env.KINGDOM_CODEX_BIN = process.execPath;
-const vault2 = mkdtempSync(join(tmpdir(), 'kingdom-vault2-'));
-const t = new Kingdom(repo, configPath);
+//      added member in bus.pending() — the trap a milestone notice already
+//      fell into, where one FYI bought the whole team a context replay.
+process.env.AGENTICOS_CODEX_BIN = process.execPath;
+const vault2 = mkdtempSync(join(tmpdir(), 'agenticos-vault2-'));
+const t = new AgenticOS(repo, configPath);
 t.config.advisor = { autoModel: false, promptEngineer: false };
 t.config.vault = vault2;
-t.config.vaultWriteDir = 'Kingdom';
+t.config.vaultWriteDir = 'AgenticOS';
 // A non-default name catches a verdict accidentally hardcoded to `orchestrator`.
-t.config.orchestrator.name = 'sovereign-regent';
+t.config.orchestrator.name = 'lead-orchestrator';
 
 let inFlight = 0;
 let maxInFlight = 0;
@@ -228,15 +229,15 @@ t.argueImpl = async (question, opts) => {
 const delivered = [];
 t.on('delivered', (d) => delivered.push(d));
 await t.start();
-t.summoned.add('coder');   // so a null-recipient message HAS somewhere wrong to go
-const regent = await member('sovereign-regent', 'orchestrator', t.dbPath).start();
+t.added.add('coder');   // so a null-recipient message HAS somewhere wrong to go
+const lead = await member('lead-orchestrator', 'orchestrator', t.dbPath).start();
 
-const mcpReply = await regent.call('argue', { question: 'from the real MCP server?' });
-a.match(mcpReply, /Sent to the argument court/,
+const mcpReply = await lead.call('argue', { question: 'from the real MCP server?' });
+a.match(mcpReply, /Sent to the argument panel/,
   'the MCP tool must fire and return, rather than waiting for a three-model verdict');
-a.ok(t.bus.history({ limit: 1000 }).some((x) => x.sender === 'sovereign-regent'
+a.ok(t.bus.history({ limit: 1000 }).some((x) => x.sender === 'lead-orchestrator'
   && x.recipient === null && x.kind === 'argue' && /real MCP server/.test(x.body)),
-  'the real MCP server must queue the question for the Kingdom sweep');
+  'the real MCP server must queue the question for the AgenticOS sweep');
 a.equal(ran.length, 0, 'the MCP response returns before the argument runner starts');
 
 // Both posted before a single sweep can run, so they land in one window.
@@ -266,9 +267,9 @@ a.match(back[0].body, /VERDICT: settled first\?/,
 a.ok(back.every((x) => x.kind === 'notice'),
   'and as a notice — the asker did not buy a turn to be told, it rides along');
 
-const regentVerdict = () => t.bus.history({ limit: 1000 }).find((x) => x.recipient === 'sovereign-regent'
+const leadVerdict = () => t.bus.history({ limit: 1000 }).find((x) => x.recipient === 'lead-orchestrator'
   && x.kind === 'notice' && /VERDICT: settled from the real MCP server\?/.test(x.body));
-a.ok(await until(regentVerdict),
+a.ok(await until(leadVerdict),
   'the MCP caller must receive its verdict under its configured name, not a hardcoded recipient');
 
 a.equal(t.bus.history({ limit: 1000 }).filter((x) => x.recipient === t.config.orchestrator.name
@@ -277,12 +278,12 @@ a.equal(t.bus.history({ limit: 1000 }).filter((x) => x.recipient === t.config.or
 
 a.equal(delivered.filter((d) => d.msg?.kind === 'argue').length, 0,
   'an argue request must never be delivered to a member: a null recipient reaches '
-  + 'every summoned member, and each delivery is a full context replay');
+  + 'every added member, and each delivery is a full context replay');
 
-regent.stop();
+lead.stop();
 await t.stop();
 rmSync(vault2, { recursive: true, force: true });
 
 for (const x of [solo, k]) x.bus.close?.();
-rmSync(repo, { recursive: true, force: true });
-console.log('t-argue.js OK — panel staffed across vendors, convened by the court, one at a time, answered to the asker');
+removeRepo(repo);
+console.log('t-argue.js OK — panel staffed across vendors, convened by the team, one at a time, answered to the asker');

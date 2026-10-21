@@ -1,4 +1,4 @@
-# dev — the Kingdom source
+# dev — the AgenticOS source
 
 Parent: [[index]] ([index.md](index.md)). Authority: [HANDOFF.md](../../HANDOFF.md).
 Its key-files table is the map; this file is the dispatch by task.
@@ -8,7 +8,7 @@ Its key-files table is the map; this file is the dispatch by task.
 | Task | Enter at | Also touches |
 |---|---|---|
 | Run lifecycle, SQLite schema, migrations | [src/bus.js](../../src/bus.js) | `test/t-tasks.js`, `test/t-merge.js` |
-| Worker spawn, recovery, verification | [src/kingdom.js](../../src/kingdom.js) | `src/worktree.js` |
+| Worker spawn, recovery, verification | [src/agenticos.js](../../src/agenticos.js) | `src/worktree.js` |
 | Worktrees, revision-bound tests, apply | [src/worktree.js](../../src/worktree.js) | `test/t-merge.js`, `test/t-branching.js` |
 | HTTP actions, SSE, snapshots | [src/daemon.js](../../src/daemon.js) | `test/t-daemon-boot.js`, `test/t-csrf.js` |
 | MCP tool surface | [src/mcp.js](../../src/mcp.js), [src/mcp/](../../src/mcp) | `test/t-tool-surface.js`, `test/t-mcp-chain.js` |
@@ -16,7 +16,7 @@ Its key-files table is the map; this file is the dispatch by task.
 | Any visual or stylesheet change | [ui/app.css](../../ui/app.css) | run [ui-change](../skills/ui-change/SKILL.md) first |
 | A view's behaviour | [ui/views/](../../ui/views) | `test/t-pages.js`, `test/t-panels.js` |
 | Mode table, crew, vault directory | [src/modes.js](../../src/modes.js) | self-checking; `node src/modes.js` |
-| Ending a court and switching repository | [electron/switch-repo.js](../../electron/switch-repo.js) | `test/t-repo-switch.js` |
+| Ending a team and switching repository | [electron/switch-repo.js](../../electron/switch-repo.js) | `test/t-repo-switch.js` |
 | Rendered layout, as opposed to CSS source text | [test/t-theme-geometry.js](../../test/t-theme-geometry.js) | needs Chromium; skips itself without one |
 
 ## Gate

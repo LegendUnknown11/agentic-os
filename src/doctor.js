@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Preflight: can this machine actually run a kingdom?  node src/doctor.js
+// Preflight: can this machine actually run a team?  node src/doctor.js
 //
 // Run this from a NORMAL terminal. Running it inside a Claude Code / Claude
 // Desktop session is misleading: those set CLAUDE_CODE_* vars that put spawned
@@ -9,38 +9,36 @@
 // runDoctor() is the same probes the CLI below prints, exported so
 // src/daemon.js can expose them at GET /api/doctor — a freshly installed app
 // has no terminal a user is expected to open, so the first screen it shows is
-// this report, not an empty throne room and an "OAuth session expired" error.
-import { spawn, execFile } from 'node:child_process';
+// this report, not an empty dashboard and an "OAuth session expired" error.
+//
+// No model calls. GET /api/doctor runs on every app boot (ui/main.js
+// maybeOpenDoctor), so the old live "answer OK" model probe spent
+// quota on each configured CLI every time the app opened. Detection is now
+// bounded, non-billing status commands (src/cli-detection.js). The cost: an
+// authenticated CLI that is OUT OF QUOTA is no longer caught here; it surfaces
+// on the member's first turn as a rate/usage-limit error instead.
+import './legacy-boot.js'; // first: legacy env fallback and home migration, before any module reads env
+import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
-import { join, dirname, resolve } from 'node:path';
+import { readFileSync, existsSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import { homedir } from 'node:os';
-import { resolveCli } from './agent.js';
-import { parseModels } from './cli-parse.js';
+import { resolveCli, claudeEnv } from './agent.js';
+import { adapters } from './cli-adapters.js';
+import { detectCli } from './cli-detection.js';
 
 const exec = promisify(execFile);
 
 /**
- * These CLIs report "logged out" via a non-zero exit and sometimes write to
- * stderr, so the useful output must be read whether the call succeeded or not.
- */
-async function tryExec(cmd, args) {
-  try {
-    const { stdout, stderr } = await exec(cmd, args, { windowsHide: true });
-    return { ok: true, out: (stdout || stderr || '').trim() };
-  } catch (e) {
-    return { ok: false, out: ((e.stdout ?? '') + (e.stderr ?? '')).trim() || e.message };
-  }
-}
-
-/**
  * Every probe this file knows how to run, in one place, with no process-level
- * side effect — no console.log, no process.exit. Returns
+ * side effect — no console.log, no process.exit, no file written. Returns
  * `{ checks: [{level: 'ok'|'warn'|'fail', message}], failures, ready }`.
- * `repo`, if given, also reports that repo's token store (matches the CLI's
- * own `node src/doctor.js <repo>` form).
+ * `repo`, if given, reports that repo's token pool size and reads that repo's
+ * own config (matches the CLI's own `node src/doctor.js <repo>` form).
+ *
+ * `detect` is injectable for tests; it defaults to the real detection.
  */
-export async function runDoctor({ repo } = {}) {
+export async function runDoctor({ repo, detect = detectCli } = {}) {
   const checks = [];
   const ok = (message) => checks.push({ level: 'ok', message });
   const warn = (message) => checks.push({ level: 'warn', message });
@@ -77,6 +75,7 @@ export async function runDoctor({ repo } = {}) {
   }
 
   // --- credentials -----------------------------------------------------
+  // Reads only the expiry timestamps; no token value is ever reported.
   try {
     const c = JSON.parse(readFileSync(join(homedir(), '.claude', '.credentials.json'), 'utf8')).claudeAiOauth;
     if (c) {
@@ -97,174 +96,88 @@ export async function runDoctor({ repo } = {}) {
   }
 
   // --- token pool -------------------------------------------------------
+  // Counted, never created: a GET must not write files (it used to create an
+  // empty tokens.json as a side effect of every boot).
+  let stateDir = null;
   if (repo) {
-    const { kingdomDir } = await import('./worktree.js');
-    const store = join(kingdomDir(resolve(repo)), 'tokens.json');
-    const envPool = (process.env.KINGDOM_CLAUDE_TOKENS ?? '').split(',').filter((s) => s.trim());
+    ({ stateDir } = await import('./worktree.js'));
+    const store = join(stateDir(resolve(repo)), 'tokens.json');
+    const envPool = (process.env.AGENTICOS_CLAUDE_TOKENS ?? '').split(',').filter((s) => s.trim());
     if (envPool.length) {
-      ok(`token pool: ${envPool.length} from KINGDOM_CLAUDE_TOKENS`);
-    } else {
+      ok(`token pool: ${envPool.length} from AGENTICOS_CLAUDE_TOKENS`);
+    } else if (existsSync(store)) {
       try {
         const n = (JSON.parse(readFileSync(store, 'utf8')).claude ?? []).filter(Boolean).length;
         if (n) ok(`token pool: ${n} in ${store}`); else warn(`token store empty: ${store}`);
       } catch {
-        mkdirSync(dirname(store), { recursive: true });
-        writeFileSync(store, JSON.stringify({ claude: [] }, null, 2));
-        warn(`created empty token store — paste tokens into: ${store}`);
+        warn(`token store unreadable: ${store}`);
       }
     }
   }
 
-  // --- the CLIs actually answering -------------------------------------
-  async function probe(cli) {
-    let resolved;
-    try {
-      resolved = resolveCli(cli);
-    } catch (e) {
-      return fail(`${cli}: ${e.message}`);
+  // --- the CLIs ---------------------------------------------------------
+  const cleanEnv = claudeEnv();
+  async function probe(cli, required) {
+    const r = await detect(cli, { resolveCli, env: cli === 'claude' ? cleanEnv : process.env });
+    // An optional CLI that is not installed is not a finding.
+    if (!required && !r.installed) return;
+    const tag = required ? '' : ' (optional, not configured)';
+    if (!r.installed) return fail(`${cli}: not installed. Install it or set its AGENTICOS_*_BIN override.`);
+    const where = r.resolved ? ` — ${r.resolved.command}${r.resolved.prefixArgs?.[0] ? ' ' + r.resolved.prefixArgs[0] : ''}` : '';
+    if (r.available === false) return (required ? fail : warn)(`${cli}: ${r.reason}${where}${tag}`);
+    if (r.authenticated === false) {
+      const guidance = cli === 'claude'
+        ? ' Being signed into the Claude desktop app does NOT log in the CLI. Fix it in a normal '
+          + 'terminal with any of: claude auth login (browser OAuth), claude setup-token '
+          + '(long-lived token), or set CLAUDE_CODE_OAUTH_TOKEN=... (token via environment).'
+        : cli === 'codex' ? ' Run: codex login'
+          : cli === 'agy' ? ' Run `agy` in a normal terminal and complete the Google sign-in.'
+            : '';
+      return (required ? fail : warn)(`${cli}: ${r.reason}.${guidance}${tag}`);
     }
-    ok(`${cli} binary: ${resolved.command}${resolved.prefixArgs[0] ? ' ' + resolved.prefixArgs[0] : ''}`);
+    if (r.authenticated === true) ok(`${cli}: ${r.reason}${where}${tag}`);
+    else warn(`${cli}: ${r.reason}${where}${tag}`);
 
-    // Ask the CLI directly before spending a token on an API probe. This is the
-    // authoritative answer: a Claude *Desktop* login does not log in the CLI, and
-    // the difference is invisible until something tries to spawn one.
-    // A token supplied via the environment overrides the stored login, and
-    // `claude auth status` still reports loggedIn:false in that case — so check
-    // the env FIRST or you will chase a phantom auth failure.
-    const ENV_AUTH = ['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN'];
-    const envAuth = ENV_AUTH.filter((k) => process.env[k]);
-
-    if (cli === 'claude' && envAuth.length) {
-      // Never print the value.
-      ok(`claude auth supplied via ${envAuth.join(' + ')} (value not shown)`);
-    } else if (cli === 'claude') {
-      const { out } = await tryExec(resolved.command, [...resolved.prefixArgs, 'auth', 'status']);
-      try {
-        const st = JSON.parse(out.slice(out.indexOf('{'), out.lastIndexOf('}') + 1));
-        if (!st.loggedIn) {
-          return fail(
-            `claude CLI is NOT logged in (authMethod: ${st.authMethod}). `
-            + `Being signed into the Claude desktop app does NOT log in the CLI. `
-            + `Fix it in a normal terminal with any of: `
-            + `claude auth login (browser OAuth), `
-            + `claude setup-token (long-lived token), `
-            + `or set CLAUDE_CODE_OAUTH_TOKEN=... (token via environment).`
-          );
-        }
-        ok(`claude logged in via ${st.authMethod}`);
-      } catch {
-        warn(`could not parse \`claude auth status\`: ${out.slice(0, 120)}`);
-      }
-    }
-
-    if (cli === 'codex') {
-      const r = await tryExec(resolved.command, [...resolved.prefixArgs, 'login', 'status']);
-      if (!r.ok || /not logged in/i.test(r.out)) return fail(`codex is not logged in. Run: codex login`);
-      ok(`codex: ${r.out || 'logged in'}`);
-    }
-
+    // The one thing that silently makes an Antigravity member useless:
+    // headless agy reads ONLY the global MCP config, so without the team
+    // declared there it has no send_message and no declare_done.
     if (cli === 'agy') {
-      // `agy models` is the cheapest thing that requires auth: it round-trips to
-      // the account, costs no tokens, and an unauthenticated CLI returns nothing.
-      // `agy models` does NOT exit when its stdio is piped — it sits waiting on a
-      // terminal it does not have. Measured: the same command that returns in a
-      // second interactively hangs past three minutes under execFile. So: detach
-      // stdin, and cap it. A probe that can hang is worse than no probe.
-      const out = await new Promise((res) => {
-        const p = spawn(resolved.command, [...resolved.prefixArgs, 'models'],
-          { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
-        let buf = '';
-        p.stdout.on('data', (d) => (buf += d));
-        p.stderr.on('data', (d) => (buf += d));
-        const t = setTimeout(() => { p.kill(); res(buf); }, 25_000);
-        p.on('exit', () => { clearTimeout(t); res(buf); });
-        p.on('error', (e) => { clearTimeout(t); res(`spawn failed: ${e.message}`); });
-      });
-      const models = parseModels(out);
-      if (!models.length) {
-        return fail('agy returned no models — it is probably not signed in. '
-          + 'Run `agy` in a normal terminal and complete the Google sign-in.');
-      }
-      ok(`agy: ${models.length} models available`);
-
-      // The one thing that silently makes an Antigravity member useless: headless
-      // agy reads ONLY the global MCP config, so without the kingdom declared
-      // there it has no send_message and no declare_done.
       try {
         const g = JSON.parse(readFileSync(join(homedir(), '.gemini', 'config', 'mcp_config.json'), 'utf8'));
-        if (g?.mcpServers?.kingdom) ok('agy: kingdom MCP server declared globally');
-        else warn('agy: the kingdom MCP server is NOT in ~/.gemini/config/mcp_config.json. '
-          + 'Antigravity members will have no kingdom tools. Starting the court installs it.');
+        if (g?.mcpServers?.agenticos) ok('agy: agenticos MCP server declared globally');
+        else warn('agy: the agenticos MCP server is NOT in ~/.gemini/config/mcp_config.json. '
+          + 'Antigravity members will have no AgenticOS tools. Starting the team installs it.');
       } catch {
-        warn('agy: no ~/.gemini/config/mcp_config.json yet — starting the court writes it.');
+        warn('agy: no ~/.gemini/config/mcp_config.json yet — starting the team writes it.');
       }
     }
-
-    if (cli === 'opencode') {
-      const r = await tryExec(resolved.command, [...resolved.prefixArgs, '--version']);
-      if (r.ok) ok(`opencode: ${r.out || 'installed'}`);
-    }
-
-    // Per CLI, because they share no argument surface at all. This used to be a
-    // claude/else ternary, so `agy` was handed codex's `exec --json` and reported
-    // as "gave an unrecognised response" — the CLI was fine, the probe was wrong.
-    const PROBES = {
-      claude: ['-p', 'reply with the single word OK', '--model', 'haiku'],
-      codex: ['exec', '--json', '--skip-git-repo-check', 'reply with the single word OK'],
-      // The prompt is --print's VALUE since agy 1.1.11, not a trailing
-      // positional. Passed the old way, agy reads the next flag as the prompt
-      // and cheerfully answers a question about it — see #runAgyTurn.
-      agy: ['--print', 'reply with the single word OK',
-        '--output-format', 'text', '--model', 'gemini-3.6-flash-low'],
-      opencode: ['run', 'reply with the single word OK', '--format', 'json', '--auto'],
-    };
-    const args = PROBES[cli];
-    if (!args) {
-      // Better to say the harness does not know this CLI than to guess at its
-      // flags and blame the CLI for the mismatch.
-      warn(`${cli}: no probe defined for this CLI — cannot verify it works. `
-        + `Add one to PROBES in src/doctor.js.`);
-      return;
-    }
-
-    const out = await new Promise((res) => {
-      const p = spawn(resolved.command, [...resolved.prefixArgs, ...args], { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
-      let buf = '';
-      p.stdout.on('data', (d) => (buf += d));
-      p.stderr.on('data', (d) => (buf += d));
-      const t = setTimeout(() => { p.kill(); res(buf + '\n[timed out after 120s]'); }, 120_000);
-      p.on('exit', () => { clearTimeout(t); res(buf); });
-      p.on('error', (e) => { clearTimeout(t); res(`spawn failed: ${e.message}`); });
-    });
-
-    if (/authenticate|OAuth|not logged in|unauthorized/i.test(out)) {
-      fail(`${cli} is NOT authenticated for spawned processes: ${out.split('\n').filter(Boolean).pop()}`);
-    } else if (/usage limit|rate limit|quota/i.test(out)) {
-      warn(`${cli} authenticated but OUT OF QUOTA — peasants will stall`);
-    } else if (/OK/i.test(out)) {
-      ok(`${cli} answered — authenticated and in quota`);
-    } else {
-      fail(`${cli} gave an unrecognised response: ${out.slice(-300)}`);
-    }
   }
 
-  const clis = new Set();
+  // The config the team actually runs: the repo's own copy if it has one
+  // (src/agenticos.js defaultConfigPath), else the shipped template. Read only.
+  const local = repo && stateDir ? join(stateDir(resolve(repo)), 'agenticos.config.json') : null;
+  const configured = new Set();
   try {
-    const cfg = JSON.parse(readFileSync(new URL('../kingdom.config.json', import.meta.url), 'utf8'));
-    for (const m of [cfg.orchestrator, cfg.briefer, ...cfg.peasants]) clis.add(m.cli ?? 'claude');
-    // The advisor and the summariser are not court members, but they are real
+    const source = local && existsSync(local) ? local : new URL('../agenticos.config.json', import.meta.url);
+    const cfg = JSON.parse(readFileSync(source, 'utf8'));
+    for (const m of [cfg.orchestrator, cfg.briefer, ...cfg.agents]) configured.add(canonical(m.cli ?? 'claude'));
+    // The advisor and the summariser are not team members, but they are real
     // model calls on real CLIs and they fail the same way. Leaving them out meant
     // a summariser on a CLI that was broken or logged out was never checked.
-    for (const s of [cfg.advisor, cfg.summarizer]) if (s?.cli) clis.add(s.cli);
+    for (const s of [cfg.advisor, cfg.summarizer]) if (s?.cli) configured.add(canonical(s.cli));
   } catch {
-    clis.add('claude');
-    clis.add('codex');
+    configured.add('claude');
+    configured.add('codex');
   }
-  for (const c of clis) await probe(c);
+  // Configured CLIs block readiness; every other known CLI is reported only
+  // when it is actually installed.
+  for (const c of new Set([...configured, ...Object.keys(adapters)])) await probe(c, configured.has(c));
 
   const failures = checks.filter((c) => c.level === 'fail').length;
   return { checks, failures, ready: failures === 0 };
 }
+
+const canonical = (cli) => (['cursor-agent', 'agent'].includes(cli) ? 'cursor' : cli);
 
 // --- CLI entry point, unchanged behaviour: colored lines, exit code --------
 if (process.argv[1]?.endsWith('doctor.js')) {
@@ -272,7 +185,7 @@ if (process.argv[1]?.endsWith('doctor.js')) {
   const { checks, failures } = await runDoctor({ repo: process.argv[2] });
   for (const { level, message } of checks) console.log(`${paint[level]} ${message}`);
   console.log(failures
-    ? `\n\x1b[31m${failures} blocking problem(s).\x1b[0m The kingdom will not work until these are fixed.`
+    ? `\n\x1b[31m${failures} blocking problem(s).\x1b[0m The team will not work until these are fixed.`
     : '\n\x1b[32mReady. Run: npm start\x1b[0m');
   process.exit(failures ? 1 : 0);
 }

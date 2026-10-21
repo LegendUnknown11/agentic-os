@@ -228,7 +228,7 @@ export function runSpendSection(state) {
     h('b', { class: `run-badge ${tone(status)}`.trim(), text: runStatusLabel(status) }));
   const ceiling = cap > 0
     ? meter((spend.usd / cap) * 100, `${money(spend.usd)} of ${money(cap)} run ceiling`)
-    : note(`${money(spend.usd)} spent. No run ceiling is set; add maxRunUsd to kingdom.config.json to stop a run at a limit.`);
+    : note(`${money(spend.usd)} spent. No run ceiling is set; add maxRunUsd to agenticos.config.json to stop a run at a limit.`);
   const members = spend.members?.length
     ? h('dl', { class: 'usage-breakdown compact' }, ...spend.members.flatMap((m) =>
       definition(displayName(m.name), `${money(m.usd)} · ${m.turns} ${m.turns === 1 ? 'turn' : 'turns'}`)))

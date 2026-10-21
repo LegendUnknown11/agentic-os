@@ -1,9 +1,9 @@
 // What a turn actually cost, in dollars.
 //
 // Why this exists: codex and agy report NO cost at all (agent.js hardcodes
-// `costUsd: 0` on both paths), and the live court is 107 codex members. So
-// `spentUsd` sat frozen while the court burned tokens, `maxBudgetUsd` and
-// `maxKingdomUsd` could never fire, and every cost decision was being made
+// `costUsd: 0` on both paths), and the live team was 107 codex members. So
+// `spentUsd` sat frozen while the team burned tokens, `maxBudgetUsd` and
+// `maxTotalUsd` could never fire, and every cost decision was being made
 // against a token count instead of a price.
 //
 // A token count is the wrong unit, because the three kinds of token do not
@@ -41,7 +41,7 @@ export const PRICES = {
   // Anthropic, via the claude CLI. The config names these by alias
   // ("opus", "sonnet"), so both the alias and the full id are listed. An
   // alias is priced as the model the CLI resolves it to today: `opus` is
-  // Opus 5.5 (confirmed by the sovereign on #75), not Opus 5.
+  // Opus 5.5 (confirmed by the user on #75), not Opus 5.
   // Fable 5.1 kept Fable 5's $10 / $50 but cut cache reads to $0.25/MTok
   // (0.025x input, not the usual 0.1x). The bare alias resolves to 5.1.
   'claude/fable':         [10.00, 0.25, 50.00],
@@ -102,7 +102,7 @@ export function costClassOf({ usage = null, reported = null, cli, model, table =
   return rateOf(cli, model, table) ? 'estimated' : 'unpriced';
 }
 
-/** The sovereign's `prices` config layered over the defaults. */
+/** The user's `prices` config layered over the defaults. */
 export function tableFrom(config) {
   return { ...PRICES, ...(config?.prices ?? {}) };
 }
@@ -131,7 +131,7 @@ if (process.argv[1]?.endsWith('price.js')) {
   near(costOf({ in: 1e6, cached: 0, written: 1e6, out: 0 }, 'claude', 'sonnet'),
     2.00 * 1.25, 'cache writes cost 1.25x the input rate');
 
-  // The model selector now offers full ids (kingdom.config.json), so the
+  // The model selector now offers full ids (agenticos.config.json), so the
   // current Fable generation must be priced under its real id, not just its
   // predecessor's — an unpriced current model would silently stop billing.
   a.ok(rateOf('claude', 'claude-fable-5-1'), 'claude-fable-5-1 (the current Fable generation) must have a published price');
@@ -147,7 +147,7 @@ if (process.argv[1]?.endsWith('price.js')) {
   near(costOf({ in: 0, cached: 1e6, written: 0, out: 0 }, 'claude', 'claude-fable-5-1'), 0.25,
     'a million cached Fable 5.1 tokens cost $0.25');
 
-  // #45: the catalogue grew Opus 5.5 (kingdom.js models(), kingdom.config.json)
+  // #45: the catalogue grew Opus 5.5 (agenticos.js models(), agenticos.config.json)
   // without a price, which would have silently stopped billing for it exactly
   // like the Fable case above.
   a.deepEqual(rateOf('claude', 'claude-opus-5-5'), [4.00, 0.20, 20.00],
@@ -161,7 +161,7 @@ if (process.argv[1]?.endsWith('price.js')) {
     'the opus alias must be priced as Opus 5.5, the model the CLI resolves it to');
 
   // Existing configs and members keep working under every id/alias this
-  // catalogue has ever offered — an old kingdom.config.json naming "opus",
+  // catalogue has ever offered — an old agenticos.config.json naming "opus",
   // "sonnet", or "claude-opus-5" must not go unpriced just because a newer
   // model joined the list.
   for (const legacy of ['opus', 'sonnet', 'haiku', 'claude-opus-5', 'claude-sonnet-5', 'claude-haiku-4-5']) {
@@ -178,7 +178,7 @@ if (process.argv[1]?.endsWith('price.js')) {
   // Zero usage is free, not NaN.
   a.equal(costOf({}, 'codex', 'gpt-5.6-luna'), 0, 'an empty turn costs nothing');
 
-  // The sovereign can add a price without editing this file.
+  // The user can add a price without editing this file.
   const custom = tableFrom({ prices: { 'agy/gemini-3.6-flash-high': [1, 0.1, 4] } });
   near(costOf({ in: 1e6, cached: 0, out: 0 }, 'agy', 'gemini-3.6-flash-high', custom), 1,
     'a config price must override/extend the built-in table');

@@ -7,7 +7,7 @@
 // route actually serves it.
 //
 //   node test/t-doctor-api.js
-// Never let a daemon this suite spawns touch the real ~/.kingdom/courts.json
+// Never let a daemon this suite spawns touch the real ~/.agenticos/teams.json
 // on the machine running the tests — see test/t-registry-isolation.js.
 import './isolate-registry.js';
 import { strict as a } from 'node:assert';
@@ -16,11 +16,11 @@ import { mkdtempSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { kingdomDir } from '../src/worktree.js';
+import { stateDir } from '../src/worktree.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-const dir = mkdtempSync(join(tmpdir(), 'kingdom-doctor-'));
+const dir = mkdtempSync(join(tmpdir(), 'agenticos-doctor-'));
 
 // One stub answers for both claude and codex: branch on which status
 // subcommand each CLI's doctor probe actually sends.
@@ -35,8 +35,10 @@ if (argv.includes('auth') && argv.includes('status')) {
   process.stdout.write('OK');
 }
 `);
-process.env.KINGDOM_CLAUDE_BIN = STUB;
-process.env.KINGDOM_CODEX_BIN = STUB;
+process.env.AGENTICOS_CLAUDE_BIN = STUB;
+process.env.AGENTICOS_CODEX_BIN = STUB;
+for (const cli of ['AGY', 'OPENCODE', 'CURSOR']) process.env[`AGENTICOS_${cli}_BIN`] = STUB;
+for (const key of ['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN']) delete process.env[key];
 
 /* ---------- 1. runDoctor() returns a structured report, not printed lines */
 {
@@ -51,28 +53,28 @@ process.env.KINGDOM_CODEX_BIN = STUB;
   }
   a.equal(report.failures, report.checks.filter((c) => c.level === 'fail').length);
   a.equal(report.ready, report.failures === 0, 'ready is exactly "no blocking failures"');
-  a.ok(report.checks.some((c) => /claude logged in via stub/.test(c.message)),
+  a.ok(report.checks.some((c) => /claude: authentication status confirmed/.test(c.message)),
     'the stubbed claude CLI must be reported as logged in');
-  a.ok(report.checks.some((c) => /codex: Logged in using Stub Account/.test(c.message)),
+  a.ok(report.checks.some((c) => /codex: authentication status confirmed/.test(c.message)),
     'the stubbed codex CLI must be reported as logged in');
   console.log('  runDoctor(): structured checks, no ANSI, ready matches failure count');
 }
 
 /* ---------- 2. GET /api/doctor serves the same report over the daemon --- */
 {
-  const repo = mkdtempSync(join(tmpdir(), 'kingdom-doctor-repo-'));
+  const repo = mkdtempSync(join(tmpdir(), 'agenticos-doctor-repo-'));
   const git = (...x) => execFileSync('git', x, { cwd: repo, stdio: 'pipe' });
   git('init', '-q');
-  git('config', 'user.email', 'k@kingdom');
-  git('config', 'user.name', 'kingdom');
+  git('config', 'user.email', 'k@agenticos');
+  git('config', 'user.name', 'agenticos');
   writeFileSync(join(repo, 'README.md'), '# t\n');
   git('add', '-A');
   git('commit', '-qm', 'init');
-  const cfg = join(repo, 'kingdom.config.json');
+  const cfg = join(repo, 'agenticos.config.json');
   writeFileSync(cfg, JSON.stringify({
     orchestrator: { name: 'orchestrator', cli: 'claude' },
     briefer: { name: 'briefer', cli: 'claude' },
-    peasants: [],
+    agents: [],
     rolesSeeded: true,
     advisor: { promptEngineer: false, autoModel: false },
     summarizer: { enabled: false },
@@ -99,13 +101,13 @@ process.env.KINGDOM_CODEX_BIN = STUB;
     const report = await r.json();
     a.ok(Array.isArray(report.checks));
     a.equal(typeof report.ready, 'boolean');
-    a.ok(report.checks.some((c) => /claude logged in via stub/.test(c.message)),
+    a.ok(report.checks.some((c) => /claude: authentication status confirmed/.test(c.message)),
       'the daemon route must run the real probes, not a canned response');
     console.log('  GET /api/doctor: serves the same structured report as a running daemon');
   } finally {
     daemon.kill();
     await wait(300);
-    for (const d of [repo, kingdomDir(repo)]) {
+    for (const d of [repo, stateDir(repo)]) {
       try { rmSync(d, { recursive: true, force: true, maxRetries: 10, retryDelay: 150 }); } catch {}
     }
   }
@@ -121,13 +123,60 @@ rmSync(dir, { recursive: true, force: true });
 // property lives on the spawn() options object, not on anything the child
 // process handle exposes back.
 {
-  const doctorSource = readFileSync(join(HERE, '..', 'src', 'doctor.js'), 'utf8');
-  const spawnCalls = [...doctorSource.matchAll(/spawn\(resolved\.command,[\s\S]*?\);/g)];
-  a.ok(spawnCalls.length >= 2, `expected at least 2 CLI probe spawns, found ${spawnCalls.length}`);
-  for (const [call] of spawnCalls) {
-    a.match(call, /windowsHide:\s*true/, `every doctor CLI probe spawn must set windowsHide: true — got:\n${call}`);
+  const source = readFileSync(join(HERE, '..', 'src', 'cli-detection.js'), 'utf8');
+  a.match(source, /windowsHide:\s*true/);
+  a.doesNotMatch(source, /reply with|readFileSync|setup-token/,
+    'detection must not call a model or read token files');
+  const doctor = readFileSync(join(HERE, '..', 'src', 'doctor.js'), 'utf8');
+  a.doesNotMatch(doctor, /reply with the single word|spawn\(/,
+    'doctor runs on every app boot; it must never send a model prompt');
+  a.doesNotMatch(doctor, /writeFileSync|mkdirSync/, 'a GET must not create files');
+  console.log('  every doctor CLI probe spawn sets windowsHide: true; doctor sends no prompt');
+}
+
+/* ---------- 4. absent, logged-out and env-token CLIs, via injected detection */
+{
+  const { runDoctor } = await import('../src/doctor.js');
+  const fake = (table) => async (cli) => table[cli] ?? { installed: false, available: false, authenticated: null, reason: 'not installed' };
+  const resolved = { command: '/fake/bin', prefixArgs: [] };
+  // Only claude + codex configured (template fallback). Optional CLIs absent.
+  let report = await runDoctor({ detect: fake({
+    claude: { installed: true, available: true, authenticated: true, reason: 'authentication status confirmed (quota unverified)', resolved },
+    codex: { installed: true, available: true, authenticated: true, reason: 'authentication status confirmed (quota unverified)', resolved },
+  }) });
+  for (const cli of ['agy', 'opencode', 'cursor']) {
+    a.ok(!report.checks.some((c) => c.message.startsWith(`${cli}:`)),
+      `an absent, unconfigured ${cli} is not a finding`);
   }
-  console.log('  every doctor CLI probe spawn sets windowsHide: true');
+  a.ok(!report.checks.some((c) => /freebuff/i.test(c.message)), 'freebuff was dropped');
+
+  // A configured CLI that is missing or logged out blocks readiness.
+  report = await runDoctor({ detect: fake({
+    claude: { installed: true, available: true, authenticated: false, reason: 'not authenticated', resolved },
+  }) });
+  const claudeFail = report.checks.find((c) => c.message.startsWith('claude:'));
+  a.equal(claudeFail.level, 'fail');
+  a.match(claudeFail.message, /desktop app does NOT log in the CLI/, 'logged-out claude keeps its fix-it guidance');
+  const codexFail = report.checks.find((c) => c.message.startsWith('codex:'));
+  a.equal(codexFail.level, 'fail', 'a configured but missing CLI fails');
+  a.equal(report.ready, false);
+  a.ok(report.failures >= 2);
+
+  // Installed optional CLI with unknown status is a warning, never a failure.
+  report = await runDoctor({ detect: fake({
+    claude: { installed: true, available: true, authenticated: null, reason: 'auth supplied via CLAUDE_CODE_OAUTH_TOKEN (value not shown; validity unverified)', resolved },
+    codex: { installed: true, available: true, authenticated: true, reason: 'authentication status confirmed (quota unverified)', resolved },
+    opencode: { installed: true, available: true, authenticated: null, reason: 'authentication status unavailable', resolved },
+  }) });
+  a.equal(report.checks.find((c) => c.message.startsWith('claude:')).level, 'warn',
+    'an env token is reported as supplied, not proven');
+  const oc = report.checks.find((c) => c.message.startsWith('opencode:'));
+  a.equal(oc.level, 'warn');
+  a.match(oc.message, /optional, not configured/);
+  // Not report.ready: the node and toolchain checks depend on the host machine.
+  a.ok(!report.checks.some((c) => c.level === 'fail' && /^(claude|codex|opencode):/.test(c.message)),
+    'unverified status does not block readiness');
+  console.log('  absent optional CLIs are silent; configured missing/logged-out CLIs fail; unknown status warns');
 }
 
 console.log('t-doctor-api.js OK — runDoctor() is a pure structured probe, and the daemon serves it live');

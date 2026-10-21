@@ -73,7 +73,7 @@ foreach ($r in $Routines) {
 }
 
 Write-Host ''
-Write-Host "registered under $TaskPath - logs in $Repo\.kingdom\routines"
+Write-Host "registered under $TaskPath - logs in $Repo\.agenticos\routines"
 Write-Host "inspect:  Get-ScheduledTask -TaskPath '$TaskPath'"
 Write-Host "run now:  Start-ScheduledTask -TaskPath '$TaskPath' -TaskName gate-log"
 Write-Host "remove:   .\.claude\routines\register.ps1 -Unregister"

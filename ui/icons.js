@@ -1,12 +1,15 @@
 // Drawn icons, one consistent stroke, one 16px grid.
 //
-// The throne room used emoji as its icon set — 👑 ♔ ⛏ ☰ 🎙 ⏻ ✕. Emoji render
+// The dashboard used emoji as its icon set — 👑 ♔ ⛏ ☰ 🎙 ⏻ ✕. Emoji render
 // differently on every machine, carry their own colour, and sit on their own
 // baseline, so a row of them can never line up or share a weight. These are
 // authored paths on a 16-box at stroke 1.5, currentColor, so they inherit text
 // colour and align with the text they sit beside.
 const P = {
-  crown: 'M2 12h12M2.5 12 2 5l3.2 2.6L8 3l2.8 4.6L14 5l-.5 7',
+  // A processor chip: a die with two pins per side. The system's own voice,
+  // drawn as machinery, not as the crown it replaced.
+  system: 'M4.6 4.6h6.8v6.8H4.6zM6.6 2.4v2.2M9.4 2.4v2.2M6.6 11.4v2.2M9.4 11.4v2.2'
+    + 'M2.4 6.6h2.2M2.4 9.4h2.2M11.4 6.6h2.2M11.4 9.4h2.2',
   bus: 'M2.5 4.5h11M2.5 8h11M2.5 11.5h7',
   command: 'M5.5 5.5h5v5h-5zM5.5 5.5a2 2 0 1 0-2-2v2m2 0v5m0 0a2 2 0 1 0 2 2v-2'
     + 'm3-5a2 2 0 1 1 2-2v2m-2 0v5m0 0a2 2 0 1 1 2 2v-2',
@@ -47,8 +50,8 @@ const P = {
   pet: 'M5.4 5.2C4.2 4 2.8 3.4 2.8 3.4v3.9a5.2 5.2 0 0 0 10.4 0V3.4s-1.4.6-2.6 1.8'
     + 'M6.4 8.2h.01M9.6 8.2h.01M8 10.4a1.2 1.2 0 0 1-1-.5M8 10.4a1.2 1.2 0 0 0 1-.5',
   who: 'M8 8.2a2.6 2.6 0 1 0 0-5.2 2.6 2.6 0 0 0 0 5.2ZM3.3 13.4a4.7 4.7 0 0 1 9.4 0',
-  // A raised standard: the court is called to it.
-  summon: 'M4.4 14V2.4M4.4 3.3h8.2l-1.9 2.7 1.9 2.7H4.4',
+  // A raised standard: the team is called to it.
+  add: 'M4.4 14V2.4M4.4 3.3h8.2l-1.9 2.7 1.9 2.7H4.4',
   // A horn: the cone, the bell, and two calls leaving it.
   sound: 'M2.6 6.2h2.4L8.4 3.4v9.2L5 9.8H2.6zM10.8 6a2.8 2.8 0 0 1 0 4M12.8 4a5.4 5.4 0 0 1 0 8',
   diff: 'M4.2 2.8v7.4M4.2 13.2a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zM4.2 5.8a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zM11.8 5.8v4.4M11.8 13.2a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zM11.8 5.8a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zM5.7 4.3h4.6',
@@ -58,6 +61,16 @@ const P = {
   workflows: 'M2.4 3.2h4.2v3.4H2.4zM9.4 9.4h4.2v3.4H9.4zM6.6 4.9h2.4a2.2 2.2 0 0 1 2.2 2.2v2.3',
   // A page with a folded corner, and two lines of text.
   document: 'M4.5 2.6h4.8l2.2 2.2v8.2a.6.6 0 0 1-.6.6h-6.4a.6.6 0 0 1-.6-.6V3.2a.6.6 0 0 1 .6-.6ZM9.3 2.6v2.2h2.2M5.6 8.4h4.8M5.6 10.6h4.8',
+  // The product mark: a rounded square with a plus, as the T3 canvas draws it.
+  logo: 'M4.2 2.4h7.6a1.8 1.8 0 0 1 1.8 1.8v7.6a1.8 1.8 0 0 1-1.8 1.8H4.2a1.8 1.8 0 0 1-1.8-1.8V4.2a1.8 1.8 0 0 1 1.8-1.8ZM5.6 8h4.8M8 5.6v4.8',
+  search: 'M7.2 2.8a4.4 4.4 0 1 0 0 8.8 4.4 4.4 0 0 0 0-8.8zM10.5 10.5l2.9 2.9',
+  plus: 'M8 3.2v9.6M3.2 8h9.6',
+  'chevron-down': 'M4 6l4 4 4-4',
+  'chevron-right': 'M6 4l4 4-4 4',
+  check: 'M3.4 8.4l3 3 6.2-6.6',
+  folder: 'M2.6 4.4a1 1 0 0 1 1-1h2.9l1.3 1.6h4.6a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H3.6a1 1 0 0 1-1-1z',
+  branch: 'M5 2.8v7.6M5 13.2a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zM11 5.8a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zM11 5.8c0 3.2-3 3.4-6 4.6',
+  mode: 'M2.6 5.2h10.8v7H2.6zM5.4 5.2V3.6h5.2v1.6',
   // A cross in a circle: the health check.
   doctor: 'M8 1.8a6.2 6.2 0 1 0 0 12.4 6.2 6.2 0 0 0 0-12.4ZM8 5.2v5.6M5.2 8h5.6',
 };

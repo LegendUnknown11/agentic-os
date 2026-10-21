@@ -1,5 +1,5 @@
 {
-  "name": "kingdom",
+  "name": "agenticos",
   "version": "0.1.0",
   "description": "Agentic OS: a local team of AI coding agents that work a git repository together.",
   "type": "module",
@@ -17,7 +17,7 @@
     "prepare": "husky"
   },
   "build": {
-    "appId": "dev.kingdom.app",
+    "appId": "dev.agenticos.app",
     "productName": "Agentic OS",
     "asar": false,
     "files": [
@@ -25,7 +25,7 @@
       "src/**",
       "ui/**",
       "skills/**",
-      "kingdom.config.json",
+      "agenticos.config.json",
       "roles.json",
       "package.json"
     ],
@@ -33,6 +33,7 @@
       "target": "nsis"
     },
     "nsis": {
+      "guid": "6c7037ed-7f85-5bb1-9fca-3e0fc4e409eb",
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createStartMenuShortcut": true

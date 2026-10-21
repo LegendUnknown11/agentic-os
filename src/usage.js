@@ -1,6 +1,6 @@
 // Three CLIs, three ways of reporting the same two numbers.
 //
-// This existed twice — once in ctx.js and once in kingdom.js — and the copies
+// This existed twice — once in ctx.js and once in agenticos.js — and the copies
 // drifted, which is exactly how the audit came to report "replayed context:
 // 107.6% of all input" and "genuinely new: -37.94M". A negative quantity of
 // new tokens is not a rounding error, it is a sign the numerator and the
@@ -117,9 +117,9 @@ export function totalsOf(usage = {}) {
  * `cached_input_tokens`/`cache_write_input_tokens` are codex's names and
  * nobody else's.
  *
- * This lived only in daemon.js. ctx.js and kingdom.js summed raw, which is why
+ * This lived only in daemon.js. ctx.js and agenticos.js summed raw, which is why
  * `node src/ctx.js` reported 2.37M for a session whose true total is 1.89M —
- * a 25% overcount that grows with turn count, in the tool the court's whole
+ * a 25% overcount that grows with turn count, in the tool the team's whole
  * cost discipline is built on.
  */
 export function isCumulative(usage = {}) {

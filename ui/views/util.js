@@ -121,7 +121,7 @@ export const section = (title, ...children) => h('section', { class: 'view-secti
 const TONE_LIVE = new Set(['running', 'active', 'working', 'busy', 'verifying', 'requested', 'implemented',
   'reading', 'editing', 'searching', 'delegating', 'thinking', 'speaking', 'messaging', 'briefing',
   'consulting', 'recording', 'catching up', 'reviewing', 'proposing', 'rejecting', 'finishing',
-  'assigning', 'summoning', 'coordinating']);
+  'assigning', 'adding', 'coordinating']);
 const TONE_SETTLED = new Set(['done', 'completed', 'verified', 'merged', 'dropped', 'ready_for_review', 'ok',
   // An approval's resolution is the same question in another domain. "answered"
   // settles a question; "approved" settles a request. "rejected" is a decision,
@@ -140,12 +140,11 @@ export function tone(status) {
 }
 export const empty = (text) => h('p', { class: 'empty', text });
 export const note = (text, cls = '') => h('p', { class: `note ${cls}`, text });
-// Primary buttons carry Editorial's pill-plus-circular-arrow shape; every
-// other variant stays a plain label — see .button.primary in app.css.
+// The one primary action is the white filled button (.button.primary); every
+// other variant stays a plain label. The T3 canvas draws no arrow on it.
 export const button = (label, action, cls = '') => h(
   'button', { class: `button ${cls}`.trim(), type: 'button', on: { click: action } },
   label,
-  cls.split(' ').includes('primary') && h('span', { class: 'button-icon', 'aria-hidden': 'true' }, '→'),
 );
 
 export function field(label, control, hint = '') {
@@ -225,7 +224,7 @@ export function spendText(spend) {
   if (!Number.isFinite(amount)) return String(spend.text ?? '');
   return money(amount);
 }
-// #41: turns are counted court-wide and shown beside the existing spend
+// #41: turns are counted team-wide and shown beside the existing spend
 // total (state.spend already carries `turns` from every 'spend' event, and
 // `turnBudget` from the session's cap) — nothing to show before the first
 // real turn, and no "/0" once a budget exists but nothing has run yet.

@@ -1,14 +1,14 @@
-// The court's brain: the sovereign's Obsidian vault, read at spawn.
+// The team's brain: the user's Obsidian vault, read at spawn.
 //
 // Three things live here, and they are deliberately different in kind:
 //
-//   INSTRUCTIONS  Kingdom/Court Instructions.md — standing rules the sovereign
+//   INSTRUCTIONS  AgenticOS/Team Instructions.md — standing rules the user
 //                 edits in Obsidian. Every member is given them verbatim on
 //                 every spawn. This is the one file to change to change how
-//                 the whole court behaves.
+//                 the whole team behaves.
 //
-//   MEMORY        Kingdom/Memories/*.md — one durable fact per note, written by
-//                 the court through the `remember` tool. Members are given the
+//   MEMORY        AgenticOS/Memories/*.md — one durable fact per note, written by
+//                 the team through the `remember` tool. Members are given the
 //                 INDEX (title + hook) at spawn, never the bodies: an index of
 //                 forty memories costs a few hundred tokens, the bodies would
 //                 cost tens of thousands and be replayed on every turn.
@@ -26,9 +26,9 @@ import { insideVault } from './vault.js';
 // the mismatch meant the memory half of every system prompt was silently
 // empty while `remember` filed notes into a sibling folder nothing ever read.
 // Nothing errored — an absent directory reads as "no memories yet", which is
-// indistinguishable from a court that has simply not learned anything.
+// indistinguishable from a team that has simply not learned anything.
 export const MEMORY_DIR = 'Memories';
-export const INSTRUCTIONS_NOTE = 'Court Instructions.md';
+export const INSTRUCTIONS_NOTE = 'Team Instructions.md';
 
 /** Filenames are titles; keep them safe on Windows and readable in Obsidian. */
 export const slugTitle = (s) =>
@@ -37,20 +37,20 @@ export const slugTitle = (s) =>
 const root = (vault, dir) => join(vault, dir);
 
 /**
- * The sovereign's standing instructions to the whole court, or null.
+ * The user's standing instructions to the whole team, or null.
  *
  * Capped: this goes into EVERY member's prompt on EVERY spawn, so an essay
  * here is paid for over and over. The cap is generous enough for real rules
  * and small enough that it cannot quietly become the biggest thing a member
  * carries.
  */
-export function courtInstructions(vault, dir = 'Kingdom', max = 6000) {
+export function teamInstructions(vault, dir = 'AgenticOS', max = 6000) {
   if (!vault) return null;
   try {
     const text = readFileSync(join(root(vault, dir), INSTRUCTIONS_NOTE), 'utf8').trim();
     if (!text) return null;
     return text.length > max
-      ? `${text.slice(0, max)}\n\n[truncated at ${max} chars — keep Court Instructions shorter]`
+      ? `${text.slice(0, max)}\n\n[truncated at ${max} chars — keep Team Instructions shorter]`
       : text;
   } catch {
     return null;   // no instructions note is a normal, silent state
@@ -67,11 +67,11 @@ export function courtInstructions(vault, dir = 'Kingdom', max = 6000) {
  * every turn of every member for the life of the session. It also puts honest
  * pressure on titles: a memory titled "testing notes" is now visibly useless.
  *
- * Newest first because a court that has learned something recently is usually
+ * Newest first because a team that has learned something recently is usually
  * still working on it, and because a hard cap has to drop something: dropping
  * the oldest is the only ordering that degrades sensibly.
  */
-export function memoryIndex(vault, dir = 'Kingdom', { limit = 40, maxChars = 3000 } = {}) {
+export function memoryIndex(vault, dir = 'AgenticOS', { limit = 40, maxChars = 3000 } = {}) {
   if (!vault) return [];
   const d = root(vault, join(dir, MEMORY_DIR));
   let files;
@@ -88,8 +88,8 @@ export function memoryIndex(vault, dir = 'Kingdom', { limit = 40, maxChars = 300
       // A note without `type: memory` in its frontmatter was not written by
       // `remember()` — a hand-authored index, a table of contents, someone's
       // scratch note dropped in this folder — and its filename is not a fact,
-      // so it does not belong in what every member is told "the court
-      // already knows". A real Kingdom/Memories/Index.md landed in this exact
+      // so it does not belong in what every member is told "the team
+      // already knows". A real AgenticOS/Memories/Index.md landed in this exact
       // index as "- Index" until this check existed.
       // Only the leading frontmatter is read (400 chars, `type:` is always
       // one of its first lines) — no need to find the closing `---`, which
@@ -115,7 +115,7 @@ export function memoryIndex(vault, dir = 'Kingdom', { limit = 40, maxChars = 300
 }
 
 /** Write one durable fact. Returns the vault-relative path. */
-export function remember(vault, { title, body: text, tags = [], by = 'court', dir = 'Kingdom' }) {
+export function remember(vault, { title, body: text, tags = [], by = 'team', dir = 'AgenticOS' }) {
   if (!vault) throw new Error('No vault is configured for this workspace.');
   const d = root(vault, join(dir, MEMORY_DIR));
   mkdirSync(d, { recursive: true });
@@ -129,7 +129,7 @@ export function remember(vault, { title, body: text, tags = [], by = 'court', di
   if (!file) throw new Error(`Refusing to write a memory outside ${MEMORY_DIR}/: "${title}"`);
   const stamp = new Date().toISOString().slice(0, 10);
   // Frontmatter matches the vault's own taxonomy so these notes are findable
-  // by the same queries as everything else the sovereign writes.
+  // by the same queries as everything else the user writes.
   const front = [
     '---',
     'type: memory',
@@ -149,16 +149,16 @@ export function remember(vault, { title, body: text, tags = [], by = 'court', di
  *
  * The system prompt is only sent when a session is CREATED. A resumed member —
  * which is most of them, most of the time — keeps whatever prompt it was born
- * with, so editing Court Instructions or recording a memory would reach nobody
+ * with, so editing Team Instructions or recording a memory would reach nobody
  * until they happened to recycle. Comparing this against what a member was last
  * told is how the orchestrator knows to hand them the difference.
  *
  * Titles, not bodies: a memory whose body is edited is the same memory, and
- * re-briefing the whole court over a typo is not worth a context replay each.
+ * re-briefing the whole team over a typo is not worth a context replay each.
  */
-export function brainFingerprint(vault, dir = 'Kingdom') {
+export function brainFingerprint(vault, dir = 'AgenticOS') {
   if (!vault) return '';
-  const rules = courtInstructions(vault, dir) ?? '';
+  const rules = teamInstructions(vault, dir) ?? '';
   const titles = memoryIndex(vault, dir, { limit: 200, maxChars: 50_000 })
     .map((l) => l.split(' — ')[0]).join('|');
   // Not cryptographic — this only has to change when the content does.
@@ -171,17 +171,17 @@ export function brainFingerprint(vault, dir = 'Kingdom') {
 /**
  * The block handed to a member at spawn: who to obey, and what is already known.
  *
- * Returns '' when there is no vault, so a kingdom without one is unaffected.
+ * Returns '' when there is no vault, so a team without one is unaffected.
  */
-export function brainBlock(vault, dir = 'Kingdom') {
+export function brainBlock(vault, dir = 'AgenticOS') {
   if (!vault || !existsSync(vault)) return '';
   const parts = [];
 
-  const rules = courtInstructions(vault, dir);
+  const rules = teamInstructions(vault, dir);
   if (rules) {
     parts.push(
-      `--- STANDING INSTRUCTIONS FROM THE SOVEREIGN ---\n` +
-      `These are the sovereign's own words, from ${dir}/${INSTRUCTIONS_NOTE} in their vault. ` +
+      `--- STANDING INSTRUCTIONS FROM THE USER ---\n` +
+      `These are the user's own words, from ${dir}/${INSTRUCTIONS_NOTE} in their vault. ` +
       `They outrank your role's habits. If an order conflicts with them, say so rather ` +
       `than quietly doing both.\n\n${rules}`);
   }
@@ -189,10 +189,10 @@ export function brainBlock(vault, dir = 'Kingdom') {
   const mem = memoryIndex(vault, dir);
   if (mem.length) {
     parts.push(
-      `--- WHAT THE COURT ALREADY KNOWS (${mem.length} memories) ---\n` +
+      `--- WHAT THE TEAM ALREADY KNOWS (${mem.length} memories) ---\n` +
       `Titles only. Read one in full with vault_read("${dir}/${MEMORY_DIR}/<title>.md") when it ` +
-      `bears on your task — do NOT re-derive something the court has already learned, and do ` +
-      `NOT ask the sovereign to re-explain it. When you learn something durable yourself, ` +
+      `bears on your task — do NOT re-derive something the team has already learned, and do ` +
+      `NOT ask the user to re-explain it. When you learn something durable yourself, ` +
       `record it with the remember tool.\n\n${mem.join('\n')}`);
   }
 
@@ -204,17 +204,17 @@ if (process.argv[1]?.endsWith('memory.js')) {
   const { mkdtempSync, rmSync } = await import('node:fs');
   const { tmpdir } = await import('node:os');
 
-  const v = mkdtempSync(join(tmpdir(), 'kingdom-mem-'));
-  a.equal(courtInstructions(v), null, 'no instructions note is a silent, normal state');
+  const v = mkdtempSync(join(tmpdir(), 'agenticos-mem-'));
+  a.equal(teamInstructions(v), null, 'no instructions note is a silent, normal state');
   a.deepEqual(memoryIndex(v), [], 'no memories yet is not an error');
   a.equal(brainBlock(v), '', 'and produces nothing to carry');
 
-  mkdirSync(join(v, 'Kingdom'), { recursive: true });
-  writeFileSync(join(v, 'Kingdom', INSTRUCTIONS_NOTE), 'Always run the tests.\n');
-  a.match(courtInstructions(v), /Always run the tests/);
+  mkdirSync(join(v, 'AgenticOS'), { recursive: true });
+  writeFileSync(join(v, 'AgenticOS', INSTRUCTIONS_NOTE), 'Always run the tests.\n');
+  a.match(teamInstructions(v), /Always run the tests/);
 
   const p = remember(v, { title: 'Flutter tests need flutter test', body: '`dart test` cannot load the bindings.', tags: ['flutter'], by: 'tester' });
-  a.equal(p, 'Kingdom/Memories/Flutter tests need flutter test.md');
+  a.equal(p, 'AgenticOS/Memories/Flutter tests need flutter test.md');
   const idx = memoryIndex(v);
   a.equal(idx.length, 1);
   a.equal(idx[0], '- Flutter tests need flutter test',
@@ -232,7 +232,7 @@ if (process.argv[1]?.endsWith('memory.js')) {
   // case a naive startsWith('..') containment check gets wrong — it did.
   const evil = remember(v, { title: '../../etc/passwd', body: 'no' });
   const abs = resolve(v, evil);
-  a.ok(insideVault(resolve(v, 'Kingdom', MEMORY_DIR), abs),
+  a.ok(insideVault(resolve(v, 'AgenticOS', MEMORY_DIR), abs),
     `a traversing title must stay inside Memory/, got ${evil}`);
   a.ok(existsSync(abs), 'and must still have been written, not silently dropped');
   a.ok(!existsSync(resolve(v, '..', 'etc')), 'and nothing may appear outside the vault');
@@ -240,7 +240,7 @@ if (process.argv[1]?.endsWith('memory.js')) {
   // A hand-authored note in the same folder — an index, a README — is not a
   // `remember()`-authored fact and must not show up as if it were one.
   const before = memoryIndex(v).length;
-  writeFileSync(join(v, 'Kingdom', MEMORY_DIR, 'Index.md'),
+  writeFileSync(join(v, 'AgenticOS', MEMORY_DIR, 'Index.md'),
     '---\ntype: index\nstatus: active\n---\n\n# Table of contents\n');
   const withStray = memoryIndex(v);
   a.equal(withStray.length, before, 'the stray index note must not join the memory index');
@@ -254,7 +254,7 @@ if (process.argv[1]?.endsWith('memory.js')) {
 
   const block = brainBlock(v);
   a.match(block, /STANDING INSTRUCTIONS/);
-  a.match(block, /WHAT THE COURT ALREADY KNOWS/);
+  a.match(block, /WHAT THE TEAM ALREADY KNOWS/);
   a.ok(block.length < 12_000, 'the brain block must stay affordable on every spawn');
 
   rmSync(v, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });

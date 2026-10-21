@@ -1,4 +1,4 @@
-// The Inbox: everything inside the app waiting on the sovereign, ranked
+// The Inbox: everything inside the app waiting on the user, ranked
 // (src/inbox.js). Pure, so every ranking rule is pinned here.
 //
 //   node test/t-inbox.js
@@ -17,9 +17,9 @@ const items = inboxItems({
   now,
   run: { id: 'r1', state: 'blocked', objective: 'ship the importer', blocker: { operation: 'verification of coder', next: 'fix the test', at: now - H } },
   approvals: [
-    { id: 9, ts: now - 2 * H, from: 'orchestrator', kind: 'summon', names: ['coder', 'tester'], reason: 'two files' },
+    { id: 9, ts: now - 2 * H, from: 'orchestrator', kind: 'add', names: ['coder', 'tester'], reason: 'two files' },
     { id: 4, ts: now - 5 * H, from: 'orchestrator', kind: 'question', questions: [{ question: 'Which database?' }] },
-    { id: 3, ts: now - 9 * H, from: 'coder', kind: 'merge', peasant: 'coder', resolved: 'approved' },
+    { id: 3, ts: now - 9 * H, from: 'coder', kind: 'merge', agent: 'coder', resolved: 'approved' },
   ],
   myTasks: [
     { id: 1, title: 'call the bank', dueTs: now - H },
@@ -46,7 +46,7 @@ a.equal(items[0].tone, 'attention');
 a.match(items[0].detail, /verification of coder\. Next: fix the test/, 'a blocked run says why and what next');
 a.equal(items[1].title, 'Which database?', 'a question reads as the question');
 a.equal(items[1].kind, 'question');
-a.equal(items[2].title, 'Summon coder, tester');
+a.equal(items[2].title, 'Add coder, tester');
 a.match(items[2].detail, /Team request from orchestrator: two files/);
 a.equal(items[4].tone, 'live');
 a.equal(items[4].detail, 'expires Friday');

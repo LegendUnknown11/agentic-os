@@ -5,7 +5,7 @@
 // markdown, so displaying it as plain text was always wrong, not a style
 // choice.
 //
-// No dependency: this covers the handful of constructs a court's turns
+// No dependency: this covers the handful of constructs a team's turns
 // actually use (bold, italic, inline/fenced code, links, lists) in a few
 // dozen lines. Anything fancier (tables, nested blockquotes) falls through
 // to plain paragraphs, which is exactly what happened before this file
@@ -50,7 +50,7 @@ export function mdToHtml(text) {
   // vault: is not a real scheme — it never reaches the network or an <a>'s
   // real href. It's a citation the app intercepts (see app.js's delegated
   // click handler) and routes to the Notes panel, so a member can point the
-  // sovereign straight at the note it drew an answer from.
+  // user straight at the note it drew an answer from.
   out = out.replace(/\[([^\]\n]+)\]\(([^)\s]+)\)/g, (m, label, url) => {
     if (/^vault:/i.test(url)) return `<a href="#" class="vault-link" data-vault="${url.slice(6)}">${label}</a>`;
     const href = safeHref(url);

@@ -38,7 +38,7 @@ needs a locally installed Chromium rather than the MCP server.
 - **GitHub MCP is unauthorized.** The workflow leans on `gh` instead, which
   works and is scriptable. Authorizing it would mainly buy inline PR reads.
   Authorization needs an interactive session; it cannot be done headlessly.
-- **No connector for the daemon itself.** The court is driven over HTTP and SSE
+- **No connector for the daemon itself.** The team is driven over HTTP and SSE
   from `src/daemon.js` on port 7777. Nothing exposes it to a Claude Code
   session, so inspecting a live run means curl, Playwright against the UI, or
   the Electron window. A thin MCP wrapper over its existing read endpoints is

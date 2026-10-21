@@ -11,6 +11,8 @@ class FakeElement {
     this.selectionStart = 0;
     this.selectionEnd = 0;
     this.listeners = {};
+    this.nodeType = 1;
+    this.classList = { add: (name) => { this.className = [this.className, name].filter(Boolean).join(' '); } };
   }
 
   set textContent(value) { this._text = String(value ?? ''); this.children = []; }
@@ -73,7 +75,14 @@ class FakeAudio {
 }
 
 globalThis.Audio = FakeAudio;
-globalThis.document = { activeElement: null, createElement: (tag) => new FakeElement(tag) };
+// createElementNS and createTextNode exist because the session inspector (ui/inspector.js) draws
+// SVG icons and composes with views/util's h(); both are DOM calls the fake must answer.
+globalThis.document = {
+  activeElement: null,
+  createElement: (tag) => new FakeElement(tag),
+  createElementNS: (_ns, tag) => new FakeElement(tag),
+  createTextNode: (text) => ({ nodeType: 3, textContent: String(text) }),
+};
 globalThis.FormData = class {
   constructor(form) { this.form = form; }
   get(name) { return name === 'text' ? this.form.querySelector('.thread-input')?.value ?? null : null; }
@@ -89,16 +98,16 @@ const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 resetForTest();
 state.members.set('orchestrator', { name: 'orchestrator', role: 'orchestrator' });
-state.members.set('coder', { name: 'coder', role: 'peasant', summoned: true });
+state.members.set('coder', { name: 'coder', role: 'agent', added: true });
 state.conversations = [{ id: 'a', title: 'Alpha' }, { id: 'b', title: 'Beta' }];
 state.view = { page: 'thread', member: 'orchestrator', conversation: 'a' };
 state.ready = true;
 state.approvals = [
   { id: 7, kind: 'question', questions: [{ header: 'Direction', options: [{ label: 'Keep going' }] }] },
-  { id: 8, kind: 'summon', names: ['coder'], reason: 'Need help' },
+  { id: 8, kind: 'add', names: ['coder'], reason: 'Need help' },
 ];
 state.log.set('orchestrator', [{ id: 1, kind: 'text', payload: { text: 'event with id one' }, conversation_id: 'a', ts: 1 }]);
-state.messages = [{ id: 1, sender: 'sovereign', recipient: 'orchestrator', body: 'message with id one', conversation_id: 'a', ts: 2 }];
+state.messages = [{ id: 1, sender: 'user', recipient: 'orchestrator', body: 'message with id one', conversation_id: 'a', ts: 2 }];
 a.deepEqual(entriesFor(state, 'orchestrator', 'a').map((entry) => entry.text), ['event with id one', 'message with id one'],
   'event and message tables must not collide when their independent IDs match');
 

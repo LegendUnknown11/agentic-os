@@ -13,23 +13,23 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Kingdom } from '../src/kingdom.js';
-import { kingdomDir } from '../src/worktree.js';
+import { AgenticOS } from '../src/agenticos.js';
+import { stateDir } from '../src/worktree.js';
 
-const repo = mkdtempSync(join(tmpdir(), 'kingdom-recycle-'));
+const repo = mkdtempSync(join(tmpdir(), 'agenticos-recycle-'));
 const git = (...x) => execFileSync('git', x, { cwd: repo, stdio: 'pipe' });
 git('init', '-q');
-git('config', 'user.email', 'k@kingdom');
-git('config', 'user.name', 'kingdom');
+git('config', 'user.email', 'k@agenticos');
+git('config', 'user.name', 'agenticos');
 writeFileSync(join(repo, 'README.md'), '# t\n');
 git('add', '-A');
 git('commit', '-qm', 'init');
 
-const configPath = join(repo, 'kingdom.config.json');
+const configPath = join(repo, 'agenticos.config.json');
 writeFileSync(configPath, JSON.stringify({
   orchestrator: { name: 'orchestrator', cli: 'codex' },
   briefer: { name: 'briefer', cli: 'codex', prompt: 'You watch.' },
-  peasants: [{ name: 'coder', cli: 'codex' }],
+  agents: [{ name: 'coder', cli: 'codex' }],
 }));
 
 const HANDOVER = 'coder is mid-task on math.js; orchestrator awaits a verdict.';
@@ -47,13 +47,13 @@ class FakeBriefer extends EventEmitter {
   stop() { this.stopped = true; }
 }
 
-const k = new Kingdom(repo, configPath);
+const k = new AgenticOS(repo, configPath);
 k.base = 'master';
 k.bus.set('base', 'master');
 k.bus.set('session:briefer:default', 'old-session-id-should-be-discarded');
 
 const fake = new FakeBriefer();
-k.agents.set('briefer', fake);
+k.processes.set('briefer', fake);
 
 let recycled = null;
 k.on('recycled', (e) => (recycled = e));
@@ -66,7 +66,7 @@ a.match(fake.sent[0], /handover/i, 'the request must ask for a handover');
 a.equal(fake.stopped, true, 'the old briefer must be stopped');
 
 // The successor must exist, and must not be the same object.
-const successor = k.agents.get('briefer');
+const successor = k.processes.get('briefer');
 a.ok(successor, 'a replacement briefer must be spawned');
 a.notEqual(successor, fake, 'the replacement must be a new agent');
 
@@ -94,14 +94,14 @@ a.ok(successor.spec.prompt.includes(HANDOVER),
       this.emit('turn_end', { usage: {}, costUsd: 0 });
     });
   };
-  const k2 = new Kingdom(repo, configPath);
+  const k2 = new AgenticOS(repo, configPath);
   k2.base = 'master';
   k2.bus.set('base', 'master');
   k2.bus.set('session:briefer:default', 'another-old-session');
-  k2.agents.set('briefer', verbose);
+  k2.processes.set('briefer', verbose);
   await k2.recycleBriefer();
 
-  const prompt = k2.agents.get('briefer').spec.prompt;
+  const prompt = k2.processes.get('briefer').spec.prompt;
   // From the handover header to the end of the prompt: the note plus whatever
   // blocks follow it, so the bound is the cap with room for those rather than
   // the cap itself. Uncapped this region is ~74,000 chars, so the margin is
@@ -117,18 +117,18 @@ a.ok(successor.spec.prompt.includes(HANDOVER),
 
 // A failed CLI can leave `send()` unable to accept a handover request. A model
 // switch must still retire it: persisting the new model while leaving the old
-// member alive strands the court on the failed runtime.
+// member alive strands the team on the failed runtime.
 {
   const failed = new FakeBriefer();
   failed.send = () => { throw new Error('dead transport'); };
-  const k3 = new Kingdom(repo, configPath);
+  const k3 = new AgenticOS(repo, configPath);
   k3.base = 'master';
   k3.bus.set('base', 'master');
-  k3.agents.set('briefer', failed);
+  k3.processes.set('briefer', failed);
 
   await k3.recycleBriefer();
   a.equal(failed.stopped, true, 'a failed handover transport must not block retirement');
-  a.ok(k3.agents.get('briefer'), 'the successor must still be spawned without a handover');
+  a.ok(k3.processes.get('briefer'), 'the successor must still be spawned without a handover');
   await k3.stop();
 }
 
@@ -141,5 +141,5 @@ a.equal(recycled.name, 'briefer');
 a.ok(recycled.note.includes(HANDOVER));
 
 await k.stop();
-for (const d of [repo, kingdomDir(repo)]) { try { rmSync(d, { recursive: true, force: true }); } catch {} }
+for (const d of [repo, stateDir(repo)]) { try { rmSync(d, { recursive: true, force: true }); } catch {} }
 console.log('t-recycle.js OK — handover written, old briefer retired, successor seeded');

@@ -34,7 +34,7 @@ that effect. A slow run is not a failing run.
 ## A failure inside the pool is not yet a failure
 
 The runner re-runs a pool failure alone and prints `flaky (failed in the pool,
-passed alone)` when the retry passes. `court self-control` is the one suite known
+passed alone)` when the retry passes. `team self-control` is the one suite known
 to do this.
 
 So: read the retry result before reporting anything. A bare pool failure is

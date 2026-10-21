@@ -1,4 +1,4 @@
-// Everything inside the app that is waiting on the sovereign, in one ranked
+// Everything inside the app that is waiting on the user, in one ranked
 // list: the Inbox view reads it, and the morning-brief automation turns it
 // into text. Pure — every input is an argument — so the ranking is pinned by
 // test/t-inbox.js rather than by eye.
@@ -11,13 +11,13 @@
 const DAY = 86_400_000;
 
 const KIND_TITLES = {
-  summon: 'Team request', role: 'Role request', merge: 'Merge request', push: 'Push request', question: 'Question',
+  add: 'Team request', role: 'Role request', merge: 'Merge request', push: 'Push request', question: 'Question',
 };
 
 function approvalTitle(a) {
   if (a.kind === 'question') return a.questions?.[0]?.question ?? 'A question for you';
-  if (a.kind === 'summon') return `Summon ${(a.names ?? []).join(', ')}`;
-  if (a.kind === 'merge') return `Merge ${a.peasant ?? 'a member'}'s work`;
+  if (a.kind === 'add') return `Add ${(a.names ?? []).join(', ')}`;
+  if (a.kind === 'merge') return `Merge ${a.agent ?? 'a member'}'s work`;
   if (a.kind === 'role') return `Role for ${a.name ?? 'a member'}`;
   return KIND_TITLES[a.kind] ?? String(a.kind ?? 'Request');
 }
@@ -31,7 +31,7 @@ const oneLine = (text, max = 160) => {
  * @param approvals  rows as /api/approvals returns them (kind, from, ts, resolved, ...)
  * @param run        the current run, or null
  * @param myTasks    bus.myTasks()
- * @param messages   bus messages addressed to the sovereign
+ * @param messages   bus messages addressed to the user
  * @returns ranked [{id, rank, kind, tone, title, detail, href, ts}]
  */
 export function inboxItems({ approvals = [], run = null, myTasks = [], messages = [], now = Date.now() } = {}) {

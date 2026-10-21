@@ -1,9 +1,9 @@
-# court — the agents the app runs
+# team — the agents the app runs
 
 Parent: [[index]] ([index.md](index.md)).
 
 Distinct from [[dev]]: that domain is the source, this one is the behaviour the
-source configures. Changing a file here changes how every court member acts
+source configures. Changing a file here changes how every team member acts
 without changing a line of logic.
 
 | Concern | File | Contract |

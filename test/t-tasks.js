@@ -1,9 +1,9 @@
 // The shared task list, driven through the real MCP servers.
 //
-// The court could not answer "what is still outstanding". The orchestrator assigned by
-// message, and a message is sent and then gone: an assignment a peasant never
+// The team could not answer "what is still outstanding". The orchestrator assigned by
+// message, and a message is sent and then gone: an assignment an agent never
 // acted on left no trace in any queue, count, or panel. This exercises the list
-// end to end through three separate MCP processes — one orchestrator, two peasants —
+// end to end through three separate MCP processes — one orchestrator, two agents —
 // because the race that matters (two members claiming one task) only exists
 // across processes, and a single-process test would prove nothing about it.
 //
@@ -17,14 +17,14 @@ import { fileURLToPath } from 'node:url';
 import { Bus } from '../src/bus.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const dir = mkdtempSync(join(tmpdir(), 'kingdom-tasks-'));
+const dir = mkdtempSync(join(tmpdir(), 'agenticos-tasks-'));
 const db = join(dir, 'bus.db');
 
 const seed = new Bus(db);
 seed.set('roster', JSON.stringify([
-  { name: 'sovereign-regent', role: 'orchestrator' },
-  { name: 'coder', role: 'peasant' },
-  { name: 'refactoring-engineer', role: 'peasant' },
+  { name: 'lead-orchestrator', role: 'orchestrator' },
+  { name: 'coder', role: 'agent' },
+  { name: 'refactoring-engineer', role: 'agent' },
 ]));
 seed.close();
 
@@ -32,7 +32,7 @@ seed.close();
 function member(name, role) {
   const child = spawn(process.execPath, [join(HERE, '..', 'src', 'mcp.js')], {
     cwd: join(HERE, '..'),
-    env: { ...process.env, KINGDOM_AGENT: name, KINGDOM_ROLE: role, KINGDOM_DB: db },
+    env: { ...process.env, AGENTICOS_AGENT: name, AGENTICOS_ROLE: role, AGENTICOS_DB: db },
     stdio: ['pipe', 'pipe', 'ignore'],
   });
   let buffer = '';
@@ -73,9 +73,9 @@ function member(name, role) {
   };
 }
 
-const orchestrator = await member('sovereign-regent', 'orchestrator').start();
-const coder = await member('coder', 'peasant').start();
-const refactoringEngineer = await member('refactoring-engineer', 'peasant').start();
+const orchestrator = await member('lead-orchestrator', 'orchestrator').start();
+const coder = await member('coder', 'agent').start();
+const refactoringEngineer = await member('refactoring-engineer', 'agent').start();
 
 try {
   /* ---------- 1. the tools reach the right roles ---------- */
@@ -85,9 +85,9 @@ try {
       'the orchestrator stocks the list, rules on plans, and can reconcile an unowned stale task');
     a.ok(!k.includes('claim_task'), 'and does not claim work — an orchestrator that codes stops coordinating');
     a.ok(c.includes('claim_task') && c.includes('declare_done') && c.includes('finish_task') && c.includes('submit_plan'));
-    a.ok(!c.includes('add_task'), 'a peasant does not write its own assignments');
+    a.ok(!c.includes('add_task'), 'an agent does not write its own assignments');
     a.ok(k.includes('tasks') && c.includes('tasks'), 'but the LIST is shared, so both must see it');
-    console.log('  tools: orchestrator stocks and rules, peasants claim, both read the same list');
+    console.log('  tools: orchestrator stocks and rules, agents claim, both read the same list');
   }
 
   /* ---------- 2. tasks, and dependencies that actually block ---------- */
@@ -174,9 +174,9 @@ try {
     a.deepEqual(done.sort(), [1, 3]);
     a.equal(bus.availableTasks().length, 0, 'and nothing is left unclaimed');
     // finish_task reports to whoever holds the office, not to the literal
-    // string "orchestrator" — this court's orchestrator is named sovereign-regent.
+    // string "orchestrator" — this team's orchestrator is named lead-orchestrator.
     const reports = bus.history({ limit: 200 }).filter((m) => m.kind === 'done');
-    a.ok(reports.length >= 2 && reports.every((m) => m.recipient === 'sovereign-regent'),
+    a.ok(reports.length >= 2 && reports.every((m) => m.recipient === 'lead-orchestrator'),
       `completions must reach the orchestrator by office, got ${JSON.stringify(reports.map((m) => m.recipient))}`);
     bus.close();
     // Section 7 pins declare_done for coder. The race above deliberately gives
@@ -228,15 +228,15 @@ try {
     bus.close();
     a.match(await orchestrator.call('close_task', { id: 5, summary: 'do not steal work' }), /still owned/,
       'an orchestrator may not close a task a member still owns');
-    // The sovereign's Tasks view drops a task; the tools must read that as closed.
+    // The user's Tasks view drops a task; the tools must read that as closed.
     const dropBus = new Bus(db);
-    const droppedId = dropBus.addTask({ title: 'cancelled by the sovereign', by: 'sovereign' });
+    const droppedId = dropBus.addTask({ title: 'cancelled by the user', by: 'user' });
     dropBus.updateTask(droppedId, { state: 'dropped' });
     dropBus.close();
     const listing = await orchestrator.call('tasks', {});
-    a.ok(!listing.split(/\n\s*\n/)[0].includes('cancelled by the sovereign'), `a dropped task is not outstanding:\n${listing}`);
+    a.ok(!listing.split(/\n\s*\n/)[0].includes('cancelled by the user'), `a dropped task is not outstanding:\n${listing}`);
     a.match(await orchestrator.call('reassign_task', { id: droppedId, to: 'coder' }), /already dropped/,
-      'a dropped task is not handed back out without the sovereign reopening it');
+      'a dropped task is not handed back out without the user reopening it');
     a.match(await orchestrator.call('close_task', { id: droppedId, summary: 'x' }), /already dropped/);
     console.log('  unowned stale tasks close audibly; active work is never guessed away');
   }
@@ -282,11 +282,11 @@ try {
     console.log('  declare_done refuses a run-owned task instead of silently bypassing its verification gate');
   }
 
-  /* ---------- the sovereign's own list: orchestrator reads and adds, peasants cannot ---------- */
+  /* ---------- the user's own list: orchestrator reads and adds, agents cannot ---------- */
   {
     const k = await orchestrator.tools(), c = await coder.tools();
-    a.ok(k.includes('my_tasks') && k.includes('add_my_task'), "the orchestrator can read and add to the sovereign's list");
-    a.ok(!c.includes('my_tasks') && !c.includes('add_my_task'), "a peasant never sees the sovereign's list");
+    a.ok(k.includes('my_tasks') && k.includes('add_my_task'), "the orchestrator can read and add to the user's list");
+    a.ok(!c.includes('my_tasks') && !c.includes('add_my_task'), "an agent never sees the user's list");
     a.match(await orchestrator.call('my_tasks'), /list is empty/);
     a.match(await orchestrator.call('add_my_task', { title: 'call the accountant', due: '2020-01-01T09:00:00Z' }), /Added #\d+ .*2020-01-01T09:00Z/);
     a.match(await orchestrator.call('add_my_task', { title: 'x', due: 'next tuesday-ish' }), /not a date/,
@@ -295,10 +295,10 @@ try {
     a.match(listed, /call the accountant — 2020-01-01T09:00Z \(OVERDUE\)/, 'overdue items are marked');
     a.doesNotMatch(listed, /\bx\b —/, 'the refused item is not on the list');
     const direct = new Bus(db);
-    a.equal(direct.myTasks()[0].by, 'sovereign-regent', 'the list records which member added an item');
+    a.equal(direct.myTasks()[0].by, 'lead-orchestrator', 'the list records which member added an item');
     a.equal(direct.tasks().some((t) => t.title === 'call the accountant'), false, 'and it never lands in the team queue');
     direct.close();
-    console.log("  my_tasks: the orchestrator reads and adds to the sovereign's list; peasants cannot");
+    console.log("  my_tasks: the orchestrator reads and adds to the user's list; agents cannot");
   }
 
   console.log('t-tasks.js OK — a shared list two processes cannot both claim, with a plan gate that holds');

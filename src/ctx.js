@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Where the court's context actually goes.
+// Where the team's context actually goes.
 //
 //   node src/ctx.js <repo>
 //
@@ -9,7 +9,8 @@
 // attack — measured, so nobody has to guess at it (this project has twice
 // tuned the wrong knob from an estimate).
 //
-// Read-only. Safe to run while the court is working.
+// Read-only. Safe to run while the team is working.
+import './legacy-boot.js'; // first: legacy env fallback and home migration, before any module reads env
 import { DatabaseSync } from 'node:sqlite';
 import { resolve } from 'node:path';
 import { dbPath } from './worktree.js';
@@ -37,7 +38,7 @@ export function audit(db, since = 0, { config = null } = {}) {
     if (e.type !== 'turn_end') continue;
     const p = JSON.parse(e.payload);
     const u = p.usage ?? {};
-    // All of this comes from usage.js, so this and kingdom.js and daemon.js
+    // All of this comes from usage.js, so this and agenticos.js and daemon.js
     // cannot drift apart again. They already had: counting Anthropic's
     // alongside-cache against an input_tokens-only denominator reported
     // "replay 107.6% of all input" and "genuinely new: -37.94M".
@@ -101,8 +102,8 @@ export function audit(db, since = 0, { config = null } = {}) {
 function specsOf(config) {
   const m = new Map();
   if (!config) return m;
-  const def = config.peasantDefaults ?? {};
-  for (const s of [config.orchestrator, config.briefer, ...(config.peasants ?? [])]) {
+  const def = config.agentDefaults ?? {};
+  for (const s of [config.orchestrator, config.briefer, ...(config.agents ?? [])]) {
     if (s?.name) m.set(s.name, { cli: s.cli ?? def.cli, model: s.model ?? def.model });
   }
   return m;
@@ -164,7 +165,7 @@ export function report(a) {
       say('cache is not being reused. Look at recycles and at anything that');
       say('changes a system prompt mid-session — both discard the cached prefix.');
     } else {
-      say('OUTPUT dominates: the court is thinking, not re-reading. The lever is');
+      say('OUTPUT dominates: the team is thinking, not re-reading. The lever is');
       say('`effort` per role, and a smaller crew — not batching or recycling.');
     }
     if (a.handovers) {
@@ -210,7 +211,7 @@ if (process.argv[1]?.endsWith('ctx.js') && !process.argv[2]) {
   a.equal(100 + 200 + 300, 600, 'sanity: the raw sum this avoids');
 
   // Priced, with a config that names the orchestrator's model.
-  const cfg = { orchestrator: { name: 'orchestrator', cli: 'codex', model: 'gpt-5.6-luna' }, peasants: [] };
+  const cfg = { orchestrator: { name: 'orchestrator', cli: 'codex', model: 'gpt-5.6-luna' }, agents: [] };
   const priced = audit(db, 0, { config: cfg });
   a.equal(priced.unpriced, 0, 'a member whose model is in the table must be priced');
   a.ok(priced.usd > 0, 'a priced session costs something');
@@ -236,7 +237,7 @@ if (process.argv[1]?.endsWith('ctx.js') && !process.argv[2]) {
   a.equal(audit(db2).cached, 40, "claude's cache_read_input_tokens must count too");
 
   // ...and agy/Gemini's third name for it. Missing this scored the orchestrator — the
-  // one member that runs on agy, and 61% of the court's output — as having
+  // one member that runs on agy, and 61% of the team's output — as having
   // replayed NOTHING, in the audit the whole cost discipline is built on.
   const db3 = new DatabaseSync(':memory:');
   db3.exec('create table events (id integer primary key autoincrement, ts integer, agent text, type text, payload text); create table messages (id integer primary key autoincrement, ts integer, sender text, recipient text, kind text, body text);');
@@ -267,7 +268,7 @@ if (process.argv[1]?.endsWith('ctx.js') && !process.argv[2]) {
       },
     }));
   const cw = audit(db4, 0, {
-    config: { orchestrator: { name: 'orchestrator', cli: 'claude', model: 'haiku' }, peasants: [] },
+    config: { orchestrator: { name: 'orchestrator', cli: 'claude', model: 'haiku' }, agents: [] },
   });
   const sum = cw.split.cached + cw.split.fresh + cw.split.out;
   a.ok(Math.abs(sum - cw.usd) < 1e-12,   // float, so "exactly" means to the cent's cent
@@ -276,7 +277,7 @@ if (process.argv[1]?.endsWith('ctx.js') && !process.argv[2]) {
 
   a.match(report(r), /replayed context/);
   // The conclusion must be drawn from the bill and must no longer tell the
-  // sovereign to recycle because the cache is working.
+  // user to recycle because the cache is working.
   const said = report(priced);
   a.match(said, /the bill:/, 'the report prices the three kinds of token');
   a.doesNotMatch(said, /recycle sooner/,
@@ -293,7 +294,7 @@ if (process.argv[1]?.endsWith('ctx.js') && process.argv[2]) {
   // them — so a missing or unreadable config degrades the report, never fails it.
   let config = null;
   try {
-    const { defaultConfigPath } = await import('./kingdom.js');
+    const { defaultConfigPath } = await import('./agenticos.js');
     const { readFileSync } = await import('node:fs');
     config = JSON.parse(readFileSync(defaultConfigPath(repo), 'utf8'));
   } catch { /* unpriced, and the report says so */ }

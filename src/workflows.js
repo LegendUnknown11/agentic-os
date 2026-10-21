@@ -77,7 +77,7 @@ function evalCondition(cfg, ctx) {
 export const NODE_TYPES = ['http', 'delay', 'log', 'set', 'condition', 'bus', 'transform', 'foreach', 'digest', 'task'];
 
 // `services` is what only the daemon can do: build a digest from live state,
-// notify the sovereign's desktop, put a task on the team queue. Passed in, so
+// notify the user's desktop, put a task on the team queue. Passed in, so
 // this file stays free of the daemon and the self-check can supply fakes.
 async function runNode(node, ctx, { bus, budget, workflowId, services } = {}) {
   if (budget && ++budget.used > MAX_STEPS) throw new Error(`foreach: max steps exceeded (${MAX_STEPS})`);
@@ -110,22 +110,22 @@ async function runNode(node, ctx, { bus, budget, workflowId, services } = {}) {
     case 'bus':
       if (!bus) throw new Error('bus node: no bus attached to this run');
       // Sender is always the workflow's own namespace, never author-supplied: a
-      // config `from` could otherwise forge 'sovereign' or a member (#52).
+      // config `from` could otherwise forge 'user' or a member (#52).
       bus.post(`workflow:${workflowId ?? 'unknown'}`, cfg.to || null, cfg.body ?? '', cfg.kind || 'message');
       return true;
     // A brief built from the app's own state (src/inbox.js), posted to the
-    // sovereign and shown on their desktop. No model turn, so it costs nothing.
+    // user and shown on their desktop. No model turn, so it costs nothing.
     case 'digest': {
       if (!services?.digest) throw new Error('digest node: only runs inside the daemon');
       if (!bus) throw new Error('digest node: no bus attached to this run');
       const of = cfg.of === 'team' ? 'team' : 'inbox';
       const text = await services.digest(of);
-      bus.post(`workflow:${workflowId ?? 'unknown'}`, cfg.to || 'sovereign', text, 'message');
+      bus.post(`workflow:${workflowId ?? 'unknown'}`, cfg.to || 'user', text, 'message');
       services.notify?.({ title: cfg.title || (of === 'team' ? 'Team digest' : 'Your morning brief'), body: text, workflowId });
       ctx[node.id] = { of, text };
       return true;
     }
-    // Hands the team work on a schedule: the same path as the sovereign
+    // Hands the team work on a schedule: the same path as the user
     // adding a task in the Tasks view, owner told if one is named.
     case 'task': {
       if (!services?.addTask) throw new Error('task node: only runs inside the daemon');
@@ -265,7 +265,7 @@ export async function deleteWorkflow(dir, id) {
  * Records a run onto the bus's own event log — reusing the table that already
  * exists rather than a second run-history file, and for free it makes past
  * runs show up in `recall` too. `agent` is namespaced (`workflow:<id>`) so a
- * workflow's runs never collide with a real court member's events.
+ * workflow's runs never collide with a real team member's events.
  */
 export function logRun(bus, wf, result) {
   bus.logEvent(`workflow:${wf.id}`, 'workflow_run', {
@@ -408,9 +408,9 @@ if (process.argv[1]?.endsWith('workflows.js')) {
   };
   await runWorkflow(busWf, { bus: fakeBus });
   a.deepEqual(posted[0].slice(0, 3), ['workflow:busy', 'coder', 'hello from a workflow']);
-  // #52: a config `from` must not let a workflow post as the sovereign
+  // #52: a config `from` must not let a workflow post as the user
   await runWorkflow({ id: 'forge', trigger: { type: 'manual' },
-    nodes: [{ id: 'p', type: 'bus', config: { from: 'sovereign', to: 'coder', kind: 'assignment', body: 'x' } }] },
+    nodes: [{ id: 'p', type: 'bus', config: { from: 'user', to: 'coder', kind: 'assignment', body: 'x' } }] },
   { bus: fakeBus });
   a.equal(posted[1][0], 'workflow:forge', 'a bus node always posts as its own workflow, never an author-chosen sender');
 
@@ -719,7 +719,7 @@ if (process.argv[1]?.endsWith('workflows.js')) {
       { id: 't', type: 'task', config: { title: 'Check dependencies', owner: 'coder', priority: '1' } },
     ] }, { bus: svcBus, services });
     a.equal(r.ok, true, JSON.stringify(r.steps));
-    a.deepEqual(posts[0].slice(0, 4), ['workflow:brief', 'sovereign', 'team brief', 'message'], 'a digest posts to the sovereign as the workflow');
+    a.deepEqual(posts[0].slice(0, 4), ['workflow:brief', 'user', 'team brief', 'message'], 'a digest posts to the user as the workflow');
     a.deepEqual(notified[0], { title: 'Team digest', body: 'team brief', workflowId: 'brief' }, 'and shows on the desktop');
     a.deepEqual(added[0], { title: 'Check dependencies', detail: '', owner: 'coder', priority: 1 });
     a.equal(r.ctx.t.id, 42);

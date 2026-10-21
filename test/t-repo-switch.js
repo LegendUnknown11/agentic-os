@@ -13,7 +13,7 @@ function fakeDeps(overrides = {}) {
       assertRepo: async (repo) => { calls.push(['assertRepo', repo]); },
       confirm: async (repo) => { calls.push(['confirm', repo]); return true; },
       shutdown: async () => { calls.push(['shutdown']); },
-      courtOnPort: async () => { calls.push(['courtOnPort']); return false; },
+      teamOnPort: async () => { calls.push(['teamOnPort']); return false; },
       startDaemon: async (repo, logPath) => { calls.push(['startDaemon', repo, logPath]); },
       reload: () => { calls.push(['reload']); },
       logPath: '/tmp/daemon.log',
@@ -54,27 +54,27 @@ function fakeDeps(overrides = {}) {
     'cancelling at the confirmation must never reach shutdown or startDaemon');
 }
 
-// --- the old court failing to free the port surfaces a clear error ------
+// --- the old team failing to free the port surfaces a clear error ------
 {
   const { calls, deps } = fakeDeps({
-    courtOnPort: async () => { calls.push(['courtOnPort']); return true; }, // never frees
+    teamOnPort: async () => { calls.push(['teamOnPort']); return true; }, // never frees
     now: (() => { let t = 0; return () => (t += 20_000); })(), // jumps straight past the 15s deadline
   });
   const result = await switchRepo('/repo', deps);
   a.deepEqual(result, { ok: false, error: 'The previous workspace did not end in time. Try again in a moment.' });
   a.ok(calls.some((c) => c[0] === 'shutdown'), 'shutdown must still be attempted before the wait loop');
-  a.ok(!calls.some((c) => c[0] === 'startDaemon'), 'a court that never frees its port must never reach startDaemon');
+  a.ok(!calls.some((c) => c[0] === 'startDaemon'), 'a team that never frees its port must never reach startDaemon');
 }
 
-// --- a court that refuses to end stops the switch, visibly --------------
+// --- a team that refuses to end stops the switch, visibly --------------
 {
   const { calls, deps } = fakeDeps({
     shutdown: async () => { calls.push(['shutdown']); return { ok: false, error: 'the workspace refused to end (HTTP 415)' }; },
   });
   const result = await switchRepo('/repo', deps);
   a.deepEqual(result, { ok: false, error: 'the workspace refused to end (HTTP 415)' });
-  a.ok(!calls.some((c) => c[0] === 'courtOnPort' || c[0] === 'startDaemon'),
-    'a refused shutdown must stop before waiting on the port or starting a second court');
+  a.ok(!calls.some((c) => c[0] === 'teamOnPort' || c[0] === 'startDaemon'),
+    'a refused shutdown must stop before waiting on the port or starting a second team');
 }
 
 // --- a daemon that fails to start surfaces its own error -----------------
@@ -92,10 +92,10 @@ function fakeDeps(overrides = {}) {
   const { calls, deps } = fakeDeps();
   const result = await switchRepo('/repo', deps);
   a.deepEqual(result, { ok: true, repo: '/resolved//repo' });
-  a.deepEqual(calls.map((c) => c[0]), ['assertRepo', 'confirm', 'shutdown', 'courtOnPort', 'startDaemon', 'reload'],
-    'a successful switch must validate, confirm, end the old court, wait for it to free the port, start the new one, then reload — in that order');
+  a.deepEqual(calls.map((c) => c[0]), ['assertRepo', 'confirm', 'shutdown', 'teamOnPort', 'startDaemon', 'reload'],
+    'a successful switch must validate, confirm, end the old team, wait for it to free the port, start the new one, then reload — in that order');
   a.deepEqual(calls.find((c) => c[0] === 'startDaemon').slice(1), ['/resolved//repo', '/tmp/daemon.log'],
     'the fresh daemon must start against the resolved repo path and the real log path');
 }
 
-console.log('t-repo-switch.js OK — the end-court-and-switch flow validates before it confirms, confirms before it destroys, and only reloads after the new court answers');
+console.log('t-repo-switch.js OK — the end-team-and-switch flow validates before it confirms, confirms before it destroys, and only reloads after the new team answers');

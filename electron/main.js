@@ -1,26 +1,34 @@
 // Thin shell. All the real work happens in the daemon (own Node 24 process,
 // because Electron's bundled Node has no node:sqlite).
 //
-// The daemon is DETACHED on purpose: an agentic court runs for hours, and
+// The daemon is DETACHED on purpose: an agentic team runs for hours, and
 // closing a window must not kill work in progress. This window is a viewer.
-// Launching again re-attaches to the court that is already running; to end it
-// for real, use "end court" in the throne room.
+// Launching again re-attaches to the team that is already running; to end it
+// for real, use "end team" in the dashboard.
+import '../src/legacy-boot.js'; // first: legacy env fallback and home migration, before any module reads env
 import { app, BrowserWindow, dialog, session, ipcMain, screen, shell } from 'electron';
 import { spawn, execFileSync } from 'node:child_process';
 import { openSync, existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { assertRepo } from '../src/worktree.js';
+import { migrateUserData } from '../src/legacy.js';
 import { switchRepo } from './switch-repo.js';
-import { listCourts } from '../src/courts.js';
-import { routeLaunch, requestShutdown, firstLaunchPlan, courtPortOf } from './courts-launch.js';
+import { listTeams } from '../src/teams.js';
+import { routeLaunch, requestShutdown, firstLaunchPlan, teamPortOf } from './teams-launch.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const PORT = Number(process.env.KINGDOM_PORT ?? 7777);
+
+// userData is named after package.json's name, which the rename changed, so
+// pet.json and daemon.log move with it once. Top level, before anything
+// (requestSingleInstanceLock, the ready event) makes Electron create the new
+// folder: an existing new folder wins and the old one is left alone.
+try { migrateUserData(app.getPath('appData'), app.getPath('userData')); } catch (e) { console.warn(`[agenticos] app data migration skipped: ${e.message}`); }
+const PORT = Number(process.env.AGENTICOS_PORT ?? 7777);
 const ORIGIN = `http://127.0.0.1:${PORT}`;
 
 /** Who, if anyone, is already holding the port. */
-async function courtOnPort(origin = ORIGIN) {
+async function teamOnPort(origin = ORIGIN) {
   try {
     const r = await fetch(`${origin}/api/ping`, { signal: AbortSignal.timeout(1200) });
     return r.ok ? await r.json() : null;
@@ -38,18 +46,18 @@ function repoFromArgv(argv = process.argv) {
 }
 
 /**
- * One BrowserWindow per live court, keyed by the port it is serving —
- * multiple courts at once (issue #42). The default launch still opens PORT
- * (pinned by KINGDOM_PORT or 7777) exactly as before; every OTHER court a
- * launch or the courts switcher opens gets its own entry here instead of
+ * One BrowserWindow per live team, keyed by the port it is serving —
+ * multiple teams at once (issue #42). The default launch still opens PORT
+ * (pinned by AGENTICOS_PORT or 7777) exactly as before; every OTHER team a
+ * launch or the teams switcher opens gets its own entry here instead of
  * replacing anything.
  */
-const courtWindows = new Map(); // port -> { win, origin }
+const teamWindows = new Map(); // port -> { win, origin }
 const originFor = (port) => `http://127.0.0.1:${port}`;
 
 /**
  * The native folder picker, on demand — Code mode asks for this through the
- * `repo:choose` IPC channel (via court-preload.cjs) instead of the app
+ * `repo:choose` IPC channel (via team-preload.cjs) instead of the app
  * blocking behind it before the window even opens. Returns a validated path,
  * or null on cancel / an error message on an invalid pick — the renderer
  * decides what to do with either, this never retries on its own.
@@ -98,13 +106,13 @@ function checkNodeVersion(node) {
 }
 
 /**
- * Start the court and leave it running. Readiness is decided by asking the
+ * Start the team and leave it running. Readiness is decided by asking the
  * port, not by parsing stdout — a detached child's output belongs in the log,
  * and this works whatever the daemon chooses to print.
  */
 async function startDaemon(repo, logPath, port = PORT) {
   return spawnDaemon(repo, logPath, ['--port', String(port)],
-    () => courtOnPort(originFor(port)), `answer on ${originFor(port)}`);
+    () => teamOnPort(originFor(port)), `answer on ${originFor(port)}`);
 }
 
 /**
@@ -112,7 +120,7 @@ async function startDaemon(repo, logPath, port = PORT) {
  * child dies, or 90s pass. `what` names the readiness for the timeout error.
  */
 async function spawnDaemon(repo, logPath, extraArgs, ready, what) {
-  const node = process.env.KINGDOM_NODE ?? 'node';
+  const node = process.env.AGENTICOS_NODE ?? 'node';
   checkNodeVersion(node);
   const out = openSync(logPath, 'a');
   const child = spawn(node, [
@@ -147,28 +155,28 @@ async function spawnDaemon(repo, logPath, extraArgs, ready, what) {
 }
 
 /**
- * The same idea as startDaemon() above, for a court that is NOT pinned to
- * PORT — every court opened besides the app's default one (a second repo
+ * The same idea as startDaemon() above, for a team that is NOT pinned to
+ * PORT — every team opened besides the app's default one (a second repo
  * from the switcher, or a bare relaunch routed by routeLaunch() below). No
  * --port is passed, so src/daemon.js picks the next free one itself (see
- * courts.firstFreePort()); readiness is read off the SAME registry that
- * choice was written to (src/courts.js), matched by this child's pid, since
+ * teams.firstFreePort()); readiness is read off the SAME registry that
+ * choice was written to (src/teams.js), matched by this child's pid, since
  * the port is not known until the daemon has already picked it.
  */
 async function startDaemonAuto(repo, logPath) {
   return spawnDaemon(repo, logPath, [],
-    async (child) => (await listCourts()).find((c) => c.pid === child.pid), 'register itself');
+    async (child) => (await listTeams()).find((c) => c.pid === child.pid), 'register itself');
 }
 
 /**
- * A court window shows the court, and nothing else.
+ * A team window shows the team, and nothing else.
  *
  * Without this, any link or script-driven navigation in the renderer could take
  * a full-privilege Electron window to an arbitrary origin — and a popup opened
  * from one inherits the opener's window. The renderer runs with
  * contextIsolation and no node integration, so this is not an RCE chain, but it
  * is the difference between "a page in a browser" and "a page wearing the
- * court's clothes". Outside links go to the real browser, where the address bar
+ * team's clothes". Outside links go to the real browser, where the address bar
  * is visible.
  */
 function lockNavigation(win, origin = ORIGIN) {
@@ -182,14 +190,14 @@ function lockNavigation(win, origin = ORIGIN) {
 }
 
 /**
- * Open the court on `port`, or focus it if a window for it is already open —
- * one call covers both "start a new court's viewer" and "a relaunch/switcher
- * action for a court already running" (issue #42). The pet window and every
+ * Open the team on `port`, or focus it if a window for it is already open —
+ * one call covers both "start a new team's viewer" and "a relaunch/switcher
+ * action for a team already running" (issue #42). The pet window and every
  * other single-window assumption in this file are untouched: PORT's window
  * is still the one opened at first launch, exactly as before.
  */
 function openWindow(port = PORT) {
-  const existing = courtWindows.get(port);
+  const existing = teamWindows.get(port);
   if (existing && !existing.win.isDestroyed()) {
     if (existing.win.isMinimized()) existing.win.restore();
     existing.win.show();
@@ -200,22 +208,22 @@ function openWindow(port = PORT) {
   const win = new BrowserWindow({
     width: 1500,
     height: 950,
-    backgroundColor: '#0a0c0f',
+    backgroundColor: '#0a0a0a',
     title: 'Agentic OS',
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      preload: join(HERE, 'court-preload.cjs'),
+      preload: join(HERE, 'team-preload.cjs'),
     },
   });
   win.setMenuBarVisibility(false);
   lockNavigation(win, origin);
   win.loadURL(`${origin}/`);
-  courtWindows.set(port, { win, origin });
+  teamWindows.set(port, { win, origin });
   win.on('closed', () => {
-    if (courtWindows.get(port)?.win === win) courtWindows.delete(port);
+    if (teamWindows.get(port)?.win === win) teamWindows.delete(port);
     // The dog does not count as a window worth staying alive for: he has no
-    // menu and no way to reopen the throne room, so an app that lived on as
+    // menu and no way to reopen the dashboard, so an app that lived on as
     // nothing but a floating dog would be unclosable except from Task Manager.
     if (BrowserWindow.getAllWindows().every((w) => w === petWin || w.isDestroyed())) app.quit();
   });
@@ -223,9 +231,9 @@ function openWindow(port = PORT) {
 }
 
 /* ---------- the floating dog ----------
- * A second window that is not a viewer of the court so much as a readout of
+ * A second window that is not a viewer of the team so much as a readout of
  * it: frameless, transparent, always on top, and draggable anywhere on the
- * desktop. He follows the court over HTTP like any other page; the main
+ * desktop. He follows the team over HTTP like any other page; the main
  * process is involved only in moving the window, which a page cannot do.
  */
 // The sprite box at scale 1, plus the transparent margin the drop shadow needs
@@ -398,33 +406,33 @@ ipcMain.on('pet:scale', (_e, raw) => {
 ipcMain.on('pet:hide', () => petWin?.destroy());
 ipcMain.on('pet:open', openPet);
 
-// The throne room's own request for a repository — Code mode asks for this
+// The dashboard's own request for a repository — Code mode asks for this
 // when none is attached yet, rather than the app blocking on it at launch.
 ipcMain.handle('repo:choose', () => chooseRepoDialog());
 
-// Kingdom#attachRepo refuses to move a LIVE court onto a different repo on
+// AgenticOS#attachRepo refuses to move a LIVE team onto a different repo on
 // purpose (its DB path, live worktrees, and every agent cwd are all derived
 // from the first repo attached — swapping them out from under a running
-// court would corrupt in-progress worktrees rather than cleanly switch
-// projects). The only real fix is a fresh court: end this one, then start
+// team would corrupt in-progress worktrees rather than cleanly switch
+// projects). The only real fix is a fresh team: end this one, then start
 // another pointed at the new path — the same startDaemon() the app itself
 // boots with. This is the one truly destructive action reachable from
-// Settings (it stops every in-flight agent turn in the current court), so it
+// Settings (it stops every in-flight agent turn in the current team), so it
 // gets a native confirmation before anything is torn down — and the target
-// gets a REAL git check (assertRepo, the same one Kingdom itself boots
+// gets a REAL git check (assertRepo, the same one AgenticOS itself boots
 // with), not just an existsSync(.git) peek: a corrupt or empty .git entry
 // passes that peek, and startDaemon's own boot path (src/worktree.js's
 // ensureRepo) is deliberately permissive — it would silently `git init` a
 // brand new repo there rather than fail, which is fine for a first boot but
-// not something a destructive court-ending action should risk triggering.
+// not something a destructive team-ending action should risk triggering.
 // The actual step sequence lives in switch-repo.js, as a plain function
 // tested without Electron, a real daemon, or a real dialog.
 //
-// Every step targets the court the REQUESTING window shows (issue #42): a
-// window opened on a non-default port must end and replace its own court,
+// Every step targets the team the REQUESTING window shows (issue #42): a
+// window opened on a non-default port must end and replace its own team,
 // not the one on the app's pinned PORT.
-ipcMain.handle('court:switchRepo', async (event, rawPath) => {
-  const port = courtPortOf(event.sender.getURL(), PORT);
+ipcMain.handle('team:switchRepo', async (event, rawPath) => {
+  const port = teamPortOf(event.sender.getURL(), PORT);
   const origin = originFor(port);
   return switchRepo(rawPath, {
     resolve,
@@ -442,50 +450,50 @@ ipcMain.handle('court:switchRepo', async (event, rawPath) => {
       return response === 1;
     },
     shutdown: () => requestShutdown(origin),
-    courtOnPort: () => courtOnPort(origin),
+    teamOnPort: () => teamOnPort(origin),
     startDaemon: (repo, logPath) => startDaemon(repo, logPath, port),
     // A fresh window load, not the renderer's own SSE reconnect: the new
     // daemon's event cursor starts back at zero, and resuming with the old
-    // court's `since` would ask for events that no longer exist in this repo's
+    // team's `since` would ask for events that no longer exist in this repo's
     // fresh store.
     reload: () => BrowserWindow.fromWebContents(event.sender)?.loadURL(`${origin}/`),
     logPath: join(app.getPath('userData'), 'daemon.log'),
   });
 });
 
-// ---- multiple courts at once (issue #42) -----------------------------------
-// The switcher reachable from Settings' Repository panel (ui/views/courts.js)
-// talks to these three. Unlike court:switchRepo above, none of them end the
-// CURRENT court — "open that repo's court" coexists with whatever is already
+// ---- multiple teams at once (issue #42) -----------------------------------
+// The switcher reachable from Settings' Repository panel (ui/views/teams.js)
+// talks to these three. Unlike team:switchRepo above, none of them end the
+// CURRENT team — "open that repo's team" coexists with whatever is already
 // running instead of replacing it.
-ipcMain.handle('courts:list', async () => {
-  const courts = await listCourts();
-  return courts.map((c) => ({ ...c, open: courtWindows.has(c.port) }));
+ipcMain.handle('teams:list', async () => {
+  const teams = await listTeams();
+  return teams.map((c) => ({ ...c, open: teamWindows.has(c.port) }));
 });
 
 // What routeLaunch needs, shared by the switcher and a second launch.
 const launchDeps = () => ({
-  listCourts,
+  listTeams,
   focusWindow: (port) => openWindow(port),
   startDaemonFor: (r, logPath) => startDaemonAuto(r, logPath),
   openWindow: (port) => openWindow(port),
   logPath: join(app.getPath('userData'), 'daemon.log'),
 });
 
-ipcMain.handle('courts:open', async (event, rawPath) =>
+ipcMain.handle('teams:open', async (event, rawPath) =>
   routeLaunch(rawPath ? resolve(String(rawPath)) : null, launchDeps()));
 
-// A court row is identified by its PORT, not its repository: repo-less courts
+// A team row is identified by its PORT, not its repository: repo-less teams
 // are real and several can run at once, so a null repo cannot name one.
-ipcMain.handle('courts:focus', async (event, port) => {
-  const found = (await listCourts()).find((c) => c.port === Number(port));
+ipcMain.handle('teams:focus', async (event, port) => {
+  const found = (await listTeams()).find((c) => c.port === Number(port));
   if (!found) return { ok: false, error: 'That workspace is no longer running.' };
   openWindow(found.port);
   return { ok: true, port: found.port };
 });
 
-ipcMain.handle('courts:end', async (event, port) => {
-  const found = (await listCourts()).find((c) => c.port === Number(port));
+ipcMain.handle('teams:end', async (event, port) => {
+  const found = (await listTeams()).find((c) => c.port === Number(port));
   if (!found) return { ok: false, error: 'That workspace is no longer running.' };
   const { response } = await dialog.showMessageBox({
     type: 'warning',
@@ -499,19 +507,19 @@ ipcMain.handle('courts:end', async (event, port) => {
   if (response !== 1) return { canceled: true };
   const down = await requestShutdown(originFor(found.port));
   if (!down.ok) return { ok: false, error: down.error };
-  const win = courtWindows.get(found.port)?.win;
+  const win = teamWindows.get(found.port)?.win;
   if (win && !win.isDestroyed()) win.close();
-  courtWindows.delete(found.port);
+  teamWindows.delete(found.port);
   return { ok: true };
 });
 
 // One daemon-launching process per machine: without this, opening the app a
 // second time (double-clicking the icon again, or the OS relaunching it)
-// would start a SECOND, port-colliding daemon rather than reach the court
+// would start a SECOND, port-colliding daemon rather than reach the team
 // already running. The losing instance quits immediately and hands its argv
 // to the surviving one via 'second-instance', which routes it exactly like a
-// first launch would (routeLaunch, shared with courts:open above) — focusing
-// the right court instead of starting a stray one.
+// first launch would (routeLaunch, shared with teams:open above) — focusing
+// the right team instead of starting a stray one.
 const singleInstanceLock = app.requestSingleInstanceLock();
 if (!singleInstanceLock) {
   app.quit();
@@ -525,18 +533,18 @@ if (!singleInstanceLock) {
 app.whenReady().then(async () => {
   if (!singleInstanceLock) return; // this instance is on its way out — see above
   // No blocking dialog here anymore: Chat/Research/Build don't need a repo at
-  // all, and Code mode asks for one live, from inside the throne room, via
+  // all, and Code mode asks for one live, from inside the dashboard, via
   // the repo:choose IPC handler below. A repo named on the command line still
   // launches pre-attached, for the power-user path.
   const repo = repoFromArgv();
 
   const logPath = join(app.getPath('userData'), 'daemon.log');
 
-  // The registry first: the named repo may already have a court on another
+  // The registry first: the named repo may already have a team on another
   // port, and a default port serving a different repo means the named one
-  // gets a court of its own (issue #42) rather than a two-button dead end.
-  let running = await courtOnPort();
-  const plan = firstLaunchPlan(repo, repo ? await listCourts() : [], running);
+  // gets a team of its own (issue #42) rather than a two-button dead end.
+  let running = await teamOnPort();
+  const plan = firstLaunchPlan(repo, repo ? await listTeams() : [], running);
   let targetPort = PORT;
   if (plan.action === 'focus') {
     targetPort = plan.port;
@@ -555,7 +563,7 @@ app.whenReady().then(async () => {
       return app.quit();
     }
   } else if (repo && !running.repo) {
-    // A court is already up but has not attached a repo yet (e.g. a bare
+    // A team is already up but has not attached a repo yet (e.g. a bare
     // relaunch from earlier). Without this, a repo named on THIS launch's
     // command line was silently dropped — the window opened, but Code mode
     // stayed unattached and nothing told the user why.
@@ -569,12 +577,12 @@ app.whenReady().then(async () => {
     } catch { /* best-effort: the window still opens either way */ }
   }
 
-  // Dictation needs the microphone. Grant it to any court window — every
-  // court is this same app's own served origin, on its own port, so "mine"
-  // now means "some live court's origin", not just the one at PORT.
+  // Dictation needs the microphone. Grant it to any team window — every
+  // team is this same app's own served origin, on its own port, so "mine"
+  // now means "some live team's origin", not just the one at PORT.
   const mine = (wc) => {
     const url = wc?.getURL() ?? '';
-    return [...courtWindows.values()].some(({ origin }) => url.startsWith(origin));
+    return [...teamWindows.values()].some(({ origin }) => url.startsWith(origin));
   };
   session.defaultSession.setPermissionRequestHandler((wc, perm, cb) =>
     cb(perm === 'media' && mine(wc)));
@@ -586,7 +594,7 @@ app.whenReady().then(async () => {
 
 app.on('activate', () => { if (singleInstanceLock && !BrowserWindow.getAllWindows().length) openWindow(); });
 
-// Closing the window closes the VIEWER. The court keeps working; "end court"
-// in the throne room is what stops it. (A court window left alone with the
+// Closing the window closes the VIEWER. The team keeps working; "end team"
+// in the dashboard is what stops it. (A team window left alone with the
 // dog quits too — see openWindow's 'closed' handler.)
 app.on('window-all-closed', () => app.quit());

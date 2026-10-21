@@ -1,154 +1,135 @@
-/* Cold-Call Workflow design system (E:\Prototype.zip, SKILL.md
- * "cold-call-workflow-design"), adopted in full at the sovereign's direction
- * 2026-09-21. This reverses PLAN.md section 1, which retired this same source
- * on 2026-09-17 in favour of Hiveory. The reversal is the sovereign's call,
- * and it is recorded here rather than made quietly.
+/* T3 Code design system (the "Agentic OS - T3 Code style" Claude design
+ * canvas), adopted in full at the user's direction 2026-10-21 on the
+ * T3-code branch. This reverses the Cold-Call Workflow paper theme adopted
+ * 2026-09-21 (PLAN.md section 1), which itself reversed Hiveory. Each reversal
+ * is the user's call and is written down rather than made quietly.
  *
- * Paper, not a dark shell. Every value below is read from the kit's own
- * tokens/*.css, which trace in turn to three shipped client builds (Smart
- * Tuitions index.html, ViniYoga app/globals.css and tailwind.config.ts,
- * Dance Class styles.css). Where the kit ships two scales this app takes the
- * product one, because it is a dense tool and not a marketing page: 16px
- * card, 12px control, no pill buttons, a real 44px tap target, hairline
- * border plus a 3px left rule on result rows. Marketing supplies display type
- * and the mono-uppercase metadata label, which the kit names as the one
- * convention all three of its sources share exactly.
+ * Dark, neutral and flat: near-black grounds one step apart, hairlines instead
+ * of shadows, one periwinkle accent for live work and links, a white fill for
+ * the single primary action, Inter for text and JetBrains Mono for code. No
+ * glass, grain or wash; the artifact has none and a flat colour gives a blur
+ * nothing to show.
+ *
+ * Where the artifact's own values fail this app's rules the app's rule wins and
+ * the number is recorded here. The canvas sets metadata in #737373, which is
+ * 4.10:1 on --surface, under the 4.5:1 AA minimum; --faint is #8a8a8a, 5.63:1.
+ * Its 26-32px chips and rows keep their look but sit inside 44px hit areas.
  *
  * This app's own discipline survives the swap unchanged: no literal colour
  * outside this block, every colour carries an -rgb channel twin, gold
- * identifies the orchestrator alone, 44px is enforced rather than suggested,
- * and type stays local-stack — an offline Electron webfont fetch can fail
- * silently, so Playfair Display, Inter and IBM Plex Mono are taken at their
- * own declared fallbacks (Georgia, a system sans, a local mono) instead of
- * being shipped.
+ * identifies the orchestrator alone, 44px is enforced rather than suggested.
  *
- * Contrast computed here 2026-09-21 (WCAG relative luminance), against this
- * exact palette, on --bg #f7f1e7: --text 9.6:1, --muted/--faint 4.9:1,
- * --accent 6.0:1, --tone-settled 8.9:1, --tone-attention 4.8:1, --gold 5.2:1
- * — all clear the 4.5:1 AA minimum, and --accent-ink on --accent is 6.7:1.
- * The kit's own contrast card claims 12.1:1 for ink on paper; its other five
- * figures reproduce exactly here and that one does not, so this file records
- * 9.6:1, the number computed, not the number quoted. */
-:root {
-  color-scheme: light;
+ * Contrast computed 2026-10-21 (WCAG relative luminance) on --surface #0d0d0d,
+ * the ground under the rail and every section, with the same pairing on --bg
+ * and --raised in brackets: --text 18.62 [18.97, 18.09], --muted 7.52 [7.66,
+ * 7.31], --faint 5.63 [5.73, 5.47], --accent 7.81 [7.96, 7.59], --tone-settled
+ * 11.15 [11.36, 10.84], --tone-attention 9.08 [9.25, 8.83], --danger 7.03
+ * [7.16, 6.83], --gold 9.69 [9.87, 9.42]. Worst case anywhere is --faint on
+ * --active (#1a1a1a) at 5.04. --accent-ink on --accent is 7.96, --fill-ink on
+ * --fill 18.97. */
 
-  /* Ground — three papers, not a dark ladder. --bg is the page, --surface the
-   * recessed one (rail, sections, meter tracks, code), --raised the white
-   * panel a card is drawn on. Smart Tuitions --paper / --paper-deep / --white.
-   * The retired --bg-alt is gone: this system has exactly three grounds, and
-   * that token was declared but never used by any rule. */
-  --bg: #f7f1e7;
-  --bg-rgb: 247 241 231;
-  --surface: #ebe1d2;
-  --surface-rgb: 235 225 210;
-  --raised: #fffdf9;
-  --raised-rgb: 255 253 249;
+/* Bundled type (2026-10-21, T3-code redesign). Inter and JetBrains Mono ship in
+ * ui/fonts as variable woff2 (SIL OFL, licences beside them), served same-origin
+ * by the daemon, so there is no network fetch to fail silently in an offline
+ * Electron window. latin subset only; the stacks below fall back to the system
+ * faces for anything outside it. */
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("./fonts/inter-latin-wght-normal.woff2") format("woff2-variations");
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 100 800;
+  font-display: swap;
+  src: url("./fonts/jetbrains-mono-latin-wght-normal.woff2") format("woff2-variations");
+}
+
+:root {
+  color-scheme: dark;
+
+  /* Ground — --bg is the page, --surface the rail and every section, --raised
+   * the panel a card or the composer is drawn on. --hover and --active are the
+   * row fills for pointer-over and the current item; they are neutral, not an
+   * accent tint, as in the canvas. */
+  --bg: #0a0a0a;
+  --bg-rgb: 10 10 10;
+  --surface: #0d0d0d;
+  --surface-rgb: 13 13 13;
+  --raised: #111111;
+  --raised-rgb: 17 17 17;
+  --hover: #171717;
+  --hover-rgb: 23 23 23;
+  --active: #1a1a1a;
+  --active-rgb: 26 26 26;
   --shell-alpha: 1;
   --surface-alpha: 1;
 
-  /* Text — the system ships two values, not three. Metadata separates from
-   * body copy by type treatment (mono, uppercase, tracked), which is how all
-   * three client sources do it, so --faint is --ink-soft rather than a third
-   * grey; a lighter one would not clear AA on paper.
-   *
-   * --muted is NOT the kit's --ink-soft #5c6c66, and this is the one place
-   * this palette departs from its source. The kit publishes every ratio
-   * against --paper and never against --paper-deep, but --paper-deep is the
-   * ground under the rail and under every section here. Measured in a live
-   * browser 2026-09-21 at 1440x900: #5c6c66 on #ebe1d2 is 4.28:1, under the
-   * 4.5:1 AA minimum, and it was doing that behind all seventeen rail
-   * controls. Taken down ~8% in lightness, same hue, it measures 4.87:1 on
-   * --surface, 5.4:1 on --bg and 6.1:1 on --raised. */
-  --text: #17332f;
-  --text-rgb: 23 51 47;
-  --muted: #55635e;
-  --muted-rgb: 85 99 94;
-  --faint: #55635e;
-  --faint-rgb: 85 99 94;
+  /* Text — three values, since the canvas separates body, secondary and
+   * metadata. --faint is lifted from the canvas's #737373 (see the header). */
+  --text: #fafafa;
+  --text-rgb: 250 250 250;
+  --muted: #a1a1a1;
+  --muted-rgb: 161 161 161;
+  --faint: #8a8a8a;
+  --faint-rgb: 138 138 138;
 
-  /* One hairline — --line/--border in every source. The kit's --border-strong
-   * is scrollbar-and-strong-dividers only and no rule here needs it, so the
-   * retired --line-soft has no successor. */
-  --line: #cec7ba;
-  --line-rgb: 206 199 186;
+  /* Two hairlines. --line-soft divides the shell and outlines cards at rest;
+   * --line outlines controls (chips, inputs, buttons), a step brighter. */
+  --line-soft: #1c1c1c;
+  --line-soft-rgb: 28 28 28;
+  --line: #262626;
+  --line-rgb: 38 38 38;
 
-  /* Accent — one slot, teal, carrying brand and primary interactive together.
-   * The kit calls swapping this single value the entire reskin step. Hover is
-   * --teal-dark, which is what the kit's own Button mixes toward. */
-  --accent: #0d6663;
-  --accent-rgb: 13 102 99;
-  --accent-hover: #084a4a;
-  --accent-hover-rgb: 8 74 74;
-  --accent-ink: #fffdf9;
-  --accent-ink-rgb: 255 253 249;
+  /* Accent — periwinkle, live work, links, focus and selected state. The one
+   * primary action is the white --fill, not the accent, as in the canvas. */
+  --accent: #7aa2ff;
+  --accent-rgb: 122 162 255;
+  --accent-hover: #9bb9ff;
+  --accent-hover-rgb: 155 185 255;
+  --accent-ink: #0a0a0a;
+  --accent-ink-rgb: 10 10 10;
+  --fill: #fafafa;
+  --fill-rgb: 250 250 250;
+  --fill-hover: #e5e5e5;
+  --fill-hover-rgb: 229 229 229;
+  --fill-ink: #0a0a0a;
+  --fill-ink-rgb: 10 10 10;
 
-  /* Status — this system ships two status hue families and the app needs four
-   * tones, so state the cost instead of papering over it: live and settled now
-   * share teal and separate by depth plus the pulse, where the retired palette
-   * gave them separate hues. A run in flight and a finished one are harder to
-   * tell apart at a glance here; the pulsing dot and the status label carry
-   * the difference. Attention is ViniYoga's --due, which is its own hex and
-   * deliberately not marketing's --red. Idle is ink-soft: in this system
-   * waiting is not a colour, and the kit warns outright against inventing a
-   * third status hue. */
-  --tone-live: #0d6663;
-  --tone-live-rgb: 13 102 99;
-  --tone-settled: #084a4a;
-  --tone-settled-rgb: 8 74 74;
-  /* Same departure, same reason: the kit's --due #af4a3f is 4.8:1 on --paper
-   * and 4.19:1 on --paper-deep, where every blocked run and failed check
-   * actually renders. Down ~10%, it is 4.93:1 there. */
-  --tone-attention: #9e4239;
-  --tone-attention-rgb: 158 66 57;
-  --tone-idle: #55635e;
-  --tone-idle-rgb: 85 99 94;
-  --danger: var(--tone-attention);
-  --danger-rgb: var(--tone-attention-rgb);
+  /* Status — four tones on four hues, as the canvas draws them: live is the
+   * accent, settled green, attention amber (a blocked run, a pending approval),
+   * idle grey. --danger is separate and red: failure, destructive actions and
+   * removed diff lines. A blocked run is waiting on you, not broken, and the
+   * canvas keeps that distinction. */
+  --tone-live: #7aa2ff;
+  --tone-live-rgb: 122 162 255;
+  --tone-settled: #4ade80;
+  --tone-settled-rgb: 74 222 128;
+  --tone-attention: #e5a54b;
+  --tone-attention-rgb: 229 165 75;
+  --tone-idle: #8a8a8a;
+  --tone-idle-rgb: 138 138 138;
+  --danger: #f87171;
+  --danger-rgb: 248 113 113;
   --ok: var(--tone-settled);
   --ok-rgb: var(--tone-settled-rgb);
 
-  /* Identity, not status. The kit has no orchestrator convention to borrow, so
-   * this app's own rule is reintroduced against paper. The dark-ground #d9b25c
-   * is unreadable here (1.9:1), so gold goes down to a depth that clears AA on
-   * both papers and still reads as gold. */
-  --gold: #7f6019;
-  --gold-rgb: 127 96 25;
+  /* Identity, not status. The canvas has no orchestrator colour, so this app's
+   * own rule stands: gold names the orchestrator and nothing else. */
+  --gold: #d9b25c;
+  --gold-rgb: 217 178 92;
 
-  /* Paper grain — Dance Class's CSS dot-grain, the kit's second documented
-   * texture technique. Chosen over Smart Tuitions' tiled photograph because it
-   * ships no binary into an offline Electron bundle and tokenises without
-   * putting a literal colour outside this block. */
-  --grain: radial-gradient(rgb(var(--text-rgb) / .05) .65px, transparent .65px);
-
-  /* Depth wash — added 2026-09-23 alongside the glass tokens above, and for
-   * the same reason: without it, backdrop-filter has nothing but a flat
-   * colour to blur, and blurring a flat colour is indistinguishable from not
-   * blurring it at all. A live session confirmed exactly that — with no
-   * wallpaper set (the state most people see), the header and rail read as
-   * plain opaque paper even with the glass rules correctly applied, because
-   * #bg's own fill sits at opacity 0 by default and the grain dots beneath it
-   * are too faint (.05 alpha) for a 20px blur to register. Two soft radial
-   * washes, teal- and paper-tinted at low alpha, painted under the grain on
-   * `body` itself — so they exist regardless of whether a user wallpaper is
-   * ever set — give the chrome something with real tonal variation to show
-   * through. Both stay light enough that no text pairing measured against
-   * --bg elsewhere in this file changes: the wash sits under content, never
-   * behind it, and reads as depth in the paper, not a colour shift. */
-  --wash: radial-gradient(1400px 420px at 28% 0%, rgb(var(--accent-rgb) / .09), transparent 70%), radial-gradient(1200px 460px at 100% 0%, rgb(var(--surface-rgb) / .95), transparent 65%);
-
-  /* Shape — the product scale, kept deliberately apart from the marketing one:
-   * 16px card, 12px control, and no pill buttons. Pills survive only where the
-   * kit pills — the status badge and the segmented control. The retired
-   * --radius-icon is gone; the product source gives icon buttons the same 12px
-   * control radius as everything else, and no rule used it. */
-  --radius-card: 16px;
-  --radius-ctl: 12px;
+  /* Shape — 12px card, 6px control, pill for the status badge and the
+   * segmented control. */
+  --radius-card: 12px;
+  --radius-ctl: 6px;
   --radius-pill: 999px;
 
-  /* Spacing — Smart Tuitions' real scale, copied verbatim. It widens faster
-   * than linear on purpose (4, 8, 16, 24, 32, 48, 64, 88): tight near the
-   * type, generous at the section level. This is not the 4/8/12/16 ladder it
-   * replaces, so every gap and pad in the app moves one step out. */
+  /* Spacing — unchanged from the paper theme: 4, 8, 16, 24, 32, 48, 64, 88. */
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 16px;
@@ -157,70 +138,32 @@
   --space-6: 48px;
   --space-7: 64px;
   --space-8: 88px;
-  --tap-target-min: 44px;      /* a real enforced minimum in the product source, not a suggestion */
+  --tap-target-min: 44px;      /* enforced, not suggested */
   --t-xs: 12px;
   --t-sm: 13px;
-  --t-md: 15px;
+  --t-md: 14px;
   --t-lg: 20px;
 
-  /* Typography — local-stack, per the offline-Electron constraint, which is a
-   * fact about this runtime and does not change with the design system. The
-   * substitutes are each face's own declared fallback in the kit's
-   * tokens/typography.css: Playfair Display falls back to Georgia, Inter to a
-   * system sans, IBM Plex Mono to a local mono. --ui is the kit's
-   * --font-product-body verbatim. */
-  --display: Georgia, "Times New Roman", serif;
-  --ui: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --mono: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  /* Typography — Inter for everything, JetBrains Mono for code and metadata.
+   * Both are bundled (see the @font-face blocks above), so this is no longer
+   * the local-stack-only rule the paper theme carried. --display is kept as a
+   * token for the headings that already use it, but the T3 look has no serif:
+   * it resolves to the UI face. */
+  --display: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --ui: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
 
-  /* Motion — the product easing (Tailwind ease-ui / --ease-product), since
-   * this is a product screen. Hover and press run at .15s, matching the real
-   * transitions in the product source; route changes take marketing's .3s. */
+  /* Motion — plain ease at .15s for hover and press, as in the canvas. */
   --fast: 150ms;
   --view: 300ms;
-  --ease: cubic-bezier(.2, 0, 0, 1);
+  --ease: ease;
 
-  /* Shadow — the kit's literal ground truth, both values teal-tinted and
-   * single-layer, not its optional layered refinement: that refinement opens
-   * with a 1px ring every card here already draws for itself. Cards at rest
-   * carry a hairline and nothing more, which is the system's own default.
-   * Elevation is for what actually floats — tooltip, toast, drawer — and for
-   * the one marketing-shaped control, the primary button. */
+  /* Shadow — flat. Cards at rest carry a hairline and nothing more; only what
+   * floats (tooltip, toast, drawer) is lifted. Black, so it is a grey triple. */
   --shadow-card: none;
   --shadow-small: none;
-  --shadow-panel: 0 24px 64px -38px rgb(8 74 74 / .62);
-  --shadow-button: 0 14px 28px -20px rgb(13 102 99 / .7);
-
-  /* Glass — a translucent, blurred chrome, added 2026-09-23 at the sovereign's
-   * direction (Hiveory-inspired feel, adopted within this paper system rather
-   * than swapping the palette for it — issue #48 is superseded by the paper
-   * kit; this is the part of it that survives). Scoped to what actually
-   * floats over content — #header, #sidebar (rail and 720px drawer),
-   * #composer, .hover-tip, the drawer scrim — never the flat cards this
-   * system already keeps hairline-bordered and shadowless at rest.
-   *
-   * Two alphas, not one, because the two grounds behind them carry different
-   * contrast budgets. Every text pairing must clear 4.5:1 against the worst
-   * ground this app can ever put behind glass: not the paper default, but a
-   * fully black wallpaper image (#bg supports an optional user wallpaper;
-   * black is the true floor, unbounded above). Computed 2026-09-23 (WCAG
-   * relative luminance), blending each surface's colour at its alpha over
-   * rgb(0 0 0):
-   * --raised blended at .90 over black: --text 10.14:1, --muted 4.72:1,
-   * --accent 5.08:1 — comfortable margin, so header and hover-tip read
-   * clearly glass.
-   * --surface already clears --muted at only 4.87:1 opaque (the same
-   * departure recorded above), so its blend budget is thinner: .97 is the
-   * highest alpha that still clears 4.5:1 there (4.57:1 measured) — the
-   * sidebar rail and composer are glass, but only just, and that is the
-   * honest number, not a rounder one that would fail black.
-   * The 720px drawer and its scrim reuse --glass-panel-alpha and a lighter
-   * blur; nothing pins text against the scrim itself, so it carries no
-   * contrast obligation of its own. */
-  --glass-blur: 20px;
-  --glass-saturate: 160%;
-  --glass-chrome-alpha: .90;
-  --glass-panel-alpha: .97;
+  --shadow-panel: 0 16px 40px -12px rgb(0 0 0 / .7);
+  --shadow-button: none;
 }
 
 * { box-sizing: border-box; }
@@ -231,14 +174,7 @@ body {
   display: grid;
   grid-template: "sidebar main" 1fr / 260px minmax(0, 1fr);
   overflow: hidden;
-  /* The grain is what makes paper read as paper rather than as flat beige.
-   * Dance Class generates it in CSS instead of tiling a photograph, which is
-   * the technique this app takes: no binary in the bundle, and the colour
-   * stays a token. --wash sits above it: see the token comment for why —
-   * without it, the glass chrome above has nothing but a flat colour to
-   * blur. */
-  background: var(--wash), var(--bg) var(--grain);
-  background-size: auto, 4px 4px;
+  background: var(--bg);
   color: var(--text);
   font: 400 var(--t-md)/1.45 var(--ui);
 }
@@ -273,6 +209,10 @@ a:focus-visible, summary:focus-visible, button:focus-visible, input:focus-visibl
   outline-offset: 2px;
 }
 
+/* The page heading takes focus when a view mounts, so a screen reader announces
+ * where it landed; it is not a control, so it draws no ring. */
+#view h1[tabindex="-1"]:focus { outline: none; }
+
 #sidebar {
   grid-area: sidebar;
   position: relative;
@@ -283,9 +223,8 @@ a:focus-visible, summary:focus-visible, button:focus-visible, input:focus-visibl
   flex-direction: column;
   gap: var(--space-3);
   padding: var(--space-3) var(--space-3);
-  border-right: 1px solid var(--line);
-  background: rgb(var(--surface-rgb) / min(var(--surface-alpha), var(--glass-panel-alpha)));
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  border-right: 1px solid var(--line-soft);
+  background: rgb(var(--surface-rgb) / var(--surface-alpha));
   overflow: hidden;
 }
 
@@ -306,11 +245,10 @@ a:focus-visible, summary:focus-visible, button:focus-visible, input:focus-visibl
   min-width: 0;
   align-items: center;
   gap: var(--space-3);
-  min-height: 72px;
-  padding: var(--space-3) var(--space-5);
-  border-bottom: 1px solid var(--line);
-  background: rgb(var(--raised-rgb) / var(--glass-chrome-alpha));
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  min-height: 52px;
+  padding: 0 var(--space-4);
+  border-bottom: 1px solid var(--line-soft);
+  background: rgb(var(--bg-rgb) / var(--shell-alpha));
 }
 
 #view {
@@ -329,9 +267,8 @@ a:focus-visible, summary:focus-visible, button:focus-visible, input:focus-visibl
   grid-area: composer;
   min-width: 0;
   padding: var(--space-3) var(--space-5) var(--space-3);
-  border-top: 1px solid var(--line);
-  background: rgb(var(--surface-rgb) / min(var(--surface-alpha), var(--glass-panel-alpha)));
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  border-top: 1px solid var(--line-soft);
+  background: rgb(var(--bg-rgb) / var(--shell-alpha));
 }
 
 #composer:empty { display: none; }
@@ -361,21 +298,32 @@ a:focus-visible, summary:focus-visible, button:focus-visible, input:focus-visibl
 
 .brand, .repo, .header-title { min-width: 0; }
 
-.brand { color: var(--accent); font-family: var(--display); font-size: 18px; font-weight: 700; letter-spacing: -.01em; }
+.brand { color: var(--text); font-family: var(--display); font-size: 13px; font-weight: 600; letter-spacing: -.01em; }
 
 .app-identity { display: none; flex: none; gap: 1px; }
 
 body.sidebar-collapsed .app-identity { display: grid; }
 
-.brand-tag { color: var(--faint); font: 500 10px/1.4 var(--mono); letter-spacing: .1em; text-transform: uppercase; }
+.brand-tag { color: var(--faint); font: 500 11px/1.4 var(--ui); letter-spacing: .06em; text-transform: uppercase; }
 
-.repo { flex: none; overflow: hidden; color: var(--text); text-overflow: ellipsis; white-space: nowrap; }
+.header-title { flex: none; font-size: var(--t-md); font-weight: 500; letter-spacing: -.01em; }
 
-.header-sep { flex: none; color: var(--faint); }
+.repo { display: inline-flex; flex: none; min-height: 26px; max-width: 28ch; align-items: center; overflow: hidden; padding: 0 var(--space-2); border: 1px solid var(--line); border-radius: var(--radius-ctl); background: var(--raised); color: var(--muted); font: 400 var(--t-xs) var(--mono); text-overflow: ellipsis; white-space: nowrap; }
 
 .goal-context { flex: 1; min-width: 0; overflow: hidden; color: var(--muted); font-size: var(--t-sm); text-overflow: ellipsis; white-space: nowrap; }
 
-.mode-switcher { display: flex; flex: none; gap: var(--space-1); min-width: 0; padding: var(--space-1); border: 1px solid var(--line); border-radius: var(--radius-pill); background: var(--surface); }
+/* The search chip is a 26px pill to the eye and a 44px target to the hand: the
+ * header is 52px tall, so the hit area is the button, not its painted border. */
+.header-search { display: inline-flex; flex: none; min-width: var(--tap-target-min); min-height: var(--tap-target-min); align-items: center; justify-content: center; padding: 0; border: 0; background: transparent; color: var(--muted); font-size: var(--t-xs); }
+
+/* The painted chip is 28px; the button around it is the 44px target. */
+.header-search-box { display: inline-flex; min-height: 28px; align-items: center; gap: var(--space-2); padding: 0 var(--space-2); border: 1px solid var(--line); border-radius: var(--radius-ctl); background: var(--raised); }
+
+.header-search-hint { color: var(--faint); font: 400 11px/1.6 var(--mono); }
+
+.header-search:hover .header-search-box { border-color: var(--faint); color: var(--text); }
+
+.mode-switcher { display: flex; flex: none; gap: var(--space-1); min-width: 0; padding: 2px; border: 1px solid var(--line-soft); border-radius: var(--radius-pill); background: var(--raised); }
 
 .mode-option { display: flex; align-items: center; min-width: 64px; min-height: var(--tap-target-min); padding: var(--space-2) var(--space-3); border: 1px solid transparent; border-radius: var(--radius-pill); background: transparent; color: var(--muted); text-align: left; transition: border-color var(--fast) var(--ease), background-color var(--fast) var(--ease), color var(--fast) var(--ease); }
 
@@ -384,7 +332,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 /* 2026-09-23: this is the same defect test/t-theme.js already banned under
  * a "small" tag selector — the mode switcher visibly dominating the header
  * with explainer copy every button's own dataset.tip and aria-label already
- * carry — read directly on a populated demo court, where three pills each
+ * carry — read directly on a populated demo team, where three pills each
  * two lines tall pushed "Connected" to the far end of the header looking
  * detached from everything beside it. It came back under `span` instead of
  * `small`; the button keeps rendering it (so nothing about its accessible
@@ -392,13 +340,11 @@ body.sidebar-collapsed .app-identity { display: grid; }
  * (ui/main.js) already surfaces the same text on hover. */
 .mode-option span { display: none; }
 
-.mode-option:hover { border-color: rgb(var(--accent-rgb) / .45); background: rgb(var(--accent-rgb) / .12); }
+.mode-option:hover { background: var(--hover); }
 
-.mode-option.selected { border-color: transparent; background: var(--accent); color: var(--accent-ink); }
+.mode-option.selected { border-color: var(--line); background: var(--active); color: var(--text); }
 
-.mode-option.selected strong { color: var(--accent-ink); }
-
-.mode-option.selected span { color: rgb(var(--accent-ink-rgb) / .75); }
+.mode-option.selected strong { color: var(--text); }
 
 .mode-option:disabled { cursor: wait; opacity: .6; }
 
@@ -430,23 +376,25 @@ body.sidebar-collapsed .app-identity { display: grid; }
 /* An agent awaiting approval is not doing work yet; keep its dot still. */
 .agent-card.requested .status-dot { animation: none; }
 
-.status-dot.attention { background: var(--danger); }
+.status-dot.attention { background: var(--tone-attention); }
 
 .status-dot.settled { background: var(--ok); }
 
 .status-dot.idle { background: var(--tone-idle); }
 
-.sidebar-heading { display: flex; align-items: center; gap: var(--space-2); margin: 0; padding: 0 var(--space-2); color: var(--faint); font: 500 10px/1.5 var(--mono); letter-spacing: .1em; text-transform: uppercase; }
+.sidebar-heading-branch { margin-left: auto; font: 400 11px/1.4 var(--mono); letter-spacing: 0; text-transform: none; }
+
+.sidebar-heading { display: flex; align-items: center; gap: var(--space-2); margin: 0; padding: 0 var(--space-2); color: var(--faint); font: 500 11px/1.5 var(--ui); letter-spacing: .06em; text-transform: uppercase; }
 
 .sidebar-empty { margin: 0; padding: var(--space-2); color: var(--faint); font-size: var(--t-xs); }
 
-.sidebar-footer { display: grid; flex-shrink: 0; gap: var(--space-2); margin-top: auto; padding-top: var(--space-3); border-top: 1px solid var(--line); }
+.sidebar-footer { display: grid; flex-shrink: 0; gap: var(--space-2); margin-top: auto; padding-top: var(--space-3); border-top: 1px solid var(--line-soft); }
 
 .sidebar-repo { display: flex; width: 100%; min-height: var(--tap-target-min); align-items: center; overflow: hidden; padding: var(--space-1) var(--space-2); border: 0; background: transparent; color: var(--muted); font-size: var(--t-sm); text-align: left; text-overflow: ellipsis; white-space: nowrap; }
 
 .sidebar-repo:hover { color: var(--text); }
 
-/* #41: the court-wide pause banner — degrades visibly instead of the court
+/* #41: the team-wide pause banner — degrades visibly instead of the team
    just going quiet with no reason on screen. Attention tone, the same token
    the rest of the app uses for a blocked/failed state; no new colour. */
 .sidebar-pause-banner { display: grid; gap: var(--space-2); padding: var(--space-2); border: 1px solid rgb(var(--tone-attention-rgb) / .4); border-radius: var(--radius-ctl); background: rgb(var(--tone-attention-rgb) / .1); }
@@ -466,26 +414,24 @@ body.sidebar-collapsed .app-identity { display: grid; }
   border: 1px solid var(--line);
   border-radius: var(--radius-ctl);
   background: var(--raised);
-  color: var(--text);
-  font-weight: 600;
+  color: var(--muted);
+  font-size: var(--t-sm);
+  font-weight: 500;
   text-decoration: none;
   transition: border-color var(--fast) var(--ease), background-color var(--fast) var(--ease), color var(--fast) var(--ease), opacity var(--fast) var(--ease);
 }
 
-.button:hover, .icon-button:hover { border-color: var(--accent); background: rgb(var(--accent-rgb) / .12); }
+.button:hover, .icon-button:hover { border-color: var(--faint); background: var(--hover); }
 
-/* Lift 2px on hover, settle 1px on press — the kit's real interaction, and
- * the only control it gives one to. Reduced motion already collapses the
- * transition, so the movement never runs for anyone who asked it not to. */
-.button.primary { border-color: transparent; background: var(--accent); box-shadow: var(--shadow-button); color: var(--accent-ink); transition: border-color var(--fast) var(--ease), background-color var(--fast) var(--ease), transform var(--fast) var(--ease); }
+/* The primary action is the white fill, as in the canvas ("Review diff",
+ * "Share", send). Everything else is the bordered chip above. */
+.button.primary { border-color: var(--fill); background: var(--fill); box-shadow: var(--shadow-button); color: var(--fill-ink); }
 
-.button.primary:hover { border-color: transparent; background: var(--accent-hover); transform: translateY(-2px); }
+.button.primary:hover { border-color: var(--fill-hover); background: var(--fill-hover); }
 
-.button.primary:active { transform: translateY(1px); }
+.button.danger { border-color: rgb(var(--danger-rgb) / .5); color: var(--danger); }
 
-.button.danger { border-color: rgb(var(--danger-rgb) / .6); color: var(--danger); }
-
-.button.link { min-height: var(--tap-target-min); padding: var(--space-1) 0; border-color: transparent; background: transparent; color: var(--muted); }
+.button.link { min-width: var(--tap-target-min); min-height: var(--tap-target-min); padding: var(--space-1) 0; border-color: transparent; background: transparent; color: var(--muted); }
 
 .button.link:hover { border-color: transparent; background: transparent; color: var(--text); }
 
@@ -497,7 +443,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .field { display: grid; gap: var(--space-1); color: var(--muted); font-size: var(--t-sm); }
 
-.field-label { display: flex; min-width: 0; align-items: baseline; justify-content: space-between; gap: var(--space-2); font: 500 10px/1.6 var(--mono); letter-spacing: .1em; text-transform: uppercase; }
+.field-label { display: flex; min-width: 0; align-items: baseline; justify-content: space-between; gap: var(--space-2); font: 500 11px/1.6 var(--ui); letter-spacing: .06em; text-transform: uppercase; }
 
 .field-value { flex: none; color: var(--text); font-size: var(--t-xs); }
 
@@ -523,9 +469,23 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .field input[type="range"] { width: 100%; height: 24px; padding: 0; border: 0; border-radius: 0; background: transparent; accent-color: var(--accent); cursor: pointer; }
 
-.thread { display: grid; gap: var(--space-4); max-width: 820px; margin: 0 auto; }
+.thread { display: block; max-width: none; margin: 0; }
 
-.question { display: grid; gap: var(--space-3); padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--raised); }
+/* A run is the transcript with the session inspector beside it. Below 1100px
+ * the inspector stacks under the transcript instead of disappearing. */
+.run-layout { display: grid; align-items: start; grid-template-columns: minmax(0, 1fr) minmax(280px, 340px); gap: var(--space-4); }
+
+.run-layout.solo { grid-template-columns: minmax(0, 1fr); }
+
+.run-main { display: grid; align-content: start; gap: var(--space-4); min-width: 0; max-width: 820px; margin: 0 auto; width: 100%; }
+
+.run-embed { min-width: 0; }
+
+.run-embed .view-heading { display: none; }
+
+.run-embed > .view-page { max-width: none; margin: 0; }
+
+.question { display: grid; gap: var(--space-3); padding: var(--space-3); border: 1px solid var(--line-soft); border-radius: var(--radius-card); background: var(--raised); }
 
 .question label { display: flex; align-items: flex-start; gap: var(--space-2); padding: var(--space-2); border: 1px solid var(--line); border-radius: var(--radius-ctl); background: var(--bg); cursor: pointer; }
 
@@ -545,13 +505,13 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .question-text { color: var(--muted); }
 
-.question-option { display: grid; width: 100%; min-height: var(--tap-target-min); gap: 2px; padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-ctl); background: var(--bg); color: var(--text); text-align: left; }
+.question-option { display: grid; width: 100%; min-height: var(--tap-target-min); gap: 2px; padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-ctl); background: var(--raised); color: var(--text); text-align: left; }
 
 .question-option:hover, .question-option.selected { border-color: var(--accent); background: var(--surface); }
 
 .question-option small { color: var(--muted); }
 
-.question-other { width: 100%; height: var(--tap-target-min); padding: 0 var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-ctl); background: var(--bg); color: var(--text); }
+.question-other { width: 100%; height: var(--tap-target-min); padding: 0 var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-ctl); background: var(--raised); color: var(--text); }
 
 .message-attachment { display: inline-flex; max-width: 100%; margin: var(--space-1) var(--space-2) 0 0; overflow: hidden; color: var(--accent); font-size: var(--t-xs); text-overflow: ellipsis; white-space: nowrap; }
 
@@ -569,7 +529,9 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 /* Components shipped with the shell use these small structural classes. They
  * share the same flat tokens instead of recreating a second visual system. */
-.sidebar-header { display: flex; flex-shrink: 0; align-items: center; gap: var(--space-2); padding-bottom: var(--space-3); border-bottom: 1px solid var(--line); }
+.sidebar-header { display: grid; flex-shrink: 0; gap: var(--space-2); padding-bottom: var(--space-2); }
+
+.sidebar-brand-row { display: flex; min-width: 0; align-items: center; gap: var(--space-2); }
 
 .mobile-menu, .sidebar-mobile-close { min-height: var(--tap-target-min); padding: var(--space-1) var(--space-2); border: 1px solid var(--line); border-radius: var(--radius-ctl); background: transparent; color: var(--muted); }
 
@@ -579,11 +541,19 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .mobile-menu:hover, .sidebar-mobile-close:hover { border-color: var(--accent); color: var(--text); }
 
-.sidebar-brand { min-width: 0; overflow: hidden; color: var(--text); font-family: var(--display); font-size: 22px; font-weight: 700; letter-spacing: -.01em; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar-brand { display: flex; min-width: 0; min-height: var(--tap-target-min); flex: 1; align-items: center; gap: var(--space-2); overflow: hidden; padding: 0 var(--space-2); border: 0; border-radius: var(--radius-ctl); background: transparent; color: var(--text); font-family: var(--display); font-size: var(--t-sm); font-weight: 600; letter-spacing: -.01em; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
 
-.sidebar-new { flex: 1; min-width: 0; min-height: var(--tap-target-min); overflow: hidden; padding: 0 var(--space-3); border: 1px solid transparent; border-radius: var(--radius-ctl); background: var(--accent); color: var(--accent-ink); font-weight: 650; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar-brand:hover { background: var(--hover); }
 
-.sidebar-new:hover { border-color: transparent; background: var(--accent-hover); }
+.sidebar-brand-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+
+.sidebar-brand-repo { margin-left: auto; min-width: 0; overflow: hidden; color: var(--faint); font: 400 11px/1.4 var(--mono); text-overflow: ellipsis; }
+
+.sidebar-new { display: flex; width: 100%; min-width: 0; min-height: var(--tap-target-min); align-items: center; gap: var(--space-2); overflow: hidden; padding: 0 var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-ctl); background: var(--raised); color: var(--text); font-size: var(--t-sm); font-weight: 500; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+
+.sidebar-new-hint { margin-left: auto; color: var(--faint); font: 400 11px/1.4 var(--mono); }
+
+.sidebar-new:hover { border-color: var(--faint); background: var(--hover); }
 
 /* align-content: start, because an implicit grid hands its free space to every
    row it created. Measured live 2026-09-21 at 1440x900: the rail's
@@ -592,7 +562,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
    and .sidebar-conversations names it explicitly. */
 .sidebar-section { display: grid; align-content: start; gap: var(--space-2); min-height: 0; }
 
-/* Measured live 2026-09-23 at 1440x900 and 1280x720 with a populated court
+/* Measured live 2026-09-23 at 1440x900 and 1280x720 with a populated team
  * (twelve conversations, More tools open): the rail's mode/workspace/more/
  * conversations sections could add up to more than the rail's own height,
  * and #sidebar's overflow: hidden clipped whatever did not fit — the
@@ -617,39 +587,32 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .sidebar-mode-option span { overflow: hidden; color: var(--faint); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 
-.sidebar-mode-option:hover { border-color: rgb(var(--accent-rgb) / .45); background: rgb(var(--accent-rgb) / .12); }
+.sidebar-mode-option:hover { background: var(--hover); }
 
-.sidebar-mode-option.selected { border-color: transparent; background: var(--accent); color: var(--accent-ink); }
+.sidebar-mode-option.selected { border-color: var(--line); background: var(--active); color: var(--text); }
 
-.sidebar-mode-option.selected strong { color: var(--accent-ink); }
-
-.sidebar-mode-option.selected span { color: rgb(var(--accent-ink-rgb) / .75); }
+.sidebar-mode-option.selected strong { color: var(--text); }
 
 .sidebar-nav { flex-shrink: 0; }
 
-.sidebar-more { display: grid; flex-shrink: 0; gap: var(--space-2); }
-
-.sidebar-more > summary { cursor: pointer; list-style: none; }
-
-.sidebar-more > summary::-webkit-details-marker { display: none; }
-
-.sidebar-more > summary::after { margin-left: auto; content: "+"; }
-
-.sidebar-more[open] > summary::after { content: "−"; }
-
-.sidebar-nav-button { display: flex; width: 100%; min-height: var(--tap-target-min); align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-3); border: 1px solid transparent; border-radius: var(--radius-ctl); background: transparent; color: var(--muted); text-align: left; transition: border-color var(--fast) var(--ease), background-color var(--fast) var(--ease), color var(--fast) var(--ease); }
+.sidebar-nav-button { display: flex; width: 100%; min-height: var(--tap-target-min); align-items: center; gap: var(--space-2); font-size: var(--t-sm); padding: var(--space-2) var(--space-3); border: 1px solid transparent; border-radius: var(--radius-ctl); background: transparent; color: var(--muted); text-align: left; transition: border-color var(--fast) var(--ease), background-color var(--fast) var(--ease), color var(--fast) var(--ease); }
 
 .sidebar-nav-button .icon { flex: none; opacity: .72; }
 
+.sidebar-nav-button { position: relative; }
+
+/* A count of what is waiting on you, as in the canvas: a small accent chip. */
+.sidebar-badge { min-width: 18px; margin-left: auto; padding: 1px 6px; border-radius: var(--radius-ctl); background: var(--accent); color: var(--accent-ink); font-size: 11px; font-weight: 600; line-height: 1.5; text-align: center; }
+
 .sidebar-nav-button.selected .icon { opacity: 1; }
 
-.sidebar-nav-button:hover { border-color: var(--line); background: var(--raised); color: var(--text); }
+.sidebar-nav-button:hover { border-color: transparent; background: var(--hover); color: var(--text); }
 
-.sidebar-nav-button.selected { border-color: transparent; background: rgb(var(--accent-rgb) / .12); color: var(--text); }
+.sidebar-nav-button.selected { border-color: transparent; background: var(--active); color: var(--text); }
 
-.sidebar-nav-button.selected .icon { color: var(--accent); }
+.sidebar-nav-button.selected .icon { color: var(--text); }
 
-.hover-tip { position: fixed; z-index: 50; max-width: 260px; padding: var(--space-2) var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-ctl); background: rgb(var(--raised-rgb) / var(--glass-chrome-alpha)); backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate)); color: var(--text); font-size: var(--t-xs); line-height: 1.4; white-space: pre-line; pointer-events: none; box-shadow: var(--shadow-panel); }
+.hover-tip { position: fixed; z-index: 50; max-width: 260px; padding: var(--space-2) var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-ctl); background: var(--raised); color: var(--text); font-size: var(--t-xs); line-height: 1.4; white-space: pre-line; pointer-events: none; box-shadow: var(--shadow-panel); }
 
 .sidebar-conversations { flex: 1; grid-template-rows: auto minmax(0, 1fr); min-height: 0; }
 
@@ -660,15 +623,23 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .conversation-row { display: flex; min-width: 0; align-items: center; gap: var(--space-2); padding: 0 var(--space-2); border: 1px solid transparent; border-radius: var(--radius-ctl); background: transparent; color: var(--muted); text-align: left; transition: border-color var(--fast) var(--ease), background-color var(--fast) var(--ease), color var(--fast) var(--ease); }
 
-.conversation-row:hover { border-color: var(--line); background: var(--raised); color: var(--text); }
+.conversation-row:hover { border-color: transparent; background: var(--hover); color: var(--text); }
 
-.conversation-row.selected { border-color: transparent; background: rgb(var(--accent-rgb) / .12); color: var(--text); }
+.conversation-row.selected { border-color: transparent; background: var(--active); color: var(--text); }
 
 /* The row's height is this control's tap target, not padding around a 24px
    button. Measured live 2026-09-21: it was 210x24, and the 44px minimum this
    system enforces is a real minimum, not a suggestion. The row loses its
    block padding in exchange, so the list gets taller by 3px, not by 20. */
-.conversation-open { display: flex; min-width: 0; min-height: var(--tap-target-min); flex: 1; align-items: center; overflow: hidden; border: 0; background: transparent; color: inherit; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+.conversation-open { display: flex; min-width: 0; min-height: var(--tap-target-min); flex: 1; align-items: center; gap: var(--space-2); overflow: hidden; border: 0; background: transparent; color: inherit; font-size: var(--t-sm); text-align: left; white-space: nowrap; }
+
+.conversation-title { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; }
+
+.conversation-age { flex: none; color: var(--faint); font-size: 11px; }
+
+/* A run that is not the open one is a ring, as in the canvas; the open run
+ * wears its own status tone through the shared .status-dot rules. */
+.conversation-dot:not(.live):not(.attention):not(.settled):not(.idle) { border: 1.5px solid var(--faint); background: transparent; }
 
 .conversation-actions { display: none; flex: none; gap: var(--space-1); }
 
@@ -684,27 +655,42 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .conversation-edit { display: flex; flex: 1; gap: var(--space-1); }
 
-.conversation-edit input { min-width: 0; flex: 1; border: 1px solid var(--line); border-radius: var(--radius-ctl); background: var(--bg); color: var(--text); }
+.conversation-edit input { min-width: 0; flex: 1; border: 1px solid var(--line); border-radius: var(--radius-ctl); background: var(--raised); color: var(--text); }
 
-.sidebar-settings, .sidebar-collapse { min-height: var(--tap-target-min); padding: var(--space-1) var(--space-2); border: 1px solid var(--line); border-radius: var(--radius-ctl); background: transparent; color: var(--muted); }
+.sidebar-settings, .sidebar-collapse { display: flex; min-height: var(--tap-target-min); align-items: center; padding: var(--space-1) var(--space-3); border: 0; border-radius: var(--radius-ctl); background: transparent; color: var(--muted); font-size: var(--t-sm); text-align: left; }
 
-.sidebar-settings:hover, .sidebar-collapse:hover { border-color: var(--accent); color: var(--text); }
-
-
+.sidebar-settings:hover, .sidebar-collapse:hover { background: var(--hover); color: var(--text); }
 
 
 
 
 
-.sidebar-spend { color: var(--muted); font-size: var(--t-xs); }
 
-.thread-header { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--surface); box-shadow: var(--shadow-card); }
 
-.thread-heading { min-width: 0; flex: 1 1 320px; }
+.sidebar-spend { padding: 0 var(--space-2); color: var(--faint); font-size: var(--t-xs); }
 
-.thread-heading h1 { margin: 0; font-family: var(--display); font-size: clamp(24px, 3vw, 34px); letter-spacing: -.01em; }
+.sidebar-spend:empty { display: none; }
 
-.thread-heading.sovereign h1 { color: var(--gold); }
+/* The run's header sits flat above its transcript, divided by a hairline, as the
+ * canvas draws it; it is not a card. */
+.thread-header { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); padding: 0 0 var(--space-3); border: 0; border-bottom: 1px solid var(--line-soft); background: transparent; box-shadow: var(--shadow-card); }
+
+.thread-heading { min-width: 0; flex: 1 1 240px; }
+
+.thread-title-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+
+/* Session / Diff / Tasks: the run's own pages, as chips beside its title. */
+.run-tabs { display: flex; flex: none; gap: var(--space-1); }
+
+.run-tab { min-height: var(--tap-target-min); padding: 0 var(--space-3); border-color: transparent; background: transparent; color: var(--muted); }
+
+.run-tab[aria-pressed="true"] { border-color: var(--line); background: var(--active); color: var(--text); }
+
+.run-tab:hover { background: var(--hover); color: var(--text); }
+
+.thread-heading h1 { margin: 0; font-family: var(--display); font-size: 14px; font-weight: 500; letter-spacing: -.01em; }
+
+.thread-heading.user h1 { color: var(--gold); }
 
 .thread-subtitle { margin: var(--space-1) 0 0; color: var(--muted); font-size: var(--t-sm); overflow-wrap: anywhere; }
 
@@ -712,7 +698,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .thread-control { display: grid; min-width: 0; gap: 2px; color: var(--faint); font-size: var(--t-xs); }
 
-.thread-control-label { padding-inline: var(--space-1); font: 500 10px/1.5 var(--mono); letter-spacing: .1em; text-transform: uppercase; }
+.thread-control-label { padding-inline: var(--space-1); font: 500 11px/1.5 var(--ui); letter-spacing: .06em; text-transform: uppercase; }
 
 .thread-model, .thread-effort { width: 18ch; min-width: 0; max-width: 100%; height: var(--tap-target-min); padding: 0 var(--space-2); border: 1px solid var(--line); border-radius: var(--radius-ctl); background: var(--raised); color: var(--muted); }
 
@@ -726,7 +712,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .thread-message.mine { justify-self: end; }
 
-.message-meta { padding: 0 var(--space-2); color: var(--faint); font: 500 10px/1.5 var(--mono); letter-spacing: .1em; text-transform: uppercase; }
+.message-meta { padding: 0 var(--space-2); color: var(--faint); font: 500 11px/1.5 var(--ui); letter-spacing: .06em; text-transform: uppercase; }
 
 .thread-message.mine .message-meta { text-align: right; }
 
@@ -744,7 +730,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .message-body ul, .message-body ol { margin: 0; padding-left: 1.4em; }
 
-.thread-message.mine .message-body { border-color: transparent; background: var(--accent); color: var(--accent-ink); }
+.thread-message.mine .message-body { border-color: var(--line); background: var(--hover); color: var(--text); }
 
 .thread-message.theirs .message-body { background: var(--raised); }
 
@@ -752,21 +738,26 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .thread-empty { padding: var(--space-5) 0; color: var(--muted); text-align: center; }
 
-.thread-composer { display: grid; gap: var(--space-2); max-width: 820px; margin: 0 auto; }
+.thread-composer { display: grid; gap: var(--space-2); max-width: 760px; margin: 0 auto; padding: var(--space-2) var(--space-3); border: 1px solid var(--line); border-radius: 14px; background: var(--raised); }
 
-.thread-input-row { display: flex; align-items: end; gap: var(--space-2); }
+.thread-composer:focus-within { border-color: var(--faint); }
 
-.thread-input { min-width: 0; min-height: var(--tap-target-min); max-height: 180px; flex: 1 1 auto; padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--raised); color: var(--text); resize: vertical; }
+.thread-input-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
 
-.thread-input:focus { border-color: var(--accent); }
+/* The field is the card's first line and the buttons its second, as in the
+ * canvas's composer; the card draws the border, so the field draws none. */
+.thread-input { order: -1; min-width: 0; min-height: var(--tap-target-min); max-height: 180px; flex: 1 1 100%; padding: var(--space-2) 0; border: 0; background: transparent; color: var(--text); resize: vertical; }
+
+.thread-send { margin-left: auto; }
+
 
 .thread-attach, .thread-send { min-height: var(--tap-target-min); padding: 0 var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-ctl); background: var(--raised); color: var(--text); transition: border-color var(--fast) var(--ease), background-color var(--fast) var(--ease), opacity var(--fast) var(--ease), filter var(--fast) var(--ease); }
 
-.thread-send { border-color: transparent; background: var(--accent); color: var(--accent-ink); }
+.thread-send { border-color: var(--fill); background: var(--fill); color: var(--fill-ink); font-weight: 600; }
 
 .thread-attach:hover { border-color: var(--accent); }
 
-.thread-send:hover { filter: brightness(1.06); }
+.thread-send:hover { background: var(--fill-hover); border-color: var(--fill-hover); }
 
 .thread-attach:disabled, .thread-send:disabled { cursor: not-allowed; opacity: .5; }
 
@@ -788,7 +779,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .skill-option small { color: var(--muted); }
 
-.view-page { display: grid; align-content: start; gap: var(--space-5); max-width: 1080px; margin: 0 auto; }
+.view-page { display: grid; align-content: start; gap: var(--space-4); max-width: 980px; margin: 0 auto; }
 
 .boot-failure { display: grid; max-width: 520px; gap: var(--space-3); margin: var(--space-5) auto; }
 
@@ -800,7 +791,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 /* 2026-09-23: this used to carry an ::before eyebrow reading the literal
  * string "AGENTIC OS / WORKSPACE" on all 14 views — no information (it never
- * changed), read directly against a populated demo court where it ate space
+ * changed), read directly against a populated demo team where it ate space
  * a run panel or a task list needed. A prior session removed it once for the
  * same reason and it came back; it must not come back a second time (see the
  * ban pinned in test/t-theme.js). The heading itself also carried the kit's
@@ -810,17 +801,17 @@ body.sidebar-collapsed .app-identity { display: grid; }
  * heading under a 48px page title was that rule not applied to the one place
  * every view shares. Shrunk to a scale nearer the product headings around
  * it, and the divider's padding tightened to match. */
-.view-heading { display: grid; max-width: 720px; gap: var(--space-1); padding-bottom: var(--space-3); border-bottom: 1px solid var(--line); }
+.view-heading { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; border: 0; clip: rect(0 0 0 0); white-space: nowrap; }
 
-.view-heading h1 { margin: 0; color: var(--text); font-family: var(--display); font-size: clamp(20px, 2.4vw, 26px); letter-spacing: -.01em; line-height: 1.2; }
+.view-heading h1 { margin: 0; color: var(--text); font-family: var(--display); font-size: clamp(18px, 2vw, 22px); font-weight: 600; letter-spacing: -.02em; line-height: 1.2; }
 
 .view-description { max-width: 60ch; margin: 0; color: var(--muted); font-size: var(--t-sm); }
 
-.view-section { display: grid; align-content: start; gap: var(--space-3); padding: var(--space-4); border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--surface); box-shadow: var(--shadow-card); }
+.view-section { display: grid; align-content: start; gap: var(--space-3); padding: var(--space-4); border: 1px solid var(--line-soft); border-radius: var(--radius-card); background: var(--surface); box-shadow: var(--shadow-card); }
 
-.view-section h2 { margin: 0; font-family: var(--display); font-size: 22px; letter-spacing: -.01em; }
+.view-section h2 { margin: 0; font-family: var(--display); font-size: var(--t-sm); font-weight: 600; letter-spacing: -.01em; }
 
-.view-page h3, .view-page h4 { font-family: var(--display); letter-spacing: -.015em; }
+.view-page h3, .view-page h4 { font-family: var(--display); font-weight: 600; letter-spacing: -.01em; }
 
 .button-row, .search-row, .form-grid, .stats { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
 
@@ -832,7 +823,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .form-grid > label:last-child { grid-column: 1 / -1; }
 
-.form-grid > input, .form-grid > select, .form-grid > label input, .form-grid > label select, .form-grid > label textarea { width: 100%; min-width: 0; height: var(--tap-target-min); padding: 0 var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-ctl); background: var(--bg); color: var(--text); }
+.form-grid > input, .form-grid > select, .form-grid > label input, .form-grid > label select, .form-grid > label textarea { width: 100%; min-width: 0; height: var(--tap-target-min); padding: 0 var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-ctl); background: var(--raised); color: var(--text); }
 
 .form-grid > label textarea { height: auto; min-height: 100px; padding-block: var(--space-3); resize: vertical; }
 
@@ -840,7 +831,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); }
 
-.stat { display: grid; gap: var(--space-1); padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-ctl); }
+.stat { display: grid; gap: var(--space-1); padding: var(--space-3); border: 1px solid var(--line-soft); border-radius: var(--radius-ctl); }
 
 .stat span { color: var(--muted); font-size: var(--t-xs); }
 
@@ -849,7 +840,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
  * all three of its client sources, and that ordinary sans is what carries
  * everything else. Status badges are not in this family: the kit sets those
  * in its product sans, and they stay there. */
-.card-meta { color: var(--muted); font: 500 10px/1.5 var(--mono); letter-spacing: .1em; text-transform: uppercase; }
+.card-meta { color: var(--muted); font: 500 11px/1.5 var(--ui); letter-spacing: .06em; text-transform: uppercase; }
 
 .usage-dashboard { display: grid; align-content: start; gap: var(--space-4); }
 
@@ -859,9 +850,9 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .usage-lead { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-3); }
 
-.metric-card { display: grid; min-width: 0; align-content: start; gap: var(--space-1); padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--raised); box-shadow: var(--shadow-card); }
+.metric-card { display: grid; min-width: 0; align-content: start; gap: var(--space-1); padding: var(--space-3); border: 1px solid var(--line-soft); border-radius: var(--radius-card); background: var(--raised); box-shadow: var(--shadow-card); }
 
-.metric-label { color: var(--muted); font: 500 10px/1.4 var(--mono); letter-spacing: .1em; text-transform: uppercase; }
+.metric-label { color: var(--muted); font: 500 11px/1.4 var(--ui); letter-spacing: .06em; text-transform: uppercase; }
 
 .metric-value { color: var(--text); font-size: clamp(20px, 3vw, 28px); overflow-wrap: anywhere; }
 
@@ -889,7 +880,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .agent-usage-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: var(--space-3); }
 
-.agent-usage-card { display: grid; min-width: 0; gap: var(--space-3); padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--raised); }
+.agent-usage-card { display: grid; min-width: 0; gap: var(--space-3); padding: var(--space-3); border: 1px solid var(--line-soft); border-radius: var(--radius-card); background: var(--raised); }
 
 .agent-usage-card header { min-width: 0; }
 
@@ -899,7 +890,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .agent-usage-card p { color: var(--muted); font-size: var(--t-xs); }
 
-.usage-recommendation { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-3); border: 1px solid var(--line); border-left: 3px solid var(--danger); border-radius: var(--radius-card); background: var(--raised); }
+.usage-recommendation { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-3); border: 1px solid var(--line-soft); border-left: 3px solid var(--tone-attention); border-radius: var(--radius-card); background: var(--raised); }
 
 .usage-recommendation > div { min-width: 0; }
 
@@ -955,7 +946,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
  * The spacing scale this system brings widens faster than the one it
  * replaces, so holding cards at --space-4 would have pushed every card in the
  * app from 16px of padding to 24px at once. */
-.approval-card, .agent-card, .home-card, .workflow-row, .activity-row, .message-row { display: grid; align-content: start; gap: var(--space-2); padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--raised); box-shadow: var(--shadow-card); }
+.approval-card, .agent-card, .home-card, .workflow-row, .activity-row, .message-row { display: grid; align-content: start; gap: var(--space-2); padding: var(--space-3); border: 1px solid var(--line-soft); border-radius: var(--radius-card); background: var(--raised); box-shadow: var(--shadow-card); }
 
 .approval-card.pending { border-color: rgb(var(--accent-rgb) / .55); }
 
@@ -966,14 +957,14 @@ body.sidebar-collapsed .app-identity { display: grid; }
  * the label needs one here. */
 .approval-status { display: flex; align-items: center; gap: var(--space-2); }
 
-.approval-status.attention { color: var(--danger); }
+.approval-status.attention { color: var(--tone-attention); }
 
 .approval-status.settled { color: var(--ok); }
 
 .activity-row { border-left: 3px solid transparent; padding-left: calc(var(--space-3) - 2px); }
 
 .activity-row.live { border-left-color: var(--accent); }
-.activity-row.attention { border-left-color: var(--danger); }
+.activity-row.attention { border-left-color: var(--tone-attention); }
 .activity-row.settled { border-left-color: var(--ok); }
 
 .question-card, .question-options, .check-row { display: grid; gap: var(--space-2); }
@@ -992,18 +983,18 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .data-table th, .data-table td { padding: var(--space-2); border-bottom: 1px solid var(--line); text-align: left; }
 
-.data-table th { color: var(--muted); font: 500 10px/1.5 var(--mono); letter-spacing: .1em; text-transform: uppercase; }
+.data-table th { color: var(--muted); font: 500 11px/1.5 var(--ui); letter-spacing: .06em; text-transform: uppercase; }
 
 /* 420px, not the 240px this carried: auto-fit only collapses tracks that are
    empty, and .run-summary spans 1 / -1, so every track stays occupied. At
    1080px that left four 261px tracks with the Queue card rendering in one of
    them, four words wide, beside 800px of nothing. Two real columns here, one
    below ~860px. */
-.home-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: var(--space-3); }
+.home-grid { display: grid; align-items: start; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: var(--space-3); }
 
 .home-card h2, .home-card p { margin: 0; }
 
-.home-card h2 { font-family: var(--display); font-size: 22px; letter-spacing: -.01em; }
+.home-card h2 { font-family: var(--display); font-size: var(--t-sm); font-weight: 500; letter-spacing: -.01em; }
 
 .run-summary { grid-column: 1 / -1; }
 
@@ -1024,11 +1015,11 @@ body.sidebar-collapsed .app-identity { display: grid; }
  * different treatment (border colour here, text colour there, badge colour
  * elsewhere) per view. */
 .run-summary.live { border-color: rgb(var(--accent-rgb) / .65); }
-.run-summary.attention { border-color: rgb(var(--danger-rgb) / .65); }
+.run-summary.attention { border-color: rgb(var(--tone-attention-rgb) / .65); }
 .run-summary.settled { border-color: rgb(var(--ok-rgb) / .65); }
 
 .run-badge.live { background: rgb(var(--accent-rgb) / .12); color: var(--accent); }
-.run-badge.attention { background: rgb(var(--danger-rgb) / .1); color: var(--danger); }
+.run-badge.attention { background: rgb(var(--tone-attention-rgb) / .1); color: var(--tone-attention); }
 .run-badge.settled { background: rgb(var(--ok-rgb) / .12); color: var(--ok); }
 
 .run-objective { margin-top: var(--space-2) !important; color: var(--muted); overflow-wrap: anywhere; }
@@ -1053,7 +1044,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 .run-item b { flex: none; color: var(--faint); font-size: var(--t-xs); font-weight: 600; }
 
 .run-item.live b { color: var(--accent); }
-.run-item.attention b { color: var(--danger); }
+.run-item.attention b { color: var(--tone-attention); }
 .run-item.settled b { color: var(--ok); }
 
 .run-controls { margin-top: var(--space-3); }
@@ -1070,10 +1061,10 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .review-list, .review-step, .review-capture { display: grid; gap: var(--space-1); }
 
-.review-command { display: grid; gap: var(--space-2); padding: var(--space-3); border: 1px solid var(--line); border-left: 3px solid transparent; border-radius: var(--radius-ctl); background: var(--raised); }
+.review-command { display: grid; gap: var(--space-2); padding: var(--space-3); border: 1px solid var(--line-soft); border-left: 3px solid transparent; border-radius: var(--radius-ctl); background: var(--raised); }
 
 .review-command.live { border-left-color: var(--accent); }
-.review-command.attention { border-left-color: var(--danger); }
+.review-command.attention { border-left-color: var(--tone-attention); }
 .review-command.settled { border-left-color: var(--ok); }
 
 .review-command code { overflow-wrap: anywhere; color: var(--accent); }
@@ -1082,21 +1073,66 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .review-step, .review-capture { padding: var(--space-2) 0; border-bottom: 1px solid var(--line); }
 
-.home-objective { grid-column: 1 / -1; min-width: 0; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; border: 0; clip: rect(0 0 0 0); white-space: nowrap; }
 
-.home-attention { border-color: rgb(var(--danger-rgb) / .6); }
+/* Overview: the objective is the headline, four numbers sit under it, and the
+ * rest is lists, as in the canvas. */
+.home-page { gap: var(--space-4); }
 
-.home-attention h2 { color: var(--danger); }
+.home-objective-block { display: grid; min-width: 0; max-width: 720px; gap: var(--space-2); }
+
+.home-headline { margin: 0; font-size: 22px; font-weight: 600; letter-spacing: -.02em; line-height: 1.3; overflow-wrap: anywhere; }
+
+.home-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; overflow: hidden; border: 1px solid var(--line-soft); border-radius: var(--radius-card); background: var(--line-soft); }
+
+.home-stat { display: grid; min-width: 0; align-content: start; gap: var(--space-1); padding: var(--space-3); background: var(--surface); }
+
+.home-stat-label { color: var(--muted); font-size: var(--t-xs); }
+
+.home-stat-value { overflow-wrap: anywhere; font-size: 20px; font-weight: 600; }
+
+.home-stat-value.attention { color: var(--tone-attention); }
+
+.row-text { display: flex; min-width: 0; flex: 1; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-2); text-align: left; }
+
+.row-title { color: var(--text); font-weight: 500; }
+
+.row-detail { min-width: 0; overflow-wrap: anywhere; color: var(--muted); }
+
+/* The Runs table reads as the canvas draws it: sentence-case column heads, and
+ * a stage that is a coloured word rather than a pill. */
+.home-runs .data-table th { font-size: var(--t-xs); font-weight: 400; letter-spacing: 0; text-transform: none; }
+
+.home-runs .data-table th, .home-runs .data-table td { border-bottom-color: var(--line-soft); }
+
+.home-runs .run-badge { padding: 0; border-radius: 0; background: none; font-size: var(--t-sm); font-weight: 400; }
+
+.home-run-name { display: flex; min-width: 0; align-items: center; gap: var(--space-2); }
+
+.home-runs { grid-column: 1 / -1; }
+
+.home-runs .data-table { min-width: 520px; }
+
+.home-runs td:last-child { white-space: nowrap; }
+
+/* A list card is rows divided by hairlines, not boxes inside a box. */
+.home-card > .task-row { margin-top: 0; border: 0; border-top: 1px solid var(--line-soft); border-radius: 0; background: transparent; }
+
+.home-card > h2 + .task-row { border-top: 0; }
+
+.home-attention { border-color: rgb(var(--tone-attention-rgb) / .6); }
+
+.home-attention h2 { color: var(--tone-attention); }
 
 .home-next-step { grid-column: 1 / -1; border-color: rgb(var(--accent-rgb) / .55); }
 
-.home-next-step h2 { margin: 0; font-size: 24px; }
+.home-next-step h2 { margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -.02em; }
 
-.home-efficiency-warning { grid-column: 1 / -1; grid-template-columns: minmax(0, 1fr) auto; align-items: center; border-left: 3px solid var(--danger); }
+.home-efficiency-warning { grid-column: 1 / -1; grid-template-columns: minmax(0, 1fr) auto; align-items: center; border-left: 3px solid var(--tone-attention); }
 
 .home-efficiency-warning .button { justify-self: end; }
 
-.mode-kicker { margin: 0; color: var(--accent); font: 500 10px/1.4 var(--mono); letter-spacing: .12em; text-transform: uppercase; }
+.mode-kicker { margin: 0; color: var(--accent); font: 500 11px/1.4 var(--ui); letter-spacing: .06em; text-transform: uppercase; }
 
 .home-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 
@@ -1104,7 +1140,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .list-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
 
-.task-row, .doctor-row, .quota { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-ctl); background: var(--raised); box-shadow: var(--shadow-small); }
+.task-row, .doctor-row, .quota { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); padding: var(--space-3); border: 1px solid var(--line-soft); border-radius: var(--radius-ctl); background: var(--raised); box-shadow: var(--shadow-small); }
 
 .task-row + .task-row, .doctor-row + .doctor-row, .quota + .quota { margin-top: var(--space-2); }
 
@@ -1114,7 +1150,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .task-row.live b { color: var(--accent); }
 
-.task-row.attention b { color: var(--danger); }
+.task-row.attention b { color: var(--tone-attention); }
 
 .task-row.idle b { color: var(--faint); }
 
@@ -1122,9 +1158,9 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .task-manage-list { display: grid; gap: var(--space-2); margin: var(--space-3) 0 0; padding: 0; list-style: none; }
 
-.task-manage { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-ctl); background: var(--raised); }
+.task-manage { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-3); border: 1px solid var(--line-soft); border-radius: var(--radius-ctl); background: var(--raised); }
 
-.task-manage.attention { border-left: 3px solid var(--danger); }
+.task-manage.attention { border-left: 3px solid var(--tone-attention); }
 
 .task-manage-text { display: grid; min-width: 0; gap: var(--space-1); }
 
@@ -1136,9 +1172,9 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .run-template-save { display: grid; gap: var(--space-2); margin-top: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--line); }
 
-.inbox-item { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-ctl); background: var(--raised); }
+.inbox-item { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-3); border: 1px solid var(--line-soft); border-radius: var(--radius-ctl); background: var(--raised); }
 
-.inbox-item.attention { border-left: 3px solid var(--danger); }
+.inbox-item.attention { border-left: 3px solid var(--tone-attention); }
 
 .inbox-item.live { border-left: 3px solid var(--accent); }
 
@@ -1166,7 +1202,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .button.list-row { width: 100%; justify-content: flex-start; border: 1px solid transparent; border-radius: var(--radius-ctl); background: transparent; text-align: left; }
 
-.button.list-row:hover { border-color: var(--line); background: var(--raised); }
+.button.list-row:hover { border-color: transparent; background: var(--hover); }
 
 .quota { display: grid; justify-content: stretch; }
 
@@ -1176,7 +1212,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .meter i { display: block; height: 100%; border-radius: inherit; background: var(--accent); }
 
-.search-row input, .search-row select { min-width: 160px; height: var(--tap-target-min); padding: 0 var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-ctl); background: var(--bg); color: var(--text); }
+.search-row input, .search-row select { min-width: 160px; height: var(--tap-target-min); padding: 0 var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-ctl); background: var(--raised); color: var(--text); }
 
 .search-row input { flex: 1 1 280px; min-width: min(100%, 240px); }
 
@@ -1192,7 +1228,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .markdown h3 { font-size: var(--t-sm); }
 
-.markdown blockquote { margin: var(--space-3) 0; padding: var(--space-2) 0 var(--space-2) var(--space-3); border-left: 2px solid var(--accent); color: var(--muted); font-family: var(--display); font-style: italic; }
+.markdown blockquote { margin: var(--space-3) 0; padding: var(--space-2) 0 var(--space-2) var(--space-3); border-left: 2px solid var(--line); color: var(--muted); }
 
 .markdown table { display: block; max-width: 100%; overflow: auto; border-collapse: collapse; }
 
@@ -1207,7 +1243,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 /* A fenced block had no rule of its own: `<pre><code>` rendered on whatever
  * browser default the UA shipped, with no wrap handling, so a long line
  * pushed the message bubble wider than the thread column instead of
- * scrolling inside it. Read directly from a populated demo court's Chat
+ * scrolling inside it. Read directly from a populated demo team's Chat
  * page, 2026-09-23. */
 .markdown pre { margin: 0; padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-ctl); background: var(--surface); overflow-x: auto; font-family: var(--mono); font-size: var(--t-xs); line-height: 1.6; }
 
@@ -1223,23 +1259,31 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .settings-tabs button { flex: 0 0 auto; min-height: var(--tap-target-min); padding: var(--space-2) var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-ctl); background: transparent; color: var(--muted); white-space: nowrap; }
 
-.settings-tabs button.selected, .settings-tabs button:hover { background: var(--raised); color: var(--text); }
+.settings-tabs button.selected { border-color: var(--line); background: var(--active); color: var(--text); }
 
-.settings-group { display: grid; min-width: 0; gap: var(--space-3); margin: 0; padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-ctl); }
+.settings-tabs button:hover { background: var(--hover); color: var(--text); }
 
-/* The multiple-courts switcher (issue #42), Settings > Repository. New
+/* Tabbed pages (Inbox, Team, Knowledge) and the embedded Settings tabs mount a
+ * view that was a page of its own; its heading would repeat the host's h1. */
+.tab-panel .view-heading, .settings-embed .view-heading { display: none; }
+
+.tab-panel > .view-page, .settings-embed > .view-page { max-width: none; margin: 0; }
+
+.settings-group { display: grid; min-width: 0; gap: var(--space-3); margin: 0; padding: var(--space-3); border: 1px solid var(--line-soft); border-radius: var(--radius-ctl); }
+
+/* The multiple-teams switcher (issue #42), Settings > Repository. New
  * selectors only — colour still comes only from the :root tokens above. */
-.courts-switcher { display: grid; gap: var(--space-2); }
+.teams-switcher { display: grid; gap: var(--space-2); }
 
-.courts-list { display: grid; gap: var(--space-2); }
+.teams-list { display: grid; gap: var(--space-2); }
 
-.court-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); padding: var(--space-2) var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-ctl); background: var(--raised); }
+.team-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); padding: var(--space-2) var(--space-3); border: 1px solid var(--line-soft); border-radius: var(--radius-ctl); background: var(--raised); }
 
-.court-row-id { display: grid; min-width: 0; gap: 2px; }
+.team-row-id { display: grid; min-width: 0; gap: 2px; }
 
-.court-repo { overflow: hidden; color: var(--text); font-size: var(--t-sm); text-overflow: ellipsis; white-space: nowrap; }
+.team-repo { overflow: hidden; color: var(--text); font-size: var(--t-sm); text-overflow: ellipsis; white-space: nowrap; }
 
-.court-port { color: var(--muted); font-family: var(--mono); font-size: var(--t-xs); letter-spacing: .04em; text-transform: uppercase; }
+.team-port { color: var(--muted); font-family: var(--mono); font-size: var(--t-xs); letter-spacing: .04em; text-transform: uppercase; }
 
 .settings-group legend { padding-inline: var(--space-1); color: var(--text); font-weight: 650; }
 
@@ -1278,7 +1322,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
   .graph-shell { grid-template-columns: 1fr; }
 }
 
-.wfgraph { position: relative; height: 340px; min-height: 180px; overflow: auto; border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--surface); touch-action: none; }
+.wfgraph { position: relative; height: 340px; min-height: 180px; overflow: auto; border: 1px solid var(--line-soft); border-radius: var(--radius-card); background: var(--surface); touch-action: none; }
 
 .wfnodes { position: absolute; inset: 0; }
 
@@ -1344,14 +1388,19 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .doctor-row.settled { color: var(--ok); }
 
-.doctor-row.attention { color: var(--danger); }
+.doctor-row.attention { color: var(--tone-attention); }
 
 @keyframes busy { to { opacity: .45; transform: scale(.8); } }
 
 @media (min-width: 721px) {
   body.sidebar-collapsed { grid-template-columns: 64px minmax(0, 1fr); }
 
-  .sidebar.collapsed .sidebar-conversations, .sidebar.collapsed .sidebar-footer > :not(.sidebar-collapse), .sidebar.collapsed .sidebar-brand { display: none; }
+  .sidebar.collapsed .sidebar-conversations, .sidebar.collapsed .sidebar-footer > :not(.sidebar-collapse), .sidebar.collapsed .sidebar-brand-name, .sidebar.collapsed .sidebar-brand-repo, .sidebar.collapsed .sidebar-new-hint, .sidebar.collapsed .sidebar-new-label { display: none; }
+
+  .sidebar.collapsed .sidebar-brand { flex: none; justify-content: center; width: var(--tap-target-min); padding: 0; }
+
+  /* The count survives as a dot: waiting work must not vanish with the label. */
+  .sidebar.collapsed .sidebar-badge { position: absolute; top: 10px; right: 8px; min-width: 0; width: 8px; height: 8px; padding: 0; border-radius: 50%; font-size: 0; }
 
   /* The rail's own 16px inset left a 64px column with 32px of content, so
      every collapsed nav button measured 34x44 live at 1440x900 — short of the
@@ -1365,20 +1414,20 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
   .sidebar.collapsed .sidebar-nav > .sidebar-heading { display: none; }
 
-  .sidebar.collapsed .sidebar-more > summary { justify-content: center; padding-inline: var(--space-2); font-size: 0; }
+  .sidebar.collapsed .sidebar-header { justify-items: center; }
 
-  .sidebar.collapsed .sidebar-more > summary::after { margin-left: 0; font-size: 16px; }
-
-  .sidebar.collapsed .sidebar-header { justify-content: center; border-bottom: 0; }
+  .sidebar.collapsed .sidebar-brand-row { justify-content: center; }
 
   /* NOT `flex: 0` — that expands to `flex: 0 1 0%`, and a 0% basis beats the
      width beside it in the main axis. Measured in a live browser 2026-09-03:
      getBoundingClientRect().width was 1.6, so the collapsed "+ New" could not
      be clicked. .sidebar-collapse below is the working sibling: no flex
      shorthand at all, just the width. */
-  .sidebar.collapsed .sidebar-new { width: var(--tap-target-min); overflow: hidden; padding: 0; font-size: 0; text-indent: 0; }
+  .sidebar.collapsed .sidebar-new { width: var(--tap-target-min); justify-content: center; overflow: hidden; padding: 0; font-size: 0; text-indent: 0; }
 
-  .sidebar.collapsed .sidebar-new::before { color: var(--accent-ink); content: "+"; font-size: 18px; line-height: 1; }
+  .sidebar.collapsed .sidebar-new::before { color: var(--text); content: "+"; font-size: 18px; line-height: 1; }
+
+  .sidebar.collapsed .sidebar-new .icon { display: none; }
 
   .sidebar.collapsed .sidebar-collapse { width: var(--tap-target-min); overflow: hidden; padding: 0; font-size: 0; }
 
@@ -1387,7 +1436,8 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 @media (max-width: 900px) {
   #header { flex-wrap: wrap; gap: var(--space-2); padding-inline: var(--space-3); }
-  .brand-tag, .repo, .header-sep, .goal-context { display: none; }
+  .brand-tag, .repo, .goal-context, .header-search-label, .header-search-hint { display: none; }
+  .header-title { flex: 1; }
   .mode-switcher { flex: 1; }
   .mode-option { min-width: 0; flex: 1; }
 }
@@ -1418,7 +1468,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
      collapsed layout lives behind a min-width: 901px query. The control was
      taking 50px of a drawer that had none to spare and doing nothing. */
   body.sidebar-open #sidebar .sidebar-collapse { display: none; }
-  body.sidebar-open #sidebar-scrim { position: fixed; z-index: 4; inset: 0; display: block; width: 100%; height: 100%; border: 0; border-radius: 0; background: rgb(var(--text-rgb) / .38); backdrop-filter: blur(6px); cursor: default; }
+  body.sidebar-open #sidebar-scrim { position: fixed; z-index: 4; inset: 0; display: block; width: 100%; height: 100%; border: 0; border-radius: 0; background: rgb(var(--bg-rgb) / .72); cursor: default; }
   /* flex-shrink: 0 alongside display, not as an afterthought. Measured live
      in the 720px drawer 2026-09-21: the section reported 287x0 while its own
      mode pills painted at y 105-155, straight through the Overview row. The
@@ -1429,6 +1479,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
   .mobile-menu, .sidebar-mobile-close { display: inline-flex; align-items: center; justify-content: center; }
   .sidebar-mobile-close { flex: none; }
   .conversation-actions { display: flex; }
+  .sidebar-new-hint, .header-search-hint { display: none; }
   .wfn-x { opacity: 1; }
   .app-identity { display: grid; flex: 1; }
   .mode-switcher { display: none; }
@@ -1452,32 +1503,84 @@ body.sidebar-collapsed .app-identity { display: grid; }
   .agent-usage-details dd { padding-bottom: var(--space-2); text-align: left; }
   .home-efficiency-warning { grid-template-columns: 1fr; }
   .home-efficiency-warning .button { width: 100%; justify-self: stretch; }
+  .home-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition-duration: 1ms !important; }
 }
 
-/* Glass falls back to the flat surface it blends with. A browser that cannot
- * blur must not silently render the thinner alpha on its own — that would
- * leave --surface's already-thin .97 budget uncomposited against whatever
- * happens to sit behind it, which is exactly the contrast obligation the
- * blur was measured against. Both fallbacks force the pre-glass opaque
- * paint instead. */
-@supports not (backdrop-filter: blur(1px)) {
-  #header, .hover-tip { background: var(--raised); }
-  #sidebar, #composer { background: var(--surface); }
-  body.sidebar-open #sidebar-scrim { backdrop-filter: none; }
-}
-
-@media (prefers-reduced-transparency: reduce) {
-  #header, .hover-tip { background: var(--raised); backdrop-filter: none; }
-  #sidebar, #composer { background: var(--surface); backdrop-filter: none; }
-  body.sidebar-open #sidebar-scrim { backdrop-filter: none; }
-}
-
 @media (forced-colors: active) {
   .meter, .metric-card, .agent-usage-card, .usage-recommendation, .home-efficiency-warning, .settings-group { border: 1px solid CanvasText; }
   .meter i { background: Highlight; }
   .usage-recommendation, .home-efficiency-warning { border-left-width: 3px; }
+}
+
+/* Ctrl K: one box that reaches every page and every run. */
+.palette-scrim { position: fixed; z-index: 40; inset: 0; display: grid; align-items: start; justify-items: center; padding-top: 12vh; background: rgb(var(--bg-rgb) / .72); }
+
+.palette { display: grid; width: min(560px, calc(100vw - var(--space-4))); max-height: 60vh; grid-template-rows: auto minmax(0, 1fr); overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--raised); box-shadow: var(--shadow-panel); }
+
+.palette-field { display: flex; align-items: center; gap: var(--space-2); padding: 0 var(--space-3); border-bottom: 1px solid var(--line-soft); color: var(--faint); }
+
+.palette-input { min-width: 0; min-height: var(--tap-target-min); flex: 1; border: 0; background: transparent; color: var(--text); font-size: var(--t-md); }
+
+/* The field's own rule marks focus; a second ring around the bare input would sit inside the dialog's border. */
+.palette-input:focus-visible { outline: none; }
+
+.palette-field:focus-within { border-bottom-color: var(--accent); }
+
+.palette-list { display: grid; align-content: start; margin: 0; padding: var(--space-1); overflow-y: auto; list-style: none; }
+
+.palette-row { display: flex; min-height: var(--tap-target-min); align-items: center; justify-content: space-between; gap: var(--space-3); padding: 0 var(--space-3); border-radius: var(--radius-ctl); color: var(--muted); font-size: var(--t-sm); cursor: pointer; }
+
+.palette-row.selected { background: var(--active); color: var(--text); }
+
+.palette-hint { color: var(--faint); font-size: var(--t-xs); }
+
+.palette-empty { padding: var(--space-3); color: var(--muted); font-size: var(--t-sm); }
+
+/* The session inspector: cards of what the daemon already knows about the run. */
+.run-inspector { position: sticky; top: 0; display: grid; align-content: start; gap: var(--space-2); min-width: 0; }
+
+.inspector-card { display: grid; gap: var(--space-2); padding: var(--space-2) var(--space-3); border: 1px solid var(--line-soft); border-radius: var(--radius-card); background: var(--raised); }
+
+.inspector-head { display: flex; width: 100%; min-height: var(--tap-target-min); align-items: center; justify-content: space-between; gap: var(--space-2); padding: 0; border: 0; background: transparent; color: var(--text); font-size: var(--t-sm); font-weight: 600; text-align: left; }
+
+.inspector-head .icon { color: var(--faint); }
+
+.inspector-body { display: grid; gap: var(--space-1); padding-bottom: var(--space-2); }
+
+.inspector-kv { display: flex; min-width: 0; align-items: center; gap: var(--space-2); min-height: 28px; color: var(--text); font-size: var(--t-sm); }
+
+.inspector-kv .icon { flex: none; color: var(--muted); }
+
+.inspector-sub { min-width: 0; margin-left: auto; overflow: hidden; color: var(--faint); font-size: var(--t-xs); text-overflow: ellipsis; white-space: nowrap; }
+
+.inspector-kv .inspector-sub:only-of-type:not(:first-child) { margin-left: auto; }
+
+.inspector-step { display: flex; min-width: 0; align-items: flex-start; gap: var(--space-2); padding: 3px 0; color: var(--muted); font-size: var(--t-sm); }
+
+.inspector-step.done .icon { color: var(--tone-settled); }
+
+.inspector-step.current { color: var(--text); }
+
+.inspector-ring { flex: none; width: 10px; height: 10px; margin: 3px; border: 1.5px solid var(--faint); border-radius: 50%; }
+
+.inspector-ring.current { border: 2px solid var(--accent); }
+
+.inspector-out { display: flex; width: 100%; min-height: var(--tap-target-min); align-items: center; justify-content: space-between; gap: var(--space-2); padding: 0 var(--space-2); border: 0; border-radius: var(--radius-ctl); background: transparent; color: var(--text); font-size: var(--t-sm); text-align: left; }
+
+.inspector-out:hover { background: var(--hover); }
+
+.inspector-empty { margin: 0; color: var(--faint); font-size: var(--t-xs); }
+
+/* The context meter and Compact session sit at the foot of "This session". */
+.inspector-context { display: grid; gap: var(--space-1); }
+
+.inspector-compact { width: 100%; justify-content: center; }
+
+@media (max-width: 1100px) {
+  .run-layout { grid-template-columns: minmax(0, 1fr); }
+  .run-inspector { position: static; }
 }

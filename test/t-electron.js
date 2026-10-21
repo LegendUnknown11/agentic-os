@@ -21,10 +21,10 @@
 // window: Chromium resolves its user data directory through them and exits
 // 0x80000003 when it cannot. Measured, not assumed — the launch dies right
 // after `Debugger attached.` with no window. The sandbox comes from the repo
-// argument instead: a daemon given a repo on argv puts its whole kingdom in
-// <repoParent>/.kingdom/<repoName>/, and the repo here is a throwaway temp
-// one, so nothing of the sovereign's is read or written. The one exception is
-// ~/.kingdom/tokens.json, which is read; no agent is ever spawned here, so no
+// argument instead: a daemon given a repo on argv puts its whole AgenticOS in
+// <repoParent>/.agenticos/<repoName>/, and the repo here is a throwaway temp
+// one, so nothing of the user's is read or written. The one exception is
+// ~/.agenticos/tokens.json, which is read; no agent is ever spawned here, so no
 // token is ever used.
 import { strict as a } from 'node:assert';
 import { execFileSync } from 'node:child_process';
@@ -34,7 +34,7 @@ import { join, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { _electron } from 'playwright-core';
 import { Bus } from '../src/bus.js';
-import { dbPath, kingdomDir } from '../src/worktree.js';
+import { dbPath, stateDir } from '../src/worktree.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, '..');
@@ -44,12 +44,12 @@ const base = `http://127.0.0.1:${PORT}`;
 
 /* ------------------------------------------------------------------ repo -- */
 
-const repo = mkdtempSync(join(tmpdir(), 'kingdom-electron-'));
+const repo = mkdtempSync(join(tmpdir(), 'agenticos-electron-'));
 const git = (...x) => execFileSync('git', x, { cwd: repo, stdio: 'pipe' }).toString().trim();
 git('init', '-q');
-git('config', 'user.email', 'k@kingdom');
-git('config', 'user.name', 'kingdom');
-writeFileSync(join(repo, 'README.md'), '# throne room acceptance\n');
+git('config', 'user.email', 'k@agenticos');
+git('config', 'user.name', 'agenticos');
+writeFileSync(join(repo, 'README.md'), '# dashboard acceptance\n');
 git('add', '-A');
 git('commit', '-qm', 'init');
 
@@ -81,11 +81,11 @@ try {
 
   app = await _electron.launch({
     args: [ROOT, repo],
-    // KINGDOM_SKIP_DOCTOR: no agent is ever spawned here (see the file
+    // AGENTICOS_SKIP_DOCTOR: no agent is ever spawned here (see the file
     // header), so the first-boot doctor redirect would be reporting on CLIs
     // this run never intends to authenticate — see src/daemon.js's
     // /api/doctor handler for why that redirect cannot be raced out safely.
-    env: { ...process.env, KINGDOM_PORT: String(PORT), KINGDOM_SKIP_DOCTOR: '1' },
+    env: { ...process.env, AGENTICOS_PORT: String(PORT), AGENTICOS_SKIP_DOCTOR: '1' },
     // Cold Electron start plus a daemon boot plus git discovery.
     // electron/main.js allows the daemon alone 90s, so anything less here
     // measures the machine rather than the app.
@@ -101,7 +101,7 @@ try {
     page = app.windows().find((w) => !w.url().includes('pet.html')) ?? null;
     if (!page) await new Promise((r) => setTimeout(r, 500));
   }
-  a.ok(page, 'the throne room window must open');
+  a.ok(page, 'the dashboard window must open');
   await page.waitForLoadState('domcontentloaded');
 
   const onScreen = (needle, timeout = 30_000) => page.waitForFunction(
@@ -121,7 +121,7 @@ try {
     await onScreen('Connected');
   });
 
-  await check('an objective-less court leads with the next step', async () => {
+  await check('an objective-less team leads with the next step', async () => {
     await page.locator('.home-next-step').first().waitFor({ state: 'visible', timeout: 30_000 });
   });
 
@@ -177,7 +177,7 @@ try {
   // The blocked state is written straight to the run table and the window
   // reloaded: that is also the proof a blocker survives a reload (it used to
   // travel only on the live event), and it needs no failing worker to stage.
-  // Resume is then CLICKED, not posted, because recovery is the sovereign's
+  // Resume is then CLICKED, not posted, because recovery is the user's
   // action and the control is what is under test.
 
   console.log('blocked-run recovery');
@@ -283,13 +283,13 @@ try {
   });
 } finally {
   // The daemon is DETACHED (electron/main.js says so on purpose), so closing
-  // the window would leave it holding the port and the temp kingdom forever.
+  // the window would leave it holding the port and the temp AgenticOS forever.
   try { await api('shutdown'); } catch { /* already gone */ }
   try { await app?.close(); } catch { /* already gone */ }
-  // This repo's OWN state folder. It used to remove join(repo, '..', '.kingdom'):
-  // the repo sits in the system temp dir, so that was the .kingdom shared by
+  // This repo's OWN state folder. It used to remove join(repo, '..', '.agenticos'):
+  // the repo sits in the system temp dir, so that was the .agenticos shared by
   // every temp workspace, other suites' live databases included.
-  try { rmSync(kingdomDir(repo), { recursive: true, force: true, maxRetries: 5 }); } catch { /* best effort */ }
+  try { rmSync(stateDir(repo), { recursive: true, force: true, maxRetries: 5 }); } catch { /* best effort */ }
   try { rmSync(repo, { recursive: true, force: true, maxRetries: 5 }); } catch { /* best effort */ }
 }
 

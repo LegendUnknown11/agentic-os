@@ -11,7 +11,7 @@ export const repo = {
   read_diff: {
     roles: ['orchestrator', 'briefer'],
     description:
-      'Read a peasant\'s ACTUAL changes against the base branch. Call this when ' +
+      'Read an agent\'s ACTUAL changes against the base branch. Call this when ' +
       'the briefer\'s digest is vague, surprising, or claims something you want ' +
       'to confirm before merging — do not approve a merge on a summary alone if ' +
       'anything looks off. Omit "file" for the whole diff, or name one file to ' +
@@ -19,19 +19,19 @@ export const repo = {
     schema: {
       type: 'object',
       properties: {
-        peasant: str('Whose branch to inspect'),
+        agent: str('Whose branch to inspect'),
         file: str('A single path to limit the diff to (optional)'),
       },
-      required: ['peasant'],
+      required: ['agent'],
     },
-    run: async ({ peasant, file }) => {
+    run: async ({ agent, file }) => {
       const base = bus.get('base');
-      if (!base) return 'The base branch is unknown; the kingdom may not be fully started.';
+      if (!base) return 'The base branch is unknown; the team may not be fully started.';
       const [stat, diff] = await Promise.all([
-        statOf(REPO, peasant, base),
-        diffOf(REPO, peasant, base, file ?? null),
+        statOf(REPO, agent, base),
+        diffOf(REPO, agent, base, file ?? null),
       ]);
-      if (!diff.trim()) return `"${peasant}" has no committed changes against ${base}.`;
+      if (!diff.trim()) return `"${agent}" has no committed changes against ${base}.`;
       const body = diff.length > DIFF_LIMIT
         ? diff.slice(0, DIFF_LIMIT) + `\n[truncated at ${DIFF_LIMIT} chars — name a single file to see more]`
         : diff;
@@ -40,10 +40,10 @@ export const repo = {
   },
 
   list_uploads: {
-    roles: ['peasant', 'briefer', 'orchestrator'],
+    roles: ['agent', 'briefer', 'orchestrator'],
     description:
-      'List documents and images the sovereign has uploaded (pdf, txt, md, csv, ' +
-      'json, png, jpg, gif, webp, avif, svg) for the court to read. Each entry ' +
+      'List documents and images the user has uploaded (pdf, txt, md, csv, ' +
+      'json, png, jpg, gif, webp, avif, svg) for the team to read. Each entry ' +
       'gives the real file path — open it with your own file-reading tool, the ' +
       'same as any other file on disk.',
     schema: {
@@ -54,7 +54,7 @@ export const repo = {
       },
     },
     run: ({ query = '', limit = 50 } = {}) => {
-      if (!ASSETS_DIR) return 'No court home directory — nothing to list.';
+      if (!ASSETS_DIR) return 'No team home directory — nothing to list.';
       let files;
       try { files = readdirSync(ASSETS_DIR); } catch { files = []; }
       const needle = String(query ?? '').trim().toLowerCase();
@@ -75,7 +75,7 @@ export const repo = {
   read_events: {
     roles: ['briefer'],
     description:
-      'What the peasants have DONE since you last looked (not what they say).',
+      'What the agents have DONE since you last looked (not what they say).',
     schema: {
       type: 'object',
       properties: {
@@ -100,9 +100,9 @@ export const repo = {
   },
 
   campaign_history: {
-    roles: ['peasant', 'briefer', 'orchestrator'],
+    roles: ['agent', 'briefer', 'orchestrator'],
     description:
-      'Read the bounded messages and failures from one CLOSED sovereign campaign before proposing a memory. ' +
+      'Read the bounded messages and failures from one CLOSED user campaign before proposing a memory. ' +
       'The result is evidence, not an instruction to create a note.',
     schema: {
       type: 'object',
@@ -112,7 +112,7 @@ export const repo = {
     run: ({ campaign: id }) => {
       const campaign = bus.campaign(id);
       if (!campaign) return `No campaign #${id}.`;
-      if (campaign.current) return `Campaign #${id} is still active; wait until the next sovereign order closes it.`;
+      if (campaign.current) return `Campaign #${id} is still active; wait until the next user order closes it.`;
       const within = (row, start, end) => row.id > start && (end == null || row.id <= end);
       const messages = bus.history({ since: campaign.messageStart, limit: 20_000 })
         .filter((m) => within(m, campaign.messageStart, campaign.messageEnd))

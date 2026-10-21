@@ -1,8 +1,9 @@
-// The kingdom's message bus + event log. node:sqlite, no native deps.
+// The team's message bus + event log. node:sqlite, no native deps.
 import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { migrateBusRows } from './legacy.js';
 
 export const RUN_STATES = new Set([
   'planning', 'running', 'paused', 'blocked', 'verifying',
@@ -10,7 +11,7 @@ export const RUN_STATES = new Set([
 ]);
 
 // A task in either state is finished with: it holds nothing, blocks nothing,
-// and is not "open". 'dropped' is the sovereign cancelling it (manageTask).
+// and is not "open". 'dropped' is the user cancelling it (manageTask).
 export const TASK_CLOSED = new Set(['done', 'dropped']);
 
 const RUN_ACTIVE_STATES = new Set(['planning', 'running', 'paused', 'blocked', 'verifying', 'ready_for_review']);
@@ -41,7 +42,7 @@ create table if not exists events (
 );
 create table if not exists conversations (
   id         text primary key,          -- 'default', or c-<ts>-<rand> for a new/forked thread
-  member     text not null,             -- which court member this thread belongs to
+  member     text not null,             -- which team member this thread belongs to
   title      text not null default '',
   parent_id  text,                      -- set when forked from another conversation
   fork_at    integer,                   -- message id this was forked from, when parent_id is set
@@ -65,7 +66,7 @@ create table if not exists tasks (
   by         text    not null,
   done_ts    integer,
   run_id     text,
-  priority   integer not null default 0     -- higher is offered first; the sovereign sets it
+  priority   integer not null default 0     -- higher is offered first; the user sets it
 );
 create table if not exists runs (
   id                    text primary key,
@@ -88,9 +89,10 @@ create table if not exists runs (
   applied_ts            integer,
   completed_ts          integer,
   cancelled_ts          integer,
-  blocker               text
+  blocker               text,
+  lead                  text                    -- the member that drove the run; null on pre-lead rows
 );
--- The sovereign's own to-do list. Separate from tasks, which is the team's
+-- The user's own to-do list. Separate from tasks, which is the team's
 -- work queue: nothing here is claimable, and nothing here wakes a member.
 create table if not exists my_tasks (
   id            integer primary key autoincrement,
@@ -100,7 +102,7 @@ create table if not exists my_tasks (
   due_ts        integer,
   done_ts       integer,
   snoozed_until integer,
-  by            text    not null default 'sovereign'
+  by            text    not null default 'user'
 );
 -- One row per priced turn taken while a run is current. A run's spend is the
 -- sum of its own rows, never lifetime spend minus a baseline: clearSpend()
@@ -111,6 +113,16 @@ create table if not exists run_spend (
   ts      integer not null,
   agent   text    not null,
   usd     real    not null
+);
+-- One row per priced turn, run or no run: the monotonic ledger spend-by-day
+-- reads. Never cleared — clearSpend() zeroes the running counters in state
+-- and leaves this alone, so "spent today" cannot go negative or vanish.
+create table if not exists spend_ledger (
+  id      integer primary key autoincrement,
+  ts      integer not null,               -- epoch ms, UTC; the day is derived at read time
+  agent   text    not null,
+  usd     real    not null,
+  tokens  integer not null default 0
 );
 create table if not exists campaigns (
   id            integer primary key autoincrement,
@@ -148,6 +160,7 @@ create index if not exists idx_evt_agent on events(agent, id);
 create index if not exists idx_task_state on tasks(state, owner);
 create index if not exists idx_conv_member on conversations(member, created_ts);
 create index if not exists idx_run_spend on run_spend(run_id, id);
+create index if not exists idx_spend_ledger_ts on spend_ledger(ts);
 `;
 
 // A pre-conversations db's messages/events tables don't have conversation_id
@@ -227,12 +240,12 @@ export class Bus {
   }
 
   #migrateAll() {
-    // Existing courts get one FTS rebuild; new rows stay current by trigger.
+    // Existing teams get one FTS rebuild; new rows stay current by trigger.
     this.#migrate('fts:transcript:v1', () => {
       this.db.exec("insert into messages_fts(messages_fts) values ('rebuild')");
       this.db.exec("insert into events_fts(events_fts) values ('rebuild')");
     });
-    // A court that existed before conversations did has `messages`/`events`
+    // A team that existed before conversations did has `messages`/`events`
     // tables with no `conversation_id` column. `CREATE TABLE IF NOT EXISTS`
     // only helps a brand-new db — an existing table needs an explicit ALTER,
     // and SQLite backfills every existing row with the column's DEFAULT, which
@@ -263,7 +276,14 @@ export class Bus {
     this.#migrate('schema:runs:blocker:v1', () => {
       if (!this.#columns('runs').includes('blocker')) this.db.exec('alter table runs add column blocker text');
     });
-    // The sovereign can now reorder the queue; existing tasks start level.
+    // Which member drove a run. The T3 Runs table has an Agent column and a
+    // run recorded none. Pre-existing runs stay null — who led them was never
+    // written down, and run_spend's split (served beside it) is what spent,
+    // not who led.
+    this.#migrate('schema:runs:lead:v1', () => {
+      if (!this.#columns('runs').includes('lead')) this.db.exec('alter table runs add column lead text');
+    });
+    // The user can now reorder the queue; existing tasks start level.
     this.#migrate('schema:tasks:priority:v1', () => {
       if (!this.#columns('tasks').includes('priority')) this.db.exec('alter table tasks add column priority integer not null default 0');
     });
@@ -274,6 +294,11 @@ export class Bus {
         if (!this.get(`approval:${row.id}`)) this.set(`approval:${row.id}`, JSON.stringify({ ...row, runId: row.run_id ?? null }));
       }
     });
+    // The de-theming rename (docs/RENAME.md): stored sender names, the
+    // `added` event and state key, the spend-ceiling key and approval
+    // payloads take their current names. Last, so every column it touches
+    // exists. A new database has nothing to rename and just records the flag.
+    this.#migrate('schema:rename:v1', () => { this.renameReport = migrateBusRows(this.db); });
   }
 
   #messageRows(rows) {
@@ -285,7 +310,7 @@ export class Bus {
   /** recipient=null broadcasts. Returns the new message id. */
   post(sender, recipient, body, kind = 'message', conversationId = 'default', attachments = [], runId = null) {
     const ts = Date.now();
-    // Approval records created during an active run inherit it; ordinary court
+    // Approval records created during an active run inherit it; ordinary team
     // traffic remains unassociated so the old transcript keeps its meaning.
     if (kind === 'approval' && runId == null) runId = this.currentRun()?.id ?? null;
     const { lastInsertRowid } = this.db
@@ -352,16 +377,16 @@ export class Bus {
    * bounded it. The oldest are taken first, so the remainder simply rides the
    * next tick: 300ms later, and in order.
    *
-   * `conversation`, when given, scopes only `assignment` rows (the sovereign's
-   * actual chat turns, posted by kingdom.js#command/#speakTo) to one thread.
+   * `conversation`, when given, scopes only `assignment` rows (the user's
+   * actual chat turns, posted by agenticos.js#command/#speakTo) to one thread.
    * Everything else — notices, approvals, system, escalation, done, brief,
-   * and plain inter-member `message` chatter — is court-wide and must reach a
+   * and plain inter-member `message` chatter — is team-wide and must reach a
    * member regardless of which conversation it currently has active (a member
-   * only ever has one live session at a time, see kingdom.js#switchConversation,
+   * only ever has one live session at a time, see agenticos.js#switchConversation,
    * so this is the delivery-side half of that: a stray "mode: research" notice
-   * must not wait for the sovereign to switch back to whatever thread happened
+   * must not wait for the user to switch back to whatever thread happened
    * to be active when it was sent). An inclusion list, not an exclusion one —
-   * new kinds default to court-wide, which is the safer failure mode.
+   * new kinds default to team-wide, which is the safer failure mode.
    */
   pending(agent, limit = 200, conversation = null) {
     const cursor = Number(this.get(`cursor:${agent}`) ?? 0);
@@ -386,7 +411,7 @@ export class Bus {
    * must get the OLDEST 60 after the cursor or it silently skips everything
    * between — that is the default. A snapshot ("the last 200, I am repainting
    * the room") must get the NEWEST 200. Only the first was implemented, so the
-   * throne room's reload replayed the FIRST 200 messages of a session and
+   * dashboard's reload replayed the FIRST 200 messages of a session and
    * nothing since — which reads, correctly, as messages not being saved at all.
    */
   history({ since = 0, limit = 200, agent = null, tail = false, conversation = null } = {}) {
@@ -448,12 +473,12 @@ export class Bus {
     return this.db.prepare('select max(id) as id from messages').get().id ?? 0;
   }
 
-  /** A sovereign order is a chronological interval, never a guessed project plan. */
+  /** A user order is a chronological interval, never a guessed project plan. */
   beginCampaign(title) {
     const row = {
       ts: Date.now(), title: String(title ?? '').trim(),
       messageStart: this.lastMessageId(), eventStart: this.lastEventId(),
-      spentUsd: Number(this.get('spentUsd') ?? 0), tokens: Number(this.get('tokens') ?? 0),
+      spentUsd: this.lifetimeSpentUsd(), tokens: Number(this.get('tokens') ?? 0),
     };
     const { lastInsertRowid } = this.db.prepare(
       'insert into campaigns (ts,title,message_start,event_start,spent_usd,tokens) values (?,?,?,?,?,?)'
@@ -463,7 +488,7 @@ export class Bus {
 
   campaigns() {
     const rows = this.db.prepare('select * from campaigns order by id').all();
-    const now = { spentUsd: Number(this.get('spentUsd') ?? 0), tokens: Number(this.get('tokens') ?? 0) };
+    const now = { spentUsd: this.lifetimeSpentUsd(), tokens: Number(this.get('tokens') ?? 0) };
     return rows.map((r, i) => {
       const next = rows[i + 1];
       const end = next
@@ -484,11 +509,37 @@ export class Bus {
   }
 
   /**
+   * Team spend that never goes down: the resettable `spentUsd` plus every
+   * amount clearSpentUsd() has zeroed. Campaign snapshots are taken against
+   * this, not `spentUsd`, because the user clearing spend to lift a
+   * ceiling drove a campaign spanning the clear negative. Before the cleared
+   * counter existed nothing had been added to it, so it reads 0 and existing
+   * campaign snapshots stay consistent.
+   */
+  lifetimeSpentUsd() {
+    return Number(this.get('spentUsd') ?? 0) + Number(this.get('spentUsdCleared') ?? 0);
+  }
+
+  /** Zero the resettable team spend, carrying it into the cleared total. */
+  clearSpentUsd() {
+    this.db.exec('begin immediate');
+    try {
+      const cleared = Number(this.get('spentUsdCleared') ?? 0) + Number(this.get('spentUsd') ?? 0);
+      this.set('spentUsdCleared', String(cleared));
+      this.set('spentUsd', '0');
+      this.db.exec('commit');
+    } catch (e) {
+      try { this.db.exec('rollback'); } catch { /* the original error is the one worth seeing */ }
+      throw e;
+    }
+  }
+
+  /**
    * Reserve one of a closed campaign's three retrospective slots.
    *
    * This is deliberately an INSERT/UPDATE rather than a history() count: the
    * bus is retained only to a finite length, and two MCP processes can propose
-   * at once. SQLite makes this one statement atomic, so a busy court cannot
+   * at once. SQLite makes this one statement atomic, so a busy team cannot
    * sneak a fourth proposed memory through a read-then-write race.
    */
   takeMemoryProposal(campaign, limit = 3) {
@@ -508,7 +559,7 @@ export class Bus {
   }
 
   /**
-   * FTS5 search across everything the court has said or done: event
+   * FTS5 search across everything the team has said or done: event
    * text/tool/summary payloads and posted messages, merged and ranked by
    * recency. This IS the "remembers everything" system — events/messages
    * already are a complete log, so recall is a read, not a new capture
@@ -546,7 +597,7 @@ export class Bus {
 
   // --- conversations ----------------------------------------------------
   //
-  // A conversation is a named thread scoped to one court member. Creation is
+  // A conversation is a named thread scoped to one team member. Creation is
   // idempotent (`on conflict do nothing`) so callers with a well-known id —
   // 'default', or one minted client-side before the round-trip completes —
   // never need a separate existence check first.
@@ -575,7 +626,7 @@ export class Bus {
     return this.conversation(id);
   }
 
-  /** Soft delete — a transcript is the court's record, never hard-deleted. */
+  /** Soft delete — a transcript is the team's record, never hard-deleted. */
   archiveConversation(id) {
     this.db.prepare('update conversations set archived = 1 where id = ?').run(id);
   }
@@ -622,6 +673,7 @@ export class Bus {
       cancelledTs: row.cancelled_ts,
       blocker,
       blockers: blocker ? [blocker] : [],
+      lead: row.lead ?? null,
     };
   }
 
@@ -629,7 +681,7 @@ export class Bus {
   createRun({
     id = null, objective = '', state = 'planning', sourceSnapshot = {}, approvedPlan = {},
     acceptanceCriteria = [], allowedModels = [], taskIds = [], recoveryHistory = [],
-    verificationEvidence = [], baselineRevision = null, branch = null,
+    verificationEvidence = [], baselineRevision = null, branch = null, lead = null,
   } = {}) {
     if (!RUN_STATES.has(state)) throw new Error(`Unknown run state: ${state}`);
     if (this.currentRun()) throw new Error('An improvement run is already active.');
@@ -638,12 +690,12 @@ export class Bus {
     this.db.prepare(
       `insert into runs
        (id,created_ts,updated_ts,state,objective,source_snapshot,approved_plan,acceptance_criteria,
-        allowed_models,task_ids,recovery_history,verification_evidence,baseline_revision,branch)
-       values (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        allowed_models,task_ids,recovery_history,verification_evidence,baseline_revision,branch,lead)
+       values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     ).run(
       runId, now, now, state, String(objective ?? ''), json(sourceSnapshot, {}), json(approvedPlan, {}),
       json(acceptanceCriteria, []), json(allowedModels, []), json(taskIds, []), json(recoveryHistory, []),
-      json(verificationEvidence, []), baselineRevision, branch,
+      json(verificationEvidence, []), baselineRevision, branch, lead ? String(lead) : null,
     );
     return this.run(runId);
   }
@@ -675,7 +727,7 @@ export class Bus {
       recoveryHistory: 'recovery_history', verificationEvidence: 'verification_evidence',
       baselineRevision: 'baseline_revision', branch: 'branch', approvedTs: 'approved_ts', appliedTs: 'applied_ts',
       finalApproval: 'final_approved', finalApprovedTs: 'final_approved_ts',
-      completedTs: 'completed_ts', cancelledTs: 'cancelled_ts', blocker: 'blocker',
+      completedTs: 'completed_ts', cancelledTs: 'cancelled_ts', blocker: 'blocker', lead: 'lead',
     };
     // A blocker describes the blocked state and nothing else: leaving it (a
     // recovery back to running, a stop) clears it unless the caller sets one.
@@ -753,7 +805,7 @@ export class Bus {
       : this.transitionRun(run.id, 'completed', { appliedTs: Date.now() });
   }
 
-  // --- the sovereign's own to-do list ----------------------------------
+  // --- the user's own to-do list ----------------------------------
 
   #myTaskRow(row) {
     if (!row) return null;
@@ -763,7 +815,7 @@ export class Bus {
     };
   }
 
-  addMyTask({ title, notes = '', dueTs = null, by = 'sovereign' } = {}) {
+  addMyTask({ title, notes = '', dueTs = null, by = 'user' } = {}) {
     const text = String(title ?? '').trim();
     if (!text) throw new Error('A task needs a title.');
     const { lastInsertRowid } = this.db.prepare(
@@ -849,6 +901,56 @@ export class Bus {
     return this.db.prepare('select coalesce(sum(usd), 0) as usd from run_spend where ts >= ?').get(Number(ts)).usd;
   }
 
+  /**
+   * Who spent on each run, keyed by run id: members by spend, highest first.
+   * The derived half of "which agent drove this run" — `lead` is the recorded
+   * half.
+   */
+  runAgents() {
+    const out = {};
+    for (const row of this.db.prepare(
+      'select run_id, agent, sum(usd) as usd, count(*) as turns from run_spend group by run_id, agent order by run_id, usd desc, agent',
+    ).all()) {
+      (out[row.run_id] ??= []).push({ name: row.agent, usd: row.usd, turns: row.turns });
+    }
+    return out;
+  }
+
+  /** Append one priced turn to the monotonic spend ledger. */
+  recordSpend(agent, usd, tokens = 0, ts = Date.now()) {
+    this.db.prepare('insert into spend_ledger (ts, agent, usd, tokens) values (?,?,?,?)')
+      .run(Number(ts), String(agent), Number(usd) || 0, Math.max(0, Math.round(Number(tokens) || 0)));
+  }
+
+  /**
+   * Spend per calendar day in `timeZone` (an IANA name), newest first, for
+   * the `days` days ending at `now` — today included even when it is empty.
+   * The day is derived from each row's UTC timestamp at read time, so a
+   * changed time zone re-buckets history rather than needing a migration.
+   */
+  spendByDay({ timeZone, days = 14, now = Date.now() } = {}) {
+    const fmt = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' });
+    const dayOf = (ts) => fmt.format(new Date(ts));
+    const span = Math.max(1, Math.min(366, Math.round(Number(days) || 14)));
+    const today = dayOf(now);
+    // Walk back by calendar day, not by 24h: a DST day is 23 or 25 hours.
+    const keys = [today];
+    for (let t = now; keys.length < span;) {
+      t -= 3_600_000;
+      const key = dayOf(t);
+      if (key !== keys.at(-1)) keys.push(key);
+    }
+    const buckets = new Map(keys.map((day) => [day, { day, usd: 0, turns: 0, tokens: 0 }]));
+    // A day is at most 25h, so this window covers every row the keys can hold.
+    const from = now - (span + 1) * 86_400_000;
+    for (const row of this.db.prepare('select ts, usd, tokens from spend_ledger where ts >= ? and ts <= ?').all(from, now)) {
+      const bucket = buckets.get(dayOf(row.ts));
+      if (!bucket) continue;
+      bucket.usd += row.usd; bucket.turns += 1; bucket.tokens += row.tokens;
+    }
+    return { timeZone, today: buckets.get(today), days: [...buckets.values()] };
+  }
+
   /** Spend and turn totals for every run that has any, keyed by run id. */
   runSpendTotals() {
     const out = {};
@@ -861,8 +963,8 @@ export class Bus {
   // --- the shared task list -------------------------------------------
   //
   // Before this, the orchestrator assigned by message and nothing tracked the result.
-  // An assignment that a peasant never acted on left no trace: not in a queue,
-  // not in a count, nowhere the sovereign could see it. So the court could not
+  // An assignment that an agent never acted on left no trace: not in a queue,
+  // not in a count, nowhere the user could see it. So the team could not
   // answer "what is still outstanding" — the single question an orchestrator
   // exists to answer.
   //
@@ -929,7 +1031,7 @@ export class Bus {
   /**
    * Take a task, or say precisely why not. `id` null means "the next one".
    *
-   * The read and the write are one transaction: two peasants asking at the
+   * The read and the write are one transaction: two agents asking at the
    * same instant must not both be told yes. The refusal reasons are separated
    * because "somebody else has it" and "its dependency is not finished" call
    * for opposite behaviour from the member reading them.
@@ -1005,7 +1107,7 @@ export class Bus {
    * Keep the newest `keep` rows of each log. A day-long session accumulates
    * tens of thousands of tool events; nothing reads that far back, and the
    * briefer's read_events would happily drag it all into context.
-   * Messages are kept longer than events — they are the kingdom's record.
+   * Messages are kept longer than events — they are the team's record.
    */
   prune({ keepMessages = 5000, keepEvents = 20000, keepApprovals = 2000 } = {}) {
     const before = this.db.prepare('select count(*) c from events').get().c;
@@ -1121,7 +1223,7 @@ if (process.argv[1]?.endsWith('bus.js')) {
   a.equal(b.countMessages(), b.history({ limit: 100_000 }).length,
     'count(*) must agree with the old load-and-measure it replaces');
 
-  // Court transcript search must use SQLite's index, not a `%LIKE%` scan over
+  // Team transcript search must use SQLite's index, not a `%LIKE%` scan over
   // a session-long log. Both durable transcript tables need their own FTS5
   // mirror because recall merges messages with agent events.
   a.match(b.db.prepare("select sql from sqlite_master where name = 'messages_fts'").get()?.sql ?? '', /fts5/i,
@@ -1129,10 +1231,10 @@ if (process.argv[1]?.endsWith('bus.js')) {
   a.match(b.db.prepare("select sql from sqlite_master where name = 'events_fts'").get()?.sql ?? '', /fts5/i,
     'events must have an FTS5 index');
 
-  // Opening an old court must build indexes for the transcript it already
+  // Opening an old team must build indexes for the transcript it already
   // retained; otherwise FTS only works from the first post-upgrade message.
-  const legacyDir = mkdtempSync(join(tmpdir(), 'kingdom-fts-legacy-'));
-  const legacyPath = join(legacyDir, 'kingdom.db');
+  const legacyDir = mkdtempSync(join(tmpdir(), 'agenticos-fts-legacy-'));
+  const legacyPath = join(legacyDir, 'agenticos.db');
   const legacy = new DatabaseSync(legacyPath);
   legacy.exec(`create table messages (id integer primary key autoincrement, ts integer not null, sender text not null, recipient text, kind text not null, body text not null);
     create table events (id integer primary key autoincrement, ts integer not null, agent text not null, type text not null, payload text not null);
@@ -1174,7 +1276,7 @@ if (process.argv[1]?.endsWith('bus.js')) {
     a.equal(run.state, 'planning');
     const task = runs.addTask({ title: 'run task', by: 'orchestrator', runId: run.id });
     a.equal(runs.task(task).runId, run.id, 'tasks carry an optional run association');
-    runs.post('orchestrator', null, JSON.stringify({ kind: 'merge', peasant: 'coder' }), 'approval');
+    runs.post('orchestrator', null, JSON.stringify({ kind: 'merge', agent: 'coder' }), 'approval');
     a.equal(runs.approvals()[0].runId, run.id, 'new approvals inherit the active run');
     a.equal(runs.approveRun(run.id).state, 'running');
     a.equal(runs.pauseRun(run.id).state, 'paused');
@@ -1198,10 +1300,33 @@ if (process.argv[1]?.endsWith('bus.js')) {
     a.equal(runs.runSpentUsd(run.id), 5);
     a.equal(runs.runSpentUsd('run-none'), 0, 'a run with no ledger rows has spent nothing');
     a.deepEqual(runs.runSpendTotals(), { [run.id]: { usd: 5, turns: 10 }, 'run-other': { usd: 3, turns: 1 } });
+    a.deepEqual(runs.runAgents()['run-other'], [{ name: 'coder', usd: 3, turns: 1 }], 'who spent on a run, by member');
+
+    // Spend by day, in an explicit time zone. 2026-03-08 is the US spring-
+    // forward day (23 hours long in New York) — the walk back must not skip it.
+    const NOON_9TH = Date.UTC(2026, 2, 9, 16);                       // 12:00 EDT, 2026-03-09
+    runs.recordSpend('coder', 1, 100, NOON_9TH - 3_600_000);         // 11:00 on the 9th
+    runs.recordSpend('orchestrator', 2, 50, Date.UTC(2026, 2, 9, 4, 30)); // 00:30 EDT on the 9th
+    runs.recordSpend('coder', 4, 10, Date.UTC(2026, 2, 9, 3, 30));   // 23:30 EDT on the 8th
+    runs.recordSpend('coder', 8, 1, Date.UTC(2026, 2, 7, 12));       // the 7th
+    const ny = runs.spendByDay({ timeZone: 'America/New_York', days: 3, now: NOON_9TH });
+    a.equal(ny.timeZone, 'America/New_York');
+    a.deepEqual(ny.days.map((d) => [d.day, d.usd, d.turns]),
+      [['2026-03-09', 3, 2], ['2026-03-08', 4, 1], ['2026-03-07', 8, 1]], 'local days, newest first, across a DST change');
+    a.deepEqual(ny.today, { day: '2026-03-09', usd: 3, turns: 2, tokens: 150 });
+    const utc = runs.spendByDay({ timeZone: 'UTC', days: 2, now: NOON_9TH });
+    a.deepEqual(utc.days.map((d) => [d.day, d.usd]), [['2026-03-09', 7], ['2026-03-08', 0]],
+      'the same rows re-bucket under another zone; an empty day is still listed');
+    a.equal(runs.spendByDay({ timeZone: 'UTC', days: 1, now: NOON_9TH + 86_400_000 * 5 }).today.usd, 0,
+      'a day with no turns is zero, not missing');
+    a.equal(run.lead, null, 'a run created with no lead records none');
+    const led = runs.createRun({ id: 'run-led', objective: 'led', lead: 'orchestrator' });
+    a.equal(led.lead, 'orchestrator', 'a run records the member that drove it');
+    a.equal(runs.updateRun(led.id, { lead: 'architect' }).lead, 'architect');
     runs.close();
   }
 
-  // --- the sovereign's own list: order, due, snooze, done ------------------
+  // --- the user's own list: order, due, snooze, done ------------------
   {
     const mine = new Bus(':memory:');
     const later = mine.addMyTask({ title: 'renew the domain', dueTs: 300 });
@@ -1217,7 +1342,7 @@ if (process.argv[1]?.endsWith('bus.js')) {
     a.deepEqual(mine.dueMyTasks(400).map((t) => t.id), [later.id], 'a done task is never due');
     a.equal(mine.myTasks().at(-1).id, soon.id, 'done tasks sort after open ones');
     a.equal(mine.myTasks({ includeDone: false }).length, 2);
-    a.equal(mine.tasks().length, 0, "the sovereign's list is not the team's queue");
+    a.equal(mine.tasks().length, 0, "the user's list is not the team's queue");
     a.equal(mine.deleteMyTask(undated.id), true);
     a.equal(mine.myTask(undated.id), null);
     mine.close();
@@ -1225,8 +1350,8 @@ if (process.argv[1]?.endsWith('bus.js')) {
 
   // --- a run's blocker survives a restart, and leaving blocked clears it --
   {
-    const blockDir = mkdtempSync(join(tmpdir(), 'kingdom-run-blocker-'));
-    const blockPath = join(blockDir, 'kingdom.db');
+    const blockDir = mkdtempSync(join(tmpdir(), 'agenticos-run-blocker-'));
+    const blockPath = join(blockDir, 'agenticos.db');
     const first = new Bus(blockPath);
     const run = first.createRun({ id: 'run-blocked', objective: 'prove a blocker is durable' });
     first.approveRun(run.id);
@@ -1242,7 +1367,7 @@ if (process.argv[1]?.endsWith('bus.js')) {
     a.deepEqual(resumed.blockers, []);
     reopened.close();
 
-    // A court whose runs table predates the column gains it on open, and its
+    // A team whose runs table predates the column gains it on open, and its
     // existing runs read back with no blocker rather than failing.
     const legacy = new DatabaseSync(blockPath);
     legacy.exec('alter table runs drop column blocker');
@@ -1253,6 +1378,17 @@ if (process.argv[1]?.endsWith('bus.js')) {
     a.deepEqual(upgraded.updateRun(run.id, { state: 'blocked', blocker }).blocker, blocker,
       'the migration adds a writable blocker column');
     upgraded.close();
+
+    // Same for `lead`: a pre-lead runs table gains the column, its runs read
+    // back with no lead (nothing invented), and the column is writable.
+    const preLead = new DatabaseSync(blockPath);
+    preLead.exec('alter table runs drop column lead');
+    preLead.prepare("delete from state where k = 'schema:runs:lead:v1'").run();
+    preLead.close();
+    const withLead = new Bus(blockPath);
+    a.equal(withLead.run(run.id).lead, null, 'a pre-lead run reads back with no lead');
+    a.equal(withLead.updateRun(run.id, { lead: 'orchestrator' }).lead, 'orchestrator', 'the migration adds a writable lead column');
+    withLead.close();
     rmSync(blockDir, { recursive: true, force: true });
   }
 
@@ -1338,8 +1474,8 @@ if (process.argv[1]?.endsWith('bus.js')) {
     a.equal(convA.id, 'default');
     a.notEqual(convB.id, convA.id);
 
-    c.post('sovereign', 'orchestrator', 'hello in A', 'message', convA.id);
-    c.post('sovereign', 'orchestrator', 'hello in B', 'message', convB.id);
+    c.post('user', 'orchestrator', 'hello in A', 'message', convA.id);
+    c.post('user', 'orchestrator', 'hello in B', 'message', convB.id);
     a.deepEqual(c.history({ conversation: convA.id }).map((m) => m.body), ['hello in A'],
       'history() must isolate one conversation from another');
     a.deepEqual(c.history({ conversation: convB.id }).map((m) => m.body), ['hello in B']);
@@ -1348,12 +1484,12 @@ if (process.argv[1]?.endsWith('bus.js')) {
     c.logEvent('orchestrator', 'text', { text: 'in B' }, convB.id);
     a.equal(c.events({ conversation: convA.id }).length, 1, 'events() must isolate too');
 
-    // pending(): a real sovereign chat turn (kind 'assignment', what
-    // kingdom.js#command actually posts) is scoped to the active conversation,
-    // but a court-wide notice reaches the member regardless of which
+    // pending(): a real user chat turn (kind 'assignment', what
+    // agenticos.js#command actually posts) is scoped to the active conversation,
+    // but a team-wide notice reaches the member regardless of which
     // conversation they were last in.
     c.post('orchestrator', 'coder', 'mode: research', 'notice', convA.id);
-    c.post('sovereign', 'coder', 'only for B', 'assignment', convB.id);
+    c.post('user', 'coder', 'only for B', 'assignment', convB.id);
     const forCoderInA = c.pending('coder', 200, convA.id);
     a.deepEqual(forCoderInA.map((m) => m.body), ['mode: research'],
       'an assignment() posted to a different conversation must not leak into this one');
@@ -1387,8 +1523,8 @@ if (process.argv[1]?.endsWith('bus.js')) {
 
   // legacy schema (pre-conversations) must migrate: old rows become 'default'
   {
-    const legacyDir = mkdtempSync(join(tmpdir(), 'kingdom-conv-legacy-'));
-    const legacyPath = join(legacyDir, 'kingdom.db');
+    const legacyDir = mkdtempSync(join(tmpdir(), 'agenticos-conv-legacy-'));
+    const legacyPath = join(legacyDir, 'agenticos.db');
     const legacy = new DatabaseSync(legacyPath);
     legacy.exec(`create table messages (id integer primary key autoincrement, ts integer not null, sender text not null, recipient text, kind text not null, body text not null);
       create table events (id integer primary key autoincrement, ts integer not null, agent text not null, type text not null, payload text not null);
@@ -1403,7 +1539,7 @@ if (process.argv[1]?.endsWith('bus.js')) {
     a.equal(rows.length, 1, 'a pre-existing row must be readable as the default conversation');
     a.equal(rows[0].body, 'a pre-conversations message');
     a.equal(migrated.task(1).runId, null, 'pre-run tasks remain readable without an association');
-    a.equal(migrated.currentRun(), null, 'legacy courts open with no synthetic run');
+    a.equal(migrated.currentRun(), null, 'legacy teams open with no synthetic run');
     migrated.close();
     rmSync(legacyDir, { recursive: true, force: true });
   }

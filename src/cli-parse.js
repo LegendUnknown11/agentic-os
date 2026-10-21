@@ -12,7 +12,7 @@
  * `gemini-3.6-flash-high<TAB>Gemini 3.6 Flash (High)`, and a matcher anchored
  * to the whole line rejects every one of them. That is not hypothetical: it
  * reported a signed-in CLI with 11 models as "probably not signed in" and told
- * the sovereign the kingdom would not work until they fixed it.
+ * the user the team would not work until they fixed it.
  *
  * A health check that fails when everything is fine is worse than no health
  * check — it sends people to fix nothing, and it teaches them to ignore the

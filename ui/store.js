@@ -3,24 +3,27 @@ import { STICKY, verbFor } from './status.js';
 // The renderer's one state owner. DOM modules consume this state; they do not
 // keep their own copies of the stream or start their own timers.
 
-const PREFS_KEY = 'kd.prefs';
+const PREFS_KEY = 'agenticos.prefs';
+// Where the same prefs lived before the de-theming rename; read once, never written.
+const LEGACY_PREFS_KEY = 'kd.prefs';
 const LOG_CAP = 400;
 const MESSAGE_CAP = 300;
 
 const readPrefs = () => {
   try {
-    const value = JSON.parse(globalThis.localStorage?.getItem(PREFS_KEY) ?? '{}');
+    const store = globalThis.localStorage;
+    const value = JSON.parse(store?.getItem(PREFS_KEY) ?? store?.getItem(LEGACY_PREFS_KEY) ?? '{}');
     return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
   } catch { return {}; }
 };
 
-const memberState = (m = {}) => m.awake ? 'awake' : m.summoned ? 'resting' : 'off';
+const memberState = (m = {}) => m.awake ? 'awake' : m.added ? 'resting' : 'off';
 const rosterEntry = (m = {}, prior = {}) => ({
   ...prior,
   ...m,
   // Role is a roster fact. Live agent events often omit it and must never
-  // quietly turn the orchestrator into a peasant.
-  role: prior.role ?? m.role ?? 'peasant',
+  // quietly turn the orchestrator into an agent.
+  role: prior.role ?? m.role ?? 'agent',
   state: memberState({ ...prior, ...m }),
 });
 
@@ -29,7 +32,7 @@ const initialState = () => ({
   base: null,
   members: new Map(),
   roster: new Map(),
-  dismissed: new Set(),
+  removed: new Set(),
   log: new Map(),
   messages: [],
   approvals: [],
@@ -49,6 +52,10 @@ const initialState = () => ({
   assetNotices: {},
   assetUploads: {},
   spend: {},
+  // name -> { tokens, window, pct, ... }: each member's session against its
+  // model's window. Seeded by the snapshot, moved by 'spend', zeroed by a
+  // recycle or a compaction.
+  context: {},
   conn: 'connecting',
   prefs: readPrefs(),
   view: { page: 'home' },
@@ -111,7 +118,7 @@ export function setView(view) {
 }
 
 function inRoster(name, row) {
-  return Boolean(row) && (row.role === 'orchestrator' || row.role === 'briefer' || row.summoned);
+  return Boolean(row) && (row.role === 'orchestrator' || row.role === 'briefer' || row.added);
 }
 
 function applyRoster(rows = [], replace = true) {
@@ -125,22 +132,22 @@ function applyRoster(rows = [], replace = true) {
   // The daemon's roster is authoritative. Remember names which left it so a
   // replayed transcript cannot recreate them before the next roster repaint.
   if (state.rosterReady && replace) {
-    for (const name of state.roster.keys()) if (!next.has(name)) state.dismissed.add(name);
+    for (const name of state.roster.keys()) if (!next.has(name)) state.removed.add(name);
   }
   for (const [name, row] of next) {
-    if (inRoster(name, row)) state.dismissed.delete(name);
+    if (inRoster(name, row)) state.removed.delete(name);
   }
 
   state.roster = next;
-  // Keep configured-but-not-summoned roles in the map as `off`; the Add Agents
+  // Keep configured-but-not-added roles in the map as `off`; the Add Agents
   // view needs them, while the sidebar can filter to the team. Names absent
-  // from the roster remain excluded by `dismissed`.
-  state.members = new Map([...next].filter(([name]) => !state.dismissed.has(name)));
+  // from the roster remain excluded by `removed`.
+  state.members = new Map([...next].filter(([name]) => !state.removed.has(name)));
   state.rosterReady = true;
 }
 
 function upsertMember(name, patch = {}) {
-  if (!name || state.dismissed.has(name)) return null;
+  if (!name || state.removed.has(name)) return null;
   const current = state.members.get(name) ?? state.roster.get(name);
   if (state.rosterReady && !current) return null;
   const next = rosterEntry(patch, current);
@@ -198,8 +205,8 @@ function applyRecordedEvent(d, id = d.id, ts = d.ts) {
     const member = upsertMember(name, { summary: payload.text ?? '' });
     if (member) member.summary = payload.text ?? '';
   }
-  if (name && !state.dismissed.has(name) && !state.members.has(name) && !state.rosterReady) {
-    upsertMember(name, { name, role: 'peasant', summoned: true, awake: false });
+  if (name && !state.removed.has(name) && !state.members.has(name) && !state.rosterReady) {
+    upsertMember(name, { name, role: 'agent', added: true, awake: false });
   }
 }
 
@@ -239,9 +246,10 @@ function snapshot(d) {
   if (d.mode) state.mode = d.mode;
   // #41: seed the durable turn count and its budget before the first live
   // 'spend' event of this browser session — otherwise a reconnect or a
-  // fresh tab shows an empty header even though the court has already taken
+  // fresh tab shows an empty header even though the team has already taken
   // turns this session.
   if (d.spend) state.spend = { ...state.spend, ...d.spend };
+  if (Array.isArray(d.context)) state.context = Object.fromEntries(d.context.filter((c) => c?.name).map((c) => [c.name, c]));
   if (d.paused !== undefined) state.paused = d.paused;
   if (d.pausedWhy !== undefined) state.pausedWhy = d.pausedWhy;
   applyRoster(d.roster ?? []);
@@ -292,7 +300,16 @@ export function reduce(_state, d = {}) {
     case 'goal': state.goal = d.text ? d : null; break;
     case 'run': state.run = d.run ?? d; break;
     case 'mode': state.mode = d.mode ?? state.mode; break;
-    case 'spend': state.spend = { ...state.spend, ...d }; break;
+    case 'spend':
+      state.spend = { ...state.spend, ...d };
+      if (d.name && Number.isFinite(Number(d.ctx))) {
+        const prior = state.context[d.name] ?? { name: d.name };
+        const window = d.window === undefined ? prior.window ?? null : d.window;
+        const tokens = Number(d.ctx);
+        state.context = { ...state.context, [d.name]: { ...prior, tokens, window, pct: window ? Math.min(100, Math.round((tokens / window) * 1000) / 10) : null } };
+      }
+      break;
+
     case 'budget':
       state.spend = {
         ...state.spend,
@@ -310,7 +327,7 @@ export function reduce(_state, d = {}) {
     case 'tasksLoading': state.tasksLoading = Boolean(d.loading); break;
     case 'tasks': state.tasks = d.tasks ?? []; state.tasksLoading = false; state.tasksError = null; break;
     case 'tasksError': state.tasksLoading = false; state.tasksError = d.error ?? 'Could not load current work.'; break;
-    // The sovereign's own list. Broadcast whole on every change, like 'tasks'.
+    // The user's own list. Broadcast whole on every change, like 'tasks'.
     case 'myTasks': state.myTasks = d.tasks ?? []; state.myTasksError = null; break;
     case 'inbox': state.inbox = d.items ?? []; state.inboxError = null; break;
     case 'changes': state.changes = d.changes ?? []; break;
@@ -337,6 +354,13 @@ export function reduce(_state, d = {}) {
       // linger and mislabel the next one.
       state.pausedWhy = state.paused ? (d.why ?? '') : '';
       break;
+    case 'recycled':
+    case 'compacted':
+      // A fresh session holds nothing yet. Then on to the notice, as before.
+      if (d.name && state.context[d.name]) {
+        state.context = { ...state.context, [d.name]: { ...state.context[d.name], tokens: 0, pct: state.context[d.name].window ? 0 : null } };
+      }
+      // falls through
     default:
       state.lastEvent = d;
       state.notices.push(d);

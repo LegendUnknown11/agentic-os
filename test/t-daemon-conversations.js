@@ -2,12 +2,12 @@
 // the UI with tabs. This is the daemon-layer half of that promise: `/stream`
 // must actually scope both its snapshot and its live push to whichever
 // conversation a tab asked for, and the new conversation ACTIONS must reach
-// the right bus/kingdom methods. bus.js's own self-check already covers the
+// the right bus/AgenticOS methods. bus.js's own self-check already covers the
 // storage layer (isolation, migration, pending() scoping); this covers the
 // HTTP surface on top of it.
 //
 //   node test/t-daemon-conversations.js
-// Never let a daemon this suite spawns touch the real ~/.kingdom/courts.json
+// Never let a daemon this suite spawns touch the real ~/.agenticos/teams.json
 // on the machine running the tests — see test/t-registry-isolation.js.
 import './isolate-registry.js';
 import { strict as a } from 'node:assert';
@@ -23,20 +23,20 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const PORT = 7991 + (process.pid % 40);
 const base = `http://127.0.0.1:${PORT}`;
 
-const fakeHome = mkdtempSync(join(tmpdir(), 'kingdom-home-'));
+const fakeHome = mkdtempSync(join(tmpdir(), 'agenticos-home-'));
 // A codex "CLI" that is really just node given codex's own argv: it exits
 // almost immediately without ever printing a session line, the same stub
-// t-accession.js uses to spawn a member without touching a real API.
+// t-onboarding.js uses to spawn a member without touching a real API.
 const childEnv = {
   ...process.env, USERPROFILE: fakeHome, HOME: fakeHome,
-  KINGDOM_CODEX_BIN: process.execPath, KINGDOM_SETTLE_MS: '200',
+  AGENTICOS_CODEX_BIN: process.execPath, AGENTICOS_SETTLE_MS: '200',
 };
 
-const configPath = join(fakeHome, 'kingdom.config.json');
+const configPath = join(fakeHome, 'agenticos.config.json');
 writeFileSync(configPath, JSON.stringify({
   orchestrator: { name: 'orchestrator', cli: 'codex' },
   briefer: { name: 'briefer', cli: 'codex' },
-  peasants: [],
+  agents: [],
   advisor: { promptEngineer: false, autoModel: false },
 }));
 
@@ -118,7 +118,7 @@ try {
 
   // The roster is persisted separately from the live process. A torn older
   // write must not turn a new SSE connection into a wedged response.
-  const state = new Bus(join(fakeHome, '.kingdom', 'workspace', 'kingdom.db'));
+  const state = new Bus(join(fakeHome, '.agenticos', 'workspace', 'agenticos.db'));
   state.set('roster', '{broken');
   state.close();
   const corruptRoster = await snapshotOf('');
@@ -144,9 +144,9 @@ try {
     'a tab scoped to an unrelated conversation must not — this is what shouldDeliver exists to guarantee');
   tapA.close(); tapB.close();
 
-  console.log('  live SSE push is filtered per-client by conversation, court-wide events excepted');
+  console.log('  live SSE push is filtered per-client by conversation, team-wide events excepted');
 
-  /* ---------- the new ACTIONS reach the right bus/kingdom methods ------- */
+  /* ---------- the new ACTIONS reach the right bus/AgenticOS methods ------- */
   convs = await fetch(`${base}/api/conversations?member=orchestrator`).then((r) => r.json());
   a.deepEqual(convs.conversations.map((c) => c.id).sort(), ['conv-a', 'default'],
     'switchConversation must have created and registered conv-a');

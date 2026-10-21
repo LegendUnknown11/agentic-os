@@ -2,10 +2,16 @@ import { state as storeState, subscribe, post as storePost, sameId } from './sto
 import { mdToHtml } from './markdown.js';
 import { pick as pickFiles, upload as uploadAsset } from './assets.js';
 import { displayName } from './names.js';
-import { date, modelLabel } from './views/util.js';
-import { renderRunThreadContext } from './run.js';
+import { date, kb, modelLabel, tone } from './views/util.js';
+import { renderRunThreadContext, runStatus, runStatusLabel } from './run.js';
+import { renderInspector } from './inspector.js';
+import { mountChanges } from './views/changes.js';
+import { mountTasks } from './views/tasks.js';
 
 const AUTO = '__auto__';
+// A run's own pages. Diff is the Changes view with the final-review gate and
+// Tasks is the queue; each is mounted into the thread, not navigated to.
+const RUN_TABS = [['session', 'Session'], ['diff', 'Diff'], ['tasks', 'Tasks']];
 const LOCAL_COMMANDS = [
   { name: 'autocompact', description: 'set the context window' },
   { name: 'argue', description: 'have models compare a question' },
@@ -39,7 +45,7 @@ function viewMember(state, options) {
 function memberRecord(state, name) {
   if (!name) return null;
   const value = state?.members instanceof Map ? state.members.get(name) : arrayOf(state?.members).find((m) => m?.name === name);
-  return value ? { name, ...value } : { name, role: name === 'orchestrator' ? 'orchestrator' : 'peasant' };
+  return value ? { name, ...value } : { name, role: name === 'orchestrator' ? 'orchestrator' : 'agent' };
 }
 
 function conversationRecord(state, conversationId) {
@@ -73,10 +79,10 @@ function workContext(state, conversationId) {
 
 function draftKey(name, conversationId) { return `${name}::${conversationId}`; }
 
-function isSovereignThread(state, options, name) {
+function isUserThread(state, options, name) {
   const view = state?.view ?? {};
-  return options.sovereign === true || view.kind === 'chat' || view.type === 'chat'
-    || view.member === 'sovereign' || view.member === 'orchestrator' || !name;
+  return options.user === true || view.kind === 'chat' || view.type === 'chat'
+    || view.member === 'user' || view.member === 'orchestrator' || !name;
 }
 
 function activeConversation(state, options) {
@@ -107,7 +113,7 @@ function normaliseEntry(row, name) {
   const kind = row?.kind ?? row?.type ?? row?.event ?? '';
   const text = row?.text ?? payload.text ?? row?.body ?? payload.message ?? '';
   const sender = row?.sender ?? row?.from;
-  const mine = row?.mine ?? (sender === 'sovereign' || sender === 'user');
+  const mine = row?.mine ?? (sender === 'user');
   return {
     id: row?.id,
     kind,
@@ -142,19 +148,19 @@ function approvalsOf(state) {
       : value && typeof value === 'object' ? Object.entries(value).map(([id, item]) => ({ id, ...item })) : [];
 }
 
-function pendingApproval(approval, name, sovereign) {
+function pendingApproval(approval, name, user) {
   if (approval.resolved) return false;
-  if (sovereign) return true;
-  return [approval.name, approval.peasant, approval.agent, approval.from].filter(Boolean).includes(name);
+  if (user) return true;
+  return [approval.name, approval.agent, approval.agent, approval.from].filter(Boolean).includes(name);
 }
 
 function titleForApproval(approval) {
-  return { summon: 'Add agents', role: 'New role', merge: 'Merge changes', push: 'Push request', question: 'Question' }[approval.kind]
+  return { add: 'Add agents', role: 'New role', merge: 'Merge changes', push: 'Push request', question: 'Question' }[approval.kind]
     ?? String(approval.kind ?? 'Approval');
 }
 
 function detailForApproval(approval) {
-  if (approval.kind === 'summon') return approval.reason ?? approval.names?.join(', ') ?? '';
+  if (approval.kind === 'add') return approval.reason ?? approval.names?.join(', ') ?? '';
   if (approval.kind === 'role') return [approval.reason, approval.prompt].filter(Boolean).join('\n\n');
   if (approval.kind === 'push') return approval.reason ?? approval.verdict ?? 'The team is ready to push.';
   return approval.verdict ?? approval.reason ?? approval.message ?? '';
@@ -291,11 +297,17 @@ function renderApprovalCard(card, approval, questionPicks, questionOthers) {
  * render() keeps what genuinely belongs to the closure: draft capture, scroll
  * restoration, and the key bookkeeping around them.
  */
-function threadHeader(state, { name, member, sovereign, ready, label, conversationId }) {
+function threadHeader(state, { name, member, user, ready, label, conversationId, tab = 'session' }) {
   const header = node('header', 'thread-header');
-  const heading = node('div', `thread-heading${sovereign ? ' sovereign' : ''}`);
-  heading.append(node('h1', '', `Chat with ${label}`));
-  const subtitle = [!sovereign && (member.title || member.description), workContext(state, conversationId)]
+  const heading = node('div', `thread-heading${user ? ' user' : ''}`);
+  const titleRow = node('div', 'thread-title-row');
+  titleRow.append(node('h1', '', `Chat with ${label}`));
+  if (user && state.run) {
+    const status = runStatus(state.run);
+    titleRow.append(node('b', `run-badge ${tone(status)}`.trim(), runStatusLabel(status)));
+  }
+  heading.append(titleRow);
+  const subtitle = [!user && (member.title || member.description), workContext(state, conversationId)]
     .filter(Boolean).join(' · ');
   heading.append(node('p', 'thread-subtitle', subtitle));
   const runContext = renderRunThreadContext(state);
@@ -319,7 +331,7 @@ function threadHeader(state, { name, member, sovereign, ready, label, conversati
   const effortControl = node('label', 'thread-control');
   effortControl.append(node('span', 'thread-control-label', 'Effort'), effort);
   controls.append(effortControl);
-  if (!sovereign) {
+  if (!user) {
     const power = node('button', 'thread-power', member.awake ? 'Sleep' : 'Wake');
     power.type = 'button';
     power.dataset.action = member.awake ? 'sleep' : 'wake';
@@ -328,14 +340,29 @@ function threadHeader(state, { name, member, sovereign, ready, label, conversati
     power.disabled = !ready;
     controls.append(power);
   }
-  header.append(heading, controls);
+  header.append(heading);
+  if (user) {
+    const tabs = node('div', 'run-tabs');
+    tabs.setAttribute('role', 'group');
+    tabs.setAttribute('aria-label', 'Run views');
+    for (const [id, text] of RUN_TABS) {
+      const chip = node('button', 'run-tab', text);
+      chip.type = 'button';
+      chip.dataset.action = 'run-tab';
+      chip.dataset.tab = id;
+      chip.setAttribute('aria-pressed', String(id === tab));
+      tabs.append(chip);
+    }
+    header.append(tabs);
+  }
+  header.append(controls);
   return header;
 }
 
 // Prunes questionOthers and submittedApprovals as a side effect: an approval
 // that has left the state must not keep its typed "other" text or its disabled
 // flag alive for whatever approval reuses the id next.
-function threadMessages(state, { name, sovereign, conversationId, questionPicks, questionOthers, submittedApprovals }) {
+function threadMessages(state, { name, user, conversationId, questionPicks, questionOthers, submittedApprovals }) {
   const messages = node('section', 'thread-messages');
   const entries = entriesFor(state, name, conversationId);
   for (const entry of entries) {
@@ -350,7 +377,7 @@ function threadMessages(state, { name, sovereign, conversationId, questionPicks,
     appendAttachments(row, entry.attachments);
     messages.append(row);
   }
-  const approvals = approvalsOf(state).filter((approval) => pendingApproval(approval, name, sovereign));
+  const approvals = approvalsOf(state).filter((approval) => pendingApproval(approval, name, user));
   const liveApprovalIds = new Set(approvals.map((approval) => String(approval.id)));
   for (const id of submittedApprovals.keys()) if (!liveApprovalIds.has(id)) submittedApprovals.delete(id);
   for (const key of questionOthers.keys()) if (!liveApprovalIds.has(key.split(':', 1)[0])) questionOthers.delete(key);
@@ -366,7 +393,7 @@ function threadMessages(state, { name, sovereign, conversationId, questionPicks,
     messages.append(card);
   }
   if (!entries.length && !approvals.length) messages.append(node('div', 'thread-empty', state.ready === false
-    ? 'Loading conversation…' : sovereign ? 'Start a conversation.' : 'No transcript yet.'));
+    ? 'Loading conversation…' : user ? 'Start a conversation.' : 'No transcript yet.'));
   return messages;
 }
 
@@ -432,9 +459,29 @@ export function mountThread(root, options = {}) {
   let skillIndex = 0;
   const composerHost = options.composer ?? root;
   const listenerHosts = composerHost === root ? [root] : [root, composerHost];
+  // Diff and Tasks mount a whole view into one host that outlives repaints, so
+  // a stream event never rebuilds a form someone is typing in.
+  const inspectorOpen = new Set(['environment', 'progress', 'outputs', 'session']);
+  // The member whose Compact session request is in flight, if any.
+  let compacting = null;
+  let embedHost = null;
+  let embedTab = null;
+  let embedCleanup = null;
+  function stopEmbed() { embedCleanup?.(); embedCleanup = null; embedTab = null; embedHost?.replaceChildren(); }
+  function embedFor(tab) {
+    embedHost ??= node('div', 'run-embed');
+    if (embedTab !== tab) {
+      stopEmbed();
+      embedTab = tab;
+      embedCleanup = (tab === 'diff' ? mountChanges : mountTasks)(currentState, embedHost, options) ?? null;
+    }
+    return embedHost;
+  }
 
   root.className = 'thread';
   root.textContent = '';
+  // A thread opens on its transcript; Diff and Tasks are chosen from there.
+  currentState.runTab = 'session';
 
   function currentName() { return viewMember(currentState, options) ?? 'orchestrator'; }
   function currentThreadKey() { return draftKey(currentName(), activeConversation(currentState, options)); }
@@ -469,7 +516,7 @@ export function mountThread(root, options = {}) {
       || (previousMessages.scrollHeight - previousMessages.scrollTop - previousMessages.clientHeight < 48);
     const name = currentName();
     const member = memberRecord(currentState, name);
-    const sovereign = isSovereignThread(currentState, options, name);
+    const user = isUserThread(currentState, options, name);
     const ready = currentState.ready !== false;
     const conversationId = activeConversation(currentState, options);
     const label = displayName(name, member.role);
@@ -479,20 +526,43 @@ export function mountThread(root, options = {}) {
       questionOthers.set(other.dataset.questionKey, other.value);
     }
     pendingFiles = (drafts.get(key)?.files ?? []).map((file) => ({ ...file }));
+    const tab = user ? (currentState.runTab ?? 'session') : 'session';
+    const header = threadHeader(currentState, { name, member, user, ready, label, conversationId, tab });
+    const inspector = user ? renderInspector(currentState, { open: inspectorOpen, compacting, member: name }) : null;
+    if (tab !== 'session' && embedTab === tab && embedHost?.isConnected && root.contains(embedHost)) {
+      // Diff or Tasks is already mounted: only the header and inspector follow
+      // the stream. Rebuilding the view would drop focus from whatever field
+      // someone is typing in.
+      root.querySelector('.thread-header')?.replaceWith(header);
+      const old = root.querySelector('.run-inspector');
+      if (old && inspector) old.replaceWith(inspector);
+      return;
+    }
     root.textContent = '';
     composerHost.textContent = '';
     root.dataset.member = name;
     root.dataset.conversation = conversationId;
     root.setAttribute('aria-busy', String(sending || uploading));
 
-    const header = threadHeader(currentState, { name, member, sovereign, ready, label, conversationId });
+    const main = node('div', 'run-main');
+    const layout = node('div', `run-layout${user ? '' : ' solo'}`);
+    layout.append(main);
+    if (inspector) layout.append(inspector);
+    root.append(layout);
+    if (tab !== 'session') {
+      // Header and inspector follow the stream; the mounted view is left alone.
+      main.append(header, embedFor(tab));
+      composerHost.textContent = '';
+      return;
+    }
+    stopEmbed();
     const messages = threadMessages(currentState, {
-      name, sovereign, conversationId, questionPicks, questionOthers, submittedApprovals,
+      name, user, conversationId, questionPicks, questionOthers, submittedApprovals,
     });
     const composer = threadComposer({
       name, label, conversationId, pendingFiles, sending, uploading, ready,
     });
-    root.append(header, messages);
+    main.append(header, messages);
     composerHost.append(composer);
     restoreDraft(composer.querySelector('.thread-input'), key);
     renderedDraftKey = key;
@@ -569,14 +639,14 @@ export function mountThread(root, options = {}) {
     const bodyText = pendingFiles.length
       ? `${text}${text ? '\n\n' : ''}[Attached: ${pendingFiles.map((file) => file.name).join(', ')}]`
       : text;
-    const body = isSovereignThread(currentState, options, name)
+    const body = isUserThread(currentState, options, name)
       ? { text: bodyText, conversationId, attachments: files }
       : { name, text: bodyText, conversationId, attachments: files };
     sending = true;
     render();
     let result;
     try {
-      result = await post(isSovereignThread(currentState, options, name) ? 'command' : 'speak', body);
+      result = await post(isUserThread(currentState, options, name) ? 'command' : 'speak', body);
     } catch (error) {
       result = { ok: false, error: error?.message ?? 'That message could not be sent.' };
     }
@@ -640,6 +710,28 @@ export function mountThread(root, options = {}) {
     return result;
   }
 
+  // Compact session: the daemon refuses (409, with a reason) when the member
+  // is mid-turn or asleep, and that refusal is what the toast says. A reply
+  // that lands after the thread has gone, or moved to another member, only
+  // clears the in-flight flag; it never repaints a view it no longer owns.
+  async function compactSession(member) {
+    if (!member || compacting) return;
+    compacting = member;
+    const key = currentThreadKey();
+    render(currentState);
+    let result;
+    try {
+      result = await post('compactSession', { name: member });
+    } catch (error) {
+      result = { ok: false, error: error?.message ?? 'The session could not be compacted.' };
+    }
+    if (compacting === member) compacting = null;
+    if (!mounted || root.isConnected === false) return;
+    if (result?.ok) options.toast?.(`Compacted ${member}: ${kb(result.before ?? 0)} to ${kb(result.after ?? 0)} tokens.`);
+    else options.toast?.(result?.error ?? 'The session could not be compacted.', true);
+    if (isCurrentThread(key)) render(currentState);
+  }
+
   async function approvalAction(action, id, target) {
     const card = target?.closest?.('[data-approval-id]');
     card?.querySelectorAll('button').forEach((button) => { button.disabled = true; });
@@ -695,6 +787,16 @@ export function mountThread(root, options = {}) {
     const target = event.target.closest('[data-action]');
     if (!target || (!root.contains(target) && !composerHost.contains(target))) return;
     const action = target.dataset.action;
+    if (action === 'run-tab') {
+      currentState.runTab = target.dataset.tab;
+      return render(currentState);
+    }
+    if (action === 'inspector-toggle') {
+      const card = target.dataset.card;
+      if (inspectorOpen.has(card)) inspectorOpen.delete(card); else inspectorOpen.add(card);
+      return render(currentState);
+    }
+    if (action === 'compact-session') return compactSession(target.dataset.member);
     if (action === 'attach') return attach();
     if (action === 'remove-attachment') {
       pendingFiles = pendingFiles.filter((file) => file.name !== target.dataset.attachment);
@@ -815,6 +917,7 @@ export function mountThread(root, options = {}) {
 
   return () => {
     mounted = false;
+    stopEmbed();
     unsubscribe?.();
     for (const host of listenerHosts) {
       host.removeEventListener('click', onClick);

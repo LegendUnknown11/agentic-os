@@ -1,6 +1,6 @@
 // Incremental reads. The briefer's tools used to default to `since = 0`, so
 // every briefing re-injected the whole history — 182k tokens per read on a
-// real kingdom. They must now return only what is new.
+// real agenticos. They must now return only what is new.
 //
 //   node test/t-incremental.js
 import { strict as a } from 'node:assert';
@@ -11,8 +11,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Bus } from '../src/bus.js';
 
-const dir = mkdtempSync(join(tmpdir(), 'kingdom-incr-'));
-const db = join(dir, 'kingdom.db');
+const dir = mkdtempSync(join(tmpdir(), 'agenticos-incr-'));
+const db = join(dir, 'agenticos.db');
 const bus = new Bus(db);
 
 function call(name, args = {}, agent = 'briefer', role = 'briefer') {
@@ -24,7 +24,7 @@ function call(name, args = {}, agent = 'briefer', role = 'briefer') {
   ].map((m) => JSON.stringify(m)).join('\n') + '\n';
   const r = spawnSync(process.execPath, [join(import.meta.dirname, '..', 'src', 'mcp.js')], {
     input: rpc, encoding: 'utf8',
-    env: { ...process.env, KINGDOM_AGENT: agent, KINGDOM_ROLE: role, KINGDOM_DB: db },
+    env: { ...process.env, AGENTICOS_AGENT: agent, AGENTICOS_ROLE: role, AGENTICOS_DB: db },
   });
   const reply = r.stdout.split('\n').filter(Boolean)
     .map((l) => { try { return JSON.parse(l); } catch { return null; } })
@@ -75,10 +75,10 @@ a.ok(!first.includes('"payload"'), 'events must be flattened, not raw JSON');
 
 // --- a limit cuts from the OLD end for a cursor read, the NEW end for a
 //     snapshot ---------------------------------------------------------
-// The throne room repaints itself from the daemon's snapshot, so `limit` there
+// The dashboard repaints itself from the daemon's snapshot, so `limit` there
 // means "the last N". It was cutting the other way, which meant a reload
 // replayed the opening of a session and nothing since — indistinguishable, from
-// the sovereign's chair, from messages not being saved at all.
+// the user's chair, from messages not being saved at all.
 for (let i = 0; i < 60; i++) {
   bus.post('coder', 'orchestrator', `line ${i}`);
   bus.logEvent('coder', 'tool', { name: `Tool${i}` });
@@ -110,20 +110,20 @@ a.equal(bus.events({ limit: 5, tail: true, type: 'tool' }).at(-1).payload.name, 
 // Structured attachment references must survive the bus round-trip separately
 // from the display text, so a reload can render real asset links.
 const attached = [{ name: 'notes.txt', kind: 'document' }, { name: 'diagram.png', kind: 'image' }];
-const attachedId = bus.post('sovereign', 'orchestrator', 'read these', 'assignment', 'attachments', attached);
+const attachedId = bus.post('user', 'orchestrator', 'read these', 'assignment', 'attachments', attached);
 a.deepEqual(bus.history({ since: attachedId - 1 }).at(-1).attachments, attached,
   'message attachments must persist as structured metadata');
 
-// Existing courts have no attachments column; opening one must migrate it and
+// Existing teams have no attachments column; opening one must migrate it and
 // make old rows readable with an empty list rather than dropping the transcript.
-const legacyDir = mkdtempSync(join(tmpdir(), 'kingdom-attachments-legacy-'));
-const legacyPath = join(legacyDir, 'kingdom.db');
+const legacyDir = mkdtempSync(join(tmpdir(), 'agenticos-attachments-legacy-'));
+const legacyPath = join(legacyDir, 'agenticos.db');
 const legacy = new DatabaseSync(legacyPath);
 legacy.exec(`create table messages (id integer primary key autoincrement, ts integer not null, sender text not null, recipient text, kind text not null, body text not null);
   create table events (id integer primary key autoincrement, ts integer not null, agent text not null, type text not null, payload text not null);
   create table state (k text primary key, v text not null);`);
 legacy.prepare('insert into messages (ts,sender,recipient,kind,body) values (?,?,?,?,?)')
-  .run(Date.now(), 'sovereign', 'orchestrator', 'assignment', 'before migration');
+  .run(Date.now(), 'user', 'orchestrator', 'assignment', 'before migration');
 legacy.close();
 const migrated = new Bus(legacyPath);
 a.deepEqual(migrated.history().at(-1).attachments, [],

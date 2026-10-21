@@ -1,9 +1,9 @@
-// The sovereign's Obsidian vault: readable in full, writable only inside one
-// folder so a court of sixteen cannot scatter files through a personal
+// The user's Obsidian vault: readable in full, writable only inside one
+// folder so a team of sixteen cannot scatter files through a personal
 // knowledge base.
 //
-// Shared by the MCP server (agents reading it) and the daemon (the throne
-// room's vault browser). It lived only in mcp.js, which runs as a separate
+// Shared by the MCP server (agents reading it) and the daemon (the
+// dashboard's vault browser). It lived only in mcp.js, which runs as a separate
 // process per agent — a second copy in the daemon would have been a second
 // containment check to get wrong.
 import {
@@ -12,7 +12,7 @@ import {
 } from 'node:fs';
 import { join, resolve, relative, extname, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
-import { kingdomDir } from './worktree.js';
+import { stateDir } from './worktree.js';
 
 /**
  * Resolve a vault-relative path, or null if it escapes.
@@ -50,24 +50,24 @@ export function walkVault(dir, out = [], depth = 0) {
 /**
  * The vault, in memory, so a search does not re-read 9.4MB from disk.
  *
- * Measured on the sovereign's real vault — 1,409 notes, 9.4MB — a single
- * searchVault call cost 800-2,600ms, and the Court Instructions tell every
+ * Measured on the user's real vault — 1,409 notes, 9.4MB — a single
+ * searchVault call cost 800-2,600ms, and the Team Instructions tell every
  * member to search before deciding. Each member also runs its OWN mcp.js
  * process, so that cost was paid per member per call.
  *
  * Revalidation is by mtime, and only after REVALIDATE_MS: stat-ing every file
  * is itself ~120ms, so doing it on every keystroke-equivalent would put the
- * floor back. Writers call invalidateVault() so a note the court just recorded
+ * floor back. Writers call invalidateVault() so a note the team just recorded
  * is searchable immediately; a note written by ANOTHER process is picked up on
  * the next revalidation.
  */
 // Read lazily, not at import: tests need to shorten it, and a constant that
 // cannot be shortened means the revalidation path is never actually exercised.
-const revalidateMs = () => Number(process.env.KINGDOM_VAULT_REVALIDATE_MS ?? 4000);
+const revalidateMs = () => Number(process.env.AGENTICOS_VAULT_REVALIDATE_MS ?? 4000);
 // With a working watcher the sweep is not a poll any more, so this is only a
 // backstop against a watcher that misses something (network shares, exhausted
 // inotify watches). Long, because the watcher is what provides freshness.
-const backstopMs = () => Number(process.env.KINGDOM_VAULT_BACKSTOP_MS ?? 120_000);
+const backstopMs = () => Number(process.env.AGENTICOS_VAULT_BACKSTOP_MS ?? 120_000);
 const corpus = new Map();   // root -> { at, files: Map<path, {mtime, text}> }
 const watchers = new Map(); // root -> { ok, dirty, w }
 
@@ -84,7 +84,7 @@ const watchers = new Map(); // root -> { ok, dirty, w }
  * reliable thing in Node — it silently misses events on some filesystems and
  * throws outright on others — so a failed watcher just falls back to the
  * original polling interval, and even a healthy one is backstopped by a full
- * sweep. The watcher can only make the court FASTER, never wronger.
+ * sweep. The watcher can only make the team FASTER, never wronger.
  */
 function ensureWatcher(key) {
   try { key = realpathSync.native(resolve(key)); } catch {}
@@ -94,7 +94,7 @@ function ensureWatcher(key) {
   // The switch exists so the polling path can still be tested. With a healthy
   // watcher the poll never runs, and an untested fallback is the one that will
   // be broken on the machine where fs.watch does not work.
-  if (process.env.KINGDOM_VAULT_WATCH === '0') {
+  if (process.env.AGENTICOS_VAULT_WATCH === '0') {
     watchers.set(key, state);
     return state;
   }
@@ -152,19 +152,19 @@ export function noteWritten(root, abs) {
 }
 
 /**
- * Copy a note the court just wrote into THIS PROJECT's own .kingdom mirror.
+ * Copy a note the team just wrote into THIS PROJECT's own .agenticos mirror.
  *
- * The vault is shared across every project the sovereign runs a court in —
+ * The vault is shared across every project the user runs a team in —
  * that is deliberate, it is how a decision made here is still visible from
- * another repo next month. But it also means a single project's .kingdom
- * folder, on its own, is missing everything the court has ever learned about
- * it. This keeps a same-shaped copy under kingdomDir(repo)/vault/ so that
+ * another repo next month. But it also means a single project's .agenticos
+ * folder, on its own, is missing everything the team has ever learned about
+ * it. This keeps a same-shaped copy under stateDir(repo)/vault/ so that
  * folder is self-sufficient too, without changing where the real vault lives.
  *
  * No repo, no mirror: Chat/Research/Build can run before any repo is
  * attached, and their state already lives at the single shared workspace
- * home (kingdomDir(null)) — mirroring there would just be writing the
- * sovereign's real homedir on every vault write in every repo-less session
+ * home (stateDir(null)) — mirroring there would just be writing the
+ * user's real homedir on every vault write in every repo-less session
  * and every test that does not set one up, for no project to actually own it.
  *
  * Best-effort otherwise: the vault write already succeeded by the time this
@@ -176,7 +176,7 @@ export function mirrorToProject(repo, root, abs) {
   const rel = relative(resolve(root), abs);
   if (!rel || rel.split(/[\\/]/)[0] === '..') return; // outside the vault; nothing to mirror
   try {
-    const dest = join(kingdomDir(repo), 'vault', rel);
+    const dest = join(stateDir(repo), 'vault', rel);
     mkdirSync(dirname(dest), { recursive: true });
     copyFileSync(abs, dest);
   } catch { /* mirroring is a courtesy copy, not the source of truth */ }
@@ -201,7 +201,7 @@ export function invalidateVault(root) {
  * member runs its own mcp.js, so each was paying the 938ms separately.
  *
  * It lives in the OS temp directory, never in the vault: the vault is the
- * sovereign's own notes and the court does not scatter machine files through
+ * user's own notes and the team does not scatter machine files through
  * it. It is a CACHE, not a source of truth — every entry is checked against
  * the real mtime before use, so a stale or corrupt index costs a re-read and
  * never a wrong answer.
@@ -211,7 +211,7 @@ export const vaultIndexPath = (root) => indexPath(resolve(root));
 const indexPath = (key) => {
   let h = 0;
   for (let i = 0; i < key.length; i++) h = (Math.imul(31, h) + key.charCodeAt(i)) | 0;
-  return join(tmpdir(), `kingdom-vault-${(h >>> 0).toString(36)}.json`);
+  return join(tmpdir(), `agenticos-vault-${(h >>> 0).toString(36)}.json`);
 };
 
 function readIndex(key) {
@@ -230,13 +230,13 @@ function readIndex(key) {
 // Rewriting it on every change cost 235ms per write-then-search cycle and put
 // 48MB on disk for five small notes, because the whole 9.7MB is rewritten each
 // time. Throttled, that becomes one write.
-const indexWriteMs = () => Number(process.env.KINGDOM_VAULT_INDEX_MS ?? 60_000);
+const indexWriteMs = () => Number(process.env.AGENTICOS_VAULT_INDEX_MS ?? 60_000);
 const indexWritten = new Map();   // root -> ts of last write by THIS process
 
 /**
  * The throttle has to be GLOBAL, not per-process.
  *
- * Every member runs its own mcp.js, so a per-process timer lets a court of
+ * Every member runs its own mcp.js, so a per-process timer lets a team of
  * sixteen write the same 9.7MB index sixteen times a minute — 155MB of churn
  * for a file that only has to be roughly right. The index's own mtime is the
  * shared clock: whoever wrote last, in whatever process, tells everyone else
@@ -259,7 +259,7 @@ function writeIndex(key, files) {
   const target = indexPath(key);
   const tmp = `${target}.${process.pid}.tmp`;
   try {
-    // 0600, because this file is the sovereign's entire vault — every note,
+    // 0600, because this file is the user's entire vault — every note,
     // body text included, ~9.7MB of it — sitting in the SHARED system tmpdir
     // under a name derived from a non-secret hash of the vault path. Default
     // permissions there are world-readable. rename preserves the mode.
@@ -331,7 +331,7 @@ function load(root) {
     if (!seen.has(f)) { files.delete(f); changed = true; }             // deleted notes
   }
   corpus.set(key, { at: now, files });
-  // At most one rewrite a minute for the whole court, not one per member.
+  // At most one rewrite a minute for the whole team, not one per member.
   if (changed && now - (indexWritten.get(key) ?? 0) >= indexWriteMs() && !indexFresh(key, now)) {
     indexWritten.set(key, now);
     writeIndex(key, files);
@@ -448,7 +448,7 @@ export function readNote(root, path, limit = 200_000) {
     // Almost every read follows a search that already pulled this note into
     // memory, so serve it from there when the corpus is warm — but only while
     // its mtime still matches: one stat is cheap, and an edit made outside the
-    // court (the sovereign, in Obsidian) must not be read back as the old text.
+    // team (the user, in Obsidian) must not be read back as the old text.
     const cached = corpus.get(resolve(root))?.files.get(abs);
     const body = cached?.mtime === statSync(abs).mtimeMs ? cached.text : readFileSync(abs, 'utf8');
     return body.length > limit ? `${body.slice(0, limit)}\n\n[truncated]` : body;

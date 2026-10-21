@@ -30,7 +30,7 @@ Polish the newly rebuilt AgentOS interface so cost, cache efficiency, model beha
 Do not edit:
 
 - `src/**`
-- `kingdom.config.json`
+- `agenticos.config.json`
 - `test/run-all.js`
 - Backend/model/MCP tests
 - `PLAN.md`, `HANDOFF.md`, `CLAUDE.md`, or `AGENTS.md`

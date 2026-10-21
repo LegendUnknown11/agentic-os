@@ -21,10 +21,10 @@ import { mkdtempSync, rmSync } from 'node:fs';
 const HERE = dirname(fileURLToPath(import.meta.url));
 
 // Several suites spawn a REAL src/daemon.js process, which registers itself
-// into the courts registry (src/courts.js) on boot — see t-registry-attach.js
-// and t-multi-court.js. Left alone, that registry defaults to the real
-// ~/.kingdom/courts.json on whatever machine runs `npm test`, which on the
-// sovereign's own machine would mutate their LIVE registry (and influence
+// into the teams registry (src/teams.js) on boot — see t-registry-attach.js
+// and t-multi-team.js. Left alone, that registry defaults to the real
+// ~/.agenticos/teams.json on whatever machine runs `npm test`, which on the
+// user's own machine would mutate their LIVE registry (and influence
 // real auto-port selection) just from running the test gate. Every suite
 // this file spawns gets its OWN isolated registry file instead — one per
 // suite, not one shared file, so concurrent suites in the pool below never
@@ -32,22 +32,22 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 // test/t-registry-isolation.js is the guard that proves this actually keeps
 // the real file untouched; test/isolate-registry.js covers a suite run
 // standalone (`node test/t-x.js`), where nothing here has run at all.
-const REGISTRY_SESSION_DIR = mkdtempSync(join(tmpdir(), 'kingdom-test-registries-'));
-const isolatedRegistryFor = (file) => join(REGISTRY_SESSION_DIR, `${basename(file, '.js')}.courts.json`);
+const REGISTRY_SESSION_DIR = mkdtempSync(join(tmpdir(), 'agenticos-test-registries-'));
+const isolatedRegistryFor = (file) => join(REGISTRY_SESSION_DIR, `${basename(file, '.js')}.teams.json`);
 const suites = [
   ['bus self-check', join(HERE, '..', 'src', 'bus.js')],
   ['workflow engine', join(HERE, '..', 'src', 'workflows.js')],
   ['context audit', join(HERE, '..', 'src', 'ctx.js')],
   ['usage accounting', join(HERE, '..', 'src', 'usage.js')],
   ['turn pricing', join(HERE, '..', 'src', 'price.js')],
-  ['summon forecast', join(HERE, '..', 'src', 'forecast.js')],
+  ['add forecast', join(HERE, '..', 'src', 'forecast.js')],
   ['approval payloads', join(HERE, '..', 'src', 'approval.js')],
   ['shared task list', join(HERE, 't-tasks.js')],
   ['idle nudge', join(HERE, 't-idle-nudge.js')],
   ['delivery replay', join(HERE, '..', 'src', 'replay.js')],
   ['recycle threshold', join(HERE, '..', 'src', 'recycle.js')],
-  ['court vs roster', join(HERE, '..', 'ui', 'court.js')],
-  // Self-checking, like court.js: the display-name map is pure, and a role that
+  ['team vs roster', join(HERE, '..', 'ui', 'team.js')],
+  // Self-checking, like team.js: the display-name map is pure, and a role that
   // resolves to nothing prints "undefined" into the rail.
   ['display names', join(HERE, '..', 'ui', 'names.js')],
   // Same again: the home screen's shaping decides what the first screen SAYS is
@@ -61,10 +61,10 @@ const suites = [
   // that has drifted from the engine's node types, both ship a workflow that
   // fails only when it runs.
   ['automation graph', join(HERE, '..', 'ui', 'graph.js')],
-  // The mode table decides who can be summoned, what gets a worktree and what
+  // The mode table decides who can be added, what gets a worktree and what
   // may ever merge. Pure, so it checks itself.
-  ['court modes', join(HERE, '..', 'src', 'modes.js')],
-  // Self-checking, like court.js: the batching decision is pure, and its 14
+  ['team modes', join(HERE, '..', 'src', 'modes.js')],
+  // Self-checking, like team.js: the batching decision is pure, and its 14
   // assertions were running only when someone invoked the file by hand.
   ['batch ripeness', join(HERE, '..', 'src', 'ripeness.js')],
   // #41/#40/#43: the rest of the "never an unprompted turn" audit that
@@ -78,7 +78,7 @@ const suites = [
   // window, so this parses every src/ and electron/ file for a child_process
   // call missing windowsHide instead.
   ['windowsHide guard', join(HERE, 't-windows-hide.js')],
-  ['court memory + instructions', join(HERE, '..', 'src', 'memory.js')],
+  ['team memory + instructions', join(HERE, '..', 'src', 'memory.js')],
   ['concurrency', join(HERE, 't-concurrent.js')],
   ['token pool', join(HERE, 't-tokens.js')],
   ['worktree + merge', join(HERE, 't-merge.js')],
@@ -95,6 +95,9 @@ const suites = [
   // blocked cleanly on missing tooling — see src/pilot-evidence.js.
   ['pilot evidence gate', join(HERE, 't-pilot-evidence.js')],
   ['briefer recycle', join(HERE, 't-recycle.js')],
+  // The T3 session surfaces: context meter, Compact session, a run's agent,
+  // and spend by day.
+  ['session surfaces', join(HERE, 't-session.js')],
   ['compaction window', join(HERE, '..', 'src', 'compact.js')],
   ['/autocompact', join(HERE, 't-compact.js')],
   ['argument panel', join(HERE, '..', 'src', 'argue.js')],
@@ -106,22 +109,25 @@ const suites = [
   ['ai turn markdown', join(HERE, 't-markdown.js')],
   ['budget + recycling', join(HERE, 't-budget.js')],
   ['incremental reads', join(HERE, 't-incremental.js')],
-  ['accession briefing', join(HERE, 't-accession.js')],
+  ['onboarding briefing', join(HERE, 't-onboarding.js')],
   ['context measurement', join(HERE, 't-context.js')],
   ['dictation (SpeechBird)', join(HERE, 't-stt.js')],
   ['codex resume args', join(HERE, 't-codex-args.js')],
   ['stranded work rescue', join(HERE, 't-rescue.js')],
   ['every tool, every role gate', join(HERE, 't-tool-surface.js')],
-  ['standing court roles', join(HERE, 't-roles.js')],
+  ['MCP listing overhead and live gates', join(HERE, 't-mcp-listing.js')],
+  ['standing team roles', join(HERE, 't-roles.js')],
+  ['roster v1 -> v2 migration', join(HERE, 't-roster-migrate.js')],
+  ['pre-rename state carries over once', join(HERE, 't-legacy-migrate.js')],
   ['cached prefix is byte-stable', join(HERE, 't-prompt.js')],
   ['approvals and resting crew', join(HERE, 't-approvals.js')],
   ['real MCP approval chain', join(HERE, 't-mcp-chain.js')],
   ['ask_question interview flow', join(HERE, 't-questions.js')],
-  ['summon payload validation', join(HERE, 't-summon-validation.js')],
+  ['add payload validation', join(HERE, 't-add-validation.js')],
   ['advisor: prompt engineer + model selector', join(HERE, 't-advisor.js')],
   ['efficiency contracts', join(HERE, 't-efficiency.js')],
   ['wallpaper and music assets', join(HERE, 't-assets.js')],
-  ['uploaded documents surfaced to the court', join(HERE, 't-uploads.js')],
+  ['uploaded documents surfaced to the team', join(HERE, 't-uploads.js')],
   ['metrics, diff and vault panels', join(HERE, 't-panels.js')],
   // One self-contained folder per completed run — objective, diff, tests,
   // reviews, cost and a timeline, reconstructed without the SQLite file it
@@ -131,6 +137,8 @@ const suites = [
   ['the shipped config template is clean', join(HERE, 't-config-template.js')],
   ['doctor report, structured and served live', join(HERE, 't-doctor-api.js')],
   ['antigravity (agy) backend', join(HERE, 't-agy.js')],
+  ['CLI adapters', join(HERE, 't-cli-adapters.js')],
+  ['cursor backend', join(HERE, 't-cursor.js')],
   ['opencode backend', join(HERE, 't-opencode.js')],
   ['turn summaries', join(HERE, 't-summarize.js')],
   ['the standing goal', join(HERE, 't-goal.js')],
@@ -138,37 +146,37 @@ const suites = [
   // The repo becomes optional on top of the three modes: Chat/Cowork
   // must run with none attached, and only Code may ever require one.
   ['repo becomes optional', join(HERE, 't-repo-optional.js')],
-  ['court self-control', join(HERE, 't-control.js')],
-  // The multi-court registry (issue #42, src/courts.js): which repos have a
+  ['team self-control', join(HERE, 't-control.js')],
+  // The multi-team registry (issue #42, src/teams.js): which repos have a
   // live daemon, on which port, pruned as soon as a pid dies or a port stops
   // answering — and safe against two launches racing to register at once.
-  ['court registry', join(HERE, 't-courts.js')],
-  // The registry's and launch router's own self-checks: `node src/courts.js`
+  ['team registry', join(HERE, 't-teams.js')],
+  // The registry's and launch router's own self-checks: `node src/teams.js`
   // went red once when the verdict key changed and nothing in the gate ran it.
-  ['court registry self-check', join(HERE, '..', 'src', 'courts.js')],
-  ['launch routing self-check', join(HERE, '..', 'electron', 'courts-launch.js')],
+  ['team registry self-check', join(HERE, '..', 'src', 'teams.js')],
+  ['launch routing self-check', join(HERE, '..', 'electron', 'teams-launch.js')],
   // Guard: a daemon this suite harness spawns must never touch the real
-  // ~/.kingdom/courts.json, whether run through run-all.js or standalone —
+  // ~/.agenticos/teams.json, whether run through run-all.js or standalone —
   // see test/isolate-registry.js.
-  ['test gate never touches the real court registry', join(HERE, 't-registry-isolation.js')],
+  ['test gate never touches the real team registry', join(HERE, 't-registry-isolation.js')],
   // Real daemon processes, not just the registry in isolation: one repo, one
-  // live court, auto ports that never collide, and a busy pinned port that
+  // live team, auto ports that never collide, and a busy pinned port that
   // refuses cleanly instead of silently binding elsewhere.
-  ['multiple courts at once (issue #42)', join(HERE, 't-multi-court.js')],
+  ['multiple teams at once (issue #42)', join(HERE, 't-multi-team.js')],
   // A relaunch (or app.requestSingleInstanceLock's second-instance event)
-  // must focus a live court rather than spawn a stray daemon — the pure
+  // must focus a live team rather than spawn a stray daemon — the pure
   // decision behind that, tested with fakes exactly like t-repo-switch.js.
-  ['launch routing focuses a live court', join(HERE, 't-courts-launch.js')],
-  // The end-court-and-switch-repo flow (issue #42): a plain function with
+  ['launch routing focuses a live team', join(HERE, 't-teams-launch.js')],
+  // The end-team-and-switch-repo flow (issue #42): a plain function with
   // injected dependencies, so its step ordering runs for real without an
   // Electron process, a daemon, or a native dialog.
   // A LIVE attach (POST /api/attachRepo, or the saved-repo re-attach at
   // boot) must claim the repo in the registry exactly like a fresh daemon
   // does — otherwise two daemons can end up serving the same repository.
   ['a live attach claims the registry', join(HERE, 't-registry-attach.js')],
-  ['end court and switch repository', join(HERE, 't-repo-switch.js')],
+  ['end team and switch repository', join(HERE, 't-repo-switch.js')],
   // A repo attached live must survive a daemon restart in the same
-  // workspace home it was attached in — see kingdom.js's this.dbPath and
+  // workspace home it was attached in — see agenticos.js's this.dbPath and
   // daemon.js's homeRepo for the bug this guards against.
   ['a live-attached repo survives a restart', join(HERE, 't-daemon-boot.js')],
   ['stream + actions scope by conversation', join(HERE, 't-daemon-conversations.js')],
@@ -178,10 +186,16 @@ const suites = [
   ['changes review lifecycle', join(HERE, 't-pages.js')],
   ['skill set + observation masking', join(HERE, 't-skills.js')],
   ['state reducer', join(HERE, 't-store.js')],
+  // A suite removes its own repo and <tmp>/.agenticos/<repo> folder, never a
+  // sibling's or the shared parent: see test/cleanup.js.
+  ['test cleanup stays in its own folder', join(HERE, 't-cleanup.js')],
   ['run notifications', join(HERE, 't-notify.js')],
-  ['the sovereign manages the task list', join(HERE, 't-task-admin.js')],
+  ['the user manages the task list', join(HERE, 't-task-admin.js')],
   ['the inbox ranks what waits on you', join(HERE, 't-inbox.js')],
   ['flat palette', join(HERE, 't-theme.js')],
+  ['route table', join(HERE, 't-routes.js')],
+  ['search palette', join(HERE, 't-palette.js')],
+  ['session inspector', join(HERE, 't-inspector.js')],
   ['flat palette — computed geometry', join(HERE, 't-theme-geometry.js')],
   ['a claude that dies mid-turn', join(HERE, 't-claude-death.js')],
   ['send() guards a claude that never spawned', join(HERE, 't-agent-guard.js')],
@@ -205,9 +219,9 @@ const SUITE_TIMEOUT_MS = 180_000;
 // computing, so more workers keeps helping long past the CPUs. It is the point
 // where the slowest suite (t-batching, ~30s of deliberate sleeping) stops being
 // the thing everything else is queued behind. Capped by cores anyway so a small
-// box does not thrash. `KINGDOM_TEST_WIDTH=1` reproduces the old serial run.
+// box does not thrash. `AGENTICOS_TEST_WIDTH=1` reproduces the old serial run.
 const WIDTH = Math.max(1, Math.min(
-  Number(process.env.KINGDOM_TEST_WIDTH ?? 4), availableParallelism()));
+  Number(process.env.AGENTICOS_TEST_WIDTH ?? 4), availableParallelism()));
 
 /**
  * Run one suite to completion, capturing its output.
@@ -229,7 +243,9 @@ const run = ([label, file]) => new Promise((resolve) => {
   try {
     p = spawn(process.execPath, [file], {
       stdio: ['ignore', 'pipe', 'pipe'],
-      env: { ...process.env, KINGDOM_COURTS_REGISTRY: isolatedRegistryFor(file) },
+      // AGENTICOS_SKIP_LEGACY_MIGRATION: a suite run on the user's own machine must
+      // never move their real pre-rename state (test/t-legacy-migrate.js covers the move).
+      env: { ...process.env, AGENTICOS_TEAMS_REGISTRY: isolatedRegistryFor(file), AGENTICOS_SKIP_LEGACY_MIGRATION: '1' },
     });
   } catch (e) {
     return done(false, `could not start ${label}: ${e.message}\n`);

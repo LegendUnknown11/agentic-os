@@ -27,16 +27,17 @@ import { createHash } from 'node:crypto';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Kingdom } from '../src/kingdom.js';
+import { AgenticOS } from '../src/agenticos.js';
+import { removeRepo } from './cleanup.js';
 
-process.env.KINGDOM_CODEX_BIN = process.execPath;
-process.env.KINGDOM_SETTLE_MS = '150';
+process.env.AGENTICOS_CODEX_BIN = process.execPath;
+process.env.AGENTICOS_SETTLE_MS = '150';
 
-const repo = mkdtempSync(join(tmpdir(), 'kingdom-prompt-'));
+const repo = mkdtempSync(join(tmpdir(), 'agenticos-prompt-'));
 const git = (...x) => execFileSync('git', x, { cwd: repo, stdio: 'pipe' });
 git('init', '-q');
-git('config', 'user.email', 'k@kingdom');
-git('config', 'user.name', 'kingdom');
+git('config', 'user.email', 'k@agenticos');
+git('config', 'user.name', 'agenticos');
 writeFileSync(join(repo, 'README.md'), '# t\n');
 git('add', '-A');
 git('commit', '-qm', 'init');
@@ -44,11 +45,11 @@ git('commit', '-qm', 'init');
 // Fixed in every respect that reaches the prompt: names, order, descriptions,
 // titles. No vault, no goal, no advisor — each of those is varied deliberately
 // below rather than left to whatever the machine happens to have.
-const cfg = join(repo, 'kingdom.config.json');
+const cfg = join(repo, 'agenticos.config.json');
 writeFileSync(cfg, JSON.stringify({
   orchestrator: { name: 'orchestrator', cli: 'codex' },
   briefer: { name: 'briefer', cli: 'codex' },
-  peasants: [
+  agents: [
     { name: 'coder', cli: 'codex', title: 'Master of Works', description: 'writes code' },
     { name: 'researcher', cli: 'codex', description: 'finds things out' },
   ],
@@ -64,13 +65,17 @@ const sha = (s) => createHash('sha256').update(s, 'utf8').digest('hex').slice(0,
 //
 // Two numbers, not one: a length alone would miss a same-length reordering, and
 // a hash alone tells you nothing about HOW far the prompt moved when it breaks.
+// Re-pinned 2026-10-21 by the de-theming rename (docs/RENAME.md): the words
+// changed to team/user/agent/add_agent and nothing else, in src/ and in the
+// shipped skills/ index every prompt carries; every prompt got 23-58 bytes
+// shorter (measured: 6926->6873 for code/orchestrator).
 const EXPECT = {
-  'code/orchestrator': ['1d7948b817402801', 6926],
-  'code/briefer': ['8b82b6fe879ee253', 3803],
-  'code/coder': ['f476f1443b1c76b2', 7200],
-  'chat/orchestrator': ['5fd7d744f71ab30f', 7283],
-  'chat/briefer': ['e733d0fc347af1d5', 4160],
-  'chat/coder': ['e173dcbb87ccc11f', 7557],
+  'code/orchestrator': ['ed7136c7ef7cd20a', 6873],
+  'code/briefer': ['826cdfe3d56f2606', 3780],
+  'code/coder': ['c63816523ff9c2ad', 7167],
+  'chat/orchestrator': ['77dd97142ebb9f70', 7225],
+  'chat/briefer': ['35d23ebf097048e9', 4132],
+  'chat/coder': ['bd5b13fa56d7e5ba', 7519],
 };
 
 const PRINT = process.argv.includes('--print');
@@ -86,7 +91,7 @@ let failures = 0;
 const seen = {};
 
 try {
-  const k = new Kingdom(repo, cfg);
+  const k = new AgenticOS(repo, cfg);
   k.on('error', () => {});
   await k.start();
 
@@ -114,13 +119,13 @@ try {
     }
   }
 
-  // The prefix must not depend on anything outside the config. A second court
+  // The prefix must not depend on anything outside the config. A second team
   // built from the same file, in a different directory, has to produce the
   // same bytes — otherwise every machine pays a fresh cache write.
   k.setMode('code');
   const twice = k.briefFor('coder');
   a.equal(sha(twice), seen['code/coder'][0],
-    'briefFor must be deterministic within one court');
+    'briefFor must be deterministic within one team');
 
   await k.stop();
 
@@ -138,5 +143,5 @@ try {
     console.log(`  ${Object.keys(seen).length} prompts byte-stable across ${MODES.length} modes`);
   }
 } finally {
-  rmSync(repo, { recursive: true, force: true });
+  removeRepo(repo);
 }

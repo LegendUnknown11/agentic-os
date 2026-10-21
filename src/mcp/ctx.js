@@ -28,57 +28,57 @@ export const NOTE_WHOLE_LIMIT = 5000;
  *
  * Normally the env says, because the CLI is told which server to run per
  * member. The Antigravity CLI cannot do that: headless agy reads ONE global
- * mcp_config.json, so a single declaration is shared by the whole court and its
+ * mcp_config.json, so a single declaration is shared by the whole team and its
  * env cannot name anybody.
  *
  * What rescues it is that the server inherits the agy process's working
  * directory, which is the member's own worktree. So identity travels by
- * directory: kingdom.js drops `.agents/kingdom-id.json` into each member's
+ * directory: agenticos.js drops `.agents/agenticos-id.json` into each member's
  * workspace and this reads it. Without this, every Antigravity member would
  * post to the bus as the same agent — whoever was configured last.
  */
 export function identityFromCwd() {
   for (const dir of [process.cwd(), join(process.cwd(), '..')]) {
     try {
-      return JSON.parse(readFileSync(join(dir, '.agents', 'kingdom-id.json'), 'utf8'));
+      return JSON.parse(readFileSync(join(dir, '.agents', 'agenticos-id.json'), 'utf8'));
     } catch { /* not this one */ }
   }
   return {};
 }
 
-export const ID = process.env.KINGDOM_AGENT ? {} : identityFromCwd();
+export const ID = process.env.AGENTICOS_AGENT ? {} : identityFromCwd();
 
-export const ME = process.env.KINGDOM_AGENT ?? ID.agent ?? 'unknown';
-export const ROLE = process.env.KINGDOM_ROLE ?? ID.role ?? 'peasant'; // peasant | briefer | orchestrator
-export const REPO = process.env.KINGDOM_REPO ?? ID.repo ?? process.cwd();
+export const ME = process.env.AGENTICOS_AGENT ?? ID.agent ?? 'unknown';
+export const ROLE = process.env.AGENTICOS_ROLE ?? ID.role ?? 'agent'; // agent | briefer | orchestrator
+export const REPO = process.env.AGENTICOS_REPO ?? ID.repo ?? process.cwd();
 // Distinct from REPO above: that one falls back to cwd so diffing/testing
 // always has SOME path to work against. Mirroring must not — a fallback here
-// would mirror into a random directory's .kingdom instead of correctly
+// would mirror into a random directory's .agenticos instead of correctly
 // mirroring nowhere when no repo is attached.
-export const MIRROR_REPO = process.env.KINGDOM_REPO || null;
+export const MIRROR_REPO = process.env.AGENTICOS_REPO || null;
 /**
- * There may be no kingdom here at all, and that is a normal state.
+ * There may be no AgenticOS here at all, and that is a normal state.
  *
  * agy reads ONE GLOBAL mcp_config.json, so this server is launched by EVERY
  * agy session on the machine — including ones opened in directories that have
- * nothing to do with a court. Those have no `.agents/kingdom-id.json` and no
- * KINGDOM_DB, so the db path is undefined.
+ * nothing to do with a team. Those have no `.agents/agenticos-id.json` and no
+ * AGENTICOS_DB, so the db path is undefined.
  *
  * Constructing a Bus on undefined threw ERR_INVALID_ARG_TYPE out of node:path
  * before any handler could run, which killed the transport and surfaced to the
- * sovereign as a stack trace plus `connection closed: calling "initialize":
+ * user as a stack trace plus `connection closed: calling "initialize":
  * client is closing: EOF`. A crash is the worst possible answer to "you are
- * not in a kingdom": it breaks the client's whole MCP connection over a
+ * not in an agenticos": it breaks the client's whole MCP connection over a
  * condition that is not an error.
  *
  * So: serve a valid session with no tools, and say why on stderr.
  */
-export const DB = process.env.KINGDOM_DB ?? ID.db;
+export const DB = process.env.AGENTICOS_DB ?? ID.db;
 export const bus = DB ? new Bus(DB) : null;
 // Same directory daemon.js schedules and serves workflows from. Derived from
-// DB rather than REPO: the kingdom's home directory is fixed for the court's
-// life (kingdom.js), but REPO can change live when a repo is attached after
-// boot (Kingdom#attachRepo) — using REPO here would silently point at a
+// DB rather than REPO: the team's home directory is fixed for the team's
+// life (agenticos.js), but REPO can change live when a repo is attached after
+// boot (AgenticOS#attachRepo) — using REPO here would silently point at a
 // different, empty directory the moment that happens.
 export const WORKFLOWS_DIR = DB ? join(dirname(DB), 'workflows') : null;
 // Same reasoning, same directory daemon.js uploads into and serves from.
@@ -91,9 +91,9 @@ export const DOCUMENT_EXT = new Set(['.pdf', '.txt', '.md', '.csv', '.json']);
 export const IMAGE_EXT = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.avif', '.svg']);
 if (!bus) {
   process.stderr.write(
-    'kingdom MCP: no court in this directory — starting with no tools.\n'
-    + '  Neither KINGDOM_DB nor .agents/kingdom-id.json was found, which is the\n'
-    + '  normal state for an agy session outside a kingdom worktree.\n'
+    'agenticos MCP: no team in this directory — starting with no tools.\n'
+    + '  Neither AGENTICOS_DB nor .agents/agenticos-id.json was found, which is the\n'
+    + '  normal state for an agy session outside a team worktree.\n'
     + `  cwd: ${process.cwd()}\n`,
   );
 }
@@ -103,11 +103,11 @@ export const DIFF_LIMIT = 15_000; // lands in the reader's context permanently
 // have read off disk itself.
 export const MSG_LIMIT = 4000;
 
-// --- the sovereign's Obsidian vault ----------------------------------
+// --- the user's Obsidian vault ----------------------------------
 // Readable in full; writes are confined to one folder so five agents cannot
 // scatter files through a personal knowledge base.
-export const VAULT = process.env.KINGDOM_VAULT || ID.vault || null;
-export const VAULT_WRITE_DIR = process.env.KINGDOM_VAULT_DIR || ID.vaultDir || 'Kingdom';
+export const VAULT = process.env.AGENTICOS_VAULT || ID.vault || null;
+export const VAULT_WRITE_DIR = process.env.AGENTICOS_VAULT_DIR || ID.vaultDir || 'AgenticOS';
 // Containment and traversal live in vault.js so the daemon's vault browser
 // enforces exactly the same rule as the agents do.
 export const insideVault = (p) => vaultInside(VAULT, p);
@@ -119,7 +119,7 @@ export function tooBig(body) {
     `Message rejected: ${body.length} characters (limit ${MSG_LIMIT}). Every ` +
     `message is replayed into the recipient's context, so pasting files is ` +
     `expensive. Write it to a file in your worktree and send the PATH — the ` +
-    `other peasants' worktrees are siblings at "../<name>/" and they can read ` +
+    `other agents' worktrees are siblings at "../<name>/" and they can read ` +
     `yours. Send a summary plus the path instead.`;
 }
 
@@ -133,7 +133,7 @@ export const boundedLimit = (value, fallback, maximum) => {
 
 // --- who is actually out there ---------------------------------------
 // The roster is published to the bus by the orchestrator on every change
-// (`kingdom.js` roster()), so it is the one view of the court that every
+// (`agenticos.js` roster()), so it is the one view of the team that every
 // member's MCP server shares.
 export const stateArray = (key) => {
   try {
@@ -155,7 +155,7 @@ export const goalNow = () => {
  * The member currently holding an office, by role rather than by name.
  *
  * `declare_done` and `brief_orchestrator` used to post to the literal string "orchestrator".
- * The orchestrator's name is configuration — `kingdom.config.json` has `orchestrator.name`,
+ * The orchestrator's name is configuration — `agenticos.config.json` has `orchestrator.name`,
  * `roleOf()` compares against it, and `#promptFor` tells every member what it
  * is — and delivery is by recipient (`bus.pending(agent)` matches
  * `recipient = ?`). So renaming the orchestrator sent every declare_done and every
@@ -173,11 +173,11 @@ export const officer = (role, fallback) => rosterNow().find((m) => m.role === ro
  *
  * `send_message` and `send_back` posted whatever name they were given and
  * answered "Sent to X." unconditionally. A typo, a hallucinated specialist, or
- * a role the sovereign had deleted produced a row that `pending()` could never
+ * a role the user had deleted produced a row that `pending()` could never
  * match for anyone — the message was stored, delivered to no one, and reported
  * as sent. `assign` has always validated; these two never did.
  *
- * An empty roster means the court has not published one yet, and blocking on
+ * An empty roster means the team has not published one yet, and blocking on
  * that would wedge a member for a condition that is not its fault. So: no
  * roster, no check.
  */
@@ -216,7 +216,7 @@ export const nothingNew = (from) =>
   from ? `Nothing new since your last read (id ${from}).` : 'Nothing recorded yet.';
 
 /**
- * What shape the court is in, read fresh every time.
+ * What shape the team is in, read fresh every time.
  *
  * NOT captured at module load. codex runs one process per turn, but a claude
  * member is one process for its whole life — so a mode flipped an hour into a

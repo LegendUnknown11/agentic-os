@@ -8,7 +8,7 @@ import {
 
 export const comms = {
   send_message: {
-    roles: ['peasant', 'briefer', 'orchestrator'],
+    roles: ['agent', 'briefer', 'orchestrator'],
     description:
       'Message another member directly by name. Prefer this over waiting on the orchestrator.',
     schema: {
@@ -25,9 +25,9 @@ export const comms = {
   },
 
   broadcast: {
-    roles: ['peasant', 'briefer', 'orchestrator'],
+    roles: ['agent', 'briefer', 'orchestrator'],
     description:
-      'Say something to every member of the court at once. EXPENSIVE — it ' +
+      'Say something to every member of the team at once. EXPENSIVE — it ' +
       'costs every recipient a turn, so prefer send_message to the one or two ' +
       'members who actually need to know.',
     schema: { type: 'object', properties: { body: str('What to say') }, required: ['body'] },
@@ -40,35 +40,35 @@ export const comms = {
   },
 
   roster: {
-    roles: ['peasant', 'briefer', 'orchestrator'],
-    description: 'List court members. Defaults to compact identity rows; query or detail narrows or expands them.',
+    roles: ['agent', 'briefer', 'orchestrator'],
+    description: 'List team members. Defaults to compact identity rows; query or detail narrows or expands them.',
     schema: {
       type: 'object',
       properties: {
         query: str('Optional name, role, title or description search'),
-        activeOnly: { type: 'boolean', description: 'Only currently summoned or awake members' },
+        activeOnly: { type: 'boolean', description: 'Only currently added or awake members' },
         detail: { type: 'boolean', description: 'Include description, CLI, model, effort and auto state' },
         limit: { type: 'integer', minimum: 1, maximum: 200, description: 'Maximum rows; query defaults to 20' },
       },
     },
     run: ({ query = '', activeOnly = false, detail = false, limit } = {}) => {
       const needle = String(query ?? '').trim().toLowerCase();
-      let rows = rosterNow().filter((m) => (!activeOnly || m.summoned || m.awake)
+      let rows = rosterNow().filter((m) => (!activeOnly || m.added || m.awake)
         && (!needle || [m.name, m.role, m.title, m.description]
           .some((v) => String(v ?? '').toLowerCase().includes(needle))));
       const cap = limit == null ? (needle ? 20 : rows.length) : Math.max(1, Math.min(200, Number(limit) || 1));
       rows = rows.slice(0, cap);
       return rows.map((m) => detail ? {
-        name: m.name, role: m.role, title: m.title, awake: Boolean(m.awake), summoned: Boolean(m.summoned),
+        name: m.name, role: m.role, title: m.title, awake: Boolean(m.awake), added: Boolean(m.added),
         description: m.description, cli: m.cli, model: m.model, effort: m.effort, auto: Boolean(m.auto),
       } : {
-        name: m.name, role: m.role, title: m.title, awake: Boolean(m.awake), summoned: Boolean(m.summoned),
+        name: m.name, role: m.role, title: m.title, awake: Boolean(m.awake), added: Boolean(m.added),
       });
     },
   },
 
   declare_done: {
-    roles: ['peasant'],
+    roles: ['agent'],
     description:
       'Declare your task complete. Tests run automatically and the orchestrator reviews your diff.',
     schema: {
@@ -133,9 +133,9 @@ export const comms = {
   },
 
   ask_question: {
-    roles: ['orchestrator', 'briefer', 'peasant'],
+    roles: ['orchestrator', 'briefer', 'agent'],
     description:
-      'Ask the sovereign one or more structured, multiple-choice questions when you are blocked ' +
+      'Ask the user one or more structured, multiple-choice questions when you are blocked ' +
       'on a decision only they can make. Returns immediately — the answer arrives later as a bus ' +
       'message. Do not use for anything you can reasonably decide yourself.',
     schema: {
@@ -178,24 +178,24 @@ export const comms = {
       const approval = approvalBody({ kind: 'question', questions }, run_id);
       if (approval.error) return approval.error;
       bus.post(ME, null, approval.body, 'approval', 'default', [], approval.id);
-      return 'Question(s) posted to the sovereign. Their answer will arrive as a bus message — '
+      return 'Question(s) posted to the user. Their answer will arrive as a bus message — '
         + 'continue other work or end your turn.';
     },
   },
 
   send_back: {
     roles: ['orchestrator'],
-    description: 'Reject a peasant\'s work and send it back with notes on what to fix.',
+    description: 'Reject an agent\'s work and send it back with notes on what to fix.',
     schema: {
       type: 'object',
-      properties: { peasant: str('Whose work'), notes: str('What must change') },
-      required: ['peasant', 'notes'],
+      properties: { agent: str('Whose work'), notes: str('What must change') },
+      required: ['agent', 'notes'],
     },
-    run: ({ peasant, notes }) => {
-      const err = badRecipient(peasant);
+    run: ({ agent, notes }) => {
+      const err = badRecipient(agent);
       if (err) return err;
-      bus.post(ME, peasant, `Your work was sent back. ${notes}`, 'assignment');
-      return `Sent back to ${peasant}.`;
+      bus.post(ME, agent, `Your work was sent back. ${notes}`, 'assignment');
+      return `Sent back to ${agent}.`;
     },
   },
 };

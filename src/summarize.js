@@ -1,22 +1,22 @@
-// A cheap model that watches what the court is doing and says it in one line.
+// A cheap model that watches what the team is doing and says it in one line.
 //
 // The complaint this answers: a member's transcript is a wall of text — every
 // file read, every command, every paragraph of reasoning — and reading it is
-// most of the work of using the throne room at all. So a small model condenses
+// most of the work of using the dashboard at all. So a small model condenses
 // each TURN into one sentence.
 //
 // Per turn, not per line. A line is meaningless alone ("→ Read") and a call per
-// line would cost more than the court itself. A turn is the natural unit: one
+// line would cost more than the team itself. A turn is the natural unit: one
 // thing the member set out to do.
 import { ask } from './advisor.js';
 
-/** Everything the sovereign can change about how summaries read. */
+/** Everything the user can change about how summaries read. */
 export const DEFAULTS = {
   enabled: true,
   cli: 'codex',
   model: 'gpt-5.4-mini',
   // gpt-5.4-mini publishes none/low/medium/high/xhigh — NOT max, which is what
-  // the rest of the court runs at. Summarising is not reasoning work.
+  // the rest of the team runs at. Summarising is not reasoning work.
   effort: 'none',
   maxWords: 16,
   style: 'Plain past tense. Lead with the verb. Name real files and symbols. '
@@ -24,14 +24,14 @@ export const DEFAULTS = {
 };
 
 /**
- * A key the sovereign has cleared means "use the default", not "use empty".
+ * A key the user has cleared means "use the default", not "use empty".
  *
  * A plain spread does not agree: the live config carried `effort: ""` and
  * `style: ""`, and `""` is falsy, so advisor.js dropped the effort flag
  * entirely and codex ran the summariser at ITS default — medium reasoning — on
  * a job the comment above calls "not reasoning work". With `maxWords` at 40
  * against a default of 16, one cosmetic one-line summary could cost more than
- * the peasant turn it was describing. Nothing caught it because the test
+ * the agent turn it was describing. Nothing caught it because the test
  * asserted DEFAULTS.effort rather than the resolved value.
  */
 export const settingsOf = (cfg) => {

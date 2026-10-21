@@ -22,8 +22,8 @@ wins a contradiction.
 
 | You are working on | Router | First read |
 |---|---|---|
-| The Kingdom source: daemon, UI, tests, build | [[dev]] ([dev.md](dev.md)) | HANDOFF.md key-files table |
-| The court the app runs: roles, its shipped skill set, the vault | [[court]] ([court.md](court.md)) | `src/skills.js`, `src/memory.js` header comments |
+| The AgenticOS source: daemon, UI, tests, build | [[dev]] ([dev.md](dev.md)) | HANDOFF.md key-files table |
+| The team the app runs: roles, its shipped skill set, the vault | [[team]] ([team.md](team.md)) | `src/skills.js`, `src/memory.js` header comments |
 | The Habitable pilot target | [[pilot]] ([pilot.md](pilot.md)) | HANDOFF.md "Habitable pilot" |
 | Connectors, MCP servers, CLIs | [[apps]] ([apps.md](apps.md)) | that file's table |
 
@@ -33,7 +33,7 @@ when there is work to route, not before.
 ## Skills
 
 Claude Code skills for working *on* this repo live in `.claude/skills/`. They
-are a different system from `skills/` at the repo root, which is the court's own
+are a different system from `skills/` at the repo root, which is the team's own
 shipped skill set loaded by `src/skills.js` and shipped in the Electron build.
 
 | Skill | Fires when |

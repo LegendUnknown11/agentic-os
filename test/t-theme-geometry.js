@@ -71,6 +71,7 @@ const MODES = [
 ];
 
 const CONVERSATIONS = Array.from({ length: 6 }, (_, i) => ({ id: `c-${i}`, title: `Conversation ${i + 1}` }));
+const MANY_CONVERSATIONS = Array.from({ length: 24 }, (_, i) => ({ id: `c-${i}`, title: `Conversation ${i + 1}` }));
 
 async function mount(page, state, options, bodyClass) {
   await page.evaluate(([state, options, bodyClass]) => {
@@ -136,27 +137,33 @@ async function main() {
       await page.close();
     }
 
-    // Defect 4 (t-theme.js: ".sidebar-scroll"): a populated court (twelve
-    // conversations, More tools open — forced here by mounting on 'doctor',
-    // one of its own pages) at a short desktop viewport (1280x720, and the
-    // enforced 900px minimum) could ask the rail for more height than it had.
-    // Before .sidebar-scroll, #sidebar's own overflow: hidden clipped
-    // whatever did not fit — measured live at 1280x720: the footer
-    // (Settings/Collapse) ran off the bottom of the viewport. Measured here
-    // as real rendered geometry: the footer's bottom edge must stay inside
-    // the viewport, and the scroller must actually have overflow to scroll.
+    // Defect 4 (t-theme.js: ".sidebar-scroll"): a populated team at a short
+    // desktop viewport (1280x720, and the enforced 900px minimum) could ask the
+    // rail for more height than it had. Before .sidebar-scroll, #sidebar's own
+    // overflow: hidden clipped whatever did not fit — measured live at 1280x720:
+    // the footer (Settings/Collapse) ran off the bottom of the viewport.
+    // Measured here as real rendered geometry: the footer's bottom edge must
+    // stay inside the viewport, and the scroller must actually have overflow to
+    // scroll. It used to take twelve conversations plus the More tools
+    // disclosure; the disclosure is gone (2026-10-21), so the pressure now comes
+    // from a long runs list alone, twenty-four of them.
     {
       const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
       await page.goto(`http://127.0.0.1:${port}/test/fixtures/sidebar-geometry.html`);
-      await mount(page, { ...BASE_STATE, view: { page: 'doctor' }, conversations: CONVERSATIONS }, { modes: MODES }, '');
-      const [footerBox, scroll, viewportHeight] = await page.evaluate(() => [
+      await mount(page, { ...BASE_STATE, view: { page: 'inbox' }, conversations: MANY_CONVERSATIONS }, { modes: MODES }, '');
+      const [footerBox, scroll, list, viewportHeight] = await page.evaluate(() => [
         document.querySelector('.sidebar-footer').getBoundingClientRect(),
         (() => { const el = document.querySelector('.sidebar-scroll'); return { scrollHeight: el.scrollHeight, clientHeight: el.clientHeight, overflowY: getComputedStyle(el).overflowY }; })(),
+        (() => { const el = document.querySelector('.conversation-list'); return { scrollHeight: el.scrollHeight, clientHeight: el.clientHeight, overflowY: getComputedStyle(el).overflowY }; })(),
         window.innerHeight,
       ]);
       a.ok(footerBox.bottom <= viewportHeight + 1, `the rail footer measured its bottom edge at ${footerBox.bottom}px against a ${viewportHeight}px viewport — it must never run past it`);
       a.equal(scroll.overflowY, 'auto', 'the rail middle must be the thing that scrolls, not the whole rail');
-      a.ok(scroll.scrollHeight > scroll.clientHeight, 'a populated court must actually need to scroll the rail middle — otherwise this proves nothing');
+      // With four nav rows the runs list is the only part that can outgrow the
+      // rail, and it scrolls inside its own box; the middle region only has to
+      // be allowed to scroll, which it is.
+      a.equal(list.overflowY, 'auto', 'the runs list scrolls inside its own box');
+      a.ok(list.scrollHeight > list.clientHeight, 'twenty-four runs must actually overflow their list at 720px — otherwise this proves nothing');
       await page.close();
     }
 
