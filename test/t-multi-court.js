@@ -14,6 +14,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { requestShutdown } from '../electron/courts-launch.js';
+import { removeRepo } from './cleanup.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DAEMON = join(HERE, '..', 'src', 'daemon.js');
@@ -124,7 +125,6 @@ try {
 } finally {
   for (const p of [A?.proc, B?.proc]) { try { p?.kill('SIGKILL'); } catch {} }
   await wait(300);
-  rmSync(repoA, { recursive: true, force: true });
-  rmSync(repoB, { recursive: true, force: true });
+  removeRepo(repoA, repoB);
   rmSync(fakeHome, { recursive: true, force: true });
 }

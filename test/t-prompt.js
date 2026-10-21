@@ -28,6 +28,7 @@ import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Kingdom } from '../src/kingdom.js';
+import { removeRepo } from './cleanup.js';
 
 process.env.KINGDOM_CODEX_BIN = process.execPath;
 process.env.KINGDOM_SETTLE_MS = '150';
@@ -138,5 +139,5 @@ try {
     console.log(`  ${Object.keys(seen).length} prompts byte-stable across ${MODES.length} modes`);
   }
 } finally {
-  rmSync(repo, { recursive: true, force: true });
+  removeRepo(repo);
 }

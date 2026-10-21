@@ -13,6 +13,7 @@ import { buildPrompt } from '../src/prompt.js';
 import { cachedTokens, deltaOf, hasUsage, totalsOf } from '../src/usage.js';
 import { costClassOf } from '../src/price.js';
 import { forecast as forecastOf, turnsPerClosedCampaign } from '../src/forecast.js';
+import { removeRepo } from './cleanup.js';
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -326,7 +327,7 @@ console.log('  MCP surfaces are under budget and roster supports query, activeOn
   a.equal(coder.stopped, undefined, 'a run ceiling stops the RUN, not unrelated work on the same member');
 
   await rk.stop();
-  rmSync(runRepo, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  removeRepo(runRepo);
   console.log('  maxRunUsd stops a run that crosses it, the same restart-safe way maxBudgetUsd/maxKingdomUsd already do');
 }
 
@@ -382,7 +383,7 @@ console.log('  MCP surfaces are under budget and roster supports query, activeOn
   a.ok(Math.abs(ledger.series.at(-1).usd - 1.2) < 1e-9, 'the series ends on the total');
 
   await rk.stop();
-  rmSync(runRepo, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  removeRepo(runRepo);
   console.log('  the run ceiling reads the run\'s own spend ledger, so clearSpend cannot disarm it');
 }
 
@@ -435,7 +436,7 @@ console.log('  MCP surfaces are under budget and roster supports query, activeOn
   a.equal(Number(ck.bus.get('spentUsd')), 1, 'clearSpend still resets the lifetime counter it lifts');
 
   await ck.stop();
-  rmSync(campRepo, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  removeRepo(campRepo);
   console.log('  campaign spend survives clearSpend: no campaign reads negative or loses its spend');
 }
 

@@ -21,6 +21,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { removeRepo } from './cleanup.js';
 
 process.env.KINGDOM_IDLE_SLEEP_MS = '300';
 process.env.KINGDOM_SETTLE_MS = '200';
@@ -119,5 +120,5 @@ try {
   console.log('t-idle-nudge.js OK — a peasant with work waiting is nudged once, then sleeps like any other');
 } finally {
   await k.stop();
-  try { rmSync(repo, { recursive: true, force: true, maxRetries: 10, retryDelay: 150 }); } catch {}
+  removeRepo(repo);
 }

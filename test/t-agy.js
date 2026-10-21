@@ -14,6 +14,7 @@ import { mkdtempSync, writeFileSync, readFileSync, rmSync, existsSync } from 'no
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { removeRepo } from './cleanup.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const MCP_PROBE = join(HERE, 'fixtures', 'mcp-identity-probe.js');
@@ -197,7 +198,8 @@ const turn = (ag) => new Promise((res) => ag.once('turn_end', res));
   a.ok(typeof k.constructor === 'function');
 
   await k.stop();
-  for (const d of [repo, vault]) { try { rmSync(d, { recursive: true, force: true, maxRetries: 8 }); } catch {} }
+  removeRepo(repo);
+  try { rmSync(vault, { recursive: true, force: true, maxRetries: 8 }); } catch {}
   console.log('  identity travels by directory: mcp.js resolves "orchestrator" from cwd alone');
 }
 

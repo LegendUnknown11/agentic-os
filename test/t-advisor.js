@@ -8,6 +8,7 @@ import { strict as a } from 'node:assert';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { removeRepo } from './cleanup.js';
 
 const dir = mkdtempSync(join(tmpdir(), 'kingdom-advisor-'));
 
@@ -313,7 +314,7 @@ process.stdout.write(JSON.stringify({ type: 'item.completed', item: { type: 'age
   await k.stop();
 
   console.log('  command(): brief delivered, original preserved, failure harmless');
-  try { rmSync(repo, { recursive: true, force: true, maxRetries: 10, retryDelay: 150 }); } catch {}
+  removeRepo(repo);
 }
 
 // Best effort: the killed hang-stub can still hold the directory open on

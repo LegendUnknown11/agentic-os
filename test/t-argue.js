@@ -18,6 +18,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Kingdom } from '../src/kingdom.js';
+import { removeRepo } from './cleanup.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const repo = mkdtempSync(join(tmpdir(), 'kingdom-argue-'));
@@ -284,5 +285,5 @@ await t.stop();
 rmSync(vault2, { recursive: true, force: true });
 
 for (const x of [solo, k]) x.bus.close?.();
-rmSync(repo, { recursive: true, force: true });
+removeRepo(repo);
 console.log('t-argue.js OK — panel staffed across vendors, convened by the court, one at a time, answered to the asker');

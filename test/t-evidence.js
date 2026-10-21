@@ -5,12 +5,21 @@
 //   node test/t-evidence.js
 import { strict as a } from 'node:assert';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Bus } from '../src/bus.js';
 import { assertRepo, createRunWorktree, revisionOf, runBranch } from '../src/worktree.js';
 import { evidenceDir, exportEvidence, timelineOf } from '../src/evidence.js';
+import { removeRepo } from './cleanup.js';
+
+// Sandbox homedir(): the no-repo case below exports into kingdomDir(null),
+// which is the REAL ~/.kingdom/workspace otherwise. os.homedir() reads these
+// at call time, so setting them before the export is enough.
+const fakeHome = mkdtempSync(join(tmpdir(), 'kingdom-evidence-home-'));
+const savedHome = { USERPROFILE: process.env.USERPROFILE, HOME: process.env.HOME };
+process.env.USERPROFILE = fakeHome;
+process.env.HOME = fakeHome;
 
 // --- a real repo with a real run branch, same shape test/t-merge.js builds.
 const repo = mkdtempSync(join(tmpdir(), 'kingdom-evidence-'));
@@ -164,9 +173,13 @@ bus.transitionRun(noRepoId, 'verifying');
 bus.transitionRun(noRepoId, 'ready_for_review');
 bus.approveRun(noRepoId);
 bus.applyRun(noRepoId);
-const { manifest: noRepoManifest } = await exportEvidence(bus, null, noRepoId, { specOf });
+const { dir: noRepoDir, manifest: noRepoManifest } = await exportEvidence(bus, null, noRepoId, { specOf });
+a.ok(noRepoDir.startsWith(fakeHome), `a no-repo export lands in the sandboxed home, not the real one: ${noRepoDir}`);
 a.equal(noRepoManifest.diffAvailable, false, 'no baseline revision must be reported, not crash the export');
 a.ok(noRepoManifest.diffUnavailableReason, 'the manifest must say WHY the diff is missing');
 
 bus.close();
+removeRepo(repo);
+for (const [k, v] of Object.entries(savedHome)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+try { rmSync(fakeHome, { recursive: true, force: true, maxRetries: 10, retryDelay: 150 }); } catch {}
 console.log('t-evidence.js OK — every section present and field-for-field matching the run record, degrades visibly when repo/baseline is missing');

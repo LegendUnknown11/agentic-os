@@ -179,6 +179,9 @@ const suites = [
   ['changes review lifecycle', join(HERE, 't-pages.js')],
   ['skill set + observation masking', join(HERE, 't-skills.js')],
   ['state reducer', join(HERE, 't-store.js')],
+  // A suite removes its own repo and <tmp>/.kingdom/<repo> folder, never a
+  // sibling's or the shared parent: see test/cleanup.js.
+  ['test cleanup stays in its own folder', join(HERE, 't-cleanup.js')],
   ['run notifications', join(HERE, 't-notify.js')],
   ['the sovereign manages the task list', join(HERE, 't-task-admin.js')],
   ['the inbox ranks what waits on you', join(HERE, 't-inbox.js')],
