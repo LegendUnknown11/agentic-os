@@ -91,6 +91,60 @@ k.bus.set('base', 'master');
   k.agents.delete('orchestrator');
 }
 
+/* ---------- 2. Compact session ---------- */
+{
+  const events = (type) => k.bus.events({ limit: 1000, type }).filter((e) => e.agent === 'coder');
+  const compacted = [];
+  const recycled = [];
+  k.on('compacted', (e) => compacted.push(e));
+  k.on('recycled', (e) => recycled.push(e));
+
+  // Asleep: nothing live to hand over from. Refused, and recorded.
+  await a.rejects(k.compactSession('coder'), (e) => e.reason === 'asleep' && e.status === 409);
+  await a.rejects(k.compactSession('nobody'), /No such team member/);
+
+  // Mid-turn: refused without touching the member.
+  const member = new FakeMember('gpt-mystery', 90_000);
+  member.busy = true;
+  k.agents.set('coder', member);
+  k.bus.set('session:coder:default', 'old-session');
+  await a.rejects(k.compactSession('coder'), (e) => e.reason === 'busy' && /mid-turn/.test(e.message));
+  a.equal(member.sent.length, 0, 'a busy member is never sent the handover request');
+  a.equal(member.stopped, false);
+  a.equal(k.agents.get('coder'), member);
+
+  member.recycling = true;
+  await a.rejects(k.compactSession('coder'), (e) => e.reason === 'recycling');
+  member.recycling = false;
+
+  const refusals = events('session_compact');
+  a.deepEqual(refusals.map((e) => e.payload.reason), ['asleep', 'busy', 'recycling'], 'every refusal is a durable event');
+  a.ok(refusals.every((e) => e.payload.ok === false));
+
+  // Idle: compacted through the very recycle the threshold fires.
+  member.busy = false;
+  const result = await k.compactSession('coder');
+  a.equal(member.sent.length, 1, 'the member is asked for a handover first');
+  a.match(member.sent[0], /handover/i);
+  a.equal(member.stopped, true, 'the old session is retired');
+  a.equal(recycled.length, 1, 'it IS the recycle path — one recycled event, no parallel one');
+  const successor = k.agents.get('coder');
+  a.ok(successor && successor !== member, 'a successor holds the session now');
+  a.ok(successor.spec.prompt.includes('the parser is half done'), 'seeded with the handover note');
+  a.equal(k.bus.get('session:coder:default'), '', 'the old session id is not resumed');
+  a.equal(k.bus.get('ctx:coder:default'), '0');
+  a.equal(result.ok, true);
+  a.equal(result.before, 90_000);
+  a.equal(result.after, 0);
+  a.equal(result.by, 'sovereign');
+  a.deepEqual(compacted, [result], 'a compacted event is emitted for the stream');
+  const done = events('session_compact').at(-1);
+  a.equal(done.payload.ok, true);
+  a.equal(done.payload.before, 90_000);
+  successor.stop?.();
+  k.agents.delete('coder');
+}
+
 await k.stop();
 for (const d of [repo, kingdomDir(repo)]) { try { rmSync(d, { recursive: true, force: true }); } catch {} }
-console.log('t-session.js OK — context meter');
+console.log('t-session.js OK — context meter, compact session');

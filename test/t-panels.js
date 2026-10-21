@@ -179,6 +179,18 @@ try {
     a.equal(m.context[0].pct, null);
     a.deepEqual(orchestrator.context, m.context[0], 'and per member, beside the existing fields');
 
+    // Compact session is an action. A member that cannot be compacted right
+    // now answers 409 with a reason, not a 500 that reads as a crash.
+    const compact = await fetch(`${base}/api/compactSession`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: 'briefer' }),
+    });
+    const compactBody = await compact.json();
+    if (compact.status === 409) a.ok(['asleep', 'busy', 'recycling'].includes(compactBody.reason), compactBody.error);
+    else a.equal(compactBody.ok, true, `compactSession answered ${compact.status}: ${compactBody.error}`);
+    const missing = await post('/api/compactSession', { name: 'nobody' });
+    a.equal(missing.ok, false);
+    a.match(missing.error, /No such team member/);
+
     // codex has no $/token in this config — quota tracks its real ceiling
     // (the plan's token allowance) instead of inventing a dollar figure.
     // Both orchestrator and coder run on codex, so their deltaed in+out (the

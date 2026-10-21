@@ -158,7 +158,7 @@ function push(type, data) {
   for (const [res, conv] of clients) if (shouldDeliver(conv, type, data)) res.write(line);
 }
 
-for (const ev of ['agent', 'event', 'delivered', 'approval', 'verified', 'merged', 'recycled', 'resolved', 'started', 'failure', 'roster', 'failover', 'mergeFailed', 'pushed', 'pushBlocked', 'spend', 'budget', 'limited', 'advising', 'advisor', 'summarizer', 'goal', 'milestone', 'mode', 'compact', 'argued', 'repo', 'paused', 'run', 'conversationSwitched']) {
+for (const ev of ['agent', 'event', 'delivered', 'approval', 'verified', 'merged', 'recycled', 'resolved', 'started', 'failure', 'roster', 'failover', 'mergeFailed', 'pushed', 'pushBlocked', 'spend', 'budget', 'limited', 'advising', 'advisor', 'summarizer', 'goal', 'milestone', 'mode', 'compact', 'argued', 'repo', 'paused', 'run', 'conversationSwitched', 'compacted']) {
   kingdom.on(ev, (d) => {
     if (ev === 'roster') metricsCache.mark = null;
     push(ev, d ?? {});
@@ -344,6 +344,9 @@ const ACTIONS = {
     return result;
   },
   sleep: (b) => kingdom.sleep(b.name),
+  // Compact session: the recycle recycleAtTokens fires, by hand. 409 with a
+  // reason (busy | asleep | recycling) when the member cannot be compacted now.
+  compactSession: (b) => kingdom.compactSession(b.name, { by: 'sovereign' }),
   pause: (b) => kingdom.pause(b.why ?? ''),
   resume: () => kingdom.resume(),
   setBudget: (b) => kingdom.setBudget(b.capUsd),
@@ -1320,7 +1323,10 @@ const handle = async (req, res) => {
       const result = await action(input);
       return send(200, { ok: true, ...(result && typeof result === 'object' ? result : {}) });
     } catch (e) {
-      return send(500, { ok: false, error: e.message });
+      // An action may refuse with a status of its own (409 when a member's
+      // state forbids it) and a machine-readable reason beside the message.
+      const status = Number.isInteger(e.status) && e.status >= 400 && e.status < 600 ? e.status : 500;
+      return send(status, { ok: false, error: e.message, ...(e.reason ? { reason: e.reason } : {}) });
     }
   }
 

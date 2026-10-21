@@ -2630,6 +2630,44 @@ export class Kingdom extends EventEmitter {
   }
 
   /**
+   * Compact session, on the sovereign's say: the same recycle the
+   * `recycleAtTokens` threshold fires — handover note, retire, reseed a
+   * successor — triggered by hand. Deliberately no second path: a compaction
+   * that summarised in place would be the thing compact.js's header explains
+   * this court does not do.
+   *
+   * Refuses rather than interrupts. Mid-turn, the handover request would be
+   * injected into a half-finished thought and the turn's work lost with the
+   * session; asleep, there is no live session to hand over from (it resumes
+   * on its next message). Every outcome is a durable `session_compact` event.
+   */
+  async compactSession(name, { by = 'sovereign' } = {}) {
+    if (!this.specOf(name)) throw new Error(`No such team member: ${name}`);
+    const before = this.contextOf(name);
+    const refuse = (reason, message) => {
+      this.bus.logEvent(name, 'session_compact', { by, ok: false, reason, before: before.tokens });
+      const e = new Error(message);
+      e.reason = reason;
+      e.status = 409; // a conflict with the member's state, not a server fault
+      throw e;
+    };
+    const agent = this.agents.get(name);
+    if (!agent) refuse('asleep', `${name} is asleep, so there is no live session to compact. It resumes on its next message.`);
+    if (agent.recycling) refuse('recycling', `${name}'s session is already being handed over.`);
+    if (agent.busy) refuse('busy', `${name} is mid-turn. Compact it once the turn ends, so the turn's work is not lost.`);
+
+    await this.recycleAgent(name);
+    const after = this.contextOf(name);
+    const result = {
+      name, by, ok: true, before: before.tokens, after: after?.tokens ?? 0,
+      window: before.window, conversationId: before.conversationId,
+    };
+    this.bus.logEvent(name, 'session_compact', result);
+    this.emit('compacted', result);
+    return result;
+  }
+
+  /**
    * Move a member's live session to a different conversation.
    *
    * No CLI backend supports holding two sessions open in one process (every
