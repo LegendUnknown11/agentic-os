@@ -126,5 +126,5 @@ try {
   for (const p of [A?.proc, B?.proc]) { try { p?.kill('SIGKILL'); } catch {} }
   await wait(300);
   removeRepo(repoA, repoB);
-  rmSync(fakeHome, { recursive: true, force: true });
+  try { rmSync(fakeHome, { recursive: true, force: true, maxRetries: 10, retryDelay: 150 }); } catch {}
 }
