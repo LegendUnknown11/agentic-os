@@ -145,6 +145,22 @@ k.bus.set('base', 'master');
   k.agents.delete('coder');
 }
 
+/* ---------- 3. the agent on a run ---------- */
+{
+  const run = await k.createRun({ objective: 'lead is recorded' });
+  a.equal(run.lead, 'orchestrator', 'a run is the orchestrator\'s thread unless told otherwise');
+  a.equal(k.bus.run(run.id).lead, 'orchestrator', 'and it is durable, not computed on read');
+  k.bus.updateRun(run.id, { state: 'cancelled', cancelledTs: Date.now() });
+
+  const named = await k.createRun({ objective: 'led by the coder', lead: 'coder' });
+  a.equal(named.lead, 'coder');
+  k.bus.updateRun(named.id, { state: 'cancelled', cancelledTs: Date.now() });
+
+  const stranger = await k.createRun({ objective: 'led by nobody real', lead: 'nobody' });
+  a.equal(stranger.lead, 'orchestrator', 'a lead outside the court is not recorded');
+  k.bus.updateRun(stranger.id, { state: 'cancelled', cancelledTs: Date.now() });
+}
+
 await k.stop();
 for (const d of [repo, kingdomDir(repo)]) { try { rmSync(d, { recursive: true, force: true }); } catch {} }
-console.log('t-session.js OK — context meter, compact session');
+console.log('t-session.js OK — context meter, compact session, run lead');

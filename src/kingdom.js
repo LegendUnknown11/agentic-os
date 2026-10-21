@@ -1864,7 +1864,11 @@ export class Kingdom extends EventEmitter {
 
   async createRun(fields = {}) {
     const baselineRevision = fields.baselineRevision ?? (this.repo ? await revisionOf(this.repo) : null);
-    const run = this.bus.createRun({ ...fields, baselineRevision });
+    // A run is the orchestrator's thread, so the orchestrator is its lead
+    // unless a caller names another member of this court. Recorded, so the
+    // Runs table's Agent column reads a fact rather than a guess.
+    const lead = fields.lead && this.specOf(fields.lead) ? fields.lead : this.config.orchestrator.name;
+    const run = this.bus.createRun({ ...fields, lead, baselineRevision });
     await this.#reconcileRun();
     const current = this.bus.run(run.id);
     this.emit('run', current);

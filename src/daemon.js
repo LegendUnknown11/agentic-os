@@ -856,10 +856,15 @@ const READS = {
     const run = id ? kingdom.bus.run(id) : kingdom.bus.currentRun() ?? all.at(-1) ?? null;
     if (id && !run) return [404, { ok: false, error: `No run ${id}.` }];
     const totals = kingdom.bus.runSpendTotals();
+    const agents = kingdom.bus.runAgents();
     const runs = all.slice(-20).reverse().map((r) => ({
       id: r.id, state: r.state, objective: r.objective, createdTs: r.createdTs,
       endedTs: r.completedTs ?? r.cancelledTs ?? null,
       usd: totals[r.id]?.usd ?? 0, turns: totals[r.id]?.turns ?? 0,
+      // Who drove it: the recorded lead (null on runs older than the column)
+      // and every member that spent on it, highest spend first.
+      lead: r.lead ?? null,
+      agents: (agents[r.id] ?? []).map((m) => m.name),
     }));
     return [200, {
       ok: true, cap: Number(kingdom.config.maxRunUsd ?? 0) || 0,

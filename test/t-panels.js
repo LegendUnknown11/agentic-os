@@ -107,7 +107,7 @@ writeFileSync(cfg, JSON.stringify({
   // Two finished runs with ledgers, so the run spend panel has a history.
   bus.createRun({ id: 'run-a', objective: 'first run', state: 'completed' });
   bus.recordRunSpend('run-a', 'coder', 0.25, 1);
-  bus.createRun({ id: 'run-b', objective: 'second run', state: 'cancelled' });
+  bus.createRun({ id: 'run-b', objective: 'second run', state: 'cancelled', lead: 'orchestrator' });
   bus.recordRunSpend('run-b', 'coder', 0.5, 2);
   bus.recordRunSpend('run-b', 'orchestrator', 0.75, 3);
   bus.close();
@@ -545,6 +545,10 @@ try {
     a.deepEqual(r.spend.members.map((m) => m.name), ['orchestrator', 'coder'], 'members rank by spend');
     a.deepEqual(r.runs.map((x) => [x.id, x.usd, x.turns]), [['run-b', 1.25, 2], ['run-a', 0.25, 1]],
       'history lists newest first with each run\'s own total');
+    // The Runs table's Agent column: the recorded lead, and who spent.
+    a.deepEqual(r.runs.map((x) => [x.id, x.lead, x.agents]),
+      [['run-b', 'orchestrator', ['orchestrator', 'coder']], ['run-a', null, ['coder']]],
+      'each run serves its lead (null when never recorded) and its spenders by spend');
     const one = await get('/api/runSpend?id=run-a');
     a.equal(one.spend.usd, 0.25, 'a named run reads its own ledger');
     const missing = await fetch(`${base}/api/runSpend?id=run-none`);
