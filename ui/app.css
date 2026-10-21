@@ -947,13 +947,37 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .run-spend-members { max-width: 480px; }
 
-.agent-heading { display: flex; min-width: 0; align-items: flex-start; gap: var(--space-3); }
+/* Team, as the canvas draws it: a grid of compact cards for whoever is on the
+ * team, then one row of chips for everyone who could be added. */
+.agent-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr)); gap: 12px; }
 
-.agent-heading > div:last-child { min-width: 0; }
+.agent-grid .agent-card { gap: 12px; padding: var(--space-3); }
+
+.agent-initial { display: inline-flex; flex: none; width: 32px; height: 32px; align-items: center; justify-content: center; border-radius: 8px; background: var(--active); color: var(--text); font-size: var(--t-sm); font-weight: 600; }
+
+.agent-state { color: var(--muted); font-size: var(--t-xs); }
+
+.agent-card.live .agent-state { color: var(--accent); }
+
+.agent-card.attention .agent-state { color: var(--tone-attention); }
+
+.agent-card .field-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+.agent-available { display: grid; gap: 10px; }
+
+.agent-available h2 { margin: 0 2px; font-size: var(--t-sm); font-weight: 500; }
+
+.agent-bench { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+
+.team-summary { color: var(--faint); font-size: var(--t-xs); }
+
+.agent-heading { display: flex; min-width: 0; align-items: center; gap: 10px; }
+
+.agent-heading > div { min-width: 0; flex: 1; }
 
 .agent-heading h3, .agent-heading p { margin: 0; }
 
-.agent-heading h3 { font-size: var(--t-md); }
+.agent-heading h3 { font-size: 13.5px; font-weight: 500; }
 
 /* 16px, the product source's own card padding, against the section's 24px.
  * The spacing scale this system brings widens faster than the one it

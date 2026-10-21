@@ -343,7 +343,7 @@ a.match(sidebarSource, /import \{ spendText, turnsText, tone[^}]*\} from '\.\/vi
   'Sidebar spend must use the shared money formatter, and now the shared turn-count formatter beside it (#41)');
 a.doesNotMatch(sidebarSource, /data-member|memberOfView|attachHoverTips/, 'Team moved out of the rail — the sidebar must not keep member-click wiring for a list it no longer renders');
 a.match(pagesSource, /actionMessage\.textContent = error\?\.message/, 'failed Team actions must leave visible retryable feedback');
-a.match(pagesSource, /power\.disabled = false/, 'failed Team actions must re-enable their control');
+a.match(pagesSource, /(power|control)\.disabled = false/, 'failed Team actions must re-enable their control');
 a.match(pagesSource, /Team request submitted for approval\./, 'successful Team actions must remain visible before SSE catches up');
 a.match(pagesSource, /function modelControls[\s\S]*model\.disabled = true/, 'failed agent model changes must lock the control while saving');
 a.match(pagesSource, /model\.value = previous/, 'failed agent model changes must restore the prior model');
