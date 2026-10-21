@@ -96,7 +96,10 @@ process.stdout.write(JSON.stringify({ type: 'item.completed', item: {
 /* ---------- the full bench remains discoverable under the prompt budget --- */
 {
   const config = JSON.parse(readFileSync(join(ROOT, 'kingdom.config.json'), 'utf8'));
-  const limits = { orchestrator: 11_000, briefer: 4_000, peasant: 8_500 };
+  // orchestrator was 11_000 against a measured 10,920 with the 107-role bench.
+  // Roster v2 (18 roles) measured 7,555 on 2026-10-21; the ceiling is lowered so
+  // the bench cannot regrow unnoticed. briefer and peasant do not embed it.
+  const limits = { orchestrator: 8_500, briefer: 4_000, peasant: 8_500 };
   for (const [role, spec] of [['orchestrator', config.orchestrator], ['briefer', config.briefer], ['peasant', config.peasants[0]]]) {
     const prompt = buildPrompt({ name: spec.name, role, spec, config, mode: 'code', goal: null, repo: ROOT });
     a.ok(prompt.length <= limits[role], `code/${role} prompt is ${prompt.length} bytes`);
@@ -121,7 +124,7 @@ const db = join(dir, 'mcp.sqlite');
 const state = new Bus(db);
 state.set('roster', JSON.stringify([
   { name: 'coder', role: 'peasant', title: 'Code specialist', description: 'writes code', awake: true, summoned: true, cli: 'codex', model: 'gpt-5.6-luna', effort: 'high', auto: false },
-  { name: 'scribe', role: 'peasant', title: 'Documentation specialist', description: 'writes docs', awake: false, summoned: false, cli: 'codex', model: 'gpt-5.6-luna', effort: 'low', auto: true },
+  { name: 'writer', role: 'peasant', title: 'Documentation specialist', description: 'writes docs', awake: false, summoned: false, cli: 'codex', model: 'gpt-5.6-luna', effort: 'low', auto: true },
   { name: 'orchestrator', role: 'orchestrator', title: 'Court lead', description: 'assigns work', awake: false, summoned: false },
 ]));
 state.set('mode', 'code');
@@ -148,7 +151,7 @@ const roster = (args) => {
   });
   return JSON.parse(out.result.content[0].text);
 };
-a.deepEqual(roster({ query: 'documentation', detail: true }).map((m) => m.name), ['scribe']);
+a.deepEqual(roster({ query: 'documentation', detail: true }).map((m) => m.name), ['writer']);
 a.deepEqual(roster({ activeOnly: true }).map((m) => m.name), ['coder']);
 a.equal(roster({ query: 'specialist', limit: 1 }).length, 1);
 console.log('  MCP surfaces are under budget and roster supports query, activeOnly, detail and limit');

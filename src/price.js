@@ -1,7 +1,7 @@
 // What a turn actually cost, in dollars.
 //
 // Why this exists: codex and agy report NO cost at all (agent.js hardcodes
-// `costUsd: 0` on both paths), and the live court is 107 codex members. So
+// `costUsd: 0` on both paths), and the live court was 107 codex members. So
 // `spentUsd` sat frozen while the court burned tokens, `maxBudgetUsd` and
 // `maxKingdomUsd` could never fire, and every cost decision was being made
 // against a token count instead of a price.

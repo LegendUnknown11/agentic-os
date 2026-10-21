@@ -89,7 +89,8 @@ export function buildPrompt({
 }) {
   // Keep the whole bench discoverable only for the orchestrator. Other roles
   // can query the roster when they need a name, so their cached prefixes do
-  // not pay for the same 107 names on every spawn.
+  // not pay for the bench on every spawn. Measured on the shipped template:
+  // 107 names were 3,910 characters of bench; roster v2's 18 are 545.
   const roster = config.peasants;
   const bench = role === 'orchestrator'
     ? roster.map((p) => `  ${p.name}${p.title ? ` (${p.title})` : ''}`).join('\n')

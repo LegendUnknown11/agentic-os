@@ -92,14 +92,14 @@ const { transcriptOf, clean, fastSummary, summarize, settingsOf, DEFAULTS, EFFOR
 
 /* ---------- 3b. a turn that only ANSWERS is not an empty turn ---------- */
 {
-  // Found on a real run: the scribe gave a perfectly good answer and the
+  // Found on a real run: the writer gave a perfectly good answer and the
   // summary read "Accomplished nothing." The prompt asked only what the member
   // DID, so a turn that produced prose instead of edits looked idle. The
   // prompt must name both kinds of turn.
   const { summarize: s2 } = await import(`../src/summarize.js?p=${Math.random()}`);
   says('Described the Kingdom project as a coordinated agentic software court.');
   const line = await s2({ ...DEFAULTS }, {
-    name: 'scribe', role: 'peasant',
+    name: 'writer', role: 'peasant',
     events: [{ kind: 'text', payload: { text: 'The Kingdom project is a coordinated agentic software court.' } }],
   }, { cwd: dir });
   a.ok(line && !/nothing|no work|idle/i.test(line),

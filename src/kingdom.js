@@ -24,6 +24,7 @@ import { ripeness, checkTiming } from './ripeness.js';
 import { argue, pickPanel, verdictNote } from './argue.js';
 import { modeOf, modeName, modeBlock, canSummon } from './modes.js';
 import { buildPrompt } from './prompt.js';
+import { ROSTER_VERSION, planRosterMigration } from './roster.js';
 import {
   assertRepo, ensureRepo, behindBase, commitAll, createWorktree, dbPath, diffOf, statOf, kingdomDir,
   globalTokenStore, mergeWorktree, removeWorktree, pushBase, runTests, worktreePath,
@@ -172,6 +173,7 @@ export class Kingdom extends EventEmitter {
     // later points.
     this.dbPath = dbPath(repo);
     this.bus = new Bus(this.dbPath);
+    this.#migrateRoster();
     this.agents = new Map(); // name -> Agent (awake, has a live process)
     this.summoned = new Set(); // members in service; may be idle-slept and revived
     this.paused = false; // true: the tick loop still runs control/approvals, nobody gets a new turn
@@ -226,7 +228,49 @@ export class Kingdom extends EventEmitter {
       ...library.filter((r) => !have.has(r.name)).map((r) => ({ ...defaults, ...r })),
     ];
     this.config.rolesSeeded = true;
+    // Seeded from the current library, so there is nothing to migrate.
+    this.config.rosterVersion = ROSTER_VERSION;
     this.#persistConfig();
+  }
+
+  /**
+   * Bring a court seeded with an older roster up to the current one (roster v2,
+   * docs/PLAN-court.md). The rules are planRosterMigration's, in src/roster.js;
+   * this only answers its one question about the live court: is a member busy?
+   *
+   * Busy means work would be stranded if its spec vanished: start() restores
+   * the saved crew only for names specOf() still knows, so dropping a summoned
+   * member would silently drop it from service; a task it owns would have no
+   * owner that can finish it; and a worktree that still exists holds edits not
+   * yet merged (#merge removes it once merged). A busy member stays on the
+   * roster and is retired on a later launch, once none of those hold.
+   *
+   * Runs on EVERY launch, because that later retirement has to happen
+   * somewhere; on a current court with nothing pending it returns at once.
+   * Degrades, never wedges: an unreadable library or a failure here leaves the
+   * roster as it was and says so, rather than stopping the court coming up.
+   */
+  #migrateRoster() {
+    if ((this.config.rosterVersion ?? 1) >= ROSTER_VERSION && !this.config.rosterRetiring?.length) return;
+    try {
+      const library = JSON.parse(readFileSync(join(HERE, '..', 'roles.json'), 'utf8')).peasants ?? [];
+      let summoned = [];
+      try { summoned = JSON.parse(this.bus.get('summoned') ?? '[]'); } catch { summoned = []; }
+      const busy = (name) => (Array.isArray(summoned) && summoned.includes(name))
+        || this.bus.tasks({ owner: name }).some((t) => !TASK_CLOSED.has(t.state))
+        || (this.repo ? existsSync(worktreePath(this.repo, name)) : false);
+      const next = planRosterMigration(this.config, { library, busy });
+      if (!next) return;
+      const { report, rosterRetiring, ...fields } = next;
+      Object.assign(this.config, fields);
+      if (rosterRetiring.length) this.config.rosterRetiring = rosterRetiring;
+      else delete this.config.rosterRetiring;
+      this.#persistConfig();
+      this.bus.logEvent(CROWN, 'roster_migrated', { version: ROSTER_VERSION, ...report, pending: rosterRetiring });
+    } catch (e) {
+      this.rosterMigrationError = `The roster upgrade to v${ROSTER_VERSION} did not run (${e.message}); `
+        + 'the court keeps its previous roster.';
+    }
   }
 
   roleOf(name) {
@@ -389,9 +433,12 @@ export class Kingdom extends EventEmitter {
    * backend") instead of setting six dropdowns by hand.
    *
    * Overridable per kingdom with `"domains"` in the config. Cross-cutting roles
-   * — tester, reviewer, refactoring-engineer, debugger, researcher, writer — are in NEITHER by
-   * default: they follow the work rather than a layer, and sweeping them with a
-   * layer choice is how a reviewer ends up on a model nobody chose for it.
+   * are in NEITHER by default: every v2 role outside these two lists (src/roster.js),
+   * i.e. researcher, strategist, refactoring-engineer, tester, reviewer, debugger,
+   * auditor, writer and the Cowork trio. They follow the work rather than a layer,
+   * and sweeping them with a layer choice is how a reviewer ends up on a model
+   * nobody chose for it. Note a backend sweep DOES move architect off its Tier 1
+   * model (docs/PLAN-court.md Q3): that is the pre-v2 default, left as it was.
    * A member listed in both domains simply takes whichever was applied last.
    */
   domains() {
@@ -683,6 +730,7 @@ export class Kingdom extends EventEmitter {
   async start() {
     // Said now rather than in the constructor, which had nobody listening.
     if (this.configBroken) this.emit('failure', { name: 'orchestrator', message: this.configBroken });
+    if (this.rosterMigrationError) this.#warn(this.rosterMigrationError);
 
     // Keep persisted state and the bus on the same public vocabulary. Old
     // Research, Build, and Automate courts become Cowork once, before anybody

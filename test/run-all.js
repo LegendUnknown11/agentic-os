@@ -117,6 +117,7 @@ const suites = [
   ['every tool, every role gate', join(HERE, 't-tool-surface.js')],
   ['MCP listing overhead and live gates', join(HERE, 't-mcp-listing.js')],
   ['standing court roles', join(HERE, 't-roles.js')],
+  ['roster v1 -> v2 migration', join(HERE, 't-roster-migrate.js')],
   ['cached prefix is byte-stable', join(HERE, 't-prompt.js')],
   ['approvals and resting crew', join(HERE, 't-approvals.js')],
   ['real MCP approval chain', join(HERE, 't-mcp-chain.js')],

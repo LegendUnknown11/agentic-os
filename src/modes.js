@@ -251,16 +251,16 @@ if (typeof process !== 'undefined' && process.argv?.[1]?.endsWith('modes.js')) {
   a.equal(modeName('nonsense'), 'code');
 
   // --- who may be summoned ---
-  a.equal(canSummon('code', 'compiler-engineer'), true, 'code offers the whole bench');
+  a.equal(canSummon('code', 'tester'), true, 'code offers the whole bench');
   a.equal(canSummon('cowork', 'researcher'), true);
-  a.equal(canSummon('cowork', 'compiler-engineer'), false, 'not on the Cowork bench');
+  a.equal(canSummon('cowork', 'tester'), false, 'not on the Cowork bench');
   a.equal(canSummon('chat', 'researcher'), false, 'chat summons nobody');
   // The officers are never filtered: a mode that could not reach its own
   // orchestrator would have nothing to say.
   a.equal(canSummon('chat', 'orchestrator', 'orchestrator'), true);
   a.equal(canSummon('chat', 'briefer', 'briefer'), true);
 
-  const bench = ['researcher', 'coder', 'writer', 'compiler-engineer'];
+  const bench = ['researcher', 'coder', 'writer', 'tester'];
   a.deepEqual(crewFor('code', bench), bench);
   a.deepEqual(crewFor('cowork', bench), ['researcher', 'writer']);
   a.deepEqual(crewFor('chat', bench), []);
