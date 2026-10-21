@@ -13,6 +13,7 @@ import { buildPrompt } from '../src/prompt.js';
 import { cachedTokens, deltaOf, hasUsage, totalsOf } from '../src/usage.js';
 import { costClassOf } from '../src/price.js';
 import { forecast as forecastOf, turnsPerClosedCampaign } from '../src/forecast.js';
+import { removeRepo } from './cleanup.js';
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -152,6 +153,28 @@ a.deepEqual(roster({ activeOnly: true }).map((m) => m.name), ['coder']);
 a.equal(roster({ query: 'specialist', limit: 1 }).length, 1);
 console.log('  MCP surfaces are under budget and roster supports query, activeOnly, detail and limit');
 
+/* ---------- structured results omit replayed formatting, not data -------- */
+{
+  const description = 'writes code\n  preserves spacing, "quotes" and \\paths';
+  const seed = new Bus(db);
+  const members = JSON.parse(seed.get('roster'));
+  members[0].description = description;
+  seed.set('roster', JSON.stringify(members));
+  seed.close();
+  const out = rpc(db, { KINGDOM_MODE: 'code', KINGDOM_AGENT: 'coder', KINGDOM_ROLE: 'peasant' }, {
+    method: 'tools/call', params: { name: 'roster', arguments: { detail: true } },
+  });
+  const text = out.result.content[0].text;
+  const rows = JSON.parse(text);
+  a.equal(rows.length, 3);
+  a.equal(rows[0].description, description, 'whitespace inside string values must survive');
+  a.equal(rows[0].awake, true);
+  a.equal(rows[1].awake, false);
+  a.equal(text, JSON.stringify(rows), 'structured MCP output must not spend context on indentation');
+  const pretty = JSON.stringify(rows, null, 2);
+  console.log(`  roster result: ${pretty.length} -> ${text.length} characters (${pretty.length - text.length} formatting characters removed)`);
+}
+
 /* ---------- high-volume MCP reads stop at their context budgets ---------- */
 {
   const seeded = new Bus(db);
@@ -191,7 +214,9 @@ console.log('  MCP surfaces are under budget and roster supports query, activeOn
   const first = call();
   const second = call();
   a.ok(first.length > 400 && first.includes('durable observation'));
+  a.equal(first, readFileSync(join(vault, 'Notes', 'Big.md'), 'utf8'), 'string results stay verbatim');
   a.match(second, /\[unchanged/);
+  a.equal(call(), first, 'asking again restores the full observation');
   const seen = new Bus(maskDb);
   a.equal(Number(seen.get('mask:calls')), 1);
   a.equal(Number(seen.get('mask:chars')), first.length);
@@ -302,7 +327,7 @@ console.log('  MCP surfaces are under budget and roster supports query, activeOn
   a.equal(coder.stopped, undefined, 'a run ceiling stops the RUN, not unrelated work on the same member');
 
   await rk.stop();
-  rmSync(runRepo, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  removeRepo(runRepo);
   console.log('  maxRunUsd stops a run that crosses it, the same restart-safe way maxBudgetUsd/maxKingdomUsd already do');
 }
 
@@ -358,8 +383,61 @@ console.log('  MCP surfaces are under budget and roster supports query, activeOn
   a.ok(Math.abs(ledger.series.at(-1).usd - 1.2) < 1e-9, 'the series ends on the total');
 
   await rk.stop();
-  rmSync(runRepo, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  removeRepo(runRepo);
   console.log('  the run ceiling reads the run\'s own spend ledger, so clearSpend cannot disarm it');
+}
+
+/* ---------- clearSpend cannot corrupt campaign spend --------------------- */
+// campaigns() measured spend as the lifetime counter now minus the counter
+// when the campaign began. clearSpend() zeroes that counter, so a campaign
+// spanning a clear read negative and the one before it read wrong.
+{
+  const campRepo = mkdtempSync(join(tmpdir(), 'kingdom-campclear-'));
+  const git = (...x) => execFileSync('git', x, { cwd: campRepo, stdio: 'pipe' });
+  git('init', '-q');
+  git('config', 'user.email', 'k@kingdom');
+  git('config', 'user.name', 'kingdom');
+  writeFileSync(join(campRepo, 'README.md'), '# t\n');
+  git('add', '-A');
+  git('commit', '-qm', 'init');
+  const campConfigPath = join(campRepo, 'kingdom.config.json');
+  writeFileSync(campConfigPath, JSON.stringify({
+    orchestrator: { name: 'orchestrator', cli: 'codex' },
+    briefer: { name: 'briefer', cli: 'codex' },
+    peasants: [{ name: 'coder', cli: 'codex' }],
+  }));
+
+  const ck = new Kingdom(campRepo, campConfigPath);
+  ck.on('error', () => {});
+  await ck.start();
+  await ck.wake('coder');
+  const coder = ck.agents.get('coder');
+  coder.send = () => {};
+  const turn = (usd) => coder.emit('turn_end', { usage: { input_tokens: 10 }, costUsd: usd });
+
+  const first = ck.bus.beginCampaign('before any spend');
+  turn(2); turn(2);
+  await wait(100);
+  const second = ck.bus.beginCampaign('spans the clear');
+  ck.clearSpend();
+  turn(0.25);
+  await wait(100);
+  const third = ck.bus.beginCampaign('after the clear');
+  turn(0.5); turn(0.25);
+  await wait(100);
+
+  const byId = Object.fromEntries(ck.bus.campaigns().map((c) => [c.id, c]));
+  const near = (x, y) => Math.abs(x - y) < 1e-9;
+  a.ok(near(byId[first.id].spentUsd, 4), `the first campaign spent $4, got ${byId[first.id].spentUsd}`);
+  a.ok(near(byId[second.id].spentUsd, 0.25),
+    `a campaign spanning clearSpend keeps its own spend, got ${byId[second.id].spentUsd}`);
+  a.ok(near(byId[third.id].spentUsd, 0.75), `the current campaign spent $0.75, got ${byId[third.id].spentUsd}`);
+  a.equal(byId[third.id].current, true);
+  a.equal(Number(ck.bus.get('spentUsd')), 1, 'clearSpend still resets the lifetime counter it lifts');
+
+  await ck.stop();
+  removeRepo(campRepo);
+  console.log('  campaign spend survives clearSpend: no campaign reads negative or loses its spend');
 }
 
 rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });

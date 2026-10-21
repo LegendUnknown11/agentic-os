@@ -11,6 +11,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Kingdom } from '../src/kingdom.js';
+import { removeRepo } from './cleanup.js';
 
 const repo = mkdtempSync(join(tmpdir(), 'kingdom-taskadmin-'));
 const git = (...x) => execFileSync('git', x, { cwd: repo, stdio: 'pipe' });
@@ -101,5 +102,5 @@ try {
   console.log('t-task-admin.js OK — the sovereign can create, assign, reprioritise, drop and reopen, and members are told');
 } finally {
   await k.stop();
-  rmSync(repo, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  removeRepo(repo);
 }

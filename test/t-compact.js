@@ -13,6 +13,7 @@ import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Kingdom } from '../src/kingdom.js';
+import { removeRepo } from './cleanup.js';
 
 const repo = mkdtempSync(join(tmpdir(), 'kingdom-compact-'));
 const git = (...x) => execFileSync('git', x, { cwd: repo, stdio: 'pipe' });
@@ -102,5 +103,5 @@ await k.command('ship the auth branch');
 a.equal(posted(), before + 1, 'real work must still reach the court');
 
 k.bus.close?.();
-rmSync(repo, { recursive: true, force: true });
+removeRepo(repo);
 console.log('t-compact.js OK — window set, persisted, scoped per member, never billed as a turn');

@@ -29,10 +29,10 @@ function callTool(name, args, extraEnv = {}) {
   const r = spawnSync(process.execPath, [join(import.meta.dirname, '..', 'src', 'mcp.js')], {
     input: rpc,
     encoding: 'utf8',
-    // mcp.js answers over stdio and then keeps running, by design, for a live
-    // member's session — it never exits on stdin EOF. This harness wants one
-    // answer per process, so it bounds the wait instead: the reply is already
-    // in stdout well before this fires (measured: an idle process, not slow).
+    // A safety net only. mcp.js exits on its own once its client closes
+    // stdin; the assertion below holds it to that. This used to fire on every
+    // vault_search (30s of this suite's ~36s): on Linux a recursive fs.watch
+    // ignores unref() and held each process open until it was killed.
     timeout: 15_000,
     env: {
       ...process.env,
@@ -42,6 +42,7 @@ function callTool(name, args, extraEnv = {}) {
       ...extraEnv,
     },
   });
+  a.equal(r.error?.code, undefined, `mcp.js must exit when its client closes stdin (${name}): ${r.error?.code}`);
   const reply = r.stdout.split('\n').filter(Boolean)
     .map((l) => { try { return JSON.parse(l); } catch { return null; } })
     .find((m) => m && m.id === 2);

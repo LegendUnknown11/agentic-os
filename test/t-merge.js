@@ -11,6 +11,7 @@ import {
   mergeIntoRun, mergeRunBranch, mergeWorktree, removeWorktree, retryTransient, revisionOf, runTests,
   statOf, testCommand, worktreePath,
 } from '../src/worktree.js';
+import { removeRepo } from './cleanup.js';
 
 const repo = mkdtempSync(join(tmpdir(), 'kingdom-merge-'));
 const git = (...x) => execFileSync('git', x, { cwd: repo, stdio: 'pipe' });
@@ -296,5 +297,6 @@ a.equal(none.ok, false, 'no tests must never report ok');
   console.log('  removeWorktree rides out a transient permission error but never swallows a real one');
 }
 
-for (const d of [repo, bare]) { try { rmSync(d, { recursive: true, force: true }); } catch {} }
+removeRepo(repo);
+try { rmSync(bare, { recursive: true, force: true }); } catch {}
 console.log('t-merge.js OK — worktree, auto-commit, diff, test discovery, merge');

@@ -115,6 +115,7 @@ const suites = [
   ['codex resume args', join(HERE, 't-codex-args.js')],
   ['stranded work rescue', join(HERE, 't-rescue.js')],
   ['every tool, every role gate', join(HERE, 't-tool-surface.js')],
+  ['MCP listing overhead and live gates', join(HERE, 't-mcp-listing.js')],
   ['standing court roles', join(HERE, 't-roles.js')],
   ['cached prefix is byte-stable', join(HERE, 't-prompt.js')],
   ['approvals and resting crew', join(HERE, 't-approvals.js')],
@@ -183,6 +184,9 @@ const suites = [
   ['changes review lifecycle', join(HERE, 't-pages.js')],
   ['skill set + observation masking', join(HERE, 't-skills.js')],
   ['state reducer', join(HERE, 't-store.js')],
+  // A suite removes its own repo and <tmp>/.kingdom/<repo> folder, never a
+  // sibling's or the shared parent: see test/cleanup.js.
+  ['test cleanup stays in its own folder', join(HERE, 't-cleanup.js')],
   ['run notifications', join(HERE, 't-notify.js')],
   ['the sovereign manages the task list', join(HERE, 't-task-admin.js')],
   ['the inbox ranks what waits on you', join(HERE, 't-inbox.js')],

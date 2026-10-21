@@ -1435,7 +1435,9 @@ export class Kingdom extends EventEmitter {
   clearSpend(name) {
     if (name) this.bus.set(`spent:${name}`, '0');
     else {
-      this.bus.set('spentUsd', '0');
+      // Not a plain set: campaigns measure from lifetime spend, which must
+      // keep what this clears (bus.lifetimeSpentUsd).
+      this.bus.clearSpentUsd();
       for (const m of this.#members()) {
         this.bus.set(`spent:${m.name}`, '0');
       }

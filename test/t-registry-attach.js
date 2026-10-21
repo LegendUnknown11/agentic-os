@@ -15,6 +15,7 @@ import { mkdtempSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { removeRepo } from './cleanup.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DAEMON = join(HERE, '..', 'src', 'daemon.js');
@@ -136,7 +137,6 @@ try {
 } finally {
   for (const p of [A, B]) { try { p?.kill('SIGKILL'); } catch {} }
   await wait(300);
-  rmSync(repoA, { recursive: true, force: true });
-  rmSync(repoC, { recursive: true, force: true });
-  rmSync(fakeHome, { recursive: true, force: true });
+  removeRepo(repoA, repoC);
+  try { rmSync(fakeHome, { recursive: true, force: true, maxRetries: 10, retryDelay: 150 }); } catch {}
 }

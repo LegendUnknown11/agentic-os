@@ -472,7 +472,7 @@ export class Bus {
     const row = {
       ts: Date.now(), title: String(title ?? '').trim(),
       messageStart: this.lastMessageId(), eventStart: this.lastEventId(),
-      spentUsd: Number(this.get('spentUsd') ?? 0), tokens: Number(this.get('tokens') ?? 0),
+      spentUsd: this.lifetimeSpentUsd(), tokens: Number(this.get('tokens') ?? 0),
     };
     const { lastInsertRowid } = this.db.prepare(
       'insert into campaigns (ts,title,message_start,event_start,spent_usd,tokens) values (?,?,?,?,?,?)'
@@ -482,7 +482,7 @@ export class Bus {
 
   campaigns() {
     const rows = this.db.prepare('select * from campaigns order by id').all();
-    const now = { spentUsd: Number(this.get('spentUsd') ?? 0), tokens: Number(this.get('tokens') ?? 0) };
+    const now = { spentUsd: this.lifetimeSpentUsd(), tokens: Number(this.get('tokens') ?? 0) };
     return rows.map((r, i) => {
       const next = rows[i + 1];
       const end = next
@@ -500,6 +500,32 @@ export class Bus {
 
   campaign(id) {
     return this.campaigns().find((c) => c.id === Number(id)) ?? null;
+  }
+
+  /**
+   * Court spend that never goes down: the resettable `spentUsd` plus every
+   * amount clearSpentUsd() has zeroed. Campaign snapshots are taken against
+   * this, not `spentUsd`, because the sovereign clearing spend to lift a
+   * ceiling drove a campaign spanning the clear negative. Before the cleared
+   * counter existed nothing had been added to it, so it reads 0 and existing
+   * campaign snapshots stay consistent.
+   */
+  lifetimeSpentUsd() {
+    return Number(this.get('spentUsd') ?? 0) + Number(this.get('spentUsdCleared') ?? 0);
+  }
+
+  /** Zero the resettable court spend, carrying it into the cleared total. */
+  clearSpentUsd() {
+    this.db.exec('begin immediate');
+    try {
+      const cleared = Number(this.get('spentUsdCleared') ?? 0) + Number(this.get('spentUsd') ?? 0);
+      this.set('spentUsdCleared', String(cleared));
+      this.set('spentUsd', '0');
+      this.db.exec('commit');
+    } catch (e) {
+      try { this.db.exec('rollback'); } catch { /* the original error is the one worth seeing */ }
+      throw e;
+    }
   }
 
   /**

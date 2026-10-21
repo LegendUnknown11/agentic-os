@@ -12,6 +12,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync, readFileSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { removeRepo } from './cleanup.js';
 
 const dir = mkdtempSync(join(tmpdir(), 'kingdom-opencode-'));
 const ARGV = join(dir, 'argv.json');
@@ -195,7 +196,7 @@ const turn = (ag) => new Promise((res) => ag.once('turn_end', res));
   a.equal(briefId.mcp.kingdom.environment.KINGDOM_AGENT, 'briefer');
 
   await k.stop();
-  try { rmSync(repo, { recursive: true, force: true, maxRetries: 8 }); } catch {}
+  removeRepo(repo);
   console.log('  orchestrator and briefer keep separate .opencode.json identities, no clobbering');
 }
 
