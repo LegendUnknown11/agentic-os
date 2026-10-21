@@ -163,15 +163,20 @@ export function mountSidebar(root, options = {}) {
   const repo = node('button', 'sidebar-repo');
   repo.type = 'button';
   repo.dataset.action = 'repo';
+  const repoText = node('span', 'sidebar-footer-label');
+  repo.append(icon('folder', 15), repoText);
   const spend = node('span', 'sidebar-spend');
-  const settings = node('button', 'sidebar-settings', 'Settings');
+  const settings = node('button', 'sidebar-settings');
   settings.type = 'button';
   settings.dataset.action = 'settings';
+  settings.append(icon('system', 15), node('span', 'sidebar-footer-label', 'Settings'));
   footer.append(pauseBanner, repo, spend, settings);
 
-  const collapse = node('button', 'sidebar-collapse', 'Collapse');
+  const collapse = node('button', 'sidebar-collapse');
   collapse.type = 'button';
   collapse.dataset.action = 'collapse';
+  const collapseText = node('span', 'sidebar-footer-label', 'Collapse');
+  collapse.append(icon('prev', 15), collapseText);
   footer.append(collapse);
   // Everything that can outgrow the rail's own height scrolls together as
   // one region, so the header and footer are never the thing the browser
@@ -284,7 +289,7 @@ export function mountSidebar(root, options = {}) {
 
   function renderFooter() {
     const path = currentState.repo ?? currentState.repository;
-    repo.textContent = repoLabel(path);
+    repoText.textContent = repoLabel(path);
     brandRepo.textContent = repoLabel(path);
     repo.dataset.tip = path || 'Attach a repository';
     const money = spendText(currentState.spend);
@@ -309,7 +314,7 @@ export function mountSidebar(root, options = {}) {
     const collapsed = Boolean(currentState.prefs?.sidebarCollapsed);
     root.classList.toggle('collapsed', collapsed);
     document.body.classList.toggle('sidebar-collapsed', collapsed);
-    collapse.textContent = collapsed ? 'Expand' : 'Collapse';
+    collapseText.textContent = collapsed ? 'Expand' : 'Collapse';
     collapse.dataset.tip = collapsed ? 'Expand sidebar' : 'Collapse sidebar';
     collapse.setAttribute('aria-expanded', String(!collapsed));
   }

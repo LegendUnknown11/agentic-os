@@ -387,11 +387,17 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .sidebar-empty { margin: 0; padding: var(--space-2); color: var(--faint); font-size: var(--t-xs); }
 
-.sidebar-footer { display: grid; flex-shrink: 0; gap: var(--space-2); margin-top: auto; padding-top: var(--space-3); border-top: 1px solid var(--line-soft); }
+.sidebar-footer { display: grid; flex-shrink: 0; gap: 2px; margin-top: auto; padding-top: 12px; border-top: 1px solid var(--line-soft); }
 
-.sidebar-repo { display: flex; width: 100%; min-height: var(--tap-target-min); align-items: center; overflow: hidden; padding: var(--space-1) var(--space-2); border: 0; background: transparent; color: var(--muted); font-size: var(--t-sm); text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+/* Footer rows share the nav rows' geometry: icon, label, 32px, as the canvas's
+ * Usage and Settings rows. */
+.sidebar-repo { display: flex; width: 100%; min-height: var(--tap-target-min); align-items: center; gap: 10px; overflow: hidden; padding: 0 10px; border: 0; border-radius: var(--radius-ctl); background: transparent; color: var(--muted); font-size: var(--t-sm); text-align: left; white-space: nowrap; }
 
-.sidebar-repo:hover { color: var(--text); }
+.sidebar-footer-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+
+.sidebar-repo .icon, .sidebar-settings .icon, .sidebar-collapse .icon { flex: none; opacity: .72; }
+
+.sidebar-repo:hover { background: var(--hover); color: var(--text); }
 
 /* #41: the team-wide pause banner — degrades visibly instead of the team
    just going quiet with no reason on screen. Attention tone, the same token
@@ -656,7 +662,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .conversation-edit input { min-width: 0; flex: 1; border: 1px solid var(--line); border-radius: var(--radius-ctl); background: var(--raised); color: var(--text); }
 
-.sidebar-settings, .sidebar-collapse { display: flex; min-height: var(--tap-target-min); align-items: center; padding: var(--space-1) var(--space-3); border: 0; border-radius: var(--radius-ctl); background: transparent; color: var(--muted); font-size: var(--t-sm); text-align: left; }
+.sidebar-settings, .sidebar-collapse { display: flex; min-height: var(--tap-target-min); align-items: center; gap: 10px; padding: 0 10px; border: 0; border-radius: var(--radius-ctl); background: transparent; color: var(--muted); font-size: var(--t-sm); text-align: left; }
 
 .sidebar-settings:hover, .sidebar-collapse:hover { background: var(--hover); color: var(--text); }
 
@@ -666,7 +672,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 
 
-.sidebar-spend { padding: 0 var(--space-2); color: var(--faint); font-size: var(--t-xs); }
+.sidebar-spend { padding: 0 10px 4px; color: var(--faint); font: 400 11px/1.6 var(--mono); }
 
 .sidebar-spend:empty { display: none; }
 
@@ -1435,7 +1441,9 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
   .sidebar.collapsed .sidebar-new .icon { display: none; }
 
-  .sidebar.collapsed .sidebar-collapse { width: var(--tap-target-min); overflow: hidden; padding: 0; font-size: 0; }
+  .sidebar.collapsed .sidebar-collapse { width: var(--tap-target-min); justify-content: center; overflow: hidden; padding: 0; font-size: 0; }
+
+  .sidebar.collapsed .sidebar-collapse .icon { display: none; }
 
   .sidebar.collapsed .sidebar-collapse::before { content: "›"; font-size: 18px; line-height: 1; }
 }
