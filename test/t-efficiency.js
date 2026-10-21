@@ -95,7 +95,10 @@ process.stdout.write(JSON.stringify({ type: 'item.completed', item: {
 /* ---------- the full bench remains discoverable under the prompt budget --- */
 {
   const config = JSON.parse(readFileSync(join(ROOT, 'kingdom.config.json'), 'utf8'));
-  const limits = { orchestrator: 11_000, briefer: 4_000, peasant: 8_500 };
+  // orchestrator was 11_000 against a measured 10,920 with the 107-role bench.
+  // Roster v2 (18 roles) measured 7,555 on 2026-10-21; the ceiling is lowered so
+  // the bench cannot regrow unnoticed. briefer and peasant do not embed it.
+  const limits = { orchestrator: 8_500, briefer: 4_000, peasant: 8_500 };
   for (const [role, spec] of [['orchestrator', config.orchestrator], ['briefer', config.briefer], ['peasant', config.peasants[0]]]) {
     const prompt = buildPrompt({ name: spec.name, role, spec, config, mode: 'code', goal: null, repo: ROOT });
     a.ok(prompt.length <= limits[role], `code/${role} prompt is ${prompt.length} bytes`);
