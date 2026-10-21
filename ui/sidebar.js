@@ -1,5 +1,5 @@
 import { state as storeState, subscribe, post as storePost, sameId } from './store.js';
-import { spendText, turnsText, tone } from './views/util.js';
+import { spendText, turnsText, tone, repoName } from './views/util.js';
 import { icon } from './icons.js';
 import { statusLabel } from './status.js';
 
@@ -66,10 +66,7 @@ export function displayStatus(member = {}) {
   return 'off';
 }
 
-function repoName(path) {
-  if (!path) return 'No repository';
-  return String(path).split(/[\\/]/).filter(Boolean).pop() || path;
-}
+const repoLabel = (path) => repoName(path) || 'No repository';
 
 function conversationTitle(c) {
   return c?.title || (c?.parent_id || c?.parentId ? 'Branch' : 'New chat');
@@ -190,7 +187,7 @@ export function mountSidebar(root, options = {}) {
 
   function renderConversations() {
     conversationList.textContent = '';
-    conversationsRepo.textContent = repoName(currentState.repo ?? currentState.repository);
+    conversationsRepo.textContent = repoLabel(currentState.repo ?? currentState.repository);
     conversationsBranch.textContent = currentState.base ?? '';
     const active = activeConversationOf(currentState);
     const rows = conversationsOf(currentState);
@@ -287,8 +284,8 @@ export function mountSidebar(root, options = {}) {
 
   function renderFooter() {
     const path = currentState.repo ?? currentState.repository;
-    repo.textContent = repoName(path);
-    brandRepo.textContent = repoName(path);
+    repo.textContent = repoLabel(path);
+    brandRepo.textContent = repoLabel(path);
     repo.dataset.tip = path || 'Attach a repository';
     const money = spendText(currentState.spend);
     const turns = turnsText(currentState.spend);

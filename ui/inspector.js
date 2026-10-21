@@ -1,4 +1,4 @@
-import { h, spendText, turnsText, tone, meter, kb } from './views/util.js';
+import { h, spendText, turnsText, tone, meter, kb, repoName } from './views/util.js';
 import { icon } from './icons.js';
 import { runStatus } from './run.js';
 
@@ -13,7 +13,6 @@ const LIFECYCLE = [['planning', 'Plan'], ['running', 'Run'], ['verifying', 'Veri
 const STAGE_OF = { planning: 0, running: 1, paused: 1, blocked: 1, verifying: 2, ready_for_review: 3, completed: 4, cancelled: 4 };
 const CLOSED = new Set(['done', 'dropped']);
 
-const repoName = (path) => (path ? String(path).split(/[\\/]/).filter(Boolean).pop() : '');
 const tasksOf = (state) => (Array.isArray(state.tasks) ? state.tasks : state.tasks?.tasks ?? []);
 const changesOf = (state) => (Array.isArray(state.changes) ? state.changes : state.changes?.changed ?? []);
 

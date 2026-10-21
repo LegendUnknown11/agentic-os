@@ -2,7 +2,7 @@ import { state as storeState, subscribe, post as storePost, sameId } from './sto
 import { mdToHtml } from './markdown.js';
 import { pick as pickFiles, upload as uploadAsset } from './assets.js';
 import { displayName } from './names.js';
-import { date, kb, modelLabel, tone } from './views/util.js';
+import { date, kb, modelLabel, tone, repoName } from './views/util.js';
 import { renderRunThreadContext, runStatus, runStatusLabel } from './run.js';
 import { renderInspector } from './inspector.js';
 import { mountChanges } from './views/changes.js';
@@ -51,10 +51,6 @@ function memberRecord(state, name) {
 function conversationRecord(state, conversationId) {
   return arrayOf(state?.conversations).find((conversation) =>
     sameId(conversation?.id, conversationId) || sameId(conversation?.conversationId, conversationId));
-}
-
-function repoName(path) {
-  return path ? String(path).split(/[\\/]/).filter(Boolean).pop() : '';
 }
 
 function workContext(state, conversationId) {

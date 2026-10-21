@@ -13,14 +13,10 @@
 // Everything here reads the bus and the repo; nothing here mutates either —
 // export is a report, not a side effect on the run.
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import { join } from 'node:path';
-import { stateDir, runBranch } from './worktree.js';
+import { stateDir, runBranch, git } from './worktree.js';
 import { rates } from './forecast.js';
 
-const exec = promisify(execFile);
-const git = (cwd, ...args) => exec('git', args, { cwd, maxBuffer: 64 * 1024 * 1024, windowsHide: true });
 
 export const evidenceDir = (repo, runId) => join(stateDir(repo), 'evidence', String(runId));
 

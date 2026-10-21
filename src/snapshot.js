@@ -5,16 +5,12 @@
 // never mutates the checkout it reads from — snapshotRepo issues no git
 // command that writes anything. restoreSnapshot reverses it exactly,
 // including a tracked file the snapshot found already deleted.
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import {
   mkdirSync, readFileSync, writeFileSync, copyFileSync, rmSync,
 } from 'node:fs';
 import { join, dirname } from 'node:path';
-import { assertRepo, revisionOf } from './worktree.js';
+import { assertRepo, revisionOf, git } from './worktree.js';
 
-const exec = promisify(execFile);
-const git = (cwd, ...args) => exec('git', args, { cwd, maxBuffer: 64 * 1024 * 1024, windowsHide: true });
 
 /*
  * What never enters a snapshot, regardless of the target repo's own

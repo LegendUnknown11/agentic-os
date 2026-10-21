@@ -202,6 +202,9 @@ const MODEL_LABELS = {
 export const modelLabel = (model) => (model ? MODEL_LABELS[model] ?? model : model);
 export const date = (ts) => ts ? new Date(ts).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
 
+/** The last segment of a repository path: E:\\AI\\agentic-os -> agentic-os. */
+export const repoName = (path) => (path ? String(path).split(/[\\/]/).filter(Boolean).pop() || String(path) : '');
+
 export const membersOf = (state) => state.members instanceof Map ? [...state.members.entries()] : Object.entries(state.members ?? {}).map(([name, member]) => [name, member]);
 export const modeDef = (state) => state.modeDef ?? state.modeInfo ?? state.modes?.[state.mode] ?? { crew: 'all', worktrees: true, merge: true, tasks: true };
 export const modeAllows = (state, capability) => {

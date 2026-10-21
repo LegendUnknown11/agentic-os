@@ -339,7 +339,7 @@ a.match(sidebarSource, /button\.dataset\.tip = label/, 'collapsed navigation ico
 a.match(sidebarSource, /brand\.dataset\.view = 'home'/, 'Overview is the brand: the way home is the logo, not a rail row');
 a.match(sidebarSource, /aria-keyshortcuts', 'Control\+N'/, 'New run advertises its shortcut to assistive tech');
 a.match(sidebarSource, /collapse\.dataset\.tip = collapsed \? 'Expand sidebar' : 'Collapse sidebar'/, 'the collapsed rail control must describe its current action');
-a.match(sidebarSource, /import \{ spendText, turnsText, tone \} from '\.\/views\/util\.js'/,
+a.match(sidebarSource, /import \{ spendText, turnsText, tone[^}]*\} from '\.\/views\/util\.js'/,
   'Sidebar spend must use the shared money formatter, and now the shared turn-count formatter beside it (#41)');
 a.doesNotMatch(sidebarSource, /data-member|memberOfView|attachHoverTips/, 'Team moved out of the rail — the sidebar must not keep member-click wiring for a list it no longer renders');
 a.match(pagesSource, /actionMessage\.textContent = error\?\.message/, 'failed Team actions must leave visible retryable feedback');

@@ -17,7 +17,7 @@ export const globalTokenStore = () =>
 
 const exec = promisify(execFile);
 
-const git = (cwd, ...args) => exec('git', args, { cwd, maxBuffer: 64 * 1024 * 1024, windowsHide: true });
+export const git = (cwd, ...args) => exec('git', args, { cwd, maxBuffer: 64 * 1024 * 1024, windowsHide: true });
 
 // Measured locally on 2026-08-21: five bare-repo pushes took 254.5–312.6ms
 // (285.5ms mean). This is a failure bound, not a latency target: it exists so

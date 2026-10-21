@@ -18,7 +18,7 @@
 import { strict as a } from 'node:assert';
 import { EventEmitter } from 'node:events';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { removeRepo } from './cleanup.js';
