@@ -92,7 +92,7 @@ export function renderInspector(state, { open, compacting = null, member = 'orch
 
   const changed = changesOf(state);
   const outputs = changed.length ? changed.map((change) => h('button', { class: 'inspector-out', type: 'button', 'data-action': 'run-tab', 'data-tab': 'diff' },
-    h('span', { text: String(change.peasant ?? change.name ?? 'worktree') }), h('span', { class: 'inspector-sub mono', text: 'diff' })))
+    h('span', { text: String(change.agent ?? change.name ?? 'worktree') }), h('span', { class: 'inspector-sub mono', text: 'diff' })))
     : [h('p', { class: 'inspector-empty', text: 'Nothing has changed in a worktree yet.' })];
 
   const members = state.members instanceof Map ? [...state.members.values()] : Object.values(state.members ?? {});

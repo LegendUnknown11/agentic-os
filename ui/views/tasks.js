@@ -8,7 +8,7 @@ const priorityLabel = (value) => (PRIORITIES.find(([n]) => n === Number(value ??
 const CLOSED = new Set(['done', 'dropped']);
 
 // The view repaints on every store change, which during a stream is every
-// frame. What the sovereign has opened or half-typed lives in state, or the
+// frame. What the user has opened or half-typed lives in state, or the
 // next event collapsed the closed list and wiped the new-task fields.
 const viewState = (state) => (state.tasksView ??= { closedOpen: false, doneOpen: false, team: '', mine: '', due: '' });
 function remembered(control, view, key) {
@@ -106,7 +106,7 @@ function teamQueue(state, refresh) {
       h('ul', { class: 'task-manage-list', 'aria-label': 'Closed team tasks' }, ...closed.map((t) => teamRow(t, members, feedback, refresh)))) : null);
 }
 
-/* ---------- my tasks: the sovereign's own list ---------- */
+/* ---------- my tasks: the user's own list ---------- */
 
 const DAY = 86_400_000;
 
@@ -152,7 +152,7 @@ function myRow(task, feedback, refresh) {
   return h('li', { class: `task-manage my-task ${due.tone}`.trim(), 'data-my-task-id': String(task.id) },
     h('label', { class: 'my-task-check' }, done,
       h('span', { class: 'task-manage-text' }, h('strong', { text: task.title }),
-        h('span', { class: 'card-meta', text: [due.label, task.by !== 'sovereign' ? `added by ${task.by}` : null].filter(Boolean).join(' · ') }),
+        h('span', { class: 'card-meta', text: [due.label, task.by !== 'user' ? `added by ${task.by}` : null].filter(Boolean).join(' · ') }),
         task.notes ? h('span', { class: 'my-task-notes', text: task.notes }) : null)),
     h('div', { class: 'task-manage-controls' }, snooze, remove));
 }

@@ -7,7 +7,7 @@
 // route actually serves it.
 //
 //   node test/t-doctor-api.js
-// Never let a daemon this suite spawns touch the real ~/.kingdom/courts.json
+// Never let a daemon this suite spawns touch the real ~/.agenticos/teams.json
 // on the machine running the tests — see test/t-registry-isolation.js.
 import './isolate-registry.js';
 import { strict as a } from 'node:assert';
@@ -16,11 +16,11 @@ import { mkdtempSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { kingdomDir } from '../src/worktree.js';
+import { stateDir } from '../src/worktree.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-const dir = mkdtempSync(join(tmpdir(), 'kingdom-doctor-'));
+const dir = mkdtempSync(join(tmpdir(), 'agenticos-doctor-'));
 
 // One stub answers for both claude and codex: branch on which status
 // subcommand each CLI's doctor probe actually sends.
@@ -35,9 +35,9 @@ if (argv.includes('auth') && argv.includes('status')) {
   process.stdout.write('OK');
 }
 `);
-process.env.KINGDOM_CLAUDE_BIN = STUB;
-process.env.KINGDOM_CODEX_BIN = STUB;
-for (const cli of ['AGY', 'OPENCODE', 'CURSOR']) process.env[`KINGDOM_${cli}_BIN`] = STUB;
+process.env.AGENTICOS_CLAUDE_BIN = STUB;
+process.env.AGENTICOS_CODEX_BIN = STUB;
+for (const cli of ['AGY', 'OPENCODE', 'CURSOR']) process.env[`AGENTICOS_${cli}_BIN`] = STUB;
 for (const key of ['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN']) delete process.env[key];
 
 /* ---------- 1. runDoctor() returns a structured report, not printed lines */
@@ -62,11 +62,11 @@ for (const key of ['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY', 'ANTHROPIC_AU
 
 /* ---------- 2. GET /api/doctor serves the same report over the daemon --- */
 {
-  const repo = mkdtempSync(join(tmpdir(), 'kingdom-doctor-repo-'));
+  const repo = mkdtempSync(join(tmpdir(), 'agenticos-doctor-repo-'));
   const git = (...x) => execFileSync('git', x, { cwd: repo, stdio: 'pipe' });
   git('init', '-q');
-  git('config', 'user.email', 'k@kingdom');
-  git('config', 'user.name', 'kingdom');
+  git('config', 'user.email', 'k@agenticos');
+  git('config', 'user.name', 'agenticos');
   writeFileSync(join(repo, 'README.md'), '# t\n');
   git('add', '-A');
   git('commit', '-qm', 'init');
@@ -74,7 +74,7 @@ for (const key of ['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY', 'ANTHROPIC_AU
   writeFileSync(cfg, JSON.stringify({
     orchestrator: { name: 'orchestrator', cli: 'claude' },
     briefer: { name: 'briefer', cli: 'claude' },
-    peasants: [],
+    agents: [],
     rolesSeeded: true,
     advisor: { promptEngineer: false, autoModel: false },
     summarizer: { enabled: false },
@@ -107,7 +107,7 @@ for (const key of ['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY', 'ANTHROPIC_AU
   } finally {
     daemon.kill();
     await wait(300);
-    for (const d of [repo, kingdomDir(repo)]) {
+    for (const d of [repo, stateDir(repo)]) {
       try { rmSync(d, { recursive: true, force: true, maxRetries: 10, retryDelay: 150 }); } catch {}
     }
   }

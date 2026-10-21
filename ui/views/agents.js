@@ -42,14 +42,14 @@ export function renderAgents(state, root) {
   const shell = page('Agents', 'Who is configured, who is on the team, and what each one is doing.');
   if (state.ready === false) { shell.append(section('Team', empty('Loading the roster…'))); root.append(shell); return; }
   const allowed = modeAllows(state, 'crew');
-  const entries = membersOf(state).filter(([, member]) => member.role === 'peasant').sort(([a], [b]) => a.localeCompare(b));
-  const active = entries.filter(([, member]) => member.summoned || member.serving || member.awake);
+  const entries = membersOf(state).filter(([, member]) => member.role === 'agent').sort(([a], [b]) => a.localeCompare(b));
+  const active = entries.filter(([, member]) => member.added || member.serving || member.awake);
   const body = section(`Configured agents · ${entries.length}`);
   body.append(note(`${active.length} currently on the team.`));
   if (!entries.length) body.append(empty('No agents are configured.'));
   for (const [name, member] of entries) {
-    const on = Boolean(member.summoned);
-    const pending = !on && (state.approvals ?? []).some((approval) => !approval.resolved && approval.kind === 'summon' && approval.names?.includes(name));
+    const on = Boolean(member.added);
+    const pending = !on && (state.approvals ?? []).some((approval) => !approval.resolved && approval.kind === 'add' && approval.names?.includes(name));
     const bench = modeDef(state).crew;
     const inBench = bench === 'all' || bench?.includes(name);
     const stateLabel = on ? displayStatus(member) : pending ? 'requested' : 'available';
@@ -66,7 +66,7 @@ export function renderAgents(state, root) {
       try {
         const result = on
           ? await post(member.awake ? 'sleep' : 'wake', { name })
-          : await post('summon', { names: [name], reason: `You requested ${displayName(name, member.role)} from the Team page.` });
+          : await post('add', { names: [name], reason: `You requested ${displayName(name, member.role)} from the Team page.` });
         if (result?.ok === false) throw new Error(result.error ?? 'The team action failed. Try again.');
         actionMessage.className = 'note success';
         actionMessage.textContent = on ? (member.awake ? 'Rest requested.' : 'Wake requested.') : 'Team request submitted for approval.';

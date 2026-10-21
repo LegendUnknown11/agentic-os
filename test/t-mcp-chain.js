@@ -1,5 +1,5 @@
-// The orchestrator's real MCP summon call must travel through the bus into the
-// Kingdom approval flow before the designer joins the standing crew.
+// The orchestrator's real MCP add call must travel through the bus into the
+// AgenticOS approval flow before the designer joins the standing crew.
 //
 //   node test/t-mcp-chain.js
 import { strict as a } from 'node:assert';
@@ -7,13 +7,13 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Kingdom } from '../src/agenticos.js';
-import { dbPath, kingdomDir } from '../src/worktree.js';
+import { AgenticOS } from '../src/agenticos.js';
+import { dbPath, stateDir } from '../src/worktree.js';
 
-const dir = mkdtempSync(join(tmpdir(), 'kingdom-mcp-chain-'));
+const dir = mkdtempSync(join(tmpdir(), 'agenticos-mcp-chain-'));
 const repo = join(dir, 'repo');
 const vault = join(dir, 'vault');
-let kingdom;
+let agenticos;
 
 function invokeOrchestratorMcp(db, extraEnv = {}) {
   const rpc = [
@@ -22,7 +22,7 @@ function invokeOrchestratorMcp(db, extraEnv = {}) {
     { jsonrpc: '2.0', method: 'notifications/initialized' },
     { jsonrpc: '2.0', id: 2, method: 'tools/list' },
     { jsonrpc: '2.0', id: 3, method: 'tools/call', params: {
-      name: 'summon', arguments: { names: ['designer'], reason: 'black-box MCP chain' } } },
+      name: 'add_agent', arguments: { names: ['designer'], reason: 'black-box MCP chain' } } },
     { jsonrpc: '2.0', id: 4, method: 'tools/call', params: {
       name: 'assign', arguments: { to: 'designer', task: 'must be blocked until approval' } } },
     ...['first', 'second', 'third', 'fourth'].map((word, i) => ({
@@ -39,7 +39,7 @@ function invokeOrchestratorMcp(db, extraEnv = {}) {
     input: rpc,
     encoding: 'utf8',
     env: {
-      ...process.env, KINGDOM_AGENT: 'orchestrator', KINGDOM_ROLE: 'orchestrator', KINGDOM_DB: db,
+      ...process.env, AGENTICOS_AGENT: 'orchestrator', AGENTICOS_ROLE: 'orchestrator', AGENTICOS_DB: db,
       ...extraEnv,
     },
   });
@@ -49,15 +49,15 @@ function invokeOrchestratorMcp(db, extraEnv = {}) {
   a.equal(r.status, 0, `orchestrator MCP exited ${r.status}. stderr: ${r.stderr.slice(0, 400)}`);
   return {
     tools: messages.find((m) => m.id === 2),
-    summon: messages.find((m) => m.id === 3),
+    add: messages.find((m) => m.id === 3),
     assign: messages.find((m) => m.id === 4),
     memories: [5, 6, 7, 8].map((id) => messages.find((m) => m.id === id)),
   };
 }
 
 execFileSync('git', ['init', '-q', repo]);
-execFileSync('git', ['config', 'user.email', 'k@kingdom'], { cwd: repo });
-execFileSync('git', ['config', 'user.name', 'kingdom'], { cwd: repo });
+execFileSync('git', ['config', 'user.email', 'k@agenticos'], { cwd: repo });
+execFileSync('git', ['config', 'user.name', 'agenticos'], { cwd: repo });
 writeFileSync(join(repo, 'README.md'), '# MCP chain\n');
 execFileSync('git', ['add', '-A'], { cwd: repo });
 execFileSync('git', ['commit', '-qm', 'init'], { cwd: repo });
@@ -66,40 +66,40 @@ const configPath = join(dir, 'agenticos.config.json');
 writeFileSync(configPath, JSON.stringify({
   orchestrator: { name: 'orchestrator', cli: 'codex' },
   briefer: { name: 'briefer', cli: 'codex' },
-  peasants: [{ name: 'designer', cli: 'codex' }],
+  agents: [{ name: 'designer', cli: 'codex' }],
   rolesSeeded: true,
   vault,
   advisor: { promptEngineer: false, autoModel: false },
 }));
 
 try {
-  kingdom = new Kingdom(repo, configPath);
+  agenticos = new AgenticOS(repo, configPath);
   const approvalPromise = new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('MCP summon did not surface an approval')), 4000);
-    kingdom.on('approval', (p) => {
-      if (p.kind !== 'summon' || !p.names.includes('designer')) return;
+    const timer = setTimeout(() => reject(new Error('MCP add did not surface an approval')), 4000);
+    agenticos.on('approval', (p) => {
+      if (p.kind !== 'add' || !p.names.includes('designer')) return;
       clearTimeout(timer);
       resolve(p);
     });
   });
 
-  await kingdom.start();
-  await kingdom.command('first order');
-  kingdom.bus.post('reviewer', 'orchestrator', 'This work was sent back. Add the missing regression.', 'assignment');
-  kingdom.bus.logEvent('coder', 'error', { message: 'formatter failed on all-empty records' });
-  await kingdom.command('next order closes the first');
-  a.ok(kingdom.bus.pending('briefer').some((m) => /RETROSPECTIVE.*campaign #1/.test(m.body)),
+  await agenticos.start();
+  await agenticos.command('first order');
+  agenticos.bus.post('reviewer', 'orchestrator', 'This work was sent back. Add the missing regression.', 'assignment');
+  agenticos.bus.logEvent('coder', 'error', { message: 'formatter failed on all-empty records' });
+  await agenticos.command('next order closes the first');
+  a.ok(agenticos.bus.pending('briefer').some((m) => /RETROSPECTIVE.*campaign #1/.test(m.body)),
     'opening a new order must offer the briefer the campaign that just closed');
-  const { tools, summon, assign, memories } = invokeOrchestratorMcp(dbPath(repo), {
-    KINGDOM_VAULT: vault, KINGDOM_REPO: repo,
+  const { tools, add, assign, memories } = invokeOrchestratorMcp(dbPath(repo), {
+    AGENTICOS_VAULT: vault, AGENTICOS_REPO: repo,
   });
-  a.ok(tools?.result?.tools?.some((t) => t.name === 'summon'),
-    'the orchestrator MCP tool list must expose summon');
-  a.equal(summon?.result?.isError, undefined,
-    `orchestrator summon failed: ${summon?.result?.content?.[0]?.text ?? 'no reply'}`);
-  a.match(summon?.result?.content?.[0]?.text ?? '', /Proposal sent to the sovereign/);
-  a.match(assign?.result?.content?.[0]?.text ?? '', /not summoned/,
-    'the orchestrator must not assign work before summon approval');
+  a.ok(tools?.result?.tools?.some((t) => t.name === 'add_agent'),
+    'the orchestrator MCP tool list must expose add_agent');
+  a.equal(add?.result?.isError, undefined,
+    `orchestrator add failed: ${add?.result?.content?.[0]?.text ?? 'no reply'}`);
+  a.match(add?.result?.content?.[0]?.text ?? '', /Proposal sent to the user/);
+  a.match(assign?.result?.content?.[0]?.text ?? '', /not added/,
+    'the orchestrator must not assign work before add approval');
   a.ok(tools?.result?.tools?.some((t) => t.name === 'campaign_history'),
     'a retrospective must have a bounded, campaign-scoped evidence source');
   for (const proposal of memories.slice(0, 3)) {
@@ -110,52 +110,52 @@ try {
     'a campaign cannot overflow its retrospective memory cap');
 
   const approval = await approvalPromise;
-  a.equal(kingdom.approvals.get(approval.id)?.kind, 'summon',
-    'the Kingdom API must retain the pending summon');
+  a.equal(agenticos.approvals.get(approval.id)?.kind, 'add',
+    'the AgenticOS API must retain the pending add');
   a.deepEqual(approval.names, ['designer']);
 
-  await kingdom.approve(approval.id);
-  a.equal(kingdom.bus.get(`resolved:${approval.id}`), 'approved');
-  a.ok(kingdom.summoned.has('designer'), 'approval must add designer to the standing crew');
-  a.ok(kingdom.agents.has('designer'), 'approval must wake designer');
-  const summons = kingdom.bus.events({ agent: 'designer', type: 'summoned' });
-  a.equal(summons.length, 1, 'an approved summon must leave one durable telemetry row');
-  a.equal(summons[0].payload.approvalId, approval.id, 'the event must identify the approval that spent the wake');
-  a.equal(summons[0].payload.by, 'orchestrator', 'the event must identify who requested the crew');
+  await agenticos.approve(approval.id);
+  a.equal(agenticos.bus.get(`resolved:${approval.id}`), 'approved');
+  a.ok(agenticos.added.has('designer'), 'approval must add designer to the standing crew');
+  a.ok(agenticos.processes.has('designer'), 'approval must wake designer');
+  const adds = agenticos.bus.events({ agent: 'designer', type: 'added' });
+  a.equal(adds.length, 1, 'an approved add must leave one durable telemetry row');
+  a.equal(adds[0].payload.approvalId, approval.id, 'the event must identify the approval that spent the wake');
+  a.equal(adds[0].payload.by, 'orchestrator', 'the event must identify who requested the crew');
 
   await new Promise((resolve) => setTimeout(resolve, 700));
-  const memoryApprovals = [...kingdom.approvals.entries()].filter(([, p]) => p.kind === 'memory');
+  const memoryApprovals = [...agenticos.approvals.entries()].filter(([, p]) => p.kind === 'memory');
   a.equal(memoryApprovals.length, 3, 'exactly three durable proposals survive in the approval queue');
-  await kingdom.approve(memoryApprovals[0][0]);
-  await kingdom.approve(memoryApprovals[1][0]);
-  kingdom.reject(memoryApprovals[2][0], 'too transient');
+  await agenticos.approve(memoryApprovals[0][0]);
+  await agenticos.approve(memoryApprovals[1][0]);
+  agenticos.reject(memoryApprovals[2][0], 'too transient');
   for (const [, p] of memoryApprovals.slice(0, 2)) {
-    const file = join(vault, 'Kingdom', 'Memories', `${p.title}.md`);
+    const file = join(vault, 'AgenticOS', 'Memories', `${p.title}.md`);
     a.ok(existsSync(file), `approved memory "${p.title}" must be written`);
     a.match(readFileSync(file, 'utf8'), /recorded_by: orchestrator/,
       'approved memory preserves the proposing member');
   }
-  a.ok(!existsSync(join(vault, 'Kingdom', 'Memories', `${memoryApprovals[2][1].title}.md`)),
+  a.ok(!existsSync(join(vault, 'AgenticOS', 'Memories', `${memoryApprovals[2][1].title}.md`)),
     'a rejected proposal must leave no memory behind');
 
-  kingdom.sleep('designer');
-  a.equal(kingdom.agents.has('designer'), false, 'sleep must stop designer');
-  await kingdom.wake('designer');
-  a.ok(kingdom.summoned.has('designer'), 'a woken designer must remain summoned');
-  a.ok(kingdom.agents.has('designer'), 'a summoned designer must be wakeable');
+  agenticos.sleep('designer');
+  a.equal(agenticos.processes.has('designer'), false, 'sleep must stop designer');
+  await agenticos.wake('designer');
+  a.ok(agenticos.added.has('designer'), 'a woken designer must remain added');
+  a.ok(agenticos.processes.has('designer'), 'an added designer must be wakeable');
 
-  await kingdom.stop();
-  kingdom = new Kingdom(repo, configPath);
-  await kingdom.start();
+  await agenticos.stop();
+  agenticos = new AgenticOS(repo, configPath);
+  await agenticos.start();
   for (const [, p] of memoryApprovals.slice(0, 2)) {
-    a.ok(existsSync(join(vault, 'Kingdom', 'Memories', `${p.title}.md`)),
+    a.ok(existsSync(join(vault, 'AgenticOS', 'Memories', `${p.title}.md`)),
       'approved memories must survive a daemon restart');
   }
 
   console.log('t-mcp-chain.js OK — approvals gate campaign memories, cap proposals, and survive restart');
 } finally {
-  try { await kingdom?.stop(); } catch {}
-  for (const target of [repo, kingdomDir(repo), dir]) {
+  try { await agenticos?.stop(); } catch {}
+  for (const target of [repo, stateDir(repo), dir]) {
     try { rmSync(target, { recursive: true, force: true, maxRetries: 10, retryDelay: 150 }); } catch {}
   }
 }

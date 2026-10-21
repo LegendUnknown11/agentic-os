@@ -8,7 +8,7 @@
 // bus. Everything it needs is an argument, so t-ripeness.js can drive the whole
 // state space in milliseconds.
 //
-// The constants stay in agenticos.js — they are the sovereign's tuning, and
+// The constants stay in agenticos.js — they are the user's tuning, and
 // passing them in is what lets a test sweep them.
 
 /**
@@ -35,7 +35,7 @@ export function ripeness(deliverable, {
   // A member whose session is being torn down and replaced still sits in the
   // roster for as long as the handover takes — up to 120s. Delivering into it
   // acks the batch and then stop() discards it, which is how a 53k-char brief
-  // vanished with the court reporting nothing at all. It is not gone, it is
+  // vanished with the team reporting nothing at all. It is not gone, it is
   // busy in a way `busy` does not describe.
   if (recycling) return { ripe: false, why: 'member is being recycled' };
 
@@ -46,7 +46,7 @@ export function ripeness(deliverable, {
   // the most expensive way to buy one: a worktree validation, a CLI process and
   // a full context replay, so it can read "AWARENESS ONLY — TAKE NO ACTION".
   // The age test alone let exactly that happen — one broadcast milestone woke
-  // every idle peasant in the court. A notice for a sleeping member waits for
+  // every idle agent in the team. A notice for a sleeping member waits for
   // whatever wakes it next; there is always something, and if there is not,
   // then nobody needed to know.
   if (deliverable.every((m) => m.kind === 'notice')) {
@@ -55,8 +55,8 @@ export function ripeness(deliverable, {
     // that guard, a member spawned at daemon boot — with nothing in its inbox
     // but housekeeping ("still in service from a previous session", "nobody
     // is working on this task any more") — would sit for noticeHoldMs and then
-    // take a full unprompted turn: a message the sovereign never sent, answered
-    // by a member the sovereign never addressed. Reported as "the orchestrator
+    // take a full unprompted turn: a message the user never sent, answered
+    // by a member the user never addressed. Reported as "the orchestrator
     // is talking to itself. I didn't give it a command yet." (issue #40).
     return hadRealTurn && awake && !busy && now - oldest > noticeHoldMs
       ? { ripe: true, why: 'notices held long enough for an awake member with real history' }
@@ -69,11 +69,11 @@ export function ripeness(deliverable, {
       };
   }
 
-  // The sovereign is sitting there watching. The settle window exists to
+  // The user is sitting there watching. The settle window exists to
   // coalesce agents talking to each other, and a human typing is not that.
-  const urgent = deliverable.some((m) => m.sender === 'sovereign');
+  const urgent = deliverable.some((m) => m.sender === 'user');
   if (!busy && (urgent || now - newest >= settleMs)) {
-    return { ripe: true, why: urgent ? 'the sovereign is waiting' : 'quiet and idle' };
+    return { ripe: true, why: urgent ? 'the user is waiting' : 'quiet and idle' };
   }
   if (now - oldest > backstopMs) return { ripe: true, why: 'backstop: held long enough' };
   return { ripe: false, why: busy ? 'member is mid-turn' : 'still settling' };
@@ -110,9 +110,9 @@ if (process.argv[1]?.endsWith('ripeness.js')) {
     'interrupting a busy member wastes a replay on a partial thought');
   a.equal(at([msg(B + 1)], { busy: true }).ripe, true, 'but the backstop still fires');
 
-  // The sovereign does not wait out a window built for agent chatter.
-  a.equal(at([msg(1, { sender: 'sovereign' })]).ripe, true, 'the sovereign is urgent');
-  a.equal(at([msg(1, { sender: 'sovereign' })], { busy: true }).ripe, false,
+  // The user does not wait out a window built for agent chatter.
+  a.equal(at([msg(1, { sender: 'user' })]).ripe, true, 'the user is urgent');
+  a.equal(at([msg(1, { sender: 'user' })], { busy: true }).ripe, false,
     'urgent still does not interrupt a turn in flight');
 
   // The bug: a notice must not spawn a sleeper.
@@ -135,7 +135,7 @@ if (process.argv[1]?.endsWith('ripeness.js')) {
 
   // issue #40 — "the orchestrator is talking to itself. I didn't give it a
   // command yet." A member spawned at daemon boot is AWAKE and IDLE the moment
-  // it is spawned, well before the sovereign has said anything. If its only
+  // it is spawned, well before the user has said anything. If its only
   // mail is housekeeping notices (inherited crew, orphaned tasks) and nothing
   // has ever addressed it directly, holding those past noticeHoldMs must NOT
   // manufacture a turn — there is no conversation to keep current, and nobody
@@ -145,7 +145,7 @@ if (process.argv[1]?.endsWith('ripeness.js')) {
     + 'no matter how long it waits');
 
   // The handover window.
-  a.equal(at([msg(B + 1, { sender: 'sovereign' })], { recycling: true }).ripe, false,
+  a.equal(at([msg(B + 1, { sender: 'user' })], { recycling: true }).ripe, false,
     'nothing is delivered into a member whose session is being replaced — not even the backstop');
 
   a.equal(checkTiming(B, S), null, 'the shipped constants are consistent');

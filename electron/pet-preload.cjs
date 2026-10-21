@@ -1,5 +1,5 @@
 // The only things the floating dog cannot do from a page: move his own window,
-// resize it, and put himself away. Everything else — what the court is doing —
+// resize it, and put himself away. Everything else — what the team is doing —
 // he gets over HTTP like any other page.
 //
 // Dragging is driven ENTIRELY by the main process, from the OS cursor. The
@@ -10,7 +10,7 @@
 // would be parsed as ESM, which a sandboxed preload cannot be.
 const { contextBridge, ipcRenderer } = require('electron');
 
-contextBridge.exposeInMainWorld('kingdomPet', {
+contextBridge.exposeInMainWorld('agenticosPet', {
   state: () => ipcRenderer.invoke('pet:state'),
   dragStart: () => ipcRenderer.send('pet:dragStart'),
   dragEnd: () => ipcRenderer.invoke('pet:dragEnd'),

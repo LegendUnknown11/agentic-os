@@ -3,7 +3,7 @@
 // message" and "regenerate a reply" can only ever mean one thing: fork a
 // fresh sibling conversation seeded with a replay of everything up to the
 // fork point, then post the new/repeated text into it. This exercises
-// Kingdom.branchFrom() directly: the fork stops exactly at the fork point
+// AgenticOS.branchFrom() directly: the fork stops exactly at the fork point
 // (nothing after it leaks into the replay), siblings forked from the same
 // point are isolated from each other, and siblingsOf() finds them all.
 //
@@ -13,17 +13,17 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Kingdom } from '../src/agenticos.js';
-import { kingdomDir } from '../src/worktree.js';
+import { AgenticOS } from '../src/agenticos.js';
+import { stateDir } from '../src/worktree.js';
 
-process.env.KINGDOM_CODEX_BIN = process.execPath; // stub: never calls an API
-process.env.KINGDOM_SETTLE_MS = '200';
+process.env.AGENTICOS_CODEX_BIN = process.execPath; // stub: never calls an API
+process.env.AGENTICOS_SETTLE_MS = '200';
 
-const repo = mkdtempSync(join(tmpdir(), 'kingdom-branch-'));
+const repo = mkdtempSync(join(tmpdir(), 'agenticos-branch-'));
 const git = (...x) => execFileSync('git', x, { cwd: repo, stdio: 'pipe' });
 git('init', '-q');
-git('config', 'user.email', 'k@kingdom');
-git('config', 'user.name', 'kingdom');
+git('config', 'user.email', 'k@agenticos');
+git('config', 'user.name', 'agenticos');
 writeFileSync(join(repo, 'README.md'), '# t\n');
 git('add', '-A');
 git('commit', '-qm', 'init');
@@ -33,7 +33,7 @@ writeFileSync(configPath, JSON.stringify({
   models: { claude: ['haiku'], codex: ['gpt-5.6-luna'] },
   orchestrator: { name: 'orchestrator', cli: 'codex' },
   briefer: { name: 'briefer', cli: 'codex' },
-  peasants: [],
+  agents: [],
   advisor: { promptEngineer: false, autoModel: false },
 }));
 
@@ -45,14 +45,14 @@ const neuter = (agent) => {
   return agent;
 };
 
-const k = new Kingdom(repo, configPath);
+const k = new AgenticOS(repo, configPath);
 await k.start();
-neuter(k.agents.get('orchestrator'));
+neuter(k.processes.get('orchestrator'));
 
 // Build up 'default' history: three turns, in order.
-const id1 = k.bus.post('sovereign', 'orchestrator', 'FIRST turn.', 'assignment', 'default');
-const id2 = k.bus.post('sovereign', 'orchestrator', 'SECOND turn.', 'assignment', 'default');
-const id3 = k.bus.post('sovereign', 'orchestrator', 'THIRD turn.', 'assignment', 'default');
+const id1 = k.bus.post('user', 'orchestrator', 'FIRST turn.', 'assignment', 'default');
+const id2 = k.bus.post('user', 'orchestrator', 'SECOND turn.', 'assignment', 'default');
+const id3 = k.bus.post('user', 'orchestrator', 'THIRD turn.', 'assignment', 'default');
 a.ok(id1 < id2 && id2 < id3, 'sanity: ids increase in post order');
 
 // --- fork right after the second turn: an edit/regenerate of the third ---
@@ -65,7 +65,7 @@ a.equal(fork1.parent_id, 'default', 'a fork records its parent conversation');
 a.equal(fork1.fork_at, id2, 'a fork records the exact message it forked from');
 a.equal(k.activeConversation.get('orchestrator'), fork1.id,
   'branching moves the member\'s live session into the new conversation');
-neuter(k.agents.get('orchestrator')); // the fresh successor spawned into fork1
+neuter(k.processes.get('orchestrator')); // the fresh successor spawned into fork1
 
 const fork1Log = k.bus.history({ conversation: fork1.id, limit: 100 }).map((m) => m.body).join('\n');
 a.match(fork1Log, /FIRST turn/, 'the replay must include everything up to the fork point');
@@ -76,7 +76,7 @@ a.match(fork1Log, /THIRD, rewritten\./, 'the edited text must land as a real mes
 
 // --- a second, independent fork from the SAME point (a sibling) ---
 const fork2 = await k.branchFrom('orchestrator', 'default', id2, 'THIRD, a different rewrite.');
-neuter(k.agents.get('orchestrator'));
+neuter(k.processes.get('orchestrator'));
 
 const sibs = k.bus.siblingsOf(fork1.id);
 a.deepEqual(sibs.map((s) => s.id).sort(), [fork1.id, fork2.id].sort(),
@@ -94,5 +94,5 @@ a.ok(!defaultHistory.some((m) => /rewritten|different rewrite/.test(m.body)),
   'forked text must never bleed back into the conversation it was forked from');
 
 await k.stop();
-for (const d of [repo, kingdomDir(repo)]) { try { rmSync(d, { recursive: true, force: true }); } catch {} }
+for (const d of [repo, stateDir(repo)]) { try { rmSync(d, { recursive: true, force: true }); } catch {} }
 console.log('t-branching.js OK — forks stop at the fork point, siblings are isolated and discoverable');

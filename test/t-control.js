@@ -1,8 +1,8 @@
-// What the COURT can reach, as opposed to what the sovereign can.
+// What the TEAM can reach, as opposed to what the user can.
 //
 // Two separate reports drove this file:
 //
-//   1. "I attached the repo and it couldn't recognize" — the sovereign attached
+//   1. "I attached the repo and it couldn't recognize" — the user attached
 //      a repository from inside the app, the config recorded it, and the
 //      orchestrator went on answering that it was in the repo-less workspace
 //      home and that this was not a git repository. A running process cannot
@@ -11,13 +11,13 @@
 //      awake. It has to be restarted.
 //
 //   2. "It doesn't have access to switch modes" — and it did not have access to
-//      wake, dismiss or re-model anybody either. Every one of those is a method
-//      daemon.js already calls for the sovereign. mcp.js runs in its own
-//      process and reaches the court only through the bus, so they travel as
+//      wake, remove or re-model anybody either. Every one of those is a method
+//      daemon.js already calls for the user. mcp.js runs in its own
+//      process and reaches the team only through the bus, so they travel as
 //      `control` rows that agenticos.js sweeps.
 //
 //   node test/t-control.js
-// Never let a daemon this suite spawns touch the real ~/.kingdom/courts.json
+// Never let a daemon this suite spawns touch the real ~/.agenticos/teams.json
 // on the machine running the tests — see test/t-registry-isolation.js.
 import './isolate-registry.js';
 import { strict as a } from 'node:assert';
@@ -25,51 +25,51 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, rmSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Kingdom } from '../src/agenticos.js';
-import { kingdomDir, dbPath, createWorktree, removeWorktree } from '../src/worktree.js';
+import { AgenticOS } from '../src/agenticos.js';
+import { stateDir, dbPath, createWorktree, removeWorktree } from '../src/worktree.js';
 import { listSkills } from '../src/skills.js';
 
-process.env.KINGDOM_CODEX_BIN = process.execPath;   // a spawn that costs nothing
-process.env.KINGDOM_SETTLE_MS = '120';
+process.env.AGENTICOS_CODEX_BIN = process.execPath;   // a spawn that costs nothing
+process.env.AGENTICOS_SETTLE_MS = '120';
 
-// Sandbox homedir(): kingdomDir(null) is a REAL path under it, and this test
+// Sandbox homedir(): stateDir(null) is a REAL path under it, and this test
 // writes a database and restarts members there. os.homedir() reads these at
 // call time, so setting them before anything is constructed is enough.
-const fakeHome = mkdtempSync(join(tmpdir(), 'kingdom-ctl-home-'));
+const fakeHome = mkdtempSync(join(tmpdir(), 'agenticos-ctl-home-'));
 const savedEnv = { USERPROFILE: process.env.USERPROFILE, HOME: process.env.HOME };
-const savedPushTimeout = process.env.KINGDOM_PUSH_TIMEOUT_MS;
+const savedPushTimeout = process.env.AGENTICOS_PUSH_TIMEOUT_MS;
 process.env.USERPROFILE = fakeHome;
 process.env.HOME = fakeHome;
 
-const dir = mkdtempSync(join(tmpdir(), 'kingdom-ctl-'));
+const dir = mkdtempSync(join(tmpdir(), 'agenticos-ctl-'));
 const repo = join(dir, 'repo');
 const otherRepo = join(dir, 'other-repo');
 const vault = join(dir, 'vault');
 execFileSync('git', ['init', '-q', repo]);
-execFileSync('git', ['config', 'user.email', 'k@kingdom'], { cwd: repo });
-execFileSync('git', ['config', 'user.name', 'kingdom'], { cwd: repo });
+execFileSync('git', ['config', 'user.email', 'k@agenticos'], { cwd: repo });
+execFileSync('git', ['config', 'user.name', 'agenticos'], { cwd: repo });
 writeFileSync(join(repo, 'README.md'), '# control\n');
 execFileSync('git', ['add', '-A'], { cwd: repo });
 execFileSync('git', ['commit', '-qm', 'init'], { cwd: repo });
 execFileSync('git', ['init', '-q', otherRepo]);
-execFileSync('git', ['config', 'user.email', 'k@kingdom'], { cwd: otherRepo });
-execFileSync('git', ['config', 'user.name', 'kingdom'], { cwd: otherRepo });
+execFileSync('git', ['config', 'user.email', 'k@agenticos'], { cwd: otherRepo });
+execFileSync('git', ['config', 'user.name', 'agenticos'], { cwd: otherRepo });
 writeFileSync(join(otherRepo, 'README.md'), '# other control\n');
 execFileSync('git', ['add', '-A'], { cwd: otherRepo });
 execFileSync('git', ['commit', '-qm', 'init'], { cwd: otherRepo });
 
-const workspace = kingdomDir(null);
+const workspace = stateDir(null);
 mkdirSync(workspace, { recursive: true });
 const configPath = join(workspace, 'agenticos.config.json');
 writeFileSync(configPath, JSON.stringify({
   orchestrator: { name: 'orchestrator', cli: 'codex' },
   briefer: { name: 'briefer', cli: 'codex' },
-  peasants: [{ name: 'coder', cli: 'codex', description: 'writes code' }],
+  agents: [{ name: 'coder', cli: 'codex', description: 'writes code' }],
   rolesSeeded: true,
   advisor: { promptEngineer: false, autoModel: false },
   summarizer: { enabled: false },
   vault,
-  vaultWriteDir: 'Kingdom',
+  vaultWriteDir: 'AgenticOS',
   mode: 'chat',
 }));
 
@@ -95,7 +95,7 @@ function mcp(calls, { role = 'orchestrator', db }) {
   const r = spawnSync(process.execPath, [join(import.meta.dirname, '..', 'src', 'mcp.js')], {
     input: rpc,
     encoding: 'utf8',
-    env: { ...process.env, KINGDOM_AGENT: role, KINGDOM_ROLE: role, KINGDOM_DB: db, KINGDOM_VAULT: vault },
+    env: { ...process.env, AGENTICOS_AGENT: role, AGENTICOS_ROLE: role, AGENTICOS_DB: db, AGENTICOS_VAULT: vault },
   });
   a.equal(r.status, 0, `mcp exited ${r.status}. stderr: ${r.stderr.slice(0, 500)}`);
   const msgs = r.stdout.split(/\r?\n/).filter(Boolean)
@@ -108,7 +108,7 @@ function mcp(calls, { role = 'orchestrator', db }) {
 
 let k;
 try {
-  k = new Kingdom(null, configPath);
+  k = new AgenticOS(null, configPath);
   k.on('error', () => {});
   const delivered = [];
   k.on('delivered', (d) => delivered.push(d));
@@ -118,43 +118,43 @@ try {
 
   /* ---- 1. a live member follows the repo, or the attach did nothing ------ */
   const who = k.config.orchestrator.name;
-  a.ok(k.agents.has(who), 'the orchestrator must be awake for this to mean anything');
-  a.equal(k.agents.get(who).cwd, workspace,
+  a.ok(k.processes.has(who), 'the orchestrator must be awake for this to mean anything');
+  a.equal(k.processes.get(who).cwd, workspace,
     'with no repo it is spawned in the workspace home — this is the state the bug starts from');
 
-  const bornAs = k.agents.get(who);
+  const bornAs = k.processes.get(who);
   await k.attachRepo(repo);
 
   a.equal(k.repo, repo, 'attachRepo must record the repo');
-  a.notEqual(k.agents.get(who), bornAs,
+  a.notEqual(k.processes.get(who), bornAs,
     'the member stranded in the repo-less home must be RESTARTED: a live process cannot '
     + 'change directory, and a resumed session is handed its original cwd back');
-  a.equal(k.agents.get(who).cwd, repo,
-    'and the replacement must be standing in the repository the sovereign just attached');
+  a.equal(k.processes.get(who).cwd, repo,
+    'and the replacement must be standing in the repository the user just attached');
   a.equal(k.bus.get(`session:${who}:default`), '',
     'its session must be dropped too, or the CLI resumes the old thread in the old cwd');
 
-  // Re-attaching the same repo must not cost the court another respawn.
-  const settled = k.agents.get(who);
+  // Re-attaching the same repo must not cost the team another respawn.
+  const settled = k.processes.get(who);
   await k.attachRepo(repo);
-  a.equal(k.agents.get(who), settled,
+  a.equal(k.processes.get(who), settled,
     'a member already standing in the repo must be left alone on a re-attach');
   await a.rejects(k.attachRepo(otherRepo), /requires a fresh workspace/,
-    'changing repositories mid-court must be refused before old worktrees can survive');
+    'changing repositories mid-team must be refused before old worktrees can survive');
   a.equal(k.repo, repo, 'a refused repository switch must leave the attached repository unchanged');
-  a.equal(k.agents.get(who), settled, 'a refused repository switch must not restart the settled court');
+  a.equal(k.processes.get(who), settled, 'a refused repository switch must not restart the settled team');
 
-  /* ---- 2. the court can change the court's shape ------------------------- */
+  /* ---- 2. the team can change the team's shape ------------------------- */
   const db = dbPath(null);
   a.equal(k.mode(), 'chat');
 
   const list = mcp([], { db }).tools;
   a.ok(list.includes('set_mode'), 'the orchestrator must be able to switch modes');
   a.ok(list.includes('set_model'), 'and to re-model a member in any mode');
-  a.ok(!list.includes('wake_member'),
+  a.ok(!list.includes('wake_agent'),
     'but not to wake anybody in Chat, which has no crew — a tool that can only fail '
     + 'still costs every member the context to carry it');
-  a.ok(!list.includes('dismiss_member'), 'same for dismissing');
+  a.ok(!list.includes('remove_agent'), 'same for removing');
 
   const { said } = mcp([
     { name: 'set_mode', arguments: { mode: 'reserch', why: 'a typo' } },
@@ -163,19 +163,19 @@ try {
 
   a.match(said[0], /No such mode/,
     'an unknown mode must be refused BY NAME: modeName() falls back to DEFAULT_MODE, '
-    + 'so a typo that reached it would quietly put the whole court into Code');
+    + 'so a typo that reached it would quietly put the whole team into Code');
   a.equal(k.mode(), 'chat', 'and nothing may have moved yet');
 
   a.ok(await until(() => k.mode() === 'cowork'),
-    `the court must actually switch, still in ${k.mode()}`);
+    `the team must actually switch, still in ${k.mode()}`);
 
   // The other half of the gate: hidden where they cannot work is only correct
   // if they are THERE where they can. Cowork has a bench.
   const inCowork = mcp([], { db }).tools;
-  a.ok(inCowork.includes('wake_member') && inCowork.includes('dismiss_member'),
-    'and both must appear once the court has a crew to act on');
+  a.ok(inCowork.includes('wake_agent') && inCowork.includes('remove_agent'),
+    'and both must appear once the team has a crew to act on');
 
-  // A member process reads this independently of the court. A torn roster
+  // A member process reads this independently of the team. A torn roster
   // record must reject an assignment, never crash the tool or claim it sent.
   const savedRoster = k.bus.get('roster');
   k.bus.set('roster', '{broken');
@@ -194,11 +194,11 @@ try {
 
   a.equal(delivered.filter((d) => d.msg?.kind === 'control').length, 0,
     'a control request must never be DELIVERED to a member: it is posted with a null '
-    + 'recipient so the sweep can find it, and a null recipient matches every summoned '
+    + 'recipient so the sweep can find it, and a null recipient matches every added '
     + 'member in bus.pending() — each delivery is a full context replay');
 
   /* ---- 3. a refused lever comes back as an answer, not as silence -------- */
-  // Code needs a repo; detach the court from one to prove the refusal path.
+  // Code needs a repo; detach the team from one to prove the refusal path.
   k.repo = null;
   k.bus.post('coder', null, JSON.stringify({ op: 'mode', mode: 'code' }), 'control');
   a.ok(await until(() => k.bus.history({ limit: 400 })
@@ -214,7 +214,7 @@ try {
 
   /* ---- 3c. and it must reach the ORCHESTRATOR, which is who actually calls -- */
   // Every lever in src/mcp/control.js is roles: ['orchestrator'], so the real
-  // caller is never 'coder' — the two checks above use a peasant the tool does
+  // caller is never 'coder' — the two checks above use an agent the tool does
   // not grant, which is how this survived. Posted from the orchestrator's own
   // name and asserted through pending(), not history(): #54 was exactly a
   // message that stored fine and was never delivered, because bus.pending()
@@ -230,17 +230,17 @@ try {
     if (before != null) k.bus.set(`cursor:${boss}`, before);
   }
 
-  /* ---- 3b. a member that uses its CLI's own court must be reported ------- */
+  /* ---- 3b. a member that uses its CLI's own team must be reported ------- */
   // codex 0.145.0 ships spawn_agent/wait/todo_list and no feature flag removes
   // them, so the prompt is the only guard — and a prompt can be talked past.
   // When one was, an entire four-module build ran through codex's own
-  // sub-agents while this kingdom recorded one member and one turn. Nothing
+  // sub-agents while this team recorded one member and one turn. Nothing
   // said a word. Asserted on the event, not on a real process: the gate is one
   // handler, and a test that has to run codex to see it is a test nobody runs.
   {
     const heard = [];
     k.on('failure', (f) => heard.push(f));
-    k.agents.get(who).emit('tool', { name: 'collab_tool_call', input: { tool: 'spawn_agent' } });
+    k.processes.get(who).emit('tool', { name: 'collab_tool_call', input: { tool: 'spawn_agent' } });
 
     a.equal(heard.length, 1, 'a member reaching for its CLI\'s own agents must be reported once');
     a.match(heard[0].message, /spawn_agent/, 'and the report must name the tool it actually called');
@@ -251,16 +251,16 @@ try {
     'and must reach the orchestrator, which is the one that can stop doing it');
 
     // An ordinary tool call must stay silent, or the notice is noise.
-    k.agents.get(who).emit('tool', { name: 'command_execution', input: { command: 'ls' } });
+    k.processes.get(who).emit('tool', { name: 'command_execution', input: { command: 'ls' } });
     a.equal(heard.length, 1, 'a normal tool call must not be reported');
     k.removeAllListeners('failure');
-    console.log('  a member using its CLI\'s own court is reported, not swallowed');
+    console.log('  a member using its CLI\'s own team is reported, not swallowed');
   }
 
-  /* ---- 3c. dismissing a member must not orphan the work it claimed ------- */
+  /* ---- 3c. removing a member must not orphan the work it claimed ------- */
   // Watched live: "backend" finished #3 and claimed #5 while #3 was in review.
   // #3 merged, mergeWork() slept it to drop the worktree, and #5 stayed active
-  // under an owner the court no longer had. claim_task refuses an owned task,
+  // under an owner the team no longer had. claim_task refuses an owned task,
   // so nobody could take it; the orchestrator read "active" as work in hand.
   // The build stopped and the board said it was running.
   {
@@ -271,7 +271,7 @@ try {
     k.sleep('coder');
 
     const after = k.bus.task(held);
-    a.equal(after.owner, null, 'a dismissed member must not keep holding a task nobody can take');
+    a.equal(after.owner, null, 'a removed member must not keep holding a task nobody can take');
     a.equal(after.state, 'pending', 'and it must be claimable again, not stuck in active');
     a.ok(k.bus.availableTasks().some((x) => x.id === held),
       'availableTasks is what claim_task offers — the released task must appear there');
@@ -283,12 +283,12 @@ try {
       && new RegExp(`#${held}`).test(m.body)),
     'and the orchestrator must be told, or it goes on reporting the task as in progress');
 
-    console.log('  a dismissed member releases its claims, and the king hears about it');
+    console.log('  a removed member releases its claims, and the orchestrator hears about it');
   }
 
-  /* ---- 4. the court can write a skill, which it structurally could not --- */
+  /* ---- 4. the team can write a skill, which it structurally could not --- */
   // vault_write puts a note in the folder the MODE picks and strips '/' out of
-  // the title, so no member could ever land a file in Kingdom/Skills/ — the one
+  // the title, so no member could ever land a file in AgenticOS/Skills/ — the one
   // place skills.js reads them from. Build mode advertises "skills, notes,
   // instructions" and could deliver two of the three.
   const before = listSkills(vault).map((s) => s.name);
@@ -300,22 +300,22 @@ try {
     body: '1. add the new column\n2. backfill\n3. flip the read\n4. drop the old one',
   } }], { db }).said[0];
 
-  a.match(saved, /Kingdom\/Skills\/ship-migration\.md/,
+  a.match(saved, /AgenticOS\/Skills\/ship-migration\.md/,
     'a skill must land where skills.js reads them from, not where the mode would put a note');
-  a.ok(existsSync(join(vault, 'Kingdom', 'Skills', 'ship-migration.md')));
+  a.ok(existsSync(join(vault, 'AgenticOS', 'Skills', 'ship-migration.md')));
   const after = listSkills(vault).find((s) => s.name === 'ship-migration');
-  a.ok(after, 'and the court must be able to find it immediately');
+  a.ok(after, 'and the team must be able to find it immediately');
   a.equal(after.description, 'moving a schema forward without a window of downtime',
     'with its trigger line intact — that line is the only part every member carries');
   a.equal(after.source, 'vault');
 
-  /* ---- 5. pausing freezes new turns without dismissing anyone ------------ */
-  // The king could previously only stop a member by dismissing it — which
-  // costs a full re-summon and re-brief to undo. This is the cheap version:
+  /* ---- 5. pausing freezes new turns without removing anyone ------------ */
+  // The orchestrator could previously only stop a member by removing it — which
+  // costs a full re-add and re-brief to undo. This is the cheap version:
   // freeze delivery, leave the roster and every session exactly as it was.
   {
     await k.wake('coder');
-    a.equal(k.paused, false, 'sanity: the court is not paused to start');
+    a.equal(k.paused, false, 'sanity: the team is not paused to start');
 
     const pausedEvents = [];
     k.on('paused', (e) => pausedEvents.push(e));
@@ -327,16 +327,16 @@ try {
     a.deepEqual(pausedEvents[0], { paused: true, why: 'checking something' });
 
     const r2 = k.pause('again');
-    a.equal(r2.changed, false, 'pausing an already-paused court is a no-op, not a second event');
+    a.equal(r2.changed, false, 'pausing an already-paused team is a no-op, not a second event');
     a.equal(pausedEvents.length, 1);
 
     const beforeLen = delivered.length;
-    k.bus.post('sovereign', 'coder', 'do something', 'assignment');
+    k.bus.post('user', 'coder', 'do something', 'assignment');
     await wait(400);
     a.equal(delivered.slice(beforeLen).some((d) => d.to === 'coder'), false,
       'a message queued while paused must not be handed out — that is the entire feature');
 
-    // Lifted the same way every other court-issued lever travels: a `control`
+    // Lifted the same way every other team-issued lever travels: a `control`
     // row the orchestrator's own MCP tool posts, swept on the next tick.
     k.bus.post('coder', null, JSON.stringify({ op: 'resume' }), 'control');
     a.ok(await until(() => k.paused === false), 'resume must actually take effect');
@@ -349,19 +349,19 @@ try {
     // Persistence: a pause set before a restart must still hold after one.
     k.pause('about to restart');
     await k.stop();
-    k = new Kingdom(null, configPath);
+    k = new AgenticOS(null, configPath);
     k.on('error', () => {});
     k.on('delivered', (d) => delivered.push(d));
     await k.start();
-    a.equal(k.paused, true, 'a paused court must come back paused, the same way `summoned` comes back restored');
+    a.equal(k.paused, true, 'a paused team must come back paused, the same way `added` comes back restored');
     k.resume();   // leave a clean state for what follows
 
     console.log('  a pause freezes delivery without touching the roster, and survives a restart');
   }
 
-  /* ---- 6. the orchestrator can move a stuck task without a dismissal ----- */
+  /* ---- 6. the orchestrator can move a stuck task without a removal ----- */
   // Previously the only way to move a claimed task off a member was
-  // dismiss_member — which also drops its worktree and its session. A task
+  // remove_agent — which also drops its worktree and its session. A task
   // stuck with a member that will not finish it needed all of that just to
   // free up nine words of ownership.
   {
@@ -373,7 +373,7 @@ try {
       { name: 'reassign_task', arguments: { id: t, to: 'briefer' } },
     ], { db });
 
-    a.match(said[0], /not summoned/, 'cannot reassign to somebody not in service');
+    a.match(said[0], /not added/, 'cannot reassign to somebody not in service');
     a.match(said[1], /Reassigned/);
 
     const after = k.bus.task(t);
@@ -403,12 +403,12 @@ try {
     const { said: vs2 } = mcp([{ name: 'reassign_task', arguments: { id: v, to: 'briefer' } }], { db });
     a.match(vs2[0], /Reassigned/, 'a resolved verification must not strand the task');
 
-    console.log('  the orchestrator can move a stuck task without a dismissal round-trip');
+    console.log('  the orchestrator can move a stuck task without a removal round-trip');
   }
 
-  /* ---- 7. an outward push needs its own, one-time sovereign approval ----- */
+  /* ---- 7. an outward push needs its own, one-time user approval ----- */
   {
-    // §5 deliberately restarted the workspace court without a command-line
+    // §5 deliberately restarted the workspace team without a command-line
     // repo. Real push is Code-only, so attach the fixture base again here.
     if (!k.repo) await k.attachRepo(repo);
     const branch = execFileSync('git', ['branch', '--show-current'], { cwd: repo, encoding: 'utf8' }).trim();
@@ -429,9 +429,9 @@ try {
     } }], { db }).said[0];
     a.match(asked, /Push proposed/, 'the tool must return after posting an approval, not push in the caller turn');
     a.ok(await until(() => [...k.approvals.values()].some((p) => p.kind === 'push')),
-      'a push must be a distinct approval kind, not a summon or merge');
+      'a push must be a distinct approval kind, not an add or merge');
     a.equal(execFileSync('git', ['for-each-ref', '--format=%(refname)'], { cwd: remote, encoding: 'utf8' }).trim(), '',
-      'requesting a push must not touch its remote before the sovereign approves');
+      'requesting a push must not touch its remote before the user approves');
     const first = [...k.approvals].find(([, p]) => p.kind === 'push')[0];
     const proposal = JSON.parse(k.bus.history({ limit: 50 }).find((m) => m.id === first).body);
     a.equal(proposal.force, undefined, 'there is no force-push request path to approve');
@@ -450,8 +450,8 @@ try {
     execFileSync('git', ['commit', '-qm', 'local after push'], { cwd: repo });
     const other = join(dir, 'push-other');
     execFileSync('git', ['clone', '-q', remote, other]);
-    execFileSync('git', ['config', 'user.email', 'k@kingdom'], { cwd: other });
-    execFileSync('git', ['config', 'user.name', 'kingdom'], { cwd: other });
+    execFileSync('git', ['config', 'user.email', 'k@agenticos'], { cwd: other });
+    execFileSync('git', ['config', 'user.name', 'agenticos'], { cwd: other });
     writeFileSync(join(other, 'remote-after-push.txt'), 'remote\n');
     execFileSync('git', ['add', '-A'], { cwd: other });
     execFileSync('git', ['commit', '-qm', 'remote after push'], { cwd: other });
@@ -474,7 +474,7 @@ try {
     writeFileSync(join(hungRemote, 'hooks', 'pre-receive'), '#!/bin/sh\nsleep 2\n');
     chmodSync(join(hungRemote, 'hooks', 'pre-receive'), 0o755); // git skips a non-executable hook silently
     execFileSync('git', ['remote', 'set-url', 'origin', hungRemote], { cwd: repo });
-    process.env.KINGDOM_PUSH_TIMEOUT_MS = '150';
+    process.env.AGENTICOS_PUSH_TIMEOUT_MS = '150';
 
     const thirdAsked = mcp([{ name: 'request_push', arguments: { reason: 'prove a hanging remote is bounded' } }], { db }).said[0];
     a.match(thirdAsked, /Push proposed/);
@@ -482,11 +482,11 @@ try {
     const third = [...k.approvals].find(([, p]) => p.kind === 'push')[0];
     const started = Date.now();
     await k.approve(third);
-    a.ok(Date.now() - started < 1_500, 'a timed-out push must return control instead of wedging the court');
+    a.ok(Date.now() - started < 1_500, 'a timed-out push must return control instead of wedging the team');
     a.equal(k.bus.get(`resolved:${third}`), 'blocked');
     a.match(JSON.parse(k.bus.get(`push:${third}`)).message, /timed out/i,
       'the timeout must become a human-readable blocked result, not a silent failure');
-    process.env.KINGDOM_PUSH_TIMEOUT_MS = savedPushTimeout;
+    process.env.AGENTICOS_PUSH_TIMEOUT_MS = savedPushTimeout;
     // The killed client has already returned; this only lets the local bare
     // repository's deliberate two-second hook exit before fixture cleanup.
     await wait(2_100);
@@ -494,13 +494,13 @@ try {
     console.log('  push waits for one approval, never forces divergence, and turns timeout into a blocked card');
   }
 
-  /* ---- 8. a restart must not inherit a task nobody in the court can work -- */
-  // sleep() releases what a dismissed member held, but a member can also leave
-  // without ever being dismissed: drop it from agenticos.config.json and the
+  /* ---- 8. a restart must not inherit a task nobody in the team can work -- */
+  // sleep() releases what a removed member held, but a member can also leave
+  // without ever being removed: drop it from agenticos.config.json and the
   // restore loop in start() silently skips it, because specOf() no longer
-  // answers for the name. Its claims survive with an owner the court does not
+  // answers for the name. Its claims survive with an owner the team does not
   // have — claimTask refuses an owned task, so nobody may take it, and the
-  // orchestrator goes on reporting it as active. Same deadlock as a dismissal,
+  // orchestrator goes on reporting it as active. Same deadlock as a removal,
   // reached without one. This is the boot-time half of the same invariant.
   {
     await k.wake('coder');   // it has to actually be in service before it can leave it
@@ -514,24 +514,24 @@ try {
     k.bus.updateTask(submitted, { state: 'verifying' });
     k.bus.set(`submission:task:${submitted}`, '4242');   // what finish_task records
     a.equal(k.bus.claimTask('briefer', mine).ok, true, 'sanity: the second claim must land');
-    a.ok(JSON.parse(k.bus.get('summoned') ?? '[]').includes('coder'),
+    a.ok(JSON.parse(k.bus.get('added') ?? '[]').includes('coder'),
       'sanity: the departing member must be in the persisted roster to begin with');
 
-    // The sovereign edits the roster between runs. Nothing dismisses anybody.
+    // The user edits the roster between runs. Nothing removes anybody.
     const cfg = JSON.parse(readFileSync(configPath, 'utf8'));
-    cfg.peasants = cfg.peasants.filter((p) => p.name !== 'coder');
+    cfg.agents = cfg.agents.filter((p) => p.name !== 'coder');
     writeFileSync(configPath, JSON.stringify(cfg));
 
     await k.stop();
-    k = new Kingdom(null, configPath);
+    k = new AgenticOS(null, configPath);
     k.on('error', () => {});
     await k.start();
 
-    a.equal(k.summoned.has('coder'), false,
+    a.equal(k.added.has('coder'), false,
       'sanity: a name the config no longer carries must not be restored — that is the setup');
     const after = k.bus.task(stranded);
     a.equal(after.owner, null,
-      'a restart must not inherit a task owned by somebody no longer in the court: nobody can claim it');
+      'a restart must not inherit a task owned by somebody no longer in the team: nobody can claim it');
     a.equal(after.state, 'pending', 'and it must be claimable again, not stuck in active');
     a.ok(k.bus.availableTasks().some((x) => x.id === stranded),
       'availableTasks is what claim_task offers — the released task must appear there');
@@ -552,7 +552,7 @@ try {
     'and the discarded verification must be named, not folded into "unclaimed again"');
 
     a.ok(k.bus.history({ limit: 400 }).some((m) =>
-      m.recipient === k.config.orchestrator.name && /no longer in this court/.test(m.body)
+      m.recipient === k.config.orchestrator.name && /no longer in this team/.test(m.body)
       && new RegExp(`#${stranded}`).test(m.body)),
     'the orchestrator must be told, or it goes on reporting the task as in progress');
 
@@ -567,11 +567,11 @@ try {
   // concrete next action, contradicting HANDOFF.md's "Degrade visibly".
   {
     await k.stop();
-    // Repo known at construction, the way a real daemon boots for a court
+    // Repo known at construction, the way a real daemon boots for a team
     // already attached to a project — this is the only path that reaches
     // #reconcileRun() while a run is still 'paused' (see start(), which calls
     // it before this.paused is restored).
-    k = new Kingdom(repo, configPath);
+    k = new AgenticOS(repo, configPath);
     k.on('error', () => {});
     await k.start();
 
@@ -585,12 +585,12 @@ try {
     // own mkdirSync cannot recover by recreating it — the same class of
     // corruption the issue names ("the repo directory moved, or the worktree
     // metadata got corrupted").
-    const runsDir = join(kingdomDir(repo), 'runs');
+    const runsDir = join(stateDir(repo), 'runs');
     rmSync(runsDir, { recursive: true, force: true });
     writeFileSync(runsDir, 'not a directory');
 
     await k.stop();
-    k = new Kingdom(repo, configPath);
+    k = new AgenticOS(repo, configPath);
     k.on('error', () => {});
     const runEvents = [];
     k.on('run', (r) => runEvents.push(r));
@@ -601,21 +601,21 @@ try {
     a.ok(runEvents.some((r) => r.id === run.id && r.state === 'blocked'),
       'the blocked transition must actually be emitted, not just written');
     await k.stop();
-    k = new Kingdom(repo, configPath);
+    k = new AgenticOS(repo, configPath);
     k.on('error', () => {});
     await k.start();
     a.match(k.bus.run(run.id).blocker?.operation ?? '', /startup reconciliation/,
-      'the blocker must survive a reload, or a restarted court shows a blocked run with no reason');
+      'the blocker must survive a reload, or a restarted team shows a blocked run with no reason');
     a.ok(k.bus.run(run.id).blocker.next, 'and it must still carry the next action');
     a.ok(k.bus.history({ limit: 400 }).some((m) =>
       m.recipient === k.config.orchestrator.name && /RUN BLOCKED: startup reconciliation/.test(m.body)),
     'the orchestrator must be told, or the failure has no visible next action');
 
     rmSync(runsDir, { force: true });
-    // This section deliberately paused the court to reach #reconcileRun()
+    // This section deliberately paused the team to reach #reconcileRun()
     // while a run was still 'paused' (see the comment above) — resume it, or
     // every section after this one silently inherits a paused, un-delivering
-    // court, the same way a leftover 'blocked' run would.
+    // team, the same way a leftover 'blocked' run would.
     k.resume();
     console.log("  a paused run's failed reconciliation at restart becomes a visible blocker, not silence");
   }
@@ -630,17 +630,17 @@ try {
     if (!k.repo) await k.attachRepo(repo);
     // Earlier sections dropped 'coder' from the roster, or replaced `k`
     // entirely via a restart; restore it here rather than reuse a name the
-    // court no longer recognises.
-    if (!k.specOf('coder')) k.config.peasants.push({ name: 'coder', cli: 'codex', description: 'writes code' });
+    // team no longer recognises.
+    if (!k.specOf('coder')) k.config.agents.push({ name: 'coder', cli: 'codex', description: 'writes code' });
     k.setMode('code', { why: 'prove the merge approval race is closed' });
     await k.wake('coder');
-    const wt = k.agents.get('coder').cwd;
+    const wt = k.processes.get('coder').cwd;
     writeFileSync(join(wt, 'race.txt'), 'merge race fixture\n');
     execFileSync('git', ['add', '-A'], { cwd: wt });
     execFileSync('git', ['commit', '-qm', 'prove the merge race is closed'], { cwd: wt });
 
-    k.bus.post('orchestrator', null, JSON.stringify({ kind: 'merge', peasant: 'coder' }), 'approval');
-    await until(() => [...k.approvals.values()].some((p) => p.kind === 'merge' && p.peasant === 'coder'));
+    k.bus.post('orchestrator', null, JSON.stringify({ kind: 'merge', agent: 'coder' }), 'approval');
+    await until(() => [...k.approvals.values()].some((p) => p.kind === 'merge' && p.agent === 'coder'));
     const approvalId = [...k.approvals].find(([, p]) => p.kind === 'merge')[0];
 
     const approving = k.approve(approvalId);
@@ -665,7 +665,7 @@ try {
   // 'push' branch right below it in source, which always records one.
   {
     await k.wake('coder');
-    const wt2 = k.agents.get('coder').cwd;
+    const wt2 = k.processes.get('coder').cwd;
     writeFileSync(join(wt2, 'race2.txt'), 'second merge fixture\n');
     execFileSync('git', ['add', '-A'], { cwd: wt2 });
     execFileSync('git', ['commit', '-qm', 'second merge commit'], { cwd: wt2 });
@@ -673,8 +673,8 @@ try {
     // Dirty the base so mergeWorktree() refuses and merge() throws.
     writeFileSync(join(repo, 'dirty.txt'), 'uncommitted\n');
 
-    k.bus.post('orchestrator', null, JSON.stringify({ kind: 'merge', peasant: 'coder' }), 'approval');
-    await until(() => [...k.approvals.values()].some((p) => p.kind === 'merge' && p.peasant === 'coder'));
+    k.bus.post('orchestrator', null, JSON.stringify({ kind: 'merge', agent: 'coder' }), 'approval');
+    await until(() => [...k.approvals.values()].some((p) => p.kind === 'merge' && p.agent === 'coder'));
     const failId = [...k.approvals].find(([, p]) => p.kind === 'merge')[0];
 
     // Must resolve, not throw — a blocked merge is a recorded outcome, not an
@@ -694,16 +694,16 @@ try {
   /* ---- 11. stopping a run must clean up like any other departure -------- */
   // stopRun killed each run-owned worker's process directly instead of
   // routing through sleep() — skipping exactly the reconciliation sleep()
-  // exists to perform: dropping the name from `summoned` and releasing its
+  // exists to perform: dropping the name from `added` and releasing its
   // still-open tasks. A stopped run's worker used to silently respawn on the
   // next message reaching its inbox, and its tasks stayed falsely "owned".
   {
     if (!k.repo) await k.attachRepo(repo);
     // Earlier sections dropped 'coder' from the roster, or slept it as part
     // of a completed merge; restore it here rather than reuse a name the
-    // court no longer recognises.
-    if (!k.specOf('coder')) k.config.peasants.push({ name: 'coder', cli: 'codex', description: 'writes code' });
-    if (!k.specOf('idler')) k.config.peasants.push({ name: 'idler', cli: 'codex', description: 'also writes code' });
+    // team no longer recognises.
+    if (!k.specOf('coder')) k.config.agents.push({ name: 'coder', cli: 'codex', description: 'writes code' });
+    if (!k.specOf('idler')) k.config.agents.push({ name: 'idler', cli: 'codex', description: 'also writes code' });
     await k.wake('coder');
     await k.wake('idler');
 
@@ -717,26 +717,26 @@ try {
     k.bus.updateRun(run.id, { taskIds: [task, idleTask] });
     a.equal(k.bus.claimTask('coder', task).ok, true, 'sanity: coder holds the run-owned task');
     a.equal(k.bus.claimTask('idler', idleTask).ok, true, 'sanity: idler holds the other run-owned task');
-    a.ok(k.summoned.has('coder'), 'sanity: coder is in service before the run is stopped');
-    a.ok(k.summoned.has('idler'), 'sanity: idler is in service before the run is stopped');
+    a.ok(k.added.has('coder'), 'sanity: coder is in service before the run is stopped');
+    a.ok(k.added.has('idler'), 'sanity: idler is in service before the run is stopped');
 
-    // #maybeIdleSleep removes a quiet worker from `this.agents` but
-    // deliberately keeps it in `this.summoned` so it can be woken again
+    // #maybeIdleSleep removes a quiet worker from `this.processes` but
+    // deliberately keeps it in `this.added` so it can be woken again
     // cheaply — reproduce exactly that split here rather than waiting out
-    // IDLE_SLEEP_MS, since stopRun's old `this.agents.has(name)` guard is
+    // IDLE_SLEEP_MS, since stopRun's old `this.processes.has(name)` guard is
     // blind to a worker in precisely this state.
-    k.agents.get('idler')?.stop();
-    k.agents.delete('idler');
-    a.equal(k.agents.has('idler'), false, 'sanity: idler has no live agent, as if idle-slept');
-    a.ok(k.summoned.has('idler'), 'sanity: idler is still summoned, as #maybeIdleSleep leaves it');
+    k.processes.get('idler')?.stop();
+    k.processes.delete('idler');
+    a.equal(k.processes.has('idler'), false, 'sanity: idler has no live agent, as if idle-slept');
+    a.ok(k.added.has('idler'), 'sanity: idler is still added, as #maybeIdleSleep leaves it');
 
     const stopped = k.stopRun(run.id, 'prove cleanup');
     a.equal(stopped.state, 'cancelled');
-    a.equal(k.agents.has('coder'), false, 'the stopped worker\'s process must be gone');
-    a.equal(k.summoned.has('coder'), false,
-      'a stopped run must not leave its worker in `summoned` — the delivery loop respawns anyone still there');
-    a.equal(k.summoned.has('idler'), false,
-      'an idle-slept run worker has no live agent but must still be released — it stays summoned and keeps its claim otherwise');
+    a.equal(k.processes.has('coder'), false, 'the stopped worker\'s process must be gone');
+    a.equal(k.added.has('coder'), false,
+      'a stopped run must not leave its worker in `added` — the delivery loop respawns anyone still there');
+    a.equal(k.added.has('idler'), false,
+      'an idle-slept run worker has no live agent but must still be released — it stays added and keeps its claim otherwise');
     const after = k.bus.task(task);
     a.equal(after.owner, null,
       'a stopped run must release what its worker still held — nobody may otherwise claim it again');
@@ -761,8 +761,8 @@ try {
   // #onDone set the run to 'verifying' or 'blocked' from whichever
   // submission happened to arrive last, with no check of the run's existing
   // state, bypassing transitionRun's allowed-transition map entirely by
-  // writing state directly. A later, unrelated peasant's PASSING submission
-  // could silently clear a run already blocked on a DIFFERENT peasant's
+  // writing state directly. A later, unrelated agent's PASSING submission
+  // could silently clear a run already blocked on a DIFFERENT agent's
   // still-unresolved failure.
   {
     if (!k.repo) await k.attachRepo(repo);
@@ -796,7 +796,7 @@ try {
     // fires the instant the tick claims the message, not once #onDone is done with
     // bob's worktree. Bob's submission is valid, so #onDone never calls #runBlock —
     // there is no run-state transition to wait on the way alice's failure gives us
-    // above — so the only real completion signal is `tests:${peasant}`, which
+    // above — so the only real completion signal is `tests:${agent}`, which
     // #onDone sets last, right after its own diffOf/statOf finish touching the
     // worktree. A fixed sleep here raced removeWorktree(repo, 'bob') below against
     // those still-running git calls on Windows CI (commitAll + revisionOf x2 +
@@ -804,8 +804,8 @@ try {
     // "not a working tree" fatal when the removal outran them.
     await until(() => Boolean(k.bus.get('tests:bob')));
     a.equal(k.bus.run(run.id).state, 'blocked',
-      "a run blocked on one peasant's failure must not be silently cleared back to verifying by a "
-      + "different, unrelated peasant's success");
+      "a run blocked on one agent's failure must not be silently cleared back to verifying by a "
+      + "different, unrelated agent's success");
 
     // A raw rmSync of the still-live git worktrees below (in the outer
     // finally block) can EPERM on Windows over a lingering git file handle;
@@ -813,7 +813,7 @@ try {
     await removeWorktree(repo, 'alice');
     await removeWorktree(repo, 'bob');
 
-    console.log("  onDone cannot silently clear a run's blocker with an unrelated peasant's success");
+    console.log("  onDone cannot silently clear a run's blocker with an unrelated agent's success");
   }
 
   /* ---- 13. recovery-attempt counting must be per (name, operation) ------- */
@@ -830,8 +830,8 @@ try {
     if (k.bus.currentRun()) await k.stopRun(undefined, 'test cleanup: clear the previous section\'s run');
     // Earlier sections dropped 'coder' from the roster, or replaced `k`
     // entirely via a restart; restore it here rather than reuse a name the
-    // court no longer recognises.
-    if (!k.specOf('coder')) k.config.peasants.push({ name: 'coder', cli: 'codex', description: 'writes code' });
+    // team no longer recognises.
+    if (!k.specOf('coder')) k.config.agents.push({ name: 'coder', cli: 'codex', description: 'writes code' });
     await k.wake('coder');
     await k.wake('briefer');
 
@@ -841,12 +841,12 @@ try {
     // transport-retry entry, and the session-limit branch always returns
     // before reaching escalateFailure — coder is never itself escalated.
     k.lastBatch.set('coder', { from: 1, to: 2 });
-    k.agents.get('coder').emit('error', 'session limit reached, resets tomorrow');
+    k.processes.get('coder').emit('error', 'session limit reached, resets tomorrow');
     await until(() => (k.bus.run(run.id)?.recoveryHistory ?? []).length >= 1);
     a.equal(k.bus.run(run.id).recoveryHistory.length, 1, "sanity: coder's blip is recorded");
 
     // briefer then fails once, for real, on something unrelated to coder.
-    k.agents.get('briefer').emit('error', 'the process crashed unexpectedly');
+    k.processes.get('briefer').emit('error', 'the process crashed unexpectedly');
     await until(() => Boolean(k.bus.get('failnotify:briefer')));
     await wait(200);   // let the async error handler's recordRecovery land
 
@@ -877,7 +877,7 @@ try {
 
     await k.wake('coder');
     k.lastBatch.set('coder', { from: 1, to: 999 });
-    k.agents.get('coder').emit('error', 'turn exceeded the watchdog');
+    k.processes.get('coder').emit('error', 'turn exceeded the watchdog');
     await wait(200);
 
     a.equal(k.bus.run(run.id).state, 'completed', 'a worker error after the run ended must not revive it');
@@ -885,7 +885,7 @@ try {
     console.log('  a worker error after a run ends cannot bring the run back');
   }
 
-  // Pausing the court used to force the active run to `paused` from any of
+  // Pausing the team used to force the active run to `paused` from any of
   // planning/running/verifying, and resume forced `paused` to `running`. A
   // run still awaiting plan approval therefore came back from a pause
   // running an unapproved plan.
@@ -893,19 +893,19 @@ try {
     if (k.bus.currentRun()) await k.stopRun(undefined, 'test cleanup');
     const run = await k.createRun({ objective: 'prove pause cannot approve a plan' });
     k.pause('a beat');
-    a.equal(k.bus.run(run.id).state, 'planning', 'pausing the court leaves a planning run in planning');
+    a.equal(k.bus.run(run.id).state, 'planning', 'pausing the team leaves a planning run in planning');
     k.resume();
     a.equal(k.bus.run(run.id).state, 'planning', 'resuming must not start a plan nobody approved');
 
     await k.approveRun(run.id);
     k.pause('a beat');
-    a.equal(k.bus.run(run.id).state, 'paused', 'a running run pauses with the court');
+    a.equal(k.bus.run(run.id).state, 'paused', 'a running run pauses with the team');
     k.resume();
     a.equal(k.bus.run(run.id).state, 'running', 'and resumes with it');
     k.bus.transitionRun(run.id, 'blocked');
     k.pause('a beat');
     await k.resumeRun(run.id);
-    a.equal(k.paused, false, 'Resume lifts the court pause');
+    a.equal(k.paused, false, 'Resume lifts the team pause');
     a.equal(k.bus.run(run.id).state, 'running', 'and the same click moves a blocked run on');
     k.stopRun(run.id, 'test cleanup');
     console.log('  pause and resume cannot carry a planning run past its approval');
@@ -930,7 +930,7 @@ try {
     console.log('  an apply refused for source drift blocks the run, as it says it does');
   }
 
-  // With enough peasants awake, #onDone hands the report to the briefer to
+  // With enough agents awake, #onDone hands the report to the briefer to
   // digest — through `agents.get(briefer)?.send`. An idle-slept briefer has
   // no live agent, so the report went nowhere and the orchestrator was never
   // told the work existed.
@@ -939,9 +939,9 @@ try {
     writeFileSync(join(wt, 'carol.txt'), 'finished\n');
     const saved = k.config.brieferDigestAbove;
     k.config.brieferDigestAbove = -1;   // any number of workers takes the digest path
-    const briefer = k.agents.get(k.config.briefer.name);
+    const briefer = k.processes.get(k.config.briefer.name);
     briefer?.stop();
-    k.agents.delete(k.config.briefer.name);
+    k.processes.delete(k.config.briefer.name);
 
     const id = k.bus.post('carol', k.config.orchestrator.name, 'carol: finished work', 'done');
     await until(() => Boolean(k.bus.get('tests:carol')));
@@ -955,12 +955,12 @@ try {
     console.log('  a done submission reaches the orchestrator even when the briefer is asleep');
   }
 
-  console.log('t-control.js OK — a live court follows the repo, and the court can steer itself');
+  console.log('t-control.js OK — a live team follows the repo, and the team can steer itself');
 } finally {
   await k?.stop?.();   // closes the bus with it
   Object.assign(process.env, savedEnv);
-  if (savedPushTimeout == null) delete process.env.KINGDOM_PUSH_TIMEOUT_MS;
-  else process.env.KINGDOM_PUSH_TIMEOUT_MS = savedPushTimeout;
+  if (savedPushTimeout == null) delete process.env.AGENTICOS_PUSH_TIMEOUT_MS;
+  else process.env.AGENTICOS_PUSH_TIMEOUT_MS = savedPushTimeout;
   rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 150 });
   rmSync(fakeHome, { recursive: true, force: true, maxRetries: 10, retryDelay: 150 });
 }

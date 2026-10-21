@@ -3,7 +3,7 @@
 // This is a CHARACTERIZATION test, written to make a refactor of src/mcp.js
 // safe rather than to prove any one tool correct. It exists because of a gap
 // found by counting: of the 47 tools, ELEVEN are named in no test at all —
-// broadcast, read_diff, milestone_done, pause_court, resume_court, set_budget,
+// broadcast, read_diff, milestone_done, pause_team, resume_team, set_budget,
 // request_merge, workflow_list, workflow_get, workflow_delete, workflow_run.
 // Nothing stopped one of them being dropped, renamed, or handed to the wrong
 // role. Now something does.
@@ -23,7 +23,7 @@ import { createHash } from 'node:crypto';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Kingdom } from '../src/agenticos.js';
+import { AgenticOS } from '../src/agenticos.js';
 import { dbPath } from '../src/worktree.js';
 
 const MCP = join(import.meta.dirname, '..', 'src', 'mcp.js');
@@ -41,12 +41,12 @@ function toolsFor(db, env) {
   const r = spawnSync(process.execPath, [MCP], {
     input: rpc,
     encoding: 'utf8',
-    env: { ...process.env, KINGDOM_DB: db, ...env },
+    env: { ...process.env, AGENTICOS_DB: db, ...env },
   });
   const line = r.stdout.split('\n').filter(Boolean)
     .map((l) => { try { return JSON.parse(l); } catch { return null; } })
     .find((m) => m?.id === 2);
-  a.ok(line, `tools/list returned nothing for ${env.KINGDOM_ROLE}\n${r.stderr}`);
+  a.ok(line, `tools/list returned nothing for ${env.AGENTICOS_ROLE}\n${r.stderr}`);
   return line.result.tools;
 }
 
@@ -67,23 +67,27 @@ const digest = (tools) => createHash('sha256')
 
 // `mode/role` -> [tool count, sha256-16 of the sorted shapes].
 // Regenerate with --print.
+// Re-pinned 2026-10-21 by the de-theming rename (docs/RENAME.md): the crew
+// tools became add_agent, wake_agent, remove_agent, pause_team and
+// resume_team, and request_merge/read_diff name their member `agent`.
+// Same counts, same tools, same arguments otherwise.
 const EXPECT = {
-  'code/orchestrator': [38, '320f63826d6291eb'],
-  'code/briefer': [19, '725a9fd9dc622a77'],
-  'code/peasant': [19, '8dabdf83354f113a'],
-  'cowork/orchestrator': [41, '345c81c347028546'],
-  'cowork/briefer': [19, '725a9fd9dc622a77'],
-  'cowork/peasant': [19, '8dabdf83354f113a'],
+  'code/orchestrator': [38, '7317b1ca2969374b'],
+  'code/briefer': [19, '28742a2638f4d5fa'],
+  'code/agent': [19, '8dabdf83354f113a'],
+  'cowork/orchestrator': [41, 'd06d028ba255183e'],
+  'cowork/briefer': [19, '28742a2638f4d5fa'],
+  'cowork/agent': [19, '8dabdf83354f113a'],
 };
 
-const dir = mkdtempSync(join(tmpdir(), 'kingdom-surface-'));
+const dir = mkdtempSync(join(tmpdir(), 'agenticos-surface-'));
 const repo = join(dir, 'repo');
 
 try {
   execFileSync('git', ['init', '-q', repo], { stdio: 'pipe' });
   const git = (...x) => execFileSync('git', x, { cwd: repo, stdio: 'pipe' });
-  git('config', 'user.email', 'k@kingdom');
-  git('config', 'user.name', 'kingdom');
+  git('config', 'user.email', 'k@agenticos');
+  git('config', 'user.name', 'agenticos');
   writeFileSync(join(repo, 'README.md'), '# t\n');
   git('add', '-A');
   git('commit', '-qm', 'init');
@@ -92,13 +96,13 @@ try {
   writeFileSync(cfg, JSON.stringify({
     orchestrator: { name: 'orchestrator', cli: 'codex' },
     briefer: { name: 'briefer', cli: 'codex' },
-    peasants: [{ name: 'coder', cli: 'codex', description: 'writes code' }],
+    agents: [{ name: 'coder', cli: 'codex', description: 'writes code' }],
     rolesSeeded: true,
     advisor: { promptEngineer: false, autoModel: false },
     summarizer: { enabled: false },
   }));
 
-  const k = new Kingdom(repo, cfg);
+  const k = new AgenticOS(repo, cfg);
   k.on('error', () => {});
   await k.start();
   const db = dbPath(repo);
@@ -111,8 +115,8 @@ try {
   const union = new Set();
   for (const mode of ['code', 'cowork']) {
     k.setMode(mode);
-    for (const role of ['orchestrator', 'briefer', 'peasant']) {
-      const tools = toolsFor(db, { KINGDOM_AGENT: role, KINGDOM_ROLE: role, KINGDOM_REPO: repo });
+    for (const role of ['orchestrator', 'briefer', 'agent']) {
+      const tools = toolsFor(db, { AGENTICOS_AGENT: role, AGENTICOS_ROLE: role, AGENTICOS_REPO: repo });
       for (const t of tools) union.add(t.name);
       seen[`${mode}/${role}`] = [tools.length, digest(tools)];
 
@@ -142,7 +146,7 @@ try {
         + 'If that was deliberate, rerun with --print.');
     }
     // The roles between them must still see all 49 (47, plus my_tasks and
-    // add_my_task on 2026-09-25: the orchestrator's view of the sovereign's list). A tool present in the file
+    // add_my_task on 2026-09-25: the orchestrator's view of the user's list). A tool present in the file
     // but gated to no role is invisible, and that is the failure mode a split
     // produces most easily.
     a.equal(union.size, 49, `expected 49 distinct tools across all roles, saw ${union.size}`);

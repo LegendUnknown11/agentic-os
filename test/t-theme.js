@@ -16,7 +16,7 @@ const rules = css.replace(/\/\*[\s\S]*?\*\//g, '').slice(css.indexOf('* { box-si
 
 const token = (name) => new RegExp(`${name}\\s*:\\s*([^;]+);`).exec(root)?.[1].trim();
 // The T3 Code system (the "Agentic OS - T3 Code style" Claude design canvas),
-// adopted in full at the sovereign's direction 2026-10-21 on the T3-code
+// adopted in full at the user's direction 2026-10-21 on the T3-code
 // branch. It reverses the Cold-Call Workflow paper theme of 2026-09-21 (PLAN.md
 // section 1), exactly as that one reversed Hiveory. Dark, neutral and flat.
 // This app's own token discipline (:root, -rgb twins, no literal colour outside
@@ -120,7 +120,7 @@ a.match(css, /\.run-spend-cap\s*\{[^}]*stroke:\s*var\(--tone-attention\)[^}]*str
 a.match(css, /\.run-spend-line\s*\{[^}]*vector-effect:\s*non-scaling-stroke/, 'a stretched chart must not stretch its 2px line');
 a.match(css, /\.mode-switcher\s*\{[^}]*border-radius:\s*var\(--radius-pill\)/, 'work modes must read as one segmented control');
 a.match(css, /\.mode-option\.selected\s*\{[^}]*background:\s*var\(--active\)/, 'the active work mode is the current-item fill, as in the canvas rail; the accent is reserved for live work');
-// 2026-09-23: reverses the line above. Read against a populated demo court,
+// 2026-09-23: reverses the line above. Read against a populated demo team,
 // "AGENTIC OS / WORKSPACE" repeated identically on all 14 views carried no
 // information and cost real space above the fold of a dense tool. A prior
 // session already removed it once for the same reason and it came back —
@@ -192,10 +192,10 @@ a.match(css, /\.mode-switcher/, 'the shell needs a visible mode switcher');
 a.match(css, /\.sidebar-mode/, 'the sidebar needs the same mode choices');
 a.match(sidebar, /options\.modes/, 'the sidebar renders the shared mode choices');
 a.match(sidebar, /dataset\.action = 'mode'/, 'sidebar mode choices use the shared action path');
-a.match(thread, /`thread-heading\$\{sovereign \? ' sovereign' : ''\}`/, 'the open thread must mark whether it is the orchestrator, once, at render time');
+a.match(thread, /`thread-heading\$\{user \? ' user' : ''\}`/, 'the open thread must mark whether it is the orchestrator, once, at render time');
 a.match(thread, /`Team \$\{awake\}\/\$\{members\.length\} awake`/, 'the header work-context fact must name what "N/M" counts, not read as a bare fraction — issue #39');
-a.match(css, /\.thread-heading\.sovereign h1\s*\{[^}]*var\(--gold\)/, 'the orchestrator must use the dedicated gold identity token, never a status colour');
-a.doesNotMatch(css, /\.thread-heading\.sovereign h1\s*\{[^}]*var\(--accent\)/, 'the orchestrator heading must not reuse the live-status accent');
+a.match(css, /\.thread-heading\.user h1\s*\{[^}]*var\(--gold\)/, 'the orchestrator must use the dedicated gold identity token, never a status colour');
+a.doesNotMatch(css, /\.thread-heading\.user h1\s*\{[^}]*var\(--accent\)/, 'the orchestrator heading must not reuse the live-status accent');
 a.doesNotMatch(css, /#d8ac54|--crown/, 'the old gold role color must not survive the prototype reskin');
 a.match(util, /class: `button \$\{cls\}`/, 'page controls inherit the shared button treatment');
 a.match(util, /role: 'progressbar'[\s\S]*?'aria-valuenow'/, 'visual meters must expose their value without relying on geometry or colour');
@@ -349,7 +349,7 @@ a.match(css, /body\.sidebar-open #sidebar \.sidebar-mode\s*\{[^}]*flex-shrink:\s
 a.match(css, /body\.sidebar-open #sidebar\s*\{[^}]*overflow-y:\s*auto;/, 'the drawer ran 122px past the viewport and swallowed the conversation list; it scrolls as one column');
 a.match(css, /body\.sidebar-open #sidebar \.sidebar-conversations\s*\{[^}]*flex:\s*none;/, 'the conversation list must keep its natural height in the drawer, not absorb a deficit');
 a.match(css, /body\.sidebar-open #sidebar \.sidebar-collapse\s*\{[^}]*display:\s*none;/, 'the collapse control is a rail affordance and there is no rail at drawer width');
-// 2026-09-23: with a populated court (twelve conversations, More tools open)
+// 2026-09-23: with a populated team (twelve conversations, More tools open)
 // the desktop rail's own sections could outgrow #sidebar's height, and its
 // overflow: hidden clipped the footer (Settings/Collapse, half off the
 // bottom of the viewport at 1280x720) and squeezed Conversations to one row.
@@ -380,7 +380,7 @@ a.match(css, /@media \(max-width: 720px\)[\s\S]*?\.wfn-x\s*\{\s*opacity:\s*1;/, 
 a.match(css, /@media \(prefers-reduced-motion: reduce\)[\s\S]*?animation:\s*none\s*!important;/, 'reduced-motion users must not receive a running animation');
 a.doesNotMatch(css, /\.section\s*\{|\.card\s*\{|\.row\s*\{|\.nav\s*\{|\.composer-form\s*\{|\.message\s*\{/, 'deleted window components must not leave a second styling vocabulary');
 
-// 2026-09-23: a populated demo court's Chat page showed a fenced code block
+// 2026-09-23: a populated demo team's Chat page showed a fenced code block
 // rendering on bare browser defaults — no background, no wrap handling, so a
 // long line pushed the message bubble past the thread column. mdToHtml
 // (ui/markdown.js) already emits real <pre><code>/<code>; the gap was purely
@@ -392,7 +392,7 @@ a.match(main, /sidebar-scrim/, 'small screens need a native close target outside
 a.doesNotMatch(main, /const action = document\.createElement\('small'\)/, 'mode tabs must not repeat the header explainer copy');
 a.doesNotMatch(css, /\.mode-option small/, 'mode tabs must not reserve space for duplicate explainer copy');
 // 2026-09-23: the same defect came back under a different tag. Read directly
-// on a populated demo court: three two-line mode pills dominated the header
+// on a populated demo team: three two-line mode pills dominated the header
 // and pushed "Connected" to the far end looking detached. The button's own
 // dataset.tip/aria-label (ui/main.js) already carry the description, and
 // attachHoverTips(document.body) already surfaces it on hover, so hiding the

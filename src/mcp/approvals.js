@@ -1,5 +1,5 @@
 // approvals tools. See src/mcp.js for how these reach a member.
-import { badRole, badSummon } from '../approval.js';
+import { badRole, badAdd } from '../approval.js';
 import {
   ME, bus, str, stateArray, rosterNow, officer,
 } from './ctx.js';
@@ -12,7 +12,7 @@ export const approvalBody = (payload, requested = null) => {
 
 export const approvals = {
   submit_plan: {
-    roles: ['peasant'],
+    roles: ['agent'],
     description:
       'Send the orchestrator your approach for a task that requires approval. You stay read-only until it is approved.',
     schema: {
@@ -34,7 +34,7 @@ export const approvals = {
   rule_on_plan: {
     roles: ['orchestrator'],
     description:
-      'Approve or reject a peasant\'s plan. Rejecting keeps them read-only and hands back your notes, so say '
+      'Approve or reject an agent\'s plan. Rejecting keeps them read-only and hands back your notes, so say '
       + 'what would make it acceptable rather than only what is wrong.',
     schema: {
       type: 'object',
@@ -59,10 +59,10 @@ export const approvals = {
     },
   },
 
-  summon: {
+  add_agent: {
     roles: ['orchestrator'],
     description:
-      'Propose the crew to wake. The sovereign approves it and reads your reasoning. Wake the fewest that can do the job.',
+      'Propose the crew to wake. The user approves it and reads your reasoning. Wake the fewest that can do the job.',
     schema: {
       type: 'object',
       properties: {
@@ -77,21 +77,21 @@ export const approvals = {
     },
     run: ({ names, reason, run_id = null }) => {
       const roster = stateArray('roster');
-      if (!roster) return 'Cannot propose a summon: roster is unavailable.';
-      const error = badSummon({ names, reason }, { roster });
+      if (!roster) return 'Cannot propose an add: roster is unavailable.';
+      const error = badAdd({ names, reason }, { roster });
       if (error) return error;
-      const approval = approvalBody({ kind: 'summon', names, reason }, run_id);
+      const approval = approvalBody({ kind: 'add', names, reason }, run_id);
       if (approval.error) return approval.error;
       bus.post(ME, null, approval.body, 'approval', 'default', [], approval.id);
-      return 'Proposal sent to the sovereign. Wait for approval before assigning work.';
+      return 'Proposal sent to the user. Wait for approval before assigning work.';
     },
   },
 
   propose_role: {
     roles: ['orchestrator'],
     description:
-      'Propose a brand-new kind of peasant to add to the roster permanently. ' +
-      'Requires the sovereign\'s approval.',
+      'Propose a brand-new kind of agent to add to the roster permanently. ' +
+      'Requires the user\'s approval.',
     schema: {
       type: 'object',
       properties: {
@@ -99,14 +99,14 @@ export const approvals = {
         prompt: str('The system prompt defining this role'),
         cli: str('"claude" or "codex"'),
         model: str('Model name (optional)'),
-        reason: str('Why the kingdom needs it'),
+        reason: str('Why the team needs it'),
         run_id: str('Optional improvement run id; defaults to the current run'),
       },
       required: ['name', 'prompt', 'cli', 'reason'],
     },
     run: (spec) => {
       // Refused HERE as well as at approve(), because the orchestrator can act on this
-      // answer — a rejection at the approval boundary is a card the sovereign
+      // answer — a rejection at the approval boundary is a card the user
       // has to read and dismiss, hours later, with no way to tell the orchestrator why.
       const err = badRole(spec, { taken: rosterNow().map((m) => m.name) });
       if (err) return `${err} Nothing was proposed.`;
@@ -114,35 +114,35 @@ export const approvals = {
       const approval = approvalBody({ kind: 'role', ...role }, run_id);
       if (approval.error) return approval.error;
       bus.post(ME, null, approval.body, 'approval', 'default', [], approval.id);
-      return 'Role proposed. Await the sovereign\'s decision.';
+      return 'Role proposed. Await the user\'s decision.';
     },
   },
 
   request_merge: {
     roles: ['orchestrator'],
     description:
-      'You have reviewed a peasant\'s work and judge it fit. This surfaces a ' +
-      'Merge button to the sovereign, who has the final word.',
+      'You have reviewed an agent\'s work and judge it fit. This surfaces a ' +
+      'Merge button to the user, who has the final word.',
     schema: {
       type: 'object',
       properties: {
-        peasant: str('Whose worktree'), verdict: str('Your review, for the sovereign'),
+        agent: str('Whose worktree'), verdict: str('Your review, for the user'),
         run_id: str('Optional improvement run id; defaults to the current run'),
       },
-      required: ['peasant', 'verdict'],
+      required: ['agent', 'verdict'],
     },
-    run: ({ peasant, verdict, run_id = null }) => {
-      const approval = approvalBody({ kind: 'merge', peasant, verdict }, run_id);
+    run: ({ agent, verdict, run_id = null }) => {
+      const approval = approvalBody({ kind: 'merge', agent, verdict }, run_id);
       if (approval.error) return approval.error;
       bus.post(ME, null, approval.body, 'approval', 'default', [], approval.id);
-      return 'Merge proposed to the sovereign.';
+      return 'Merge proposed to the user.';
     },
   },
 
   request_push: {
     roles: ['orchestrator'],
     description:
-      'Ask the sovereign for one explicit push of the local base branch to its configured upstream. This never '
+      'Ask the user for one explicit push of the local base branch to its configured upstream. This never '
       + 'pushes now, never force-pushes, and every later push needs a new approval.',
     schema: {
       type: 'object',
@@ -156,7 +156,7 @@ export const approvals = {
       const approval = approvalBody({ op: 'push', reason }, run_id);
       if (approval.error) return approval.error;
       bus.post(ME, null, approval.body, 'control', 'default', [], approval.id);
-      return 'Push proposed to the sovereign. No remote was contacted.';
+      return 'Push proposed to the user. No remote was contacted.';
     },
   },
 };

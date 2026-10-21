@@ -2,7 +2,7 @@
 //
 // Every cost tool in this repo is post-hoc: ctx.js, recycle.js, replay.js and
 // the Usage panel all answer "where did the money go". The one moment the
-// sovereign can actually change the bill — approving a summon — showed names
+// user can actually change the bill — approving an add — showed names
 // and a paragraph of prose and no number at all, even though README.md names
 // the roster as the biggest lever there is and says to trim it right there.
 // This is the number that was missing from that card.
@@ -28,11 +28,11 @@ import { deltaOf, totalsOf } from './usage.js';
 import { costOf, PRICES } from './price.js';
 
 /**
- * Per-member observed cost, from this court's own `turn_end` log.
+ * Per-member observed cost, from this team's own `turn_end` log.
  *
  * @param rows      turn_end events, oldest first, payload already parsed
  *                  (exactly what `bus.events({type:'turn_end'})` returns)
- * @param specOf    name -> {cli, model}, i.e. kingdom.specOf
+ * @param specOf    name -> {cli, model}, i.e. agenticos.specOf
  * @param table     price table, i.e. tableFrom(config)
  * @param quotaClis clis billed by subscription, i.e. Object.keys(config.quotas)
  * @returns Map name -> {name, cli, model, turns, usd, tokens, metered}
@@ -107,7 +107,7 @@ export function turnsPerClosedCampaign(campaigns, turnEndRows) {
  * when history supports it, a projected total for the whole order.
  *
  * Three states a member can be in, and they are deliberately different:
- *   turns === 0     never run in this court — no history, no number
+ *   turns === 0     never run in this team — no history, no number
  *   metered false   subscription or unpriced — tokens per turn, no dollars
  *   otherwise       dollars and tokens per turn
  *
@@ -168,7 +168,7 @@ export function forecast(rows, names, opts = {}) {
       // is free", which is the one thing it certainly is not.
       perTurnUsd,
       perTurnTokens: members.reduce((t, m) => t + m.perTurnTokens, 0),
-      // Named, not just counted: the sovereign is deciding whom to cut, and
+      // Named, not just counted: the user is deciding whom to cut, and
       // "one member is unpriced" does not tell them which one.
       unpriced: members.filter((m) => m.turns && !m.metered).map((m) => m.name),
       unknown: members.filter((m) => !m.turns).map((m) => m.name),
@@ -271,7 +271,7 @@ if (process.argv[1]?.endsWith('forecast.js')) {
   // claude's cache read sits ALONGSIDE input_tokens, so this turn read 300.
   a.equal(mf.members[1].perTurnTokens, 320, "claude's alongside cache must be added in");
 
-  // --- a member outside the summon must not leak into the card, and an
+  // --- a member outside the add must not leak into the card, and an
   // unparseable row must cost only itself.
   const noisy = forecast(
     [...mixed, { agent: 'coder', payload: '{not json' }, ev('stranger', { input_tokens: 9e9 })],

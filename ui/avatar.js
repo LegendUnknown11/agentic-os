@@ -4,7 +4,7 @@
 //
 // This file used to draw a face: a hue-derived monogram disc, one per member,
 // on the argument that people recognise a colour faster than they read a word.
-// The discs were removed on the sovereign's instruction. What was INSIDE one is
+// The discs were removed on the user's instruction. What was INSIDE one is
 // not decoration and stays: a single dot carrying four states —
 //
 //   awake    a live process

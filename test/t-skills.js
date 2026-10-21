@@ -1,6 +1,6 @@
-// The court's skill set, and observation masking on tool results.
+// The team's skill set, and observation masking on tool results.
 //
-// Both exist for the same reason and are tested together: 93% of this court's
+// Both exist for the same reason and are tested together: 93% of this team's
 // input tokens are replayed context, so the only things that matter are what
 // enters a member's context and how many times.
 //
@@ -18,9 +18,9 @@ import {
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const MCP = join(HERE, '..', 'src', 'mcp.js');
-const dir = mkdtempSync(join(tmpdir(), 'kingdom-skills-'));
+const dir = mkdtempSync(join(tmpdir(), 'agenticos-skills-'));
 const vault = join(dir, 'vault');
-mkdirSync(join(vault, 'Kingdom', 'Skills'), { recursive: true });
+mkdirSync(join(vault, 'AgenticOS', 'Skills'), { recursive: true });
 
 // ---- names ----------------------------------------------------------
 // The name is typed by a human into a `/` menu, so it has to survive being
@@ -44,19 +44,19 @@ for (const c of shipped.filter((s) => s.combo.length)) {
   }
 }
 
-// ---- a skill that names a court member must name one that exists ----
+// ---- a skill that names a team member must name one that exists ----
 // A skill that assigns work by name — "send this to the devops-engineer" — fails at the
 // worst possible moment if that role was renamed or removed: mid-task, after
-// the sovereign has already approved a crew. Check every skill, not one.
+// the user has already approved a crew. Check every skill, not one.
 {
   const roles = JSON.parse(readFileSync(join(HERE, '..', 'roles.json'), 'utf8'));
-  const known = new Set((roles.peasants ?? roles).map((p) => p.name));
+  const known = new Set((roles.agents ?? roles).map((p) => p.name));
   for (const s of shipped) {
     // Table rows shaped `| scout | what it takes |`, minus a `| member |` header.
     const named = [...s.body.matchAll(/^\|\s*([a-z]+)\s*\|/gm)]
       .map((m) => m[1]).filter((n) => n !== 'member' && n !== 'level');
     for (const n of named) {
-      a.ok(known.has(n), `/${s.name} assigns work to "${n}", which is not a court role`);
+      a.ok(known.has(n), `/${s.name} assigns work to "${n}", which is not a team role`);
     }
   }
 }
@@ -84,14 +84,14 @@ a.ok(site.text.includes('4.5:1'), 'and must contain the real part bodies, not th
 a.equal(composeSkill(null, 'review').parts.length, 0, 'a plain skill brings only itself');
 
 // A combo that names itself must terminate rather than recurse forever.
-writeFileSync(join(vault, 'Kingdom', 'Skills', 'loop.md'),
+writeFileSync(join(vault, 'AgenticOS', 'Skills', 'loop.md'),
   '---\nname: loop\ndescription: a cycle\ncombo: loop, review\n---\nround and round\n');
 const loop = composeSkill(vault, 'loop');
 a.ok(loop, 'a self-referential combo must resolve, not hang');
 a.ok(loop.parts.includes('review'), 'and must still pick up its other parts');
 
-// ---- the sovereign overrides ----------------------------------------
-writeFileSync(join(vault, 'Kingdom', 'Skills', 'review.md'),
+// ---- the user overrides ----------------------------------------
+writeFileSync(join(vault, 'AgenticOS', 'Skills', 'review.md'),
   '---\nname: review\ndescription: my own review\n---\nlook at it and see how you feel\n');
 const mine = readSkill(vault, 'review');
 a.equal(mine.source, 'vault', 'the vault must win over a shipped skill of the same name');
@@ -103,7 +103,7 @@ a.equal(expandSkillCommand(vault, '/src/mcp.js is broken'), null,
   'an unknown /word is a path or a flag far more often than a skill — leave it alone');
 const cmd = expandSkillCommand(vault, '/design-site the settings page, mobile first');
 a.equal(cmd.name, 'design-site');
-a.match(cmd.text, /mobile first/, "the rest of the sovereign's message must survive");
+a.match(cmd.text, /mobile first/, "the rest of the user's message must survive");
 a.ok(!cmd.text.includes('Squint at it'),
   'the body must NOT be inlined — an order is replayed forever, a tool result is fetched once');
 
@@ -126,8 +126,8 @@ function callTool(name, args) {
   ].map((m) => JSON.stringify(m)).join('\n') + '\n';
   const r = spawnSync(process.execPath, [MCP], {
     input: rpc, encoding: 'utf8',
-    env: { ...process.env, KINGDOM_AGENT: 'coder', KINGDOM_ROLE: 'peasant',
-      KINGDOM_DB: db, KINGDOM_VAULT: vault, KINGDOM_VAULT_WATCH: '0' },
+    env: { ...process.env, AGENTICOS_AGENT: 'coder', AGENTICOS_ROLE: 'agent',
+      AGENTICOS_DB: db, AGENTICOS_VAULT: vault, AGENTICOS_VAULT_WATCH: '0' },
   });
   a.equal(r.status, 0, `mcp exited ${r.status}: ${r.stderr.slice(0, 500)}`);
   const msg = r.stdout.split(/\r?\n/).filter(Boolean)

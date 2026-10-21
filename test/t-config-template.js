@@ -73,16 +73,16 @@ a.deepEqual(cfg.efforts.agy, ['low', 'medium', 'high'], 'agy keeps its measured 
 }
 
 /* ---------- agenticos.js's own fallback default matches the template ------- */
-// Kingdom#models() falls back to a hardcoded default only when a config
+// AgenticOS#models() falls back to a hardcoded default only when a config
 // carries no `models` key at all (e.g. one built by hand in a test, or an
 // older workspace's config predating this key). That default must not
 // regress to the same bare-alias bug the template was just fixed for.
 {
-  const kingdomSource = readFileSync(join(ROOT, 'src', 'agenticos.js'), 'utf8');
-  a.match(kingdomSource,
+  const agenticosSource = readFileSync(join(ROOT, 'src', 'agenticos.js'), 'utf8');
+  a.match(agenticosSource,
     /claude: \['claude-opus-5-5', 'claude-opus-5', 'claude-sonnet-5', 'claude-haiku-4-5', 'claude-fable-5-1'\]/,
-    'Kingdom#models()\'s hardcoded fallback must also name full, versioned, CURRENT model ids');
-  console.log('  Kingdom#models()\'s fallback default matches the template\'s versioned, current ids');
+    'AgenticOS#models()\'s hardcoded fallback must also name full, versioned, CURRENT model ids');
+  console.log('  AgenticOS#models()\'s fallback default matches the template\'s versioned, current ids');
 }
 
 console.log('t-config-template.js OK — the shipped template is clean, and the packaged app carries its own skills');

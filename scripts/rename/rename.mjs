@@ -21,6 +21,7 @@ import { execFileSync } from 'node:child_process';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as M from './map.mjs';
+import { transformLine, excluded } from './transform.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const argv = process.argv.slice(2);
@@ -32,69 +33,10 @@ const prefixes = argv.filter((a) => !a.startsWith('--'));
 
 const git = (...args) => execFileSync('git', args, { cwd: ROOT, encoding: 'utf8' });
 
-const cap = (s) => s[0].toUpperCase() + s.slice(1);
-
-/** Expand WORDS into [regex, replacement, opts] triples. */
-function wordRules() {
-  const out = [];
-  for (const [old, neu, opts = {}] of M.WORDS) {
-    out.push([new RegExp(`(?<![A-Za-z])${old}(?![a-z])`, 'g'), neu, opts]);
-    out.push([new RegExp(`(?<![A-Z])${cap(old)}(?![a-z])`, 'g'), opts.Cap ?? cap(neu), opts]);
-    out.push([new RegExp(`(?<![A-Z])${old.toUpperCase()}(?![A-Z])`, 'g'), opts.UPPER ?? neu.toUpperCase(), opts]);
-  }
-  return out;
-}
-const WORD_RULES = wordRules();
-
-const excluded = (f) => M.EXCLUDE.some((re) => re.test(f));
-const keepLine = (f, line) => line.includes('rename-keep')
-  || M.KEEP_LINES.some(([fre, lre]) => fre.test(f) && lre.test(line));
-
-/** Code part of a JS line: everything before a `//` comment, or nothing on a JSDoc/comment line. */
-function splitCode(line) {
-  if (/^\s*(\*|\/\*|\/\/)/.test(line)) return [ '', line ];
-  const i = line.indexOf('//');
-  return i === -1 ? [line, ''] : [line.slice(0, i), line.slice(i)];
-}
-
 function phase0Applies() {
   const { file, has } = M.PHASE0_GUARD;
   const p = resolve(ROOT, file);
   return existsSync(p) && has.test(readFileSync(p, 'utf8'));
-}
-
-function transformLine(f, line, phase0) {
-  if (keepLine(f, line)) return line;
-  let s = line;
-  for (const [re, to] of M.PATH_RULES) s = s.replace(re, to);
-  if (PATHS_ONLY) return s;
-  if (phase0) {
-    for (const block of M.PHASE0) {
-      if (!block.files.test(f)) continue;
-      for (const [re, to] of block.rules) {
-        if (block.code) {
-          const [code, rest] = splitCode(s);
-          s = code.replace(re, to) + rest;
-        } else s = s.replace(re, to);
-      }
-    }
-  }
-  for (const [re, to, fre] of M.SCOPED) if (fre.test(f)) s = s.replace(re, to);
-  for (const [re, to] of M.PHRASES) s = s.replace(re, to);
-  if (/\.md$/.test(f)) for (const [re, to] of M.PROSE) s = s.replace(re, to);
-  else if (/\.(m|c)?js$/.test(f)) {
-    const [code, rest] = splitCode(s);
-    let prose = rest;
-    for (const [re, to] of M.PROSE) prose = prose.replace(re, to);
-    s = code + prose;
-  }
-  const ordinaryDismiss = M.DISMISS_IS_ORDINARY.test(f);
-  for (const [re, to, opts] of WORD_RULES) {
-    if (opts.dismiss && ordinaryDismiss) continue;
-    s = s.replace(re, to);
-  }
-  if (s !== line) for (const [re, to] of M.ARTICLES) s = s.replace(re, to);
-  return s;
 }
 
 function isBinary(buf) {
@@ -135,7 +77,7 @@ for (const f of files) {
   const lines = text.split('\n');
   let n = 0;
   const next = lines.map((l, i) => {
-    const s = transformLine(f, l, phase0);
+    const s = transformLine(f, l, { phase0, pathsOnly: PATHS_ONLY });
     if (s !== l) {
       n++;
       if (REPORT) console.log(`${f}:${i + 1}\n  - ${l.trim()}\n  + ${s.trim()}`);

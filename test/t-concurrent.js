@@ -1,6 +1,6 @@
 // Regression test for "database is locked".
 //
-// The kingdom runs one MCP server process per agent, all writing to the same
+// The team runs one MCP server process per agent, all writing to the same
 // bus. Without `pragma busy_timeout` the second concurrent writer fails
 // immediately instead of queueing — which is exactly what killed a
 // propose_role call in a live session.
@@ -16,8 +16,8 @@ import { Bus } from '../src/bus.js';
 const WRITERS = 8;
 const PER_WRITER = 40;
 
-const dir = mkdtempSync(join(tmpdir(), 'kingdom-conc-'));
-const db = join(dir, 'kingdom.db');
+const dir = mkdtempSync(join(tmpdir(), 'agenticos-conc-'));
+const db = join(dir, 'agenticos.db');
 // A file:// URL, not a Windows path — ESM import of "E:\..." is a hard error.
 const busPath = new URL('../src/bus.js', import.meta.url).href;
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// The kingdom's MCP server. One instance is spawned per agent by its CLI, with
-// KINGDOM_AGENT / KINGDOM_ROLE / KINGDOM_DB in the environment. The toolset it
-// advertises depends on the role, so a peasant simply cannot see `summon`.
+// The team's MCP server. One instance is spawned per agent by its CLI, with
+// AGENTICOS_AGENT / AGENTICOS_ROLE / AGENTICOS_DB in the environment. The toolset it
+// advertises depends on the role, so an agent simply cannot see `add_agent`.
 //
 // It writes straight to the SQLite bus (WAL, multi-process safe). The
 // orchestrator polls for new rows rather than being called back — one less
@@ -72,19 +72,19 @@ const toolListings = bus ? Object.entries(TOOLS)
   .map(([name, t]) => listed(name, t)) : [];
 
 const server = new Server(
-  { name: 'kingdom', version: '0.1.0' },
+  { name: 'agenticos', version: '0.1.0' },
   { capabilities: { tools: {} } }
 );
 
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
-  // No court here means no court tools — an empty list, not a broken server.
+  // No team here means no team tools — an empty list, not a broken server.
   tools: bus ? visible() : [],
 }));
 
 /**
  * Observation masking: never hand a member the same bytes twice.
  *
- * 93% of this court's input tokens are replayed context, so a member that
+ * 93% of this team's input tokens are replayed context, so a member that
  * reads a note on turn 3 and again on turn 9 pays for that note on every turn
  * from 3 onward, twice over from 9. The literature on long-horizon tool-using
  * agents finds the same thing and answers it by dropping stale observations
@@ -118,10 +118,10 @@ const digest = (s) => {
 };
 
 function alreadyServed(name, text) {
-  // KINGDOM_MASK=0 turns it off: this is the one mechanism here that can make
+  // AGENTICOS_MASK=0 turns it off: this is the one mechanism here that can make
   // a member see LESS than it asked for, so it needs a switch that does not
   // require a code change to reach — and A/B measuring it needs one too.
-  if (process.env.KINGDOM_MASK === '0') return false;
+  if (process.env.AGENTICOS_MASK === '0') return false;
   if (!MASKABLE.has(name) || text.length < MASK_MIN) return false;
   let seen;
   try { seen = JSON.parse(bus.get(`served:${ME}`) || '[]'); } catch { seen = []; }
@@ -146,8 +146,8 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
     return {
       isError: true,
       content: [{ type: 'text', text:
-        'There is no kingdom in this directory, so the court tools are unavailable. '
-        + 'Start a kingdom here, or run this from a member\'s worktree.' }],
+        'There is no AgenticOS team in this directory, so the team tools are unavailable. '
+        + 'Start a team here, or run this from a member\'s worktree.' }],
     };
   }
   const tool = TOOLS[req.params.name];

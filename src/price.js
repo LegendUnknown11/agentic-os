@@ -1,9 +1,9 @@
 // What a turn actually cost, in dollars.
 //
 // Why this exists: codex and agy report NO cost at all (agent.js hardcodes
-// `costUsd: 0` on both paths), and the live court was 107 codex members. So
-// `spentUsd` sat frozen while the court burned tokens, `maxBudgetUsd` and
-// `maxKingdomUsd` could never fire, and every cost decision was being made
+// `costUsd: 0` on both paths), and the live team was 107 codex members. So
+// `spentUsd` sat frozen while the team burned tokens, `maxBudgetUsd` and
+// `maxTotalUsd` could never fire, and every cost decision was being made
 // against a token count instead of a price.
 //
 // A token count is the wrong unit, because the three kinds of token do not
@@ -11,7 +11,7 @@
 //
 //   fresh input   1.0x      cache write  1.25x      cache read  0.1x
 //
-// Measured on a real 3-turn session (E:\AI\.kingdom\Sant Dnyaneshwar), 95.2%
+// Measured on a real 3-turn session (E:\AI\.agenticos\Sant Dnyaneshwar), 95.2%
 // of all input was cache READ. Counted as tokens that looks like a session
 // paying to re-read itself; priced, those tokens are ~34% of the input bill —
 // the session cost $0.604 on the orchestrator's terra, against $3.93 if those same
@@ -41,7 +41,7 @@ export const PRICES = {
   // Anthropic, via the claude CLI. The config names these by alias
   // ("opus", "sonnet"), so both the alias and the full id are listed. An
   // alias is priced as the model the CLI resolves it to today: `opus` is
-  // Opus 5.5 (confirmed by the sovereign on #75), not Opus 5.
+  // Opus 5.5 (confirmed by the user on #75), not Opus 5.
   // Fable 5.1 kept Fable 5's $10 / $50 but cut cache reads to $0.25/MTok
   // (0.025x input, not the usual 0.1x). The bare alias resolves to 5.1.
   'claude/fable':         [10.00, 0.25, 50.00],
@@ -102,7 +102,7 @@ export function costClassOf({ usage = null, reported = null, cli, model, table =
   return rateOf(cli, model, table) ? 'estimated' : 'unpriced';
 }
 
-/** The sovereign's `prices` config layered over the defaults. */
+/** The user's `prices` config layered over the defaults. */
 export function tableFrom(config) {
   return { ...PRICES, ...(config?.prices ?? {}) };
 }
@@ -178,7 +178,7 @@ if (process.argv[1]?.endsWith('price.js')) {
   // Zero usage is free, not NaN.
   a.equal(costOf({}, 'codex', 'gpt-5.6-luna'), 0, 'an empty turn costs nothing');
 
-  // The sovereign can add a price without editing this file.
+  // The user can add a price without editing this file.
   const custom = tableFrom({ prices: { 'agy/gemini-3.6-flash-high': [1, 0.1, 4] } });
   near(costOf({ in: 1e6, cached: 0, out: 0 }, 'agy', 'gemini-3.6-flash-high', custom), 1,
     'a config price must override/extend the built-in table');

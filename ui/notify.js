@@ -1,4 +1,4 @@
-// Desktop notifications for the things that stall the court while you are not
+// Desktop notifications for the things that stall the team while you are not
 // looking at the window.
 //
 // Deliberately narrow. A notification for every event would be noise you learn
@@ -103,7 +103,7 @@ export function onEvent(d) {
       return enabled.failures && fire(`${d.name} has failed`, d.message, 'failure');
 
     case 'mergeFailed':
-      return enabled.failures && fire('Merge refused', `${d.peasant}: ${d.message}`, 'merge');
+      return enabled.failures && fire('Merge refused', `${d.agent}: ${d.message}`, 'merge');
 
     case 'limited':
       return enabled.failures && fire(`${d.name} is rate limited`,
@@ -119,7 +119,7 @@ export function onEvent(d) {
           `$${(d.spent ?? 0).toFixed(2)} of $${d.cap}. The run is blocked; other work continues.`, 'budget');
       }
       return enabled.budget && fire(
-        d.scope === 'kingdom' ? 'Team spend ceiling reached' : `${d.name} hit its ceiling`,
+        d.scope === 'total' ? 'Team spend ceiling reached' : `${d.name} hit its ceiling`,
         `$${(d.spent ?? 0).toFixed(2)} of $${d.cap}. Everyone stopped.`, 'budget');
 
     // A brief or digest an automation built for you (src/workflows.js digest).
@@ -127,7 +127,7 @@ export function onEvent(d) {
       return enabled.digests && fire(d.title || 'Your brief', d.body, 'digest');
 
     case 'merged':
-      return enabled.done && fire('Merged', `${d.peasant} is in the base branch.`, 'done');
+      return enabled.done && fire('Merged', `${d.agent} is in the base branch.`, 'done');
 
     default:
       return false;

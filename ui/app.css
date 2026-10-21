@@ -1,8 +1,8 @@
 /* T3 Code design system (the "Agentic OS - T3 Code style" Claude design
- * canvas), adopted in full at the sovereign's direction 2026-10-21 on the
+ * canvas), adopted in full at the user's direction 2026-10-21 on the
  * T3-code branch. This reverses the Cold-Call Workflow paper theme adopted
  * 2026-09-21 (PLAN.md section 1), which itself reversed Hiveory. Each reversal
- * is the sovereign's call and is written down rather than made quietly.
+ * is the user's call and is written down rather than made quietly.
  *
  * Dark, neutral and flat: near-black grounds one step apart, hairlines instead
  * of shadows, one periwinkle accent for live work and links, a white fill for
@@ -332,7 +332,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 /* 2026-09-23: this is the same defect test/t-theme.js already banned under
  * a "small" tag selector — the mode switcher visibly dominating the header
  * with explainer copy every button's own dataset.tip and aria-label already
- * carry — read directly on a populated demo court, where three pills each
+ * carry — read directly on a populated demo team, where three pills each
  * two lines tall pushed "Connected" to the far end of the header looking
  * detached from everything beside it. It came back under `span` instead of
  * `small`; the button keeps rendering it (so nothing about its accessible
@@ -394,7 +394,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .sidebar-repo:hover { color: var(--text); }
 
-/* #41: the court-wide pause banner — degrades visibly instead of the court
+/* #41: the team-wide pause banner — degrades visibly instead of the team
    just going quiet with no reason on screen. Attention tone, the same token
    the rest of the app uses for a blocked/failed state; no new colour. */
 .sidebar-pause-banner { display: grid; gap: var(--space-2); padding: var(--space-2); border: 1px solid rgb(var(--tone-attention-rgb) / .4); border-radius: var(--radius-ctl); background: rgb(var(--tone-attention-rgb) / .1); }
@@ -562,7 +562,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
    and .sidebar-conversations names it explicitly. */
 .sidebar-section { display: grid; align-content: start; gap: var(--space-2); min-height: 0; }
 
-/* Measured live 2026-09-23 at 1440x900 and 1280x720 with a populated court
+/* Measured live 2026-09-23 at 1440x900 and 1280x720 with a populated team
  * (twelve conversations, More tools open): the rail's mode/workspace/more/
  * conversations sections could add up to more than the rail's own height,
  * and #sidebar's overflow: hidden clipped whatever did not fit — the
@@ -690,7 +690,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .thread-heading h1 { margin: 0; font-family: var(--display); font-size: 14px; font-weight: 500; letter-spacing: -.01em; }
 
-.thread-heading.sovereign h1 { color: var(--gold); }
+.thread-heading.user h1 { color: var(--gold); }
 
 .thread-subtitle { margin: var(--space-1) 0 0; color: var(--muted); font-size: var(--t-sm); overflow-wrap: anywhere; }
 
@@ -791,7 +791,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 /* 2026-09-23: this used to carry an ::before eyebrow reading the literal
  * string "AGENTIC OS / WORKSPACE" on all 14 views — no information (it never
- * changed), read directly against a populated demo court where it ate space
+ * changed), read directly against a populated demo team where it ate space
  * a run panel or a task list needed. A prior session removed it once for the
  * same reason and it came back; it must not come back a second time (see the
  * ban pinned in test/t-theme.js). The heading itself also carried the kit's
@@ -1243,7 +1243,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 /* A fenced block had no rule of its own: `<pre><code>` rendered on whatever
  * browser default the UA shipped, with no wrap handling, so a long line
  * pushed the message bubble wider than the thread column instead of
- * scrolling inside it. Read directly from a populated demo court's Chat
+ * scrolling inside it. Read directly from a populated demo team's Chat
  * page, 2026-09-23. */
 .markdown pre { margin: 0; padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-ctl); background: var(--surface); overflow-x: auto; font-family: var(--mono); font-size: var(--t-xs); line-height: 1.6; }
 
@@ -1271,19 +1271,19 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .settings-group { display: grid; min-width: 0; gap: var(--space-3); margin: 0; padding: var(--space-3); border: 1px solid var(--line-soft); border-radius: var(--radius-ctl); }
 
-/* The multiple-courts switcher (issue #42), Settings > Repository. New
+/* The multiple-teams switcher (issue #42), Settings > Repository. New
  * selectors only — colour still comes only from the :root tokens above. */
-.courts-switcher { display: grid; gap: var(--space-2); }
+.teams-switcher { display: grid; gap: var(--space-2); }
 
-.courts-list { display: grid; gap: var(--space-2); }
+.teams-list { display: grid; gap: var(--space-2); }
 
-.court-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); padding: var(--space-2) var(--space-3); border: 1px solid var(--line-soft); border-radius: var(--radius-ctl); background: var(--raised); }
+.team-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); padding: var(--space-2) var(--space-3); border: 1px solid var(--line-soft); border-radius: var(--radius-ctl); background: var(--raised); }
 
-.court-row-id { display: grid; min-width: 0; gap: 2px; }
+.team-row-id { display: grid; min-width: 0; gap: 2px; }
 
-.court-repo { overflow: hidden; color: var(--text); font-size: var(--t-sm); text-overflow: ellipsis; white-space: nowrap; }
+.team-repo { overflow: hidden; color: var(--text); font-size: var(--t-sm); text-overflow: ellipsis; white-space: nowrap; }
 
-.court-port { color: var(--muted); font-family: var(--mono); font-size: var(--t-xs); letter-spacing: .04em; text-transform: uppercase; }
+.team-port { color: var(--muted); font-family: var(--mono); font-size: var(--t-xs); letter-spacing: .04em; text-transform: uppercase; }
 
 .settings-group legend { padding-inline: var(--space-1); color: var(--text); font-weight: 650; }
 

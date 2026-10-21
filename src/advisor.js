@@ -1,14 +1,14 @@
 // The advisor: a small, cheap, single-shot model call that answers a question
-// and exits. It is NOT a court member — no bus, no MCP, no session, no memory,
+// and exits. It is NOT a team member — no bus, no MCP, no session, no memory,
 // no worktree. Two features ride on it:
 //
-//   * the prompt engineer, which rewrites what the sovereign typed before the
+//   * the prompt engineer, which rewrites what the user typed before the
 //     orchestrator ever sees it;
 //   * the model selector, which picks each member's model and effort.
 //
 // Both are advisory: if the call fails, times out, or answers with nonsense,
 // the caller keeps what it already had. A broken advisor must never be able to
-// stop the court, so every failure here returns null rather than throwing.
+// stop the team, so every failure here returns null rather than throwing.
 import { spawn } from 'node:child_process';
 import { resolveCli, AGY_EFFORTS } from './agent.js';
 import { adapterFor, cursorUsage, isCursor } from './cli-adapters.js';
@@ -66,7 +66,7 @@ export function ask(spec, prompt, {
   // agy is a natural fit for these two jobs: they are one-shot text calls that
   // need no tools at all, which is exactly the part of agy that works headless.
   // It also bills against a different quota from codex, so moving the
-  // per-turn summariser here takes that load off the court's own budget.
+  // per-turn summariser here takes that load off the team's own budget.
   // Cursor: read-only `ask` mode, no --force — the advisor touches nothing.
   const args = isCursor(cli)
     ? adapterFor(cli).buildArgs({ spec: { ...spec, mode: 'ask', skipPermissions: false, outputFormat: undefined }, cwd, prompt })
@@ -85,7 +85,7 @@ export function ask(spec, prompt, {
       // headless mode auto-denies it, so the run produces NOTHING. The only
       // switch that fixes it auto-approves every tool — far too wide a grant to
       // turn on quietly for a job that should touch nothing. Opt in per
-      // kingdom with `"skipPermissions": true`, and know what it means.
+      // AgenticOS with `"skipPermissions": true`, and know what it means.
       ...(spec.skipPermissions ? ['--dangerously-skip-permissions'] : []),
       '--print-timeout', '5m']
     : cli === 'codex'
@@ -136,7 +136,7 @@ export function ask(spec, prompt, {
     }
 
     // Kill the whole turn if it overruns: an advisor that hangs would hold up
-    // every message the sovereign sends.
+    // every message the user sends.
     timer = setTimeout(() => {
       try { proc.kill(); } catch {}
       onFail?.(`no answer within ${Math.round(timeoutMs / 1000)}s`);
@@ -220,7 +220,7 @@ export function parseJson(text) {
 }
 
 const ENGINEER = `You rewrite instructions for an AI software-engineering team.
-Rewrite the sovereign's message below into a brief that is unambiguous and
+Rewrite the user's message below into a brief that is unambiguous and
 directly actionable. Rules:
 - Preserve every requirement, constraint and named file. Add nothing they did not ask for.
 - Do NOT answer the request, plan it, or propose a solution. You only rewrite.
@@ -230,31 +230,31 @@ directly actionable. Rules:
 - If the message is already clear, return it close to unchanged.
 - Never invent file paths, versions, or acceptance criteria.
 
-Then classify what the sovereign is actually asking for, as exactly one of:
+Then classify what the user is actually asking for, as exactly one of:
 - "code"     — write, change, fix, test or review code in this repository
-- "chat"     — talk it through; a question about this court itself; thinking out loud
+- "chat"     — talk it through; a question about this team itself; thinking out loud
 - "cowork"   — delegate multi-step research, writing, notes, tasks, configuration, or an automation/workflow
-When it is genuinely both, pick the one the sovereign wants FIRST.
+When it is genuinely both, pick the one the user wants FIRST.
 
 Reply with ONLY this JSON object and nothing else:
 {"mode":"chat|cowork|code","brief":"the rewritten brief"}`;
 
 /**
- * Rewrite the sovereign's message, and say what kind of work it is.
+ * Rewrite the user's message, and say what kind of work it is.
  *
  * Classification rides on the rewrite rather than taking a call of its own. The
- * rewrite already blocks — it changes the words the court acts on, so it must
+ * rewrite already blocks — it changes the words the team acts on, so it must
  * land before the message posts — and a second blocking call would put a second
  * model's latency between pressing enter and the orchestrator hearing anything. This
  * costs one more line of output on a call that was happening regardless.
  *
  * Returns `{text, mode}`, or null if there is nothing usable. `mode` is null
  * whenever the model did not answer with one of the modes — an unclassified
- * message leaves the court in the shape it was already in, which is the same
+ * message leaves the team in the shape it was already in, which is the same
  * thing that happens when the advisor is off.
  */
 export async function engineerPrompt(spec, text, opts = {}) {
-  const out = await ask(spec, `${ENGINEER}\n\n--- SOVEREIGN'S MESSAGE ---\n${text}`,
+  const out = await ask(spec, `${ENGINEER}\n\n--- USER'S MESSAGE ---\n${text}`,
     { ...opts, purpose: 'prompt-engineering' });
   if (!out) return null;
   // A model that ignored the schema still produced a usable rewrite, and taking
@@ -264,15 +264,15 @@ export async function engineerPrompt(spec, text, opts = {}) {
   const brief = typeof json?.brief === 'string' && json.brief.trim() ? json.brief.trim() : out;
   const mode = MODE_NAMES.includes(json?.mode) ? json.mode : null;
   // A "rewrite" many times the original is the model answering the request
-  // instead of restating it. Rather than feed the court a hallucinated plan,
-  // fall back to what the sovereign actually typed.
+  // instead of restating it. Rather than feed the team a hallucinated plan,
+  // fall back to what the user actually typed.
   if (brief.length > Math.max(1200, text.length * 6)) return null;
   return { text: brief, mode };
 }
 
 /**
- * The sovereign's own selection policy, from the vault (References/Model
- * Guidance, Effort Levels, GPT 5.6 Luna/Terra/Sol). Overridable per kingdom via
+ * The user's own selection policy, from the vault (References/Model
+ * Guidance, Effort Levels, GPT 5.6 Luna/Terra/Sol). Overridable per AgenticOS via
  * `advisor.guidance` — this is a preference, not a fact, and it will go stale
  * when prices move.
  *
@@ -296,7 +296,7 @@ function priceContext(allowed, table) {
 }
 
 /**
- * What this court has actually spent on output at each recorded effort.
+ * What this team has actually spent on output at each recorded effort.
  *
  * A turn snapshots its CLI/model/effort when it ends, rather than looking at
  * the member's current settings. Otherwise an effort change would rewrite the
@@ -329,7 +329,7 @@ export function outputEvidence(events = [], { names = null, table = PRICES } = {
   const rows = [...grouped.values()].sort((a, b) => a.name.localeCompare(b.name)
     || a.cli.localeCompare(b.cli) || a.model.localeCompare(b.model)
     || a.effort.localeCompare(b.effort));
-  if (!rows.length) return 'No measured output history is available for this court yet.';
+  if (!rows.length) return 'No measured output history is available for this team yet.';
   return ['MEASURED OUTPUT HISTORY — observed usage, not a quality score:']
     .concat(rows.map((r) => `- ${r.name} · ${r.cli}/${r.model} · ${r.effort}: ${r.turns} turns, `
       + `${r.output} output tokens, ${r.priced ? '$' + r.outputCost.toFixed(6) : 'unpriced output'}`))
@@ -339,7 +339,7 @@ export function outputEvidence(events = [], { names = null, table = PRICES } = {
 /**
  * Picks a model and effort per member from `allowed`.
  *
- * `allowed` is the sovereign's restriction, checked again on the way out —
+ * `allowed` is the user's restriction, checked again on the way out —
  * a model is only ever applied if it was on the list, so a creative answer
  * cannot spend money on a tier they excluded.
  */
@@ -387,7 +387,7 @@ ${priceContext(choices, table)}
 
 ${guidance}
 
-${measurements ?? 'No measured output history is available for this court yet.'}
+${measurements ?? 'No measured output history is available for this team yet.'}
 Use that history only as a cost observation. It does not measure correctness,
 quality, or task difficulty; do not treat token count as a quality score.
 

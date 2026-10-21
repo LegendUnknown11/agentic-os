@@ -1,7 +1,7 @@
-// The advisor runs BEFORE the court sees anything the sovereign typed, so its
+// The advisor runs BEFORE the team sees anything the user typed, so its
 // failure modes are the dangerous kind: a bad rewrite silently changes the
 // order, and a creative model pick silently spends money on a tier the
-// sovereign excluded. Both must be impossible, not merely unlikely.
+// user excluded. Both must be impossible, not merely unlikely.
 //
 //   node test/t-advisor.js
 import { strict as a } from 'node:assert';
@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { removeRepo } from './cleanup.js';
 
-const dir = mkdtempSync(join(tmpdir(), 'kingdom-advisor-'));
+const dir = mkdtempSync(join(tmpdir(), 'agenticos-advisor-'));
 
 /* ---------- 1. pulling JSON out of whatever the model felt like saying ---- */
 {
@@ -36,7 +36,7 @@ const dir = mkdtempSync(join(tmpdir(), 'kingdom-advisor-'));
 // initially pointed at a new file each time and quietly kept replaying the
 // first stub's answer.)
 const STUB = join(dir, 'stub.js');
-process.env.KINGDOM_CODEX_BIN = STUB;
+process.env.AGENTICOS_CODEX_BIN = STUB;
 const stub = (body) => { writeFileSync(STUB, body); return STUB; };
 const says = (reply) => stub(`
 process.stdout.write(JSON.stringify({ type: 'item.completed',
@@ -68,7 +68,7 @@ async function pick(reply, allowed) {
 }
 
 {
-  // The sovereign excluded terra. The model reaches for it anyway.
+  // The user excluded terra. The model reaches for it anyway.
   const out = await pick(JSON.stringify({
     coder: { model: 'codex/gpt-5.5', effort: 'ultra' },
     writer: { model: 'codex/gpt-5.6-luna', effort: 'low' },
@@ -108,7 +108,7 @@ async function pick(reply, allowed) {
       // Codex usage is cumulative, so this contributes 40, not 50, output tokens.
       usage: { input_tokens: 250, cached_input_tokens: 200, output_tokens: 50 },
     } },
-    // Courts created before this feature have no configuration snapshot. They
+    // Teams created before this feature have no configuration snapshot. They
     // remain an honest absence of evidence, rather than being guessed from a
     // member's current settings.
     { agent: 'writer', payload: { usage: { input_tokens: 999, output_tokens: 999 } } },
@@ -116,7 +116,7 @@ async function pick(reply, allowed) {
   a.match(evidence, /coder .*gpt-5\.6-luna.*max.*2 turns.*50 output tokens/i,
     'the advisor sees the measured cumulative delta, grouped by the actual effort used');
   a.match(evidence, /\$0\.000060/, 'output cost uses the rate card, not an invented ratio');
-  a.equal(outputEvidence([]), 'No measured output history is available for this court yet.');
+  a.equal(outputEvidence([]), 'No measured output history is available for this team yet.');
 
   const capture = join(dir, 'model-prompt.txt');
   stub(`
@@ -133,7 +133,7 @@ process.stdout.write(JSON.stringify({ type: 'item.completed',
   }, { cwd: dir });
   a.ok(picked.coder, 'adding evidence must not change the allowlist gate');
   const prompt = readFileSync(capture, 'utf8');
-  a.match(prompt, /MEASURED OUTPUT HISTORY/, 'the selected advisor receives the court measurement');
+  a.match(prompt, /MEASURED OUTPUT HISTORY/, 'the selected advisor receives the team measurement');
   a.match(prompt, /do not treat token count as a quality score/i,
     'the prompt must not turn output volume into an invented quality proxy');
   console.log('  measured output history informs effort selection without claiming quality');
@@ -153,7 +153,7 @@ process.stdout.write(JSON.stringify({ type: 'item.completed',
     'Cowork is a first-class advisor result, not a UI-only translation');
 
   // A model that answers instead of rewriting produces something far longer
-  // than what it was given. Feeding that to the orchestrator as if the sovereign said
+  // than what it was given. Feeding that to the orchestrator as if the user said
   // it would put an invented plan in their mouth.
   says('x'.repeat(4000));
   const { engineerPrompt: e2 } = await import(`../src/advisor.js?e2=${Math.random()}`);
@@ -162,7 +162,7 @@ process.stdout.write(JSON.stringify({ type: 'item.completed',
 
   // The schema is a request, not a guarantee. A model that answers in plain
   // prose must still get its rewrite used — losing the classification costs a
-  // manual switch, losing the rewrite would put the wrong words in the court.
+  // manual switch, losing the rewrite would put the wrong words in the team.
   says('Fix the login redirect on /auth/callback.');
   const { engineerPrompt: e3 } = await import(`../src/advisor.js?e3=${Math.random()}`);
   a.deepEqual(await e3({ cli: 'codex' }, 'login redirect broken', { cwd: dir }),
@@ -178,7 +178,7 @@ process.stdout.write(JSON.stringify({ type: 'item.completed',
   console.log('  rewrite accepted when brief, refused when it runs away; mode classified');
 }
 
-/* ---------- 5. a dead advisor must not stop the sovereign ---------------- */
+/* ---------- 5. a dead advisor must not stop the user ---------------- */
 {
   stub('process.exit(9);');
   const { ask, engineerPrompt } = await import(`../src/advisor.js?d=${Math.random()}`);
@@ -198,13 +198,13 @@ process.stdout.write(JSON.stringify({ type: 'item.completed',
 // that matters — that command() puts the RIGHT text on the bus.
 {
   const { execFileSync } = await import('node:child_process');
-  const { Kingdom } = await import('../src/agenticos.js');
+  const { AgenticOS } = await import('../src/agenticos.js');
 
-  const repo = mkdtempSync(join(tmpdir(), 'kingdom-adv-repo-'));
+  const repo = mkdtempSync(join(tmpdir(), 'agenticos-adv-repo-'));
   const git = (...x) => execFileSync('git', x, { cwd: repo, stdio: 'pipe' });
   git('init', '-q');
-  git('config', 'user.email', 'k@kingdom');
-  git('config', 'user.name', 'kingdom');
+  git('config', 'user.email', 'k@agenticos');
+  git('config', 'user.name', 'agenticos');
   writeFileSync(join(repo, 'README.md'), '# t\n');
   git('add', '-A');
   git('commit', '-qm', 'init');
@@ -217,35 +217,35 @@ process.stdout.write(JSON.stringify({ type: 'item.completed',
     } },
     orchestrator: { name: 'orchestrator', cli: 'codex' },
     briefer: { name: 'briefer', cli: 'codex' },
-    peasants: [{ name: 'coder', cli: 'codex', model: 'gpt-5.6-luna', effort: 'medium',
+    agents: [{ name: 'coder', cli: 'codex', model: 'gpt-5.6-luna', effort: 'medium',
       description: 'writes code', ...(auto && { auto: true }) }],
     rolesSeeded: true,
     advisor,
   }));
 
-  const sovereignSaid = (k) =>
-    k.bus.history({ limit: 50 }).filter((m) => m.sender === 'sovereign').pop();
+  const userSaid = (k) =>
+    k.bus.history({ limit: 50 }).filter((m) => m.sender === 'user').pop();
 
   // (a) rewrite ON — the orchestrator reads the brief, but the original survives.
   says('Fix the double-charge race in the payment webhook handler.');
   write({ cli: 'codex', model: 'gpt-5.6-luna', promptEngineer: true, autoModel: false, allow: [] });
-  let k = new Kingdom(repo, cfg);
+  let k = new AgenticOS(repo, cfg);
   k.on('error', () => {});   // #warn routes here; nothing to assert on
   await k.start();
   await k.command('the payment thing charges twice sometimes');
-  let posted = sovereignSaid(k);
+  let posted = userSaid(k);
   a.match(posted.body, /double-charge race/, 'the orchestrator must receive the engineered brief');
   a.match(posted.body, /charges twice sometimes/,
-    "the sovereign's own wording must still be on the bus for a successor to find");
+    "the user's own wording must still be on the bus for a successor to find");
   await k.stop();
 
   // (b) rewrite OFF — byte-for-byte what was typed, nothing appended.
   write({ promptEngineer: false, autoModel: false });
-  k = new Kingdom(repo, cfg);
+  k = new AgenticOS(repo, cfg);
   k.on('error', () => {});
   await k.start();
   await k.command('exactly this');
-  a.equal(sovereignSaid(k).body, 'exactly this', 'with the advisor off nothing may be added');
+  a.equal(userSaid(k).body, 'exactly this', 'with the advisor off nothing may be added');
   await k.stop();
 
   // (c) A completed turn persists the configuration that actually produced it,
@@ -253,17 +253,17 @@ process.stdout.write(JSON.stringify({ type: 'item.completed',
   // be reconfigured later; reading its current dropdown would relabel history.
   const captured = join(repo, 'measured-model-prompt.txt');
   stub(`
-// Court members read their prompt from stdin and therefore end their argv with
+// Team members read their prompt from stdin and therefore end their argv with
 // '-'. Only the advisor receives the model-selection prompt as an argument.
 if (process.argv.at(-1) !== '-') require('node:fs').writeFileSync(${JSON.stringify(captured)}, process.argv.at(-1));
 process.stdout.write(JSON.stringify({ type: 'item.completed', item: { type: 'agent_message',
   text: ${JSON.stringify(JSON.stringify({ coder: { model: 'codex/gpt-5.6-luna', effort: 'medium' } }))} } }) + '\\n');
 `);
   write({ cli: 'codex', model: 'gpt-5.6-luna', promptEngineer: false, autoModel: true, allow: [] }, true);
-  k = new Kingdom(repo, cfg);
+  k = new AgenticOS(repo, cfg);
   await k.start();
   await k.wake('coder');
-  const liveCoder = k.agents.get('coder');
+  const liveCoder = k.processes.get('coder');
   liveCoder.emit('turn_end', { usage: { input_tokens: 100, cached_input_tokens: 80, output_tokens: 12 }, ctx: 12 });
   const recorded = k.bus.events({ agent: 'coder', type: 'turn_end' }).at(-1).payload;
   a.deepEqual(
@@ -273,7 +273,7 @@ process.stdout.write(JSON.stringify({ type: 'item.completed', item: { type: 'age
   await k.command('use the measured effort history');
   await k.autoModelPending;
   a.match(readFileSync(captured, 'utf8'), /12 output tokens/,
-    'the next Auto selection receives this court\'s measured output history');
+    'the next Auto selection receives this team\'s measured output history');
   await k.stop();
 
   // (d) nobody is on Auto — the model selector must not be called AT ALL.
@@ -281,28 +281,28 @@ process.stdout.write(JSON.stringify({ type: 'item.completed', item: { type: 'age
   // and spending an advisor call to throw the answer away is pure cost.
   stub('process.exit(1);');
   write({ cli: 'codex', model: 'gpt-5.6-luna', promptEngineer: false, autoModel: true, allow: [] });
-  k = new Kingdom(repo, cfg);
+  k = new AgenticOS(repo, cfg);
   const quiet = [];
   k.on('error', (e) => quiet.push(e.message));
   await k.start();
   await k.command('no auto members here');
   await k.autoModelPending;
-  a.equal(sovereignSaid(k).body, 'no auto members here', 'the order still goes through');
+  a.equal(userSaid(k).body, 'no auto members here', 'the order still goes through');
   a.equal(quiet.length, 0, 'with nobody on Auto the selector must never run');
   await k.stop();
 
   // (e) advisor dead, with a member on Auto — the order still gets through.
   write({ cli: 'codex', model: 'gpt-5.6-luna', promptEngineer: true, autoModel: true, allow: [] }, true);
-  k = new Kingdom(repo, cfg);
+  k = new AgenticOS(repo, cfg);
   const warned = [];
   k.on('error', (e) => warned.push(e.message));
   await k.start();
   await k.command('ship it');
-  a.equal(sovereignSaid(k).body, 'ship it', 'a broken advisor must not eat the order');
+  a.equal(userSaid(k).body, 'ship it', 'a broken advisor must not eat the order');
 
   // Model selection no longer blocks the order — it only ever changes sleeping
   // members, and awaiting it put the advisor's 90s timeout between the
-  // sovereign pressing enter and the orchestrator hearing anything. So its complaint
+  // user pressing enter and the orchestrator hearing anything. So its complaint
   // lands after command() has already returned. Wait for it rather than racing.
   await k.autoModelPending;   // deterministic: no polling, no race
   a.equal(warned.length, 2, 'each failing advisor job must complain exactly once');

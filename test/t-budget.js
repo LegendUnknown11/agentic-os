@@ -11,16 +11,16 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Kingdom } from '../src/agenticos.js';
-import { kingdomDir } from '../src/worktree.js';
+import { AgenticOS } from '../src/agenticos.js';
+import { stateDir } from '../src/worktree.js';
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const repo = mkdtempSync(join(tmpdir(), 'kingdom-budget-'));
+const repo = mkdtempSync(join(tmpdir(), 'agenticos-budget-'));
 const git = (...x) => execFileSync('git', x, { cwd: repo, stdio: 'pipe' });
 git('init', '-q');
-git('config', 'user.email', 'k@kingdom');
-git('config', 'user.name', 'kingdom');
+git('config', 'user.email', 'k@agenticos');
+git('config', 'user.name', 'agenticos');
 writeFileSync(join(repo, 'README.md'), '# t\n');
 git('add', '-A');
 git('commit', '-qm', 'init');
@@ -28,11 +28,11 @@ git('commit', '-qm', 'init');
 const configPath = join(repo, 'agenticos.config.json');
 writeFileSync(configPath, JSON.stringify({
   maxBudgetUsd: 1,
-  maxKingdomUsd: 10,
+  maxTotalUsd: 10,
   recycleAtTokens: 100000,
   orchestrator: { name: 'orchestrator', cli: 'codex' },
   briefer: { name: 'briefer', cli: 'codex' },
-  peasants: [{ name: 'coder', cli: 'codex' }],
+  agents: [{ name: 'coder', cli: 'codex' }],
 }));
 
 /**
@@ -57,12 +57,12 @@ function neuter(agent, { answerHandover = false } = {}) {
   return agent;
 }
 
-const k = new Kingdom(repo, configPath);
+const k = new AgenticOS(repo, configPath);
 await k.start();
 
 // --- cumulative spend stops a member, and SURVIVES a restart ----------
 await k.wake('coder');
-const coder = neuter(k.agents.get('coder'));
+const coder = neuter(k.processes.get('coder'));
 
 const budgetEvents = [];
 k.on('budget', (e) => budgetEvents.push(e));
@@ -76,24 +76,24 @@ a.equal(budgetEvents[0].scope, 'member');
 a.equal(budgetEvents[0].name, 'coder');
 a.ok(budgetEvents[0].spent >= 1, `spend should be >= cap, got ${budgetEvents[0].spent}`);
 a.equal(coder.stopped, true, 'the over-budget member must actually be stopped');
-a.ok(!k.agents.has('coder'), 'and removed from the awake set');
+a.ok(!k.processes.has('coder'), 'and removed from the awake set');
 
 // This is the bit --max-budget-usd cannot do: persist across a restart.
 const spentBefore = Number(k.bus.get('spent:coder'));
 a.ok(spentBefore >= 1.2 - 1e-9, `cumulative spend recorded, got ${spentBefore}`);
 await k.stop();
 
-const k2 = new Kingdom(repo, configPath);
+const k2 = new AgenticOS(repo, configPath);
 await k2.start();
 a.equal(Number(k2.bus.get('spent:coder')), spentBefore,
   'cumulative spend must survive a restart — this is why $5 became $41');
 
-// The sovereign can lift the ceiling deliberately.
+// The user can lift the ceiling deliberately.
 k2.clearSpend('coder');
 a.equal(Number(k2.bus.get('spent:coder')), 0, 'clearSpend must reset it');
 
 // --- ANY member recycles on context, not just the briefer --------------
-const orchestrator = neuter(k2.agents.get('orchestrator'), { answerHandover: true });
+const orchestrator = neuter(k2.processes.get('orchestrator'), { answerHandover: true });
 
 const recycled = [];
 k2.on('recycled', (e) => recycled.push(e));
@@ -138,12 +138,12 @@ a.equal(Number(k2.bus.get('tokens:orchestrator')) > 0, true, 'and to the member 
 bigTurn();
 await wait(600);
 
-a.equal(recycled.length, 1, 'the KING must recycle on context, not only the briefer');
+a.equal(recycled.length, 1, 'the ORCHESTRATOR must recycle on context, not only the briefer');
 a.equal(recycled[0].name, 'orchestrator');
 a.match(recycled[0].note, /Coverage still pending/, 'the handover note must be captured');
 a.equal(orchestrator.stopped, true, 'the exhausted orchestrator must be retired');
 
-const successor = k2.agents.get('orchestrator');
+const successor = k2.processes.get('orchestrator');
 a.ok(successor && successor !== orchestrator, 'a successor orchestrator must be spawned');
 a.match(successor.spec.prompt, /HANDOVER FROM YOUR PREDECESSOR/,
   'the successor must inherit the note');
@@ -151,18 +151,18 @@ a.match(successor.spec.prompt, /Coverage still pending/);
 
 await k2.stop();
 
-// --- a codex court can be capped at all --------------------------------
+// --- a codex team can be capped at all --------------------------------
 //
 // The gap this closes: codex and agy hardcode `costUsd: 0`, and the whole live
-// court is codex. So `#enforceBudget` compared 0 against the cap on every turn
-// and neither maxBudgetUsd nor maxKingdomUsd could ever fire — the automatic
+// team is codex. So `#enforceBudget` compared 0 against the cap on every turn
+// and neither maxBudgetUsd nor maxTotalUsd could ever fire — the automatic
 // runaway protection did not exist for the configuration actually in use.
 // Now an unreported cost is priced from the rate card.
-const repo3 = mkdtempSync(join(tmpdir(), 'kingdom-priced-'));
+const repo3 = mkdtempSync(join(tmpdir(), 'agenticos-priced-'));
 const git3 = (...x) => execFileSync('git', x, { cwd: repo3, stdio: 'pipe' });
 git3('init', '-q');
-git3('config', 'user.email', 'k@kingdom');
-git3('config', 'user.name', 'kingdom');
+git3('config', 'user.email', 'k@agenticos');
+git3('config', 'user.name', 'agenticos');
 writeFileSync(join(repo3, 'README.md'), '# t\n');
 git3('add', '-A');
 git3('commit', '-qm', 'init');
@@ -175,16 +175,16 @@ writeFileSync(cfg3, JSON.stringify({
   recycleAtTokens: 10_000_000,          // not what is under test here
   orchestrator: { name: 'orchestrator', cli: 'codex', model: 'gpt-5.6-luna' },
   briefer: { name: 'briefer', cli: 'codex', model: 'gpt-5.6-luna' },
-  peasants: [
+  agents: [
     { name: 'coder', cli: 'codex', model: 'gpt-5.6-luna' },
     { name: 'refactoring-engineer', cli: 'codex', model: 'gpt-9-unreleased' },
   ],
 }));
 
-const k3 = new Kingdom(repo3, cfg3);
+const k3 = new AgenticOS(repo3, cfg3);
 await k3.start();
 await k3.wake('coder');
-const priced = neuter(k3.agents.get('coder'));
+const priced = neuter(k3.processes.get('coder'));
 const capped = [];
 k3.on('budget', (e) => capped.push(e));
 
@@ -211,7 +211,7 @@ a.equal(Number(k3.bus.get('tokens:coder')), 3e6 + 10,
 // A model with no published price spends nothing rather than an invented
 // amount — a cap enforced against a guess is worse than no cap.
 await k3.wake('refactoring-engineer');
-const unpriced = neuter(k3.agents.get('refactoring-engineer'));
+const unpriced = neuter(k3.processes.get('refactoring-engineer'));
 unpriced.emit('turn_end', {
   usage: { input_tokens: 10, cached_input_tokens: 0, output_tokens: 9e6 },
   costUsd: 0,
@@ -225,11 +225,11 @@ a.equal(unpriced.stopped, false);
 await k3.stop();
 
 // --- a subscription quota stops the whole CLI before another turn --------
-const repo4 = mkdtempSync(join(tmpdir(), 'kingdom-quota-'));
+const repo4 = mkdtempSync(join(tmpdir(), 'agenticos-quota-'));
 const git4 = (...x) => execFileSync('git', x, { cwd: repo4, stdio: 'pipe' });
 git4('init', '-q');
-git4('config', 'user.email', 'k@kingdom');
-git4('config', 'user.name', 'kingdom');
+git4('config', 'user.email', 'k@agenticos');
+git4('config', 'user.name', 'agenticos');
 writeFileSync(join(repo4, 'README.md'), '# t\n');
 git4('add', '-A');
 git4('commit', '-qm', 'init');
@@ -240,13 +240,13 @@ writeFileSync(cfg4, JSON.stringify({
   quotas: { codex: { label: 'Tiny Test Plan', limitTokens: 20 } },
   orchestrator: { name: 'orchestrator', cli: 'codex' },
   briefer: { name: 'briefer', cli: 'codex' },
-  peasants: [{ name: 'coder', cli: 'codex' }],
+  agents: [{ name: 'coder', cli: 'codex' }],
 }));
 
-const k4 = new Kingdom(repo4, cfg4);
+const k4 = new AgenticOS(repo4, cfg4);
 await k4.start();
 await k4.wake('coder');
-const quotaCoder = neuter(k4.agents.get('coder'));
+const quotaCoder = neuter(k4.processes.get('coder'));
 const quotaEvents = [];
 const quotaFailures = [];
 k4.on('budget', (e) => quotaEvents.push(e));
@@ -259,49 +259,49 @@ await wait(200);
 a.equal(quotaEvents.length, 1, 'reaching a subscription quota must surface one event');
 a.deepEqual(quotaEvents[0], { scope: 'quota', cli: 'codex', label: 'Tiny Test Plan', used: 20, cap: 20 });
 a.equal(quotaCoder.stopped, true, 'the member that reached the plan ceiling must stop');
-a.ok(!k4.agents.has('coder') && !k4.agents.has('orchestrator'),
+a.ok(!k4.processes.has('coder') && !k4.processes.has('orchestrator'),
   'every member on the exhausted CLI must stop, not just the one that reported last');
 a.match(quotaFailures.find((e) => /Tiny Test Plan/.test(e.message))?.message ?? '', /Tiny Test Plan.*20.*20/i,
-  'the sovereign must be told which quota stopped the court and why');
+  'the user must be told which quota stopped the team and why');
 
 const turnsBefore = k4.bus.events({ type: 'turn_end', limit: 100 }).length;
-k4.bus.post('sovereign', 'coder', 'do not start another paid turn', 'assignment');
+k4.bus.post('user', 'coder', 'do not start another paid turn', 'assignment');
 await k4.wake('coder');
 await wait(500);
-a.equal(k4.agents.has('coder'), false, 'waking an exhausted CLI must refuse before delivery');
+a.equal(k4.processes.has('coder'), false, 'waking an exhausted CLI must refuse before delivery');
 a.equal(k4.bus.events({ type: 'turn_end', limit: 100 }).length, turnsBefore,
   'the refused wake must not spend a second turn');
 
 await k4.stop();
 
-// --- the kingdom-wide ceiling can be raised or lowered live --------------
+// --- the team-wide ceiling can be raised or lowered live --------------
 //
-// maxKingdomUsd used to take effect only at the process that read the
-// config file — a court running hot had no lever except a restart, which
+// maxTotalUsd used to take effect only at the process that read the
+// config file — a team running hot had no lever except a restart, which
 // is itself billed and stops nothing in the meantime.
-const repo5 = mkdtempSync(join(tmpdir(), 'kingdom-livecap-'));
+const repo5 = mkdtempSync(join(tmpdir(), 'agenticos-livecap-'));
 const git5 = (...x) => execFileSync('git', x, { cwd: repo5, stdio: 'pipe' });
 git5('init', '-q');
-git5('config', 'user.email', 'k@kingdom');
-git5('config', 'user.name', 'kingdom');
+git5('config', 'user.email', 'k@agenticos');
+git5('config', 'user.name', 'agenticos');
 writeFileSync(join(repo5, 'README.md'), '# t\n');
 git5('add', '-A');
 git5('commit', '-qm', 'init');
 
 const cfg5 = join(repo5, 'agenticos.config.json');
 writeFileSync(cfg5, JSON.stringify({
-  maxKingdomUsd: 100,   // high enough that nothing below trips it before the live change
+  maxTotalUsd: 100,   // high enough that nothing below trips it before the live change
   orchestrator: { name: 'orchestrator', cli: 'codex' },
   briefer: { name: 'briefer', cli: 'codex' },
-  peasants: [{ name: 'coder', cli: 'codex' }],
+  agents: [{ name: 'coder', cli: 'codex' }],
 }));
 
-const k5 = new Kingdom(repo5, cfg5);
+const k5 = new AgenticOS(repo5, cfg5);
 await k5.start();
-neuter(k5.agents.get('orchestrator'));
-neuter(k5.agents.get('briefer'));
+neuter(k5.processes.get('orchestrator'));
+neuter(k5.processes.get('briefer'));
 await k5.wake('coder');
-const liveCoder = neuter(k5.agents.get('coder'));
+const liveCoder = neuter(k5.processes.get('coder'));
 const liveEvents = [];
 k5.on('budget', (e) => liveEvents.push(e));
 
@@ -310,7 +310,7 @@ a.throws(() => k5.setBudget(-1), /must be a number/, 'a negative ceiling must be
 const setResult = k5.setBudget(1);
 a.equal(setResult.cap, 1);
 a.equal(liveEvents.length, 1, 'setBudget must announce the change on its own, not wait for a trip');
-a.deepEqual(liveEvents[0], { scope: 'kingdom', cap: 1, changed: true });
+a.deepEqual(liveEvents[0], { scope: 'total', cap: 1, changed: true });
 
 // $0.60 x 2 = $1.20 — under the CONFIGURED $100 cap, over the LIVE $1 one.
 liveCoder.emit('turn_end', { usage: { input_tokens: 10 }, costUsd: 0.6 });
@@ -318,26 +318,26 @@ liveCoder.emit('turn_end', { usage: { input_tokens: 10 }, costUsd: 0.6 });
 await wait(200);
 
 a.equal(liveEvents.length, 2, 'the live ceiling must be the one #enforceBudget actually checks');
-a.equal(liveEvents[1].scope, 'kingdom');
+a.equal(liveEvents[1].scope, 'total');
 a.equal(liveEvents[1].cap, 1, 'the trip must report the LIVE cap, not the config default of 100');
-a.equal(liveCoder.stopped, true, 'crossing the live ceiling must still stop the court for real');
+a.equal(liveCoder.stopped, true, 'crossing the live ceiling must still stop the team for real');
 
 await k5.stop();
 
 // --- issue #41: a per-session TURN budget, beside the dollar ceilings ----
 //
-// maxBudgetUsd/maxKingdomUsd only ever fire once a model IS priced — a court
+// maxBudgetUsd/maxTotalUsd only ever fire once a model IS priced — a team
 // running an unpriced or misconfigured model had NO ceiling of any kind.
-// setTurnBudget()/turnBudget() mirror setBudget()/#kingdomBudget() exactly
+// setTurnBudget()/turnBudget() mirror setBudget()/#totalBudget() exactly
 // (a live override in the bus, config as the fallback), but #enforceTurnBudget
-// PAUSES the court (the sovereign's own pause/resume machinery) rather than
+// PAUSES the team (the user's own pause/resume machinery) rather than
 // sleeping members, because a turn budget is a session-wide brake, not a
 // per-member spend cap.
-const repo6 = mkdtempSync(join(tmpdir(), 'kingdom-turnbudget-'));
+const repo6 = mkdtempSync(join(tmpdir(), 'agenticos-turnbudget-'));
 const git6 = (...x) => execFileSync('git', x, { cwd: repo6, stdio: 'pipe' });
 git6('init', '-q');
-git6('config', 'user.email', 'k@kingdom');
-git6('config', 'user.name', 'kingdom');
+git6('config', 'user.email', 'k@agenticos');
+git6('config', 'user.name', 'agenticos');
 writeFileSync(join(repo6, 'README.md'), '# t\n');
 git6('add', '-A');
 git6('commit', '-qm', 'init');
@@ -347,15 +347,15 @@ writeFileSync(cfg6, JSON.stringify({
   turnBudget: 2,   // low and explicit, so the DEFAULT_TURN_BUDGET fallback never matters here
   orchestrator: { name: 'orchestrator', cli: 'codex' },
   briefer: { name: 'briefer', cli: 'codex' },
-  peasants: [{ name: 'coder', cli: 'codex' }],
+  agents: [{ name: 'coder', cli: 'codex' }],
 }));
 
-const k6 = new Kingdom(repo6, cfg6);
+const k6 = new AgenticOS(repo6, cfg6);
 await k6.start();
-neuter(k6.agents.get('orchestrator'));
-neuter(k6.agents.get('briefer'));
+neuter(k6.processes.get('orchestrator'));
+neuter(k6.processes.get('briefer'));
 await k6.wake('coder');
-const turnBudgetCoder = neuter(k6.agents.get('coder'));
+const turnBudgetCoder = neuter(k6.processes.get('coder'));
 const turnBudgetEvents = [];
 k6.on('budget', (e) => { if (e.scope === 'turns') turnBudgetEvents.push(e); });
 const pausedEvents = [];
@@ -363,7 +363,7 @@ k6.on('paused', (e) => pausedEvents.push(e));
 
 a.throws(() => k6.setTurnBudget(-1), /must be a number/, 'a negative turn budget must be refused');
 a.equal(k6.turnBudget(), 2, 'the configured turnBudget must be read back exactly');
-a.equal(k6.paused, false, 'sanity: the court is not paused yet');
+a.equal(k6.paused, false, 'sanity: the team is not paused yet');
 
 turnBudgetCoder.emit('turn_end', { usage: { input_tokens: 10 }, costUsd: 0 });
 await wait(200);
@@ -371,7 +371,7 @@ a.equal(k6.paused, false, 'one turn under a budget of two must not pause anythin
 
 turnBudgetCoder.emit('turn_end', { usage: { input_tokens: 10 }, costUsd: 0 });
 await wait(200);
-a.equal(k6.paused, true, 'reaching the turn budget must pause the court — the same mechanism as a manual pause');
+a.equal(k6.paused, true, 'reaching the turn budget must pause the team — the same mechanism as a manual pause');
 a.equal(turnBudgetEvents.length, 1, 'the trip must announce itself on the shared "budget" event, same as the dollar ceilings');
 a.equal(turnBudgetEvents[0].cap, 2);
 a.equal(turnBudgetEvents[0].turns, 2);
@@ -379,7 +379,7 @@ a.ok(pausedEvents.some((e) => e.paused && /turn budget/i.test(e.why ?? '')),
   'the pause reason must name the turn budget, or the sidebar cannot tell it apart from a manual pause '
   + 'to decide whether to offer "raise and resume"');
 
-// A resumed court whose cap is still unmet must not spend a second full turn
+// A resumed team whose cap is still unmet must not spend a second full turn
 // pausing itself again immediately — no new turn can even be granted while
 // paused (#deliver's own `if (this.paused) return`), so this only proves the
 // mechanism does not double-fire on the SAME already-counted turn.
@@ -395,16 +395,16 @@ a.equal(raised.cap, 10, 'raising by 8 from 2 session turns makes the session cap
 a.equal(k6.sessionTurnCap(), 10, 'the raised cap must be the one #enforceTurnBudget now checks');
 a.equal(k6.turnBudget(), 2, 'a raise extends THIS session only — the configured budget is not overwritten');
 a.throws(() => k6.raiseTurnBudget(0), /positive number/, 'a raise must be a positive number of turns');
-a.equal(k6.paused, false, 'raiseTurnBudget must also resume — a raise with no resume leaves the court looking stuck');
+a.equal(k6.paused, false, 'raiseTurnBudget must also resume — a raise with no resume leaves the team looking stuck');
 
 turnBudgetCoder.emit('turn_end', { usage: { input_tokens: 10 }, costUsd: 0 });
 await wait(200);
-a.equal(k6.paused, false, 'a third turn under the newly-raised cap of 10 must not re-pause the court');
+a.equal(k6.paused, false, 'a third turn under the newly-raised cap of 10 must not re-pause the team');
 
 // Lowering the cap below what this session already took must pause NOW, not
 // after one more turn_end has spent another turn.
 k6.setTurnBudget(1);
-a.equal(k6.paused, true, 'setTurnBudget below the current session count must pause the court immediately');
+a.equal(k6.paused, true, 'setTurnBudget below the current session count must pause the team immediately');
 k6.resume();
 k6.setTurnBudget(0);
 a.equal(k6.paused, false, 'a budget of 0 turns the guard off and must not pause');
@@ -431,7 +431,7 @@ await k6.stop();
 //
 // #countTurns() feeds a LIFETIME, restart-safe counter (bus 'turns'), same
 // discipline as spentUsd. Comparing turnBudget directly against THAT meant
-// any existing court that had already taken turnBudget-or-more turns in its
+// any existing team that had already taken turnBudget-or-more turns in its
 // life paused on the very first turn after upgrading to this feature, and
 // "add 100 turns" only ever bought 100 against a number that never resets.
 // turnsThisSession() fixes it by measuring from a baseline latched once —
@@ -439,11 +439,11 @@ await k6.stop();
 // later restart: recomputing it on every restart would let a crash-restart
 // loop silently hand itself a fresh budget on every bounce, which is
 // precisely the failure mode a per-session cap exists to prevent.
-const repo7 = mkdtempSync(join(tmpdir(), 'kingdom-turnbudget-session-'));
+const repo7 = mkdtempSync(join(tmpdir(), 'agenticos-turnbudget-session-'));
 const git7 = (...x) => execFileSync('git', x, { cwd: repo7, stdio: 'pipe' });
 git7('init', '-q');
-git7('config', 'user.email', 'k@kingdom');
-git7('config', 'user.name', 'kingdom');
+git7('config', 'user.email', 'k@agenticos');
+git7('config', 'user.name', 'agenticos');
 writeFileSync(join(repo7, 'README.md'), '# t\n');
 git7('add', '-A');
 git7('commit', '-qm', 'init');
@@ -453,13 +453,13 @@ writeFileSync(cfg7, JSON.stringify({
   turnBudget: 3,
   orchestrator: { name: 'orchestrator', cli: 'codex' },
   briefer: { name: 'briefer', cli: 'codex' },
-  peasants: [{ name: 'coder', cli: 'codex' }],
+  agents: [{ name: 'coder', cli: 'codex' }],
 }));
 
-// Simulate an existing, heavily-used court from before this feature existed:
+// Simulate an existing, heavily-used team from before this feature existed:
 // 1000 lifetime turns already on the bus, no baseline recorded yet — exactly
 // what an upgrade finds on disk.
-const k7 = new Kingdom(repo7, cfg7);
+const k7 = new AgenticOS(repo7, cfg7);
 k7.bus.set('turns', '1000');
 await k7.start();
 
@@ -467,13 +467,13 @@ a.equal(k7.turnsLifetime(), 1000, 'sanity: the pre-existing lifetime count is re
 a.equal(k7.turnsThisSession(), 0,
   'a fresh session must start at 0 regardless of lifetime history — the whole point of the baseline');
 a.equal(k7.paused, false,
-  'an existing court with 1000 lifetime turns must NOT pause on boot just because 1000 exceeds turnBudget — '
+  'an existing team with 1000 lifetime turns must NOT pause on boot just because 1000 exceeds turnBudget — '
   + 'that is the exact regression this fix closes');
 
-neuter(k7.agents.get('orchestrator'));
-neuter(k7.agents.get('briefer'));
+neuter(k7.processes.get('orchestrator'));
+neuter(k7.processes.get('briefer'));
 await k7.wake('coder');
-const sessionCoder = neuter(k7.agents.get('coder'));
+const sessionCoder = neuter(k7.processes.get('coder'));
 
 sessionCoder.emit('turn_end', { usage: { input_tokens: 10 }, costUsd: 0 });
 await wait(150);
@@ -493,7 +493,7 @@ a.equal(k7.turnsLifetime(), 1003);
 // handler) rather than to a stale cached cap.
 const raised7 = k7.raiseTurnBudget(3);
 a.equal(raised7.cap, 6);
-a.equal(k7.paused, false, 'raiseTurnBudget must resume the court');
+a.equal(k7.paused, false, 'raiseTurnBudget must resume the team');
 sessionCoder.emit('turn_end', { usage: { input_tokens: 10 }, costUsd: 0 });
 sessionCoder.emit('turn_end', { usage: { input_tokens: 10 }, costUsd: 0 });
 await wait(150);
@@ -507,21 +507,21 @@ await k7.stop();
 // Restart-safety: a second start() against the SAME bus must not move the
 // baseline, or a crash-restart loop would grant itself a fresh session
 // budget on every bounce.
-const k7b = new Kingdom(repo7, cfg7);
+const k7b = new AgenticOS(repo7, cfg7);
 await k7b.start();
 a.equal(k7b.bus.get('turnBudgetBaseline'), '1000',
   'the baseline must be left exactly where it was — a restart must not silently grant a fresh budget');
 a.equal(k7b.turnsThisSession(), 6, 'session turns must read as a continuation across the restart, not reset to 0');
-a.equal(k7b.paused, true, 'a restart must not clear a pause the sovereign has not resolved — same discipline as `this.paused` itself');
-a.equal(k7b.sessionTurnCap(), 6, 'a court still paused for its budget keeps its raised cap across the restart');
+a.equal(k7b.paused, true, 'a restart must not clear a pause the user has not resolved — same discipline as `this.paused` itself');
+a.equal(k7b.sessionTurnCap(), 6, 'a team still paused for its budget keeps its raised cap across the restart');
 
-// Once the sovereign resumes, the next daemon run is a NEW session: the
-// baseline re-latches and the raise extension is dropped, so the court gets
+// Once the user resumes, the next daemon run is a NEW session: the
+// baseline re-latches and the raise extension is dropped, so the team gets
 // its full configured budget back instead of a lifetime cap that keeps
 // pausing it every few turns forever.
 k7b.resume();
 await k7b.stop();
-const k7c = new Kingdom(repo7, cfg7);
+const k7c = new AgenticOS(repo7, cfg7);
 await k7c.start();
 a.equal(k7c.bus.get('turnBudgetBaseline'), '1006', 'a new daemon run re-latches the baseline to the lifetime count');
 a.equal(k7c.turnsThisSession(), 0, 'a new session starts at 0 turns');
@@ -531,11 +531,11 @@ a.equal(k7c.paused, false);
 await k7c.stop();
 
 for (const d of [
-  repo, kingdomDir(repo), repo3, kingdomDir(repo3), repo4, kingdomDir(repo4),
-  repo5, kingdomDir(repo5), repo6, kingdomDir(repo6), repo7, kingdomDir(repo7),
+  repo, stateDir(repo), repo3, stateDir(repo3), repo4, stateDir(repo4),
+  repo5, stateDir(repo5), repo6, stateDir(repo6), repo7, stateDir(repo7),
 ]) {
   try { rmSync(d, { recursive: true, force: true }); } catch {}
 }
-console.log('t-budget.js OK — cumulative ceiling survives restarts, codex courts can be capped, any member recycles, '
-  + 'a per-session turn budget pauses the court visibly and raises back in one call, and an existing court\'s '
+console.log('t-budget.js OK — cumulative ceiling survives restarts, codex teams can be capped, any member recycles, '
+  + 'a per-session turn budget pauses the team visibly and raises back in one call, and an existing team\'s '
   + 'lifetime turn history cannot pause a fresh session or be reset by a restart');

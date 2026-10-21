@@ -8,7 +8,7 @@ import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Bus } from '../src/bus.js';
-import { Kingdom } from '../src/agenticos.js';
+import { AgenticOS } from '../src/agenticos.js';
 import { buildPrompt } from '../src/prompt.js';
 import { cachedTokens, deltaOf, hasUsage, totalsOf } from '../src/usage.js';
 import { costClassOf } from '../src/price.js';
@@ -19,7 +19,7 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const ROOT = join(import.meta.dirname, '..');
 const MCP = join(ROOT, 'src', 'mcp.js');
-const dir = mkdtempSync(join(tmpdir(), 'kingdom-efficiency-'));
+const dir = mkdtempSync(join(tmpdir(), 'agenticos-efficiency-'));
 
 const rpc = (db, env, request) => {
   const input = [
@@ -30,7 +30,7 @@ const rpc = (db, env, request) => {
     { jsonrpc: '2.0', id: 2, ...request },
   ].map((m) => JSON.stringify(m)).join('\n') + '\n';
   const result = spawnSync(process.execPath, [MCP], {
-    input, encoding: 'utf8', env: { ...process.env, KINGDOM_DB: db, ...env },
+    input, encoding: 'utf8', env: { ...process.env, AGENTICOS_DB: db, ...env },
   });
   a.equal(result.status, 0, `MCP failed: ${result.stderr}`);
   const message = result.stdout.split(/\r?\n/).filter(Boolean)
@@ -63,7 +63,7 @@ const rpc = (db, env, request) => {
 {
   const stub = join(dir, 'advisor.js');
   const marker = join(dir, 'called');
-  process.env.KINGDOM_CODEX_BIN = stub;
+  process.env.AGENTICOS_CODEX_BIN = stub;
   writeFileSync(stub, `
 process.stdout.write(JSON.stringify({ type: 'turn.completed', usage: {
   input_tokens: 120, cached_input_tokens: 100, output_tokens: 8
@@ -98,18 +98,18 @@ process.stdout.write(JSON.stringify({ type: 'item.completed', item: {
   const config = JSON.parse(readFileSync(join(ROOT, 'agenticos.config.json'), 'utf8'));
   // orchestrator was 11_000 against a measured 10,920 with the 107-role bench.
   // Roster v2 (18 roles) measured 7,555 on 2026-10-21; the ceiling is lowered so
-  // the bench cannot regrow unnoticed. briefer and peasant do not embed it.
-  const limits = { orchestrator: 8_500, briefer: 4_000, peasant: 8_500 };
-  for (const [role, spec] of [['orchestrator', config.orchestrator], ['briefer', config.briefer], ['peasant', config.peasants[0]]]) {
+  // the bench cannot regrow unnoticed. briefer and agent do not embed it.
+  const limits = { orchestrator: 8_500, briefer: 4_000, agent: 8_500 };
+  for (const [role, spec] of [['orchestrator', config.orchestrator], ['briefer', config.briefer], ['agent', config.agents[0]]]) {
     const prompt = buildPrompt({ name: spec.name, role, spec, config, mode: 'code', goal: null, repo: ROOT });
     a.ok(prompt.length <= limits[role], `code/${role} prompt is ${prompt.length} bytes`);
     if (role === 'orchestrator') {
-      for (const member of config.peasants) a.ok(prompt.includes(member.name), `${member.name} fell out of the bench`);
+      for (const member of config.agents) a.ok(prompt.includes(member.name), `${member.name} fell out of the bench`);
     } else {
-      a.ok(!prompt.includes(config.peasants.at(-1).name), `${role} still embeds the full bench`);
+      a.ok(!prompt.includes(config.agents.at(-1).name), `${role} still embeds the full bench`);
     }
   }
-  console.log(`  code prompts fit ${limits.orchestrator}/${limits.briefer}/${limits.peasant}-byte role ceilings; all ${config.peasants.length} specialists remain visible to the orchestrator`);
+  console.log(`  code prompts fit ${limits.orchestrator}/${limits.briefer}/${limits.agent}-byte role ceilings; all ${config.agents.length} specialists remain visible to the orchestrator`);
 }
 
 /* ---------- MCP payload budgets and roster filtering --------------------- */
@@ -117,15 +117,15 @@ process.stdout.write(JSON.stringify({ type: 'item.completed', item: {
 // +629 bytes, measured 15,698 code / 16,500 cowork). Both stay under the
 // byte ceilings below, which were not raised.
 const BASE = {
-  'code/orchestrator': [38, 17_924], 'code/briefer': [19, 9_160], 'code/peasant': [19, 8_817],
-  'cowork/orchestrator': [41, 18_774], 'cowork/briefer': [19, 9_160], 'cowork/peasant': [19, 8_817],
+  'code/orchestrator': [38, 17_924], 'code/briefer': [19, 9_160], 'code/agent': [19, 8_817],
+  'cowork/orchestrator': [41, 18_774], 'cowork/briefer': [19, 9_160], 'cowork/agent': [19, 8_817],
 };
 const db = join(dir, 'mcp.sqlite');
 const state = new Bus(db);
 state.set('roster', JSON.stringify([
-  { name: 'coder', role: 'peasant', title: 'Code specialist', description: 'writes code', awake: true, summoned: true, cli: 'codex', model: 'gpt-5.6-luna', effort: 'high', auto: false },
-  { name: 'writer', role: 'peasant', title: 'Documentation specialist', description: 'writes docs', awake: false, summoned: false, cli: 'codex', model: 'gpt-5.6-luna', effort: 'low', auto: true },
-  { name: 'orchestrator', role: 'orchestrator', title: 'Court lead', description: 'assigns work', awake: false, summoned: false },
+  { name: 'coder', role: 'agent', title: 'Code specialist', description: 'writes code', awake: true, added: true, cli: 'codex', model: 'gpt-5.6-luna', effort: 'high', auto: false },
+  { name: 'writer', role: 'agent', title: 'Documentation specialist', description: 'writes docs', awake: false, added: false, cli: 'codex', model: 'gpt-5.6-luna', effort: 'low', auto: true },
+  { name: 'orchestrator', role: 'orchestrator', title: 'Team lead', description: 'assigns work', awake: false, added: false },
 ]));
 state.set('mode', 'code');
 state.close();
@@ -135,7 +135,7 @@ for (const [key, [count, baseline]] of Object.entries(BASE)) {
   const modeBus = new Bus(db);
   modeBus.set('mode', mode);
   modeBus.close();
-  const listed = rpc(db, { KINGDOM_MODE: mode, KINGDOM_AGENT: role, KINGDOM_ROLE: role }, { method: 'tools/list' });
+  const listed = rpc(db, { AGENTICOS_MODE: mode, AGENTICOS_AGENT: role, AGENTICOS_ROLE: role }, { method: 'tools/list' });
   const tools = listed.result.tools;
   a.equal(tools.length, count, `${key} tool count changed`);
   const payloadSize = JSON.stringify(tools).length;
@@ -146,7 +146,7 @@ const codeMode = new Bus(db);
 codeMode.set('mode', 'code');
 codeMode.close();
 const roster = (args) => {
-  const out = rpc(db, { KINGDOM_MODE: 'code', KINGDOM_AGENT: 'coder', KINGDOM_ROLE: 'peasant' }, {
+  const out = rpc(db, { AGENTICOS_MODE: 'code', AGENTICOS_AGENT: 'coder', AGENTICOS_ROLE: 'agent' }, {
     method: 'tools/call', params: { name: 'roster', arguments: args },
   });
   return JSON.parse(out.result.content[0].text);
@@ -164,7 +164,7 @@ console.log('  MCP surfaces are under budget and roster supports query, activeOn
   members[0].description = description;
   seed.set('roster', JSON.stringify(members));
   seed.close();
-  const out = rpc(db, { KINGDOM_MODE: 'code', KINGDOM_AGENT: 'coder', KINGDOM_ROLE: 'peasant' }, {
+  const out = rpc(db, { AGENTICOS_MODE: 'code', AGENTICOS_AGENT: 'coder', AGENTICOS_ROLE: 'agent' }, {
     method: 'tools/call', params: { name: 'roster', arguments: { detail: true } },
   });
   const text = out.result.content[0].text;
@@ -185,16 +185,16 @@ console.log('  MCP surfaces are under budget and roster supports query, activeOn
   for (let i = 0; i < 250; i++) seeded.post('coder', 'briefer', `limitneedle message ${i}`);
   seeded.close();
   const call = (role, name, args) => rpc(db, {
-    KINGDOM_MODE: 'code', KINGDOM_AGENT: role, KINGDOM_ROLE: role,
+    AGENTICOS_MODE: 'code', AGENTICOS_AGENT: role, AGENTICOS_ROLE: role,
   }, { method: 'tools/call', params: { name, arguments: args } }).result.content[0].text.split('\n');
   a.equal(call('briefer', 'read_bus', { since: 0, limit: 200 }).length, 200);
   a.equal(call('briefer', 'read_events', { since: 0, limit: 500 }).length, 500);
-  a.equal(call('peasant', 'recall', { query: 'limitneedle', limit: 50 }).length, 50);
+  a.equal(call('agent', 'recall', { query: 'limitneedle', limit: 50 }).length, 50);
 
   const assets = join(dir, 'assets');
   mkdirSync(assets);
   for (let i = 0; i < 105; i++) writeFileSync(join(assets, `upload-${String(i).padStart(3, '0')}.md`), 'x');
-  const uploads = call('peasant', 'list_uploads', { query: 'upload-', limit: 100 });
+  const uploads = call('agent', 'list_uploads', { query: 'upload-', limit: 100 });
   a.equal(uploads.length, 101, '100 uploads plus one truthful truncation line');
   a.match(uploads.at(-1), /5 more uploads withheld/);
   console.log('  bus, event, recall and upload reads stop at 200/500/50/100 rows');
@@ -202,7 +202,7 @@ console.log('  MCP surfaces are under budget and roster supports query, activeOn
 
 /* ---------- duplicate observations are measured, not just masked --------- */
 {
-  const maskDir = mkdtempSync(join(tmpdir(), 'kingdom-mask-'));
+  const maskDir = mkdtempSync(join(tmpdir(), 'agenticos-mask-'));
   const maskDb = join(maskDir, 'mask.sqlite');
   const vault = join(maskDir, 'vault');
   mkdirSync(join(vault, 'Notes'), { recursive: true });
@@ -210,7 +210,7 @@ console.log('  MCP surfaces are under budget and roster supports query, activeOn
   const seed = new Bus(maskDb);
   seed.set('mode', 'code');
   seed.close();
-  const env = { KINGDOM_MODE: 'code', KINGDOM_AGENT: 'coder', KINGDOM_ROLE: 'peasant', KINGDOM_VAULT: vault };
+  const env = { AGENTICOS_MODE: 'code', AGENTICOS_AGENT: 'coder', AGENTICOS_ROLE: 'agent', AGENTICOS_VAULT: vault };
   const call = () => rpc(maskDb, env, { method: 'tools/call', params: {
     name: 'vault_read', arguments: { path: 'Notes/Big.md' },
   } }).result.content[0].text;
@@ -248,7 +248,7 @@ console.log('  MCP surfaces are under budget and roster supports query, activeOn
   const cb = new Bus(campDb);
   const specOf = () => ({ cli: 'codex', model: 'gpt-5.6-luna' });
 
-  // Campaign 1: two real turns, closed by the sovereign's next order.
+  // Campaign 1: two real turns, closed by the user's next order.
   cb.beginCampaign('order one');
   cb.logEvent('coder', 'turn_end', { usage: { input_tokens: 1000, output_tokens: 100 } });
   cb.logEvent('coder', 'turn_end', { usage: { input_tokens: 1000, output_tokens: 100 } });
@@ -280,16 +280,16 @@ console.log('  MCP surfaces are under budget and roster supports query, activeOn
   const near = Math.abs(f.crew.projectedTotalUsd - f.crew.perTurnUsd * 1.5) < 1e-9;
   a.ok(near, 'projected total must be the measured rate times the measured mean, end to end against a real bus');
   cb.close();
-  console.log('  the summon card projected total is measured from a real bus\'s campaign/event-id brackets');
+  console.log('  the add card projected total is measured from a real bus\'s campaign/event-id brackets');
 }
 
 /* ---------- a per-run ceiling actually stops the run, restart-safe ------- */
 {
-  const runRepo = mkdtempSync(join(tmpdir(), 'kingdom-runcap-'));
+  const runRepo = mkdtempSync(join(tmpdir(), 'agenticos-runcap-'));
   const git = (...x) => execFileSync('git', x, { cwd: runRepo, stdio: 'pipe' });
   git('init', '-q');
-  git('config', 'user.email', 'k@kingdom');
-  git('config', 'user.name', 'kingdom');
+  git('config', 'user.email', 'k@agenticos');
+  git('config', 'user.name', 'agenticos');
   writeFileSync(join(runRepo, 'README.md'), '# t\n');
   git('add', '-A');
   git('commit', '-qm', 'init');
@@ -299,16 +299,16 @@ console.log('  MCP surfaces are under budget and roster supports query, activeOn
     maxRunUsd: 1,
     orchestrator: { name: 'orchestrator', cli: 'codex' },
     briefer: { name: 'briefer', cli: 'codex' },
-    peasants: [{ name: 'coder', cli: 'codex' }],
+    agents: [{ name: 'coder', cli: 'codex' }],
   }));
 
-  const rk = new Kingdom(runRepo, runConfigPath);
+  const rk = new AgenticOS(runRepo, runConfigPath);
   rk.on('error', () => {});
   await rk.start();
   // Same technique as t-budget.js: a REAL agent so the turn_end wiring under
   // test is genuine, with send/stop patched so nothing actually spawns.
   await rk.wake('coder');
-  const coder = rk.agents.get('coder');
+  const coder = rk.processes.get('coder');
   coder.send = () => {};
   coder.stop = function () { this.stopped = true; };
 
@@ -331,19 +331,19 @@ console.log('  MCP surfaces are under budget and roster supports query, activeOn
 
   await rk.stop();
   removeRepo(runRepo);
-  console.log('  maxRunUsd stops a run that crosses it, the same restart-safe way maxBudgetUsd/maxKingdomUsd already do');
+  console.log('  maxRunUsd stops a run that crosses it, the same restart-safe way maxBudgetUsd/maxTotalUsd already do');
 }
 
 /* ---------- clearSpend cannot disarm the per-run ceiling ----------------- */
 // The ceiling used to be lifetime spend minus a baseline captured when the run
-// began. Court spend before the run, then the sovereign clearing spend, left
+// began. Team spend before the run, then the user clearing spend, left
 // the run's figure negative, so it could never reach the cap.
 {
-  const runRepo = mkdtempSync(join(tmpdir(), 'kingdom-runledger-'));
+  const runRepo = mkdtempSync(join(tmpdir(), 'agenticos-runledger-'));
   const git = (...x) => execFileSync('git', x, { cwd: runRepo, stdio: 'pipe' });
   git('init', '-q');
-  git('config', 'user.email', 'k@kingdom');
-  git('config', 'user.name', 'kingdom');
+  git('config', 'user.email', 'k@agenticos');
+  git('config', 'user.name', 'agenticos');
   writeFileSync(join(runRepo, 'README.md'), '# t\n');
   git('add', '-A');
   git('commit', '-qm', 'init');
@@ -353,18 +353,18 @@ console.log('  MCP surfaces are under budget and roster supports query, activeOn
     maxRunUsd: 1,
     orchestrator: { name: 'orchestrator', cli: 'codex' },
     briefer: { name: 'briefer', cli: 'codex' },
-    peasants: [{ name: 'coder', cli: 'codex' }],
+    agents: [{ name: 'coder', cli: 'codex' }],
   }));
 
-  const rk = new Kingdom(runRepo, runConfigPath);
+  const rk = new AgenticOS(runRepo, runConfigPath);
   rk.on('error', () => {});
   await rk.start();
   await rk.wake('coder');
-  const coder = rk.agents.get('coder');
+  const coder = rk.processes.get('coder');
   coder.send = () => {};
   coder.stop = function () { this.stopped = true; };
 
-  // $4 of court spend before any run exists: not the run's money.
+  // $4 of team spend before any run exists: not the run's money.
   for (let i = 0; i < 2; i++) coder.emit('turn_end', { usage: { input_tokens: 10 }, costUsd: 2 });
   await wait(100);
   const run = await rk.createRun({ objective: 'prove clearSpend cannot disarm the run ceiling' });
@@ -395,11 +395,11 @@ console.log('  MCP surfaces are under budget and roster supports query, activeOn
 // when the campaign began. clearSpend() zeroes that counter, so a campaign
 // spanning a clear read negative and the one before it read wrong.
 {
-  const campRepo = mkdtempSync(join(tmpdir(), 'kingdom-campclear-'));
+  const campRepo = mkdtempSync(join(tmpdir(), 'agenticos-campclear-'));
   const git = (...x) => execFileSync('git', x, { cwd: campRepo, stdio: 'pipe' });
   git('init', '-q');
-  git('config', 'user.email', 'k@kingdom');
-  git('config', 'user.name', 'kingdom');
+  git('config', 'user.email', 'k@agenticos');
+  git('config', 'user.name', 'agenticos');
   writeFileSync(join(campRepo, 'README.md'), '# t\n');
   git('add', '-A');
   git('commit', '-qm', 'init');
@@ -407,14 +407,14 @@ console.log('  MCP surfaces are under budget and roster supports query, activeOn
   writeFileSync(campConfigPath, JSON.stringify({
     orchestrator: { name: 'orchestrator', cli: 'codex' },
     briefer: { name: 'briefer', cli: 'codex' },
-    peasants: [{ name: 'coder', cli: 'codex' }],
+    agents: [{ name: 'coder', cli: 'codex' }],
   }));
 
-  const ck = new Kingdom(campRepo, campConfigPath);
+  const ck = new AgenticOS(campRepo, campConfigPath);
   ck.on('error', () => {});
   await ck.start();
   await ck.wake('coder');
-  const coder = ck.agents.get('coder');
+  const coder = ck.processes.get('coder');
   coder.send = () => {};
   const turn = (usd) => coder.emit('turn_end', { usage: { input_tokens: 10 }, costUsd: usd });
 

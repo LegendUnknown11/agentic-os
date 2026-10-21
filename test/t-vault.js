@@ -1,4 +1,4 @@
-// Vault access: the court can search and read the sovereign's notes, and its
+// Vault access: the team can search and read the user's notes, and its
 // writes are confined to one folder so a personal knowledge base cannot be
 // scattered with agent files.
 //   node test/t-vault.js
@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const vault = realpathSync.native(mkdtempSync(join(tmpdir(), 'kingdom-vault-')));
+const vault = realpathSync.native(mkdtempSync(join(tmpdir(), 'agenticos-vault-')));
 mkdirSync(join(vault, 'References'), { recursive: true });
 mkdirSync(join(vault, '.obsidian'), { recursive: true });
 mkdirSync(join(vault, '.trash'), { recursive: true });
@@ -36,9 +36,9 @@ function callTool(name, args, extraEnv = {}) {
     timeout: 15_000,
     env: {
       ...process.env,
-      KINGDOM_AGENT: 'coder', KINGDOM_ROLE: 'peasant',
-      KINGDOM_DB: join(vault, 'test.db'),
-      KINGDOM_VAULT: vault, KINGDOM_VAULT_DIR: 'Kingdom',
+      AGENTICOS_AGENT: 'coder', AGENTICOS_ROLE: 'agent',
+      AGENTICOS_DB: join(vault, 'test.db'),
+      AGENTICOS_VAULT: vault, AGENTICOS_VAULT_DIR: 'AgenticOS',
       ...extraEnv,
     },
   });
@@ -72,8 +72,8 @@ const saved = callTool('vault_write', {
   body: 'Discovered while wiring the python service.',
   links: ['Model Guidance'],
 });
-a.match(saved, /Kingdom[\/\\]/, 'writes must go under the write dir');
-const note = join(vault, 'Kingdom', 'Reframe route needs SSRF guard.md');
+a.match(saved, /AgenticOS[\/\\]/, 'writes must go under the write dir');
+const note = join(vault, 'AgenticOS', 'Reframe route needs SSRF guard.md');
 a.ok(existsSync(note), 'the note must exist on disk');
 const text = readFileSync(note, 'utf8');
 a.match(text, /Recorded by coder/, 'notes must say which member wrote them');
@@ -101,8 +101,8 @@ a.equal(existsSync(join(vault, '..', 'escaped.md')), false, 'title must not trav
   // watcher OFF. Otherwise either mechanism quietly refreshes the corpus and
   // every assertion passes whether or not the one under test works — the
   // watcher in particular fires on the test's own writes within 2ms.
-  process.env.KINGDOM_VAULT_REVALIDATE_MS = '600000';
-  process.env.KINGDOM_VAULT_WATCH = '0';
+  process.env.AGENTICOS_VAULT_REVALIDATE_MS = '600000';
+  process.env.AGENTICOS_VAULT_WATCH = '0';
 
   a.equal(searchVault(vault, 'zork-token-4417').length, 0, 'sanity: nothing matches yet');
 
@@ -119,7 +119,7 @@ a.equal(existsSync(join(vault, '..', 'escaped.md')), false, 'title must not trav
   a.equal(searchVault(vault, 'grue-token-9902').length, 1, 'an edited note must re-read');
   a.match(readNote(vault, 'cache-probe.md'), /grue-token-9902/, 'and read back the new text');
 
-  // An edit nobody announced — the sovereign typing in Obsidian — must not be
+  // An edit nobody announced — the user typing in Obsidian — must not be
   // served from the cached text on a direct read. mtime is bumped explicitly so
   // a coarse filesystem clock cannot make the two writes look identical.
   writeFileSync(probe, 'grue-token-9902 was replaced by quux-token-3141\n');
@@ -160,7 +160,7 @@ a.equal(existsSync(join(vault, '..', 'escaped.md')), false, 'title must not trav
 
   // --- reading a big note must not dump it into the member's context -------
   // 97% of this vault is sectioned, and everything read stays in context for
-  // the rest of the session. The real Kingdom Index is 121k chars: read whole
+  // the rest of the session. The real AgenticOS Index is 121k chars: read whole
   // it cost ~5,000 tokens (the old 20k truncation), as an outline ~225.
   {
     const big = join(vault, 'References', 'Big Note.md');
@@ -251,7 +251,7 @@ a.equal(existsSync(join(vault, '..', 'escaped.md')), false, 'title must not trav
       'a corrupt index must be ignored and rebuilt, not thrown');
 
     // ...and an index describing files that no longer exist must not resurrect
-    // them. This is the failure that would quietly haunt a court for weeks.
+    // them. This is the failure that would quietly haunt a team for weeks.
     const ghost = join(vault, 'References', 'ghost-note.md');
     writeFileSync(ghost, 'ghost-token-8891\n');
     invalidateVault(vault);
@@ -269,8 +269,8 @@ a.equal(existsSync(join(vault, '..', 'escaped.md')), false, 'title must not trav
   // already knows its one path — updating just that entry is 22ms.
   {
     const { noteWritten } = await import('../src/vault.js');
-    process.env.KINGDOM_VAULT_WATCH = '0';        // isolate: no watcher to rescue this
-    process.env.KINGDOM_VAULT_REVALIDATE_MS = '600000';
+    process.env.AGENTICOS_VAULT_WATCH = '0';        // isolate: no watcher to rescue this
+    process.env.AGENTICOS_VAULT_REVALIDATE_MS = '600000';
     invalidateVault(vault);
     searchVault(vault, 'seed');                   // establish a corpus
 
@@ -300,13 +300,13 @@ a.equal(existsSync(join(vault, '..', 'escaped.md')), false, 'title must not trav
   // --- the watcher, which is what makes repeat searches free ---------------
   // Re-stat-ing 1,409 files cost 134ms and ran every 4s. A recursive watcher
   // answers the same question in 1-2ms. It must be a pure optimisation: never
-  // a reason for the court to read something stale.
+  // a reason for the team to read something stale.
   {
     const { closeVaultWatchers } = await import('../src/vault.js');
     closeVaultWatchers();
-    delete process.env.KINGDOM_VAULT_WATCH;                 // watcher ON
-    process.env.KINGDOM_VAULT_REVALIDATE_MS = '600000';     // polling CANNOT rescue this
-    process.env.KINGDOM_VAULT_BACKSTOP_MS = '600000';       // nor can the backstop
+    delete process.env.AGENTICOS_VAULT_WATCH;                 // watcher ON
+    process.env.AGENTICOS_VAULT_REVALIDATE_MS = '600000';     // polling CANNOT rescue this
+    process.env.AGENTICOS_VAULT_BACKSTOP_MS = '600000';       // nor can the backstop
     invalidateVault(vault);
     searchVault(vault, 'seed');                             // establish the cache + watcher
 
@@ -332,24 +332,24 @@ a.equal(existsSync(join(vault, '..', 'escaped.md')), false, 'title must not trav
     a.equal(searchVault(vault, 'replaced-token-7731').length, 0, 'and a deletion');
 
     closeVaultWatchers();
-    delete process.env.KINGDOM_VAULT_BACKSTOP_MS;
+    delete process.env.AGENTICOS_VAULT_BACKSTOP_MS;
     console.log('  watcher keeps the corpus fresh without the 134ms stat sweep');
   }
 
-  process.env.KINGDOM_VAULT_WATCH = '0';   // isolate the polling path again
-  process.env.KINGDOM_VAULT_REVALIDATE_MS = '1';
+  process.env.AGENTICOS_VAULT_WATCH = '0';   // isolate the polling path again
+  process.env.AGENTICOS_VAULT_REVALIDATE_MS = '1';
   callTool('vault_write', { title: 'Second Process Probe', body: 'wisp-token-5540' });
   await new Promise((r) => setTimeout(r, 20));
   a.equal(searchVault(vault, 'wisp-token-5540').length, 1,
     'the corpus must revalidate on its own, not only when a writer asks it to');
-  delete process.env.KINGDOM_VAULT_REVALIDATE_MS;
-  delete process.env.KINGDOM_VAULT_WATCH;
+  delete process.env.AGENTICOS_VAULT_REVALIDATE_MS;
+  delete process.env.AGENTICOS_VAULT_WATCH;
   console.log('  search corpus cached; writes, edits and deletes stay coherent');
 }
 
 // --- the on-disk index is throttled ACROSS PROCESSES, not per process ------
 //
-// Every member runs its own mcp.js. A per-process timer lets a court of
+// Every member runs its own mcp.js. A per-process timer lets a team of
 // sixteen each rewrite the same 9.7MB index once a minute — the same file,
 // sixteen times, for a cache that only has to be roughly right. The index's
 // own mtime is the shared clock.
@@ -366,7 +366,7 @@ a.equal(existsSync(join(vault, '..', 'escaped.md')), false, 'title must not trav
 
   const run = (script) => execFileSync(process.execPath, ['-e', script], {
     encoding: 'utf8',
-    env: { ...process.env, KINGDOM_VAULT_WATCH: '0' },
+    env: { ...process.env, AGENTICOS_VAULT_WATCH: '0' },
   }).trim();
 
   const load = `const {searchVault}=await import(${JSON.stringify(pathToFileURL(join(HERE, '..', 'src', 'vault.js')).href)});`
@@ -378,7 +378,7 @@ a.equal(existsSync(join(vault, '..', 'escaped.md')), false, 'title must not trav
 
   // A second process, with an empty in-memory throttle, finding a fresh index
   // and a changed vault. It must leave the file alone.
-  writeFileSync(join(vault, 'Kingdom', 'Churn Probe.md'), 'index-churn-token-8814\n');
+  writeFileSync(join(vault, 'AgenticOS', 'Churn Probe.md'), 'index-churn-token-8814\n');
   const after = Number(run(`(async()=>{${load}})()`));
   a.equal(after, built,
     'a second process must not rewrite an index another process just wrote — '
@@ -388,46 +388,46 @@ a.equal(existsSync(join(vault, '..', 'escaped.md')), false, 'title must not trav
   // version forever and stop being a useful seed.
   const stale = execFileSync(process.execPath, ['-e', `(async()=>{${load}})()`], {
     encoding: 'utf8',
-    env: { ...process.env, KINGDOM_VAULT_WATCH: '0', KINGDOM_VAULT_INDEX_MS: '0' },
+    env: { ...process.env, AGENTICOS_VAULT_WATCH: '0', AGENTICOS_VAULT_INDEX_MS: '0' },
   }).trim();
   a.ok(Number(stale) > built, 'with the window closed, a changed vault must rewrite the index');
 
-  rmSync(join(vault, 'Kingdom', 'Churn Probe.md'), { force: true });
-  console.log('  the index is written at most once a minute by the whole court, not once per member');
+  rmSync(join(vault, 'AgenticOS', 'Churn Probe.md'), { force: true });
+  console.log('  the index is written at most once a minute by the whole team, not once per member');
 }
 
-// --- a project with an attached repo gets its own mirror of what the court
-// wrote about it, so that project's .kingdom folder is never missing what
+// --- a project with an attached repo gets its own mirror of what the team
+// wrote about it, so that project's .AgenticOS folder is never missing what
 // the shared vault knows, even though the vault itself stays put -----------
 {
-  const { kingdomDir } = await import('../src/worktree.js');
-  const repo = mkdtempSync(join(tmpdir(), 'kingdom-mirror-repo-'));
+  const { stateDir } = await import('../src/worktree.js');
+  const repo = mkdtempSync(join(tmpdir(), 'agenticos-mirror-repo-'));
 
   const saved = callTool('vault_write',
     { title: 'Mirror Probe', body: 'mirror-token-2291' },
-    { KINGDOM_REPO: repo });
-  a.match(saved, /Kingdom[\/\\]/);
-  const mirrored = join(kingdomDir(repo), 'vault', 'Kingdom', 'Mirror Probe.md');
-  a.ok(existsSync(mirrored), 'a vault write for an attached repo must be mirrored into its .kingdom folder');
+    { AGENTICOS_REPO: repo });
+  a.match(saved, /AgenticOS[\/\\]/);
+  const mirrored = join(stateDir(repo), 'vault', 'AgenticOS', 'Mirror Probe.md');
+  a.ok(existsSync(mirrored), 'a vault write for an attached repo must be mirrored into its .AgenticOS folder');
   a.match(readFileSync(mirrored, 'utf8'), /mirror-token-2291/, 'the mirror must carry the real content');
 
   const remembered = callTool('remember',
     { campaign: 1, title: 'Mirror remember probe', body: 'discovered the hard way' },
-    { KINGDOM_REPO: repo });
+    { AGENTICOS_REPO: repo });
   a.match(remembered, /No campaign #1/,
     'remember must not write directly when there is no closed campaign to ground a proposal');
-  const mirroredMemory = join(kingdomDir(repo), 'vault', 'Kingdom', 'Memories', 'Mirror remember probe.md');
-  a.ok(!existsSync(mirroredMemory), 'a memory must not exist until the sovereign approves its proposal');
+  const mirroredMemory = join(stateDir(repo), 'vault', 'AgenticOS', 'Memories', 'Mirror remember probe.md');
+  a.ok(!existsSync(mirroredMemory), 'a memory must not exist until the user approves its proposal');
 
   // No repo attached: a write must NOT touch the shared homedir workspace —
   // that would be silent pollution of the machine's real state on every test run.
   const { homedir } = await import('node:os');
-  const workspaceVault = join(homedir(), '.kingdom', 'workspace', 'vault', 'Kingdom', 'Reframe route needs SSRF guard.md');
+  const workspaceVault = join(homedir(), '.agenticos', 'workspace', 'vault', 'AgenticOS', 'Reframe route needs SSRF guard.md');
   a.ok(!existsSync(workspaceVault), 'a repo-less write must not fall back to mirroring the real homedir workspace');
 
-  try { rmSync(kingdomDir(repo), { recursive: true, force: true }); } catch {}
+  try { rmSync(stateDir(repo), { recursive: true, force: true }); } catch {}
   try { rmSync(repo, { recursive: true, force: true }); } catch {}
-  console.log('  a repo\'s own .kingdom folder mirrors what the shared vault just learned about it');
+  console.log('  a repo\'s own .AgenticOS folder mirrors what the shared vault just learned about it');
 }
 
 try { rmSync(vault, { recursive: true, force: true }); } catch {}

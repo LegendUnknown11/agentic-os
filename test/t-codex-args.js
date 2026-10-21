@@ -4,7 +4,7 @@
 // -s/--sandbox, which every resumed turn passed: codex died with
 // `unexpected argument '--sandbox'` before printing anything, so the member
 // flashed a console window and then simply never answered. Nothing in the
-// kingdom said a word.
+// AgenticOS said a word.
 //
 // So: assert the flag sets directly, and assert that a turn producing no
 // output at all is reported rather than mistaken for thinking.
@@ -18,11 +18,11 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 
-const dir = mkdtempSync(join(tmpdir(), 'kingdom-codexargs-'));
+const dir = mkdtempSync(join(tmpdir(), 'agenticos-codexargs-'));
 
 /* ---------- 0. Windows must prefer the npm JS entry over a shim exe ------- */
 if (process.platform === 'win32') {
-  const prior = { appdata: process.env.APPDATA, path: process.env.PATH, codex: process.env.KINGDOM_CODEX_BIN };
+  const prior = { appdata: process.env.APPDATA, path: process.env.PATH, codex: process.env.AGENTICOS_CODEX_BIN };
   const appdata = join(dir, 'appdata');
   const bin = join(dir, 'bin');
   const entry = join(appdata, 'npm', 'node_modules', '@openai', 'codex', 'bin', 'codex.js');
@@ -32,7 +32,7 @@ if (process.platform === 'win32') {
   writeFileSync(join(bin, 'codex.exe'), 'synthetic shim executable\n');
   process.env.APPDATA = appdata;
   process.env.PATH = bin + delimiter + (prior.path ?? '');
-  delete process.env.KINGDOM_CODEX_BIN;
+  delete process.env.AGENTICOS_CODEX_BIN;
 
   const { resolveCli } = await import(`../src/agent.js?npm-entry-${Date.now()}`);
   const resolved = resolveCli('codex');
@@ -41,7 +41,7 @@ if (process.platform === 'win32') {
 
   if (prior.appdata === undefined) delete process.env.APPDATA; else process.env.APPDATA = prior.appdata;
   if (prior.path === undefined) delete process.env.PATH; else process.env.PATH = prior.path;
-  if (prior.codex === undefined) delete process.env.KINGDOM_CODEX_BIN; else process.env.KINGDOM_CODEX_BIN = prior.codex;
+  if (prior.codex === undefined) delete process.env.AGENTICOS_CODEX_BIN; else process.env.AGENTICOS_CODEX_BIN = prior.codex;
   console.log('  Windows prefers the npm codex.js entry over a shim executable');
 }
 
@@ -67,7 +67,7 @@ function flagsOf(...argv) {
   return new Set(r.stdout.match(/--[a-z][a-z-]+/g) ?? []);
 }
 
-/* ---------- 2. what the Agent actually builds for a resumed turn ---------- */
+/* ---------- 2. what the AgentProcess actually builds for a resumed turn ---------- */
 // A stub records argv instead of being codex, so this runs everywhere.
 const stub = join(dir, 'codex-stub.js');
 writeFileSync(stub, `
@@ -76,14 +76,14 @@ writeFileSync(${JSON.stringify(join(dir, 'argv.json'))}, JSON.stringify(process.
 process.stdout.write(JSON.stringify({ type: 'thread.started', thread_id: 'thr-1' }) + '\\n');
 process.stdout.write(JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 1 } }) + '\\n');
 `);
-process.env.KINGDOM_CODEX_BIN = stub;
-const { Agent } = await import('../src/agent.js');
+process.env.AGENTICOS_CODEX_BIN = stub;
+const { AgentProcess } = await import('../src/agent.js');
 const { readFileSync } = await import('node:fs');
 
 const turn = (agent) => new Promise((res) => agent.once('turn_end', res));
 
 // A RESUMED turn — the case that was broken.
-const resumed = new Agent({ name: 'orchestrator', cli: 'codex', model: 'gpt-5.6-terra', effort: 'high' },
+const resumed = new AgentProcess({ name: 'orchestrator', cli: 'codex', model: 'gpt-5.6-terra', effort: 'high' },
   { cwd: dir, sessionId: 'thr-existing' });
 resumed.start();
 const done = turn(resumed);
@@ -101,22 +101,22 @@ a.ok(argv.includes('--json'), 'we still need the JSON protocol');
 // deny every MCP tool call ("user cancelled MCP tool call"), under every
 // approval policy, with or without writable_roots. The MCP server starts and
 // stays alive, so it is a denial and not a connection failure. A member with
-// no send_message and no declare_done is not a court member, so the default
+// no send_message and no declare_done is not a team member, so the default
 // must be the mode where the tools work.
 const sandboxArg = argv.find((x) => x.startsWith('sandbox_mode='));
 a.ok(sandboxArg, 'the sandbox mode must be passed explicitly, not left to config.toml');
 a.equal(sandboxArg, 'sandbox_mode="danger-full-access"',
-  'a confining default silently kills every kingdom tool');
+  'a confining default silently kills every team tool');
 console.log(`  sandbox: ${sandboxArg}`);
 console.log('  resumed argv is clean:', argv.filter((x) => x.startsWith('-') || x.includes('=')).join(' '));
 
 /* ---------- 2b. a long brief must not go on the command line ------------- */
-// Windows caps a command line at 32,767 chars. The sovereign's briefs are
+// Windows caps a command line at 32,767 chars. The user's briefs are
 // routinely longer, and passing one as argv made spawn throw ENAMETOOLONG
 // SYNCHRONOUSLY — so proc.on('exit') never ran, `busy` never cleared, and the
 // orchestrator was wedged for the rest of the session with its order already acked.
 // Observed for real: a 53k-char brief vanished without a word.
-const big = new Agent({ name: 'orchestrator', cli: 'codex' }, { cwd: dir, sessionId: 'thr-big' });
+const big = new AgentProcess({ name: 'orchestrator', cli: 'codex' }, { cwd: dir, sessionId: 'thr-big' });
 big.start();
 const bigDone = turn(big);
 big.send('x'.repeat(100_000));
@@ -148,8 +148,8 @@ writeFileSync(silent, `
 process.stderr.write("error: unexpected argument '--sandbox' found\\n");
 process.exit(2);
 `);
-process.env.KINGDOM_CODEX_BIN = silent;
-const { Agent: A2 } = await import('../src/agent.js?silent');   // fresh CLI cache
+process.env.AGENTICOS_CODEX_BIN = silent;
+const { AgentProcess: A2 } = await import('../src/agent.js?silent');   // fresh CLI cache
 
 const mute = new A2({ name: 'orchestrator', cli: 'codex' }, { cwd: dir, sessionId: 'thr-x' });
 mute.start();
@@ -174,9 +174,9 @@ console.log(`  silent failure reported: "${errors[0].trim().slice(0, 70)}…"`);
 process.stdout.write(JSON.stringify({ type: 'thread.started', thread_id: 'thr-h' }) + '\\n');
 setInterval(() => {}, 1000);   // never completes the turn, never exits
 `);
-  process.env.KINGDOM_CODEX_BIN = hang;
-  process.env.KINGDOM_TURN_TIMEOUT_MS = '1500';
-  const { Agent: A3 } = await import('../src/agent.js?hang');
+  process.env.AGENTICOS_CODEX_BIN = hang;
+  process.env.AGENTICOS_TURN_TIMEOUT_MS = '1500';
+  const { AgentProcess: A3 } = await import('../src/agent.js?hang');
 
   const stuck = new A3({ name: 'orchestrator', cli: 'codex' }, { cwd: dir, sessionId: 'thr-h' });
   stuck.start();
@@ -187,7 +187,7 @@ setInterval(() => {}, 1000);   // never completes the turn, never exits
   a.equal(stuck.busy, false, 'a killed turn must release the member');
   a.match(said.join(' '), /turn exceeded/, 'and must say why, not just go quiet');
   console.log(`  hung turn stopped: "${said[0]}"`);
-  delete process.env.KINGDOM_TURN_TIMEOUT_MS;
+  delete process.env.AGENTICOS_TURN_TIMEOUT_MS;
 }
 
 rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 150 });
@@ -195,10 +195,10 @@ console.log('t-codex-args.js OK — resume gets only flags it accepts, and silen
 
 /* ---------- a confined codex member must be reported, not silently mute ---- */
 {
-  const { MUTES_KINGDOM_TOOLS } = await import('../src/agent.js?silent');
-  a.ok(MUTES_KINGDOM_TOOLS.has('workspace-write'), 'workspace-write mutes the tools');
-  a.ok(MUTES_KINGDOM_TOOLS.has('read-only'), 'so does read-only');
-  a.ok(!MUTES_KINGDOM_TOOLS.has('danger-full-access'), 'and full access does not');
+  const { MUTES_AGENTICOS_TOOLS } = await import('../src/agent.js?silent');
+  a.ok(MUTES_AGENTICOS_TOOLS.has('workspace-write'), 'workspace-write mutes the tools');
+  a.ok(MUTES_AGENTICOS_TOOLS.has('read-only'), 'so does read-only');
+  a.ok(!MUTES_AGENTICOS_TOOLS.has('danger-full-access'), 'and full access does not');
   console.log('  confining sandboxes flagged as tool-muting');
 }
 
@@ -213,7 +213,7 @@ console.log('t-codex-args.js OK — resume gets only flags it accepts, and silen
 // gate is one method that every exit handler passes through, and a test that
 // has to sleep to observe a bug is a test that will one day sleep too little.
 {
-  const ghost = new Agent({ name: 'ghost', cli: 'codex' }, { cwd: dir, sessionId: 'thr-ghost' });
+  const ghost = new AgentProcess({ name: 'ghost', cli: 'codex' }, { cwd: dir, sessionId: 'thr-ghost' });
   const heard = [];
   ghost.on('error', (e) => heard.push(String(e)));
   ghost.on('turn_end', () => heard.push('turn_end'));

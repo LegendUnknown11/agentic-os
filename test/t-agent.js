@@ -1,6 +1,6 @@
-import { Agent } from '../src/agent.js';
+import { AgentProcess } from '../src/agent.js';
 
-const a = new Agent(
+const a = new AgentProcess(
   { name: 'coder', cli: 'codex', prompt: 'You are terse. Answer in one word.' },
   { cwd: process.cwd() }
 );

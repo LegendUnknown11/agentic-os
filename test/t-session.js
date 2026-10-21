@@ -9,14 +9,14 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Kingdom } from '../src/agenticos.js';
-import { kingdomDir } from '../src/worktree.js';
+import { AgenticOS } from '../src/agenticos.js';
+import { stateDir } from '../src/worktree.js';
 
-const repo = mkdtempSync(join(tmpdir(), 'kingdom-session-'));
+const repo = mkdtempSync(join(tmpdir(), 'agenticos-session-'));
 const git = (...x) => execFileSync('git', x, { cwd: repo, stdio: 'pipe' });
 git('init', '-q');
-git('config', 'user.email', 'k@kingdom');
-git('config', 'user.name', 'kingdom');
+git('config', 'user.email', 'k@agenticos');
+git('config', 'user.name', 'agenticos');
 writeFileSync(join(repo, 'README.md'), '# t\n');
 git('add', '-A');
 git('commit', '-qm', 'init');
@@ -25,7 +25,7 @@ const configPath = join(repo, 'agenticos.config.json');
 writeFileSync(configPath, JSON.stringify({
   orchestrator: { name: 'orchestrator', cli: 'codex', model: 'gpt-known' },
   briefer: { name: 'briefer', cli: 'codex', prompt: 'You watch.' },
-  peasants: [{ name: 'coder', cli: 'codex', model: 'gpt-mystery' }],
+  agents: [{ name: 'coder', cli: 'codex', model: 'gpt-mystery' }],
   contextWindows: { 'gpt-known': 400_000 },
   rolesSeeded: true,
 }));
@@ -52,7 +52,7 @@ class FakeMember extends EventEmitter {
   stop() { this.stopped = true; }
 }
 
-const k = new Kingdom(repo, configPath);
+const k = new AgenticOS(repo, configPath);
 k.base = 'master';
 k.bus.set('base', 'master');
 
@@ -83,12 +83,12 @@ k.bus.set('base', 'master');
 
   // Awake: the live agent's own measurement wins over the stored figure.
   const live = new FakeMember('gpt-known', 200_000);
-  k.agents.set('orchestrator', live);
+  k.processes.set('orchestrator', live);
   const awake = k.contextOf('orchestrator');
   a.equal(awake.tokens, 200_000, 'a live member reports what its agent measures now');
   a.equal(awake.pct, 50);
   a.equal(awake.awake, true);
-  k.agents.delete('orchestrator');
+  k.processes.delete('orchestrator');
 }
 
 /* ---------- 2. Compact session ---------- */
@@ -106,12 +106,12 @@ k.bus.set('base', 'master');
   // Mid-turn: refused without touching the member.
   const member = new FakeMember('gpt-mystery', 90_000);
   member.busy = true;
-  k.agents.set('coder', member);
+  k.processes.set('coder', member);
   k.bus.set('session:coder:default', 'old-session');
   await a.rejects(k.compactSession('coder'), (e) => e.reason === 'busy' && /mid-turn/.test(e.message));
   a.equal(member.sent.length, 0, 'a busy member is never sent the handover request');
   a.equal(member.stopped, false);
-  a.equal(k.agents.get('coder'), member);
+  a.equal(k.processes.get('coder'), member);
 
   member.recycling = true;
   await a.rejects(k.compactSession('coder'), (e) => e.reason === 'recycling');
@@ -128,7 +128,7 @@ k.bus.set('base', 'master');
   a.match(member.sent[0], /handover/i);
   a.equal(member.stopped, true, 'the old session is retired');
   a.equal(recycled.length, 1, 'it IS the recycle path — one recycled event, no parallel one');
-  const successor = k.agents.get('coder');
+  const successor = k.processes.get('coder');
   a.ok(successor && successor !== member, 'a successor holds the session now');
   a.ok(successor.spec.prompt.includes('the parser is half done'), 'seeded with the handover note');
   a.equal(k.bus.get('session:coder:default'), '', 'the old session id is not resumed');
@@ -136,13 +136,13 @@ k.bus.set('base', 'master');
   a.equal(result.ok, true);
   a.equal(result.before, 90_000);
   a.equal(result.after, 0);
-  a.equal(result.by, 'sovereign');
+  a.equal(result.by, 'user');
   a.deepEqual(compacted, [result], 'a compacted event is emitted for the stream');
   const done = events('session_compact').at(-1);
   a.equal(done.payload.ok, true);
   a.equal(done.payload.before, 90_000);
   successor.stop?.();
-  k.agents.delete('coder');
+  k.processes.delete('coder');
 }
 
 /* ---------- 3. the agent on a run ---------- */
@@ -157,7 +157,7 @@ k.bus.set('base', 'master');
   k.bus.updateRun(named.id, { state: 'cancelled', cancelledTs: Date.now() });
 
   const stranger = await k.createRun({ objective: 'led by nobody real', lead: 'nobody' });
-  a.equal(stranger.lead, 'orchestrator', 'a lead outside the court is not recorded');
+  a.equal(stranger.lead, 'orchestrator', 'a lead outside the team is not recorded');
   k.bus.updateRun(stranger.id, { state: 'cancelled', cancelledTs: Date.now() });
 }
 
@@ -185,5 +185,5 @@ k.bus.set('base', 'master');
 }
 
 await k.stop();
-for (const d of [repo, kingdomDir(repo)]) { try { rmSync(d, { recursive: true, force: true }); } catch {} }
+for (const d of [repo, stateDir(repo)]) { try { rmSync(d, { recursive: true, force: true }); } catch {} }
 console.log('t-session.js OK — context meter, compact session, run lead, spend by day');

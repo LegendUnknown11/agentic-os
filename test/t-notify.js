@@ -84,7 +84,7 @@ const take = () => shown.splice(0);
   const [budget] = take();
   a.equal(budget?.title, 'Run spend ceiling reached');
   a.doesNotMatch(budget.title + budget.body, /undefined|Everyone stopped/,
-    'a run ceiling stops the run only; it must not read as a member or a court-wide stop');
+    'a run ceiling stops the run only; it must not read as a member or a team-wide stop');
 }
 
 /* ---------- a digest an automation built ---------- */

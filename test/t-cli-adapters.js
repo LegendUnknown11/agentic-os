@@ -1,7 +1,7 @@
 import { strict as a } from 'node:assert';
 import { adapterFor, adapters, jsonStream, positional, cursorUsage, openCodeUsage } from '../src/cli-adapters.js';
 import { detectCli, parseAuth } from '../src/cli-detection.js';
-import { Agent, claudeEnv, resolveCli as resolveBinary } from '../src/agent.js';
+import { AgentProcess, claudeEnv, resolveCli as resolveBinary } from '../src/agent.js';
 import { createRequire, syncBuiltinESMExports } from 'node:module';
 import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
@@ -33,7 +33,7 @@ a.deepEqual(adapterFor('claude').buildArgs({ spec: { prompt: 'persona', model: '
 ['--print', '--verbose', '--input-format', 'stream-json', '--output-format', 'stream-json',
   '--permission-mode', 'bypassPermissions', '--setting-sources', 'project', '--append-system-prompt', 'persona',
   '--session-id', 's', '--model', 'm', '--effort', 'high', '--add-dir', '/wt', '--disallowed-tools', 'Bash(git push:*)',
-  '--mcp-config', JSON.stringify({ mcpServers: { kingdom: { command: 'node', args: ['mcp.js'] } } }), '--strict-mcp-config']);
+  '--mcp-config', JSON.stringify({ mcpServers: { agenticos: { command: 'node', args: ['mcp.js'] } } }), '--strict-mcp-config']);
 a.ok(build('claude', { resume: true }, 's').includes('--resume'));
 a.ok(build('claude', { permissionMode: 'plan' }).includes('plan'));
 a.ok(!build('claude', { outputFormat: 'json' }).includes('--input-format'));
@@ -41,7 +41,7 @@ a.ok(!build('opencode', { skipPermissions: false }).includes('--auto'));
 a.ok(!build('agy', { effort: 'max' }).includes('--effort'), 'agy rejects max; it is dropped, not passed');
 a.ok(build('agy', { effort: 'high' }).includes('high'));
 a.ok(!adapterFor('agy').buildArgs({ spec: {}, prompt: 'p', addDirs: ['/wt'] }).includes('--add-dir'),
-  'agy never got --add-dir; an unverified flag would fail every peasant turn');
+  'agy never got --add-dir; an unverified flag would fail every agent turn');
 a.ok(!build('agy', { effort: 'none', skipPermissions: false }).includes('--effort'));
 a.ok(!build('agy', { skipPermissions: false }).includes('--dangerously-skip-permissions'));
 a.deepEqual(build('cursor-agent', { mode: 'plan', sandbox: 'enabled' }), build('cursor', { mode: 'plan', sandbox: 'enabled' }));
@@ -54,7 +54,7 @@ a.equal(positional('hello'), 'hello');
 a.equal(adapterFor('opencode').buildArgs({ spec: {}, prompt: '-v' })[1], '\n-v');
 
 function parse(cli, objects, spec = {}) {
-  const agent = new Agent({ cli, ...spec });
+  const agent = new AgentProcess({ cli, ...spec });
   const events = [];
   for (const type of ['ready', 'text', 'tool', 'turn_end', 'error']) agent.on(type, (value) => events.push([type, value]));
   const state = new Map();
@@ -187,18 +187,18 @@ await detectCli('agy', { resolveCli, env: {}, run: async (_, args, opts) => {
 a.equal(agyTimeout, 25000, 'agy models keeps its measured 25s cap');
 a.equal(claudeEnv({ CLAUDE_CODE_OAUTH_TOKEN: 'synthetic-fixture', CLAUDECODE: 'host' }).CLAUDECODE, undefined);
 
-// Exercise the actual Agent lifecycle with in-process child streams: no CLI,
+// Exercise the actual AgentProcess lifecycle with in-process child streams: no CLI,
 // auth, model calls, filesystem fixtures or platform process timing required.
 const childProcess = createRequire(import.meta.url)('node:child_process');
 const originalSpawn = childProcess.spawn;
-const originalOverride = process.env.KINGDOM_OPENCODE_BIN;
-const originalCursor = process.env.KINGDOM_CURSOR_BIN;
-const originalClaude = process.env.KINGDOM_CLAUDE_BIN;
-process.env.KINGDOM_OPENCODE_BIN = process.execPath;
-process.env.KINGDOM_CURSOR_BIN = process.execPath;
-process.env.KINGDOM_CLAUDE_BIN = process.execPath;
-const originalCodex = process.env.KINGDOM_CODEX_BIN;
-process.env.KINGDOM_CODEX_BIN = process.execPath;
+const originalOverride = process.env.AGENTICOS_OPENCODE_BIN;
+const originalCursor = process.env.AGENTICOS_CURSOR_BIN;
+const originalClaude = process.env.AGENTICOS_CLAUDE_BIN;
+process.env.AGENTICOS_OPENCODE_BIN = process.execPath;
+process.env.AGENTICOS_CURSOR_BIN = process.execPath;
+process.env.AGENTICOS_CLAUDE_BIN = process.execPath;
+const originalCodex = process.env.AGENTICOS_CODEX_BIN;
+process.env.AGENTICOS_CODEX_BIN = process.execPath;
 a.equal(resolveBinary('cursor-agent').command, process.execPath, 'alias honors the canonical Cursor override');
 const spawned = [];
 let protocol = [
@@ -225,7 +225,7 @@ childProcess.spawn = (command, args, options) => {
 };
 syncBuiltinESMExports();
 try {
-  const agent = new Agent({ name: 'coder', cli: 'opencode' }, { cwd: '/workspace' });
+  const agent = new AgentProcess({ name: 'coder', cli: 'opencode' }, { cwd: '/workspace' });
   const ends = [], failures = [];
   agent.on('turn_end', (event) => ends.push(event));
   agent.on('error', (error) => failures.push(error));
@@ -255,7 +255,7 @@ try {
       { type: 'system', subtype: 'init', session_id: `${cli}-session` },
       { type: 'result', session_id: `${cli}-session`, result: 'JSON answer', usage: { input_tokens: 2 } },
     ];
-    const member = new Agent({ name: 'fixture', cli, outputFormat: 'json', skipPermissions: false }, { cwd: '/workspace' });
+    const member = new AgentProcess({ name: 'fixture', cli, outputFormat: 'json', skipPermissions: false }, { cwd: '/workspace' });
     member.start();
     const texts = [], completed = [];
     member.on('text', (text) => texts.push(text));
@@ -280,7 +280,7 @@ try {
   exitOnly = true;
   protocol = [{ type: 'thread.started', thread_id: 't1' },
     { type: 'turn.completed', usage: { input_tokens: 1 } }];
-  const codex = new Agent({ name: 'cx', cli: 'codex' }, { cwd: '/workspace' });
+  const codex = new AgentProcess({ name: 'cx', cli: 'codex' }, { cwd: '/workspace' });
   const codexErrors = [];
   codex.on('error', (e) => codexErrors.push(e));
   codex.start();
@@ -311,13 +311,13 @@ try {
 } finally {
   childProcess.spawn = originalSpawn;
   syncBuiltinESMExports();
-  if (originalOverride === undefined) delete process.env.KINGDOM_OPENCODE_BIN;
-  else process.env.KINGDOM_OPENCODE_BIN = originalOverride;
-  if (originalCursor === undefined) delete process.env.KINGDOM_CURSOR_BIN;
-  else process.env.KINGDOM_CURSOR_BIN = originalCursor;
-  if (originalCodex === undefined) delete process.env.KINGDOM_CODEX_BIN;
-  else process.env.KINGDOM_CODEX_BIN = originalCodex;
-  if (originalClaude === undefined) delete process.env.KINGDOM_CLAUDE_BIN;
-  else process.env.KINGDOM_CLAUDE_BIN = originalClaude;
+  if (originalOverride === undefined) delete process.env.AGENTICOS_OPENCODE_BIN;
+  else process.env.AGENTICOS_OPENCODE_BIN = originalOverride;
+  if (originalCursor === undefined) delete process.env.AGENTICOS_CURSOR_BIN;
+  else process.env.AGENTICOS_CURSOR_BIN = originalCursor;
+  if (originalCodex === undefined) delete process.env.AGENTICOS_CODEX_BIN;
+  else process.env.AGENTICOS_CODEX_BIN = originalCodex;
+  if (originalClaude === undefined) delete process.env.AGENTICOS_CLAUDE_BIN;
+  else process.env.AGENTICOS_CLAUDE_BIN = originalClaude;
 }
 console.log('t-cli-adapters.js OK — arguments, all protocols, JSON framing and private non-billing detection');

@@ -145,14 +145,14 @@ function connect() {
     try {
       const event = JSON.parse(message.data);
       const firstSnapshot = event.type === 'snapshot' && !state.ready;
-      // The advisor can flip the court's mode on its own reading of one plain
-      // message (Kingdom#queueMode, by: 'advisor') — Chat becomes Cowork or
-      // Code with no sovereign click on the mode switcher at all. That is how
+      // The advisor can flip the team's mode on its own reading of one plain
+      // message (AgenticOS#queueMode, by: 'advisor') — Chat becomes Cowork or
+      // Code with no user click on the mode switcher at all. That is how
       // "I thought it was only one prompt" turns into unexplained delegation:
       // the header text updated, but nothing said why or that it wasn't the
-      // sovereign's own choice. A mode change the sovereign clicked already
+      // user's own choice. A mode change the user clicked already
       // gets its own notice from chooseMode(); this covers every other one.
-      if (event.type === 'mode' && event.by && event.by !== 'sovereign') {
+      if (event.type === 'mode' && event.by && event.by !== 'user') {
         const target = event.pending ?? event.mode;
         const label = USER_MODE_BY_ID.get(userModeOf(target))?.label ?? target;
         const reason = event.why ? ` — ${event.why}` : '';
@@ -225,7 +225,7 @@ async function maybeOpenDoctor(firstSnapshot) {
   if (report && report.ok !== false) { state.doctor = report; apply({ type: '__doctor__' }); }
   // The probe is async and can resolve well after boot. Anything that
   // happened while it was in flight — a run created, an event streamed in —
-  // means the sovereign is already mid-task, and grabbing the screen for a
+  // means the user is already mid-task, and grabbing the screen for a
   // first-run health check at that point isn't a greeting, it's an
   // interruption. eventsApplied mirrors the connectionAttempt staleness
   // check above: if it moved since the probe started, the probe's result no
@@ -388,7 +388,7 @@ async function chooseMode(id) {
   const request = ++modeRequest;
   modeNotice = `Switching to ${choice.label}… ${choice.action}`;
   renderShell();
-  const result = await post('mode', { mode: backend, why: `sovereign chose ${choice.label}` });
+  const result = await post('mode', { mode: backend, why: `you chose ${choice.label}` });
   if (request !== modeRequest) return;
   modeRequest = 0;
   if (!result?.ok) {
@@ -444,7 +444,7 @@ export async function mount(name = viewName()) {
   else globalThis.setTimeout?.(reveal, 0);
   const context = {
     state, root, header: $('header'), composer: $('composer'), post, get, navigate, toast, refreshLists,
-    sovereign: !state.view?.member || state.view.member === 'orchestrator',
+    user: !state.view?.member || state.view.member === 'orchestrator',
     tab: route.tab,
   };
   const listsRefresh = refreshLists();

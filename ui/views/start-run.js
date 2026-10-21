@@ -101,7 +101,7 @@ export function startRunSection(state, rerender) {
   }, 'danger') : null;
 
   return section('Start a run',
-    // Also what the sovereign sees right after starting one: the run event
+    // Also what the user sees right after starting one: the run event
     // repaints this form before any "started" message could be read.
     active ? h('div', { class: 'button-row run-active-note' },
       note(`Current run (${String(active.state ?? active.status).replace(/_/g, ' ')}): ${active.objective || active.id}. One run at a time; manage it from Overview.`),

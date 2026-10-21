@@ -13,7 +13,7 @@ import { Speech } from '../src/stt.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const config = JSON.parse(readFileSync(join(HERE, '..', 'agenticos.config.json'), 'utf8'));
-const speech = new Speech(process.env.KINGDOM_SPEECHBIRD ?? config.speechbird);
+const speech = new Speech(process.env.AGENTICOS_SPEECHBIRD ?? config.speechbird);
 
 /* ---------- absence is not failure ---------- */
 if (!speech.available()) {

@@ -1,8 +1,8 @@
-// The court's skill set.
+// The team's skill set.
 //
-// A skill is a procedure the court should follow the same way every time —
+// A skill is a procedure the team should follow the same way every time —
 // "how we ship a migration", "how we review a PR". It is NOT knowledge (that
-// is Memory) and NOT a standing rule (that is Court Instructions): it is a
+// is Memory) and NOT a standing rule (that is Team Instructions): it is a
 // method, invoked on purpose, for a task that is happening now.
 //
 // PROGRESSIVE DISCLOSURE, exactly as memoryIndex does it. Every member carries
@@ -11,12 +11,12 @@
 // one actually applies. Measured on the shipped set: the index is ~330 chars
 // where the bodies are ~14,000, and that difference is paid on every turn of
 // every member. A skill set that loaded itself would be the single most
-// expensive thing the court carries.
+// expensive thing the team carries.
 //
 // Skills come from two places, and both are optional:
 //   skills/*.md next to this source   — what the OS ships with
-//   <vault>/Kingdom/Skills/*.md       — what the sovereign writes in Obsidian
-// The vault wins on a name collision, so a sovereign can override a shipped
+//   <vault>/AgenticOS/Skills/*.md       — what the user writes in Obsidian
+// The vault wins on a name collision, so a user can override a shipped
 // skill without editing the repo.
 import { readFileSync, readdirSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
@@ -30,7 +30,7 @@ const BUILTIN = join(dirname(fileURLToPath(import.meta.url)), '..', 'skills');
  * One colon is allowed and meaningful: `design:design-critique` is the
  * `design-critique` skill from the `design` pack, which is just a
  * subdirectory. Packs exist so a set can grow past the point where a flat
- * menu is readable, and so the sovereign can drop a whole family in at once.
+ * menu is readable, and so the user can drop a whole family in at once.
  */
 export const slugSkill = (s) =>
   String(s).toLowerCase().replace(/[^a-z0-9:]+/g, '-')
@@ -40,7 +40,7 @@ export const slugSkill = (s) =>
  * `name:` and `description:` out of the frontmatter, and the body without it.
  *
  * Hand-rolled rather than a YAML dependency: this reads two scalar strings out
- * of a block the court itself writes. A parser for the other 95% of YAML would
+ * of a block the team itself writes. A parser for the other 95% of YAML would
  * be five dependencies to support syntax nobody here emits.
  */
 function parse(text, fallbackName) {
@@ -51,7 +51,7 @@ function parse(text, fallbackName) {
     return f ? f[1].trim().replace(/^["']|["']$/g, '') : '';
   };
   // `combo: a, b` and a YAML `combo:\n  - a\n  - b` both mean the same thing,
-  // and the court writes both. Accepting either is cheaper than teaching it.
+  // and the team writes both. Accepting either is cheaper than teaching it.
   const comboLine = /^combo:\s*(.*)$/im.exec(front);
   let combo = [];
   if (comboLine) {
@@ -95,7 +95,7 @@ function readDir(dir, pack = '') {
       // frontmatter remembered to say so.
       if (pack && !s.name.includes(':')) s.name = `${pack}:${s.name}`;
       out.push({ ...s, file: join(dir, e.name) });
-    } catch { /* a skill that will not read is one the court does without */ }
+    } catch { /* a skill that will not read is one the team does without */ }
   }
   return out;
 }
@@ -106,7 +106,7 @@ function readDir(dir, pack = '') {
  * Bodies come along because the only callers are a one-shot tool call and the
  * daemon's menu; a skill set is a dozen small files, not a vault.
  */
-export function listSkills(vault, dir = 'Kingdom') {
+export function listSkills(vault, dir = 'AgenticOS') {
   const byName = new Map();
   for (const s of readDir(BUILTIN)) if (s.name) byName.set(s.name, { ...s, source: 'builtin' });
   if (vault) {
@@ -124,7 +124,7 @@ export function listSkills(vault, dir = 'Kingdom') {
  * finds `design:responsive`. Typing the pack is for disambiguating, not a tax
  * on the common case.
  */
-export function readSkill(vault, name, dir = 'Kingdom') {
+export function readSkill(vault, name, dir = 'AgenticOS') {
   const want = slugSkill(name);
   const all = listSkills(vault, dir);
   const exact = all.find((s) => s.name === want);
@@ -136,7 +136,7 @@ export function readSkill(vault, name, dir = 'Kingdom') {
 /**
  * A skill resolved for handing to a member — a combo brings its parts with it.
  *
- * This is the ONE place the court deliberately spends context up front. A
+ * This is the ONE place the team deliberately spends context up front. A
  * combo exists because those procedures are always run together, so making the
  * member discover and fetch each part would buy four tool calls (and four
  * context replays) to save nothing. Every other path stays index-first.
@@ -144,7 +144,7 @@ export function readSkill(vault, name, dir = 'Kingdom') {
  * Cycles are cut by `seen` rather than by forbidding a combo of combos: two
  * combos that share a part is the normal case and must keep working.
  */
-export function composeSkill(vault, name, dir = 'Kingdom', seen = new Set()) {
+export function composeSkill(vault, name, dir = 'AgenticOS', seen = new Set()) {
   const s = readSkill(vault, name, dir);
   if (!s || seen.has(s.name)) return null;
   seen.add(s.name);
@@ -172,7 +172,7 @@ export function composeSkill(vault, name, dir = 'Kingdom', seen = new Set()) {
  * holds. Descriptions are clipped rather than dropped: a skill nobody can tell
  * when to use is worse than one with a shortened hint.
  */
-export function skillsBlock(vault, dir = 'Kingdom', { maxChars = 2600 } = {}) {
+export function skillsBlock(vault, dir = 'AgenticOS', { maxChars = 2600 } = {}) {
   const skills = listSkills(vault, dir);
   if (!skills.length) return '';
   // Combos first, then bare skills: a combo answers a whole task and a member
@@ -209,25 +209,25 @@ export function skillsBlock(vault, dir = 'Kingdom', { maxChars = 2600 } = {}) {
     add(`- /${p}:… — ${names.sort().join(', ')}`);
   }
   return `\n\n--- SKILLS AVAILABLE TO YOU (${skills.length}) ---\n` +
-    `Named procedures the court follows. Names and triggers only — call ` +
+    `Named procedures the team follows. Names and triggers only — call ` +
     `skill("<name>") to get the steps, and only when one applies to the task in ` +
     `front of you. Loading a skill you do not need costs the same as one you do. ` +
-    `If the sovereign's message begins with /<name>, that skill is not a ` +
+    `If the user's message begins with /<name>, that skill is not a ` +
     `suggestion: load it first and follow it.\n\n${lines.join('\n')}\n`;
 }
 
 /**
- * A `/name rest…` command from the sovereign, resolved.
+ * A `/name rest…` command from the user, resolved.
  *
  * Returns the rewritten prompt, which NAMES the skill rather than pasting it.
  * Inlining the body here would put it in the member's context permanently even
  * on the turns it no longer matters; making the member fetch it costs one tool
  * call and keeps the whole set on the same progressive-disclosure footing.
  *
- * An unknown /word is left completely alone — the sovereign may simply be
+ * An unknown /word is left completely alone — the user may simply be
  * writing a path, a flag, or a date.
  */
-export function expandSkillCommand(vault, text, dir = 'Kingdom') {
+export function expandSkillCommand(vault, text, dir = 'AgenticOS') {
   const m = /^\/([a-zA-Z0-9-]+)\s*([\s\S]*)$/.exec(String(text ?? '').trim());
   if (!m) return null;
   const skill = readSkill(vault, m[1], dir);
@@ -272,7 +272,7 @@ if (process.argv[1] && /(^|[\\/])skills\.js$/.test(process.argv[1])) {
   // A budget, not a formality: this rides in every prompt of every member on
   // every turn. If a new skill breaks this, the fix is to put it in a PACK
   // (packs cost one shared line) — top level is for procedures that answer a
-  // whole task and that the court must know exist without being told.
+  // whole task and that the team must know exist without being told.
   a.ok(block.length < 2200, `the skills block must stay affordable, got ${block.length}`);
   a.ok(block.length * 8 < bodies,   // 10.1× as shipped
     `progressive disclosure must actually save: block ${block.length} vs bodies ${bodies}`);
@@ -292,14 +292,14 @@ if (process.argv[1] && /(^|[\\/])skills\.js$/.test(process.argv[1])) {
   a.equal(composeSkill(null, 'design-critique').name, 'design:design-critique',
     'a bare name must find an unambiguous packed skill — typing the pack is for disambiguating');
 
-  const v = mkdtempSync(join(tmpdir(), 'kingdom-skill-'));
+  const v = mkdtempSync(join(tmpdir(), 'agenticos-skill-'));
   a.equal(readSkill(v, 'nope'), null, 'an unknown skill is null, not a throw');
   a.equal(expandSkillCommand(v, '/nope do a thing'), null,
     'an unknown /word must be left alone — it is probably a path or a flag');
   a.equal(expandSkillCommand(v, 'no slash here'), null);
 
-  mkdirSync(join(v, 'Kingdom', SKILLS_DIR), { recursive: true });
-  writeFileSync(join(v, 'Kingdom', SKILLS_DIR, 'Ship It.md'),
+  mkdirSync(join(v, 'AgenticOS', SKILLS_DIR), { recursive: true });
+  writeFileSync(join(v, 'AgenticOS', SKILLS_DIR, 'Ship It.md'),
     '---\nname: ship-it\ndescription: how we cut a release\n---\n1. run the tests\n2. tag it\n');
   const mine = readSkill(v, 'ship-it');
   a.equal(mine.source, 'vault');
@@ -308,14 +308,14 @@ if (process.argv[1] && /(^|[\\/])skills\.js$/.test(process.argv[1])) {
 
   const cmd = expandSkillCommand(v, '/ship-it the auth branch');
   a.equal(cmd.name, 'ship-it');
-  a.match(cmd.text, /the auth branch/, 'the rest of the sovereign\'s message must survive');
+  a.match(cmd.text, /the auth branch/, 'the rest of the user\'s message must survive');
   a.ok(!cmd.text.includes('tag it'),
     'the body must NOT be inlined — it would sit in context forever; the member fetches it');
 
   // A vault skill shadows a shipped one of the same name.
   const first = shipped[0].name;
-  writeFileSync(join(v, 'Kingdom', SKILLS_DIR, 'override.md'),
-    `---\nname: ${first}\ndescription: mine\n---\nthe sovereign's own version of this procedure\n`);
+  writeFileSync(join(v, 'AgenticOS', SKILLS_DIR, 'override.md'),
+    `---\nname: ${first}\ndescription: mine\n---\nthe user's own version of this procedure\n`);
   const merged = listSkills(v);
   a.equal(merged.filter((s) => s.name === first).length, 1, 'an override must replace, not duplicate');
   a.equal(merged.find((s) => s.name === first).source, 'vault', 'and the vault must win');

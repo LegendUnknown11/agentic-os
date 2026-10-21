@@ -12,8 +12,8 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 const HERE = dirname(fileURLToPath(import.meta.url));
-import { Kingdom } from '../src/agenticos.js';
-import { kingdomDir } from '../src/worktree.js';
+import { AgenticOS } from '../src/agenticos.js';
+import { stateDir } from '../src/worktree.js';
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -33,15 +33,15 @@ const until = async (fn, ms = 60_000) => {
 
 // Reviving a slept member really does spawn its CLI. Point codex at a stub
 // that exits immediately so this test stays offline and costs nothing.
-process.env.KINGDOM_CODEX_BIN = process.execPath;
+process.env.AGENTICOS_CODEX_BIN = process.execPath;
 // Short settle window so the test stays quick; the real default is 90s.
-process.env.KINGDOM_SETTLE_MS = '400';
+process.env.AGENTICOS_SETTLE_MS = '400';
 
-const repo = mkdtempSync(join(tmpdir(), 'kingdom-batch-'));
+const repo = mkdtempSync(join(tmpdir(), 'agenticos-batch-'));
 const git = (...x) => execFileSync('git', x, { cwd: repo, stdio: 'pipe' });
 git('init', '-q');
-git('config', 'user.email', 'k@kingdom');
-git('config', 'user.name', 'kingdom');
+git('config', 'user.email', 'k@agenticos');
+git('config', 'user.name', 'agenticos');
 writeFileSync(join(repo, 'README.md'), '# t\n');
 git('add', '-A');
 git('commit', '-qm', 'init');
@@ -50,7 +50,7 @@ const configPath = join(repo, 'agenticos.config.json');
 writeFileSync(configPath, JSON.stringify({
   orchestrator: { name: 'orchestrator', cli: 'codex' },
   briefer: { name: 'briefer', cli: 'codex' },
-  peasants: [{ name: 'coder', cli: 'codex' }],
+  agents: [{ name: 'coder', cli: 'codex' }],
 }));
 
 class FakeAgent extends EventEmitter {
@@ -59,12 +59,12 @@ class FakeAgent extends EventEmitter {
   stop() {}
 }
 
-const k = new Kingdom(repo, configPath);
+const k = new AgenticOS(repo, configPath);
 await k.start();
 
 const coder = new FakeAgent();
-k.agents.set('coder', coder);
-k.summoned.add('coder');
+k.processes.set('coder', coder);
+k.added.add('coder');
 
 // --- three messages arriving together must cost ONE turn --------------
 k.bus.post('orchestrator', 'coder', 'first thing');
@@ -78,7 +78,7 @@ for (const s of ['first thing', 'second thing', 'third thing']) {
 }
 a.match(coder.sent[0], /3 new messages/, 'the batch should say how many arrived');
 
-// --- the sovereign never waits out the settle window ------------------
+// --- the user never waits out the settle window ------------------
 // The window absorbs bursts of agent-to-agent chatter. A human typing is not a
 // burst, and 15s of silence is what makes them retype the same order.
 //
@@ -86,12 +86,12 @@ a.match(coder.sent[0], /3 new messages/, 'the batch should say how many arrived'
 // distinguishable: at the 400ms used elsewhere in this file, "arrived within
 // 700ms" would pass whether or not the message waited. settleMs() reads the
 // env on every call, so this takes effect immediately.
-process.env.KINGDOM_SETTLE_MS = '4000';
+process.env.AGENTICOS_SETTLE_MS = '4000';
 {
   coder.sent.length = 0;
-  k.bus.post('sovereign', 'coder', 'do this now', 'assignment');
+  k.bus.post('user', 'coder', 'do this now', 'assignment');
   await wait(1200);            // a quarter of the window
-  a.equal(coder.sent.length, 1, "the sovereign's message must not wait for the settle window");
+  a.equal(coder.sent.length, 1, "the user's message must not wait for the settle window");
 
   // ...and the same message from an AGENT still waits it out.
   coder.sent.length = 0;
@@ -101,15 +101,15 @@ process.env.KINGDOM_SETTLE_MS = '4000';
   await wait(3500);
   a.equal(coder.sent.length, 1, 'and land once the window closes');
 }
-process.env.KINGDOM_SETTLE_MS = '400';
+process.env.AGENTICOS_SETTLE_MS = '400';
 
 // --- a repeated order is delivered ONCE -------------------------------
-// A stalled court makes the sovereign retype; seven identical "Resume"
+// A stalled team makes the user retype; seven identical "Resume"
 // messages were then delivered in one batch and acted on seven times.
 coder.sent.length = 0;
 coder.busy = true;                       // hold them so they batch together
-for (let i = 0; i < 5; i++) k.bus.post('sovereign', 'coder', 'Resume', 'assignment');
-k.bus.post('sovereign', 'coder', 'and then stop', 'assignment');
+for (let i = 0; i < 5; i++) k.bus.post('user', 'coder', 'Resume', 'assignment');
+k.bus.post('user', 'coder', 'and then stop', 'assignment');
 await wait(800);
 coder.busy = false;
 await wait(1500);
@@ -154,29 +154,29 @@ a.ok(coder.sent[2].includes('just so you know'), 'the notice must ride along');
 a.ok(coder.sent[2].includes('real work'));
 
 // --- an idle-slept member is revived on demand ------------------------
-k.agents.delete('coder'); // simulate an idle sleep; still summoned
+k.processes.delete('coder'); // simulate an idle sleep; still added
 k.bus.post('orchestrator', 'coder', 'wake up');
-a.ok(await until(() => k.agents.has('coder')),
-  'a summoned-but-slept member must be revived to receive mail');
+a.ok(await until(() => k.processes.has('coder')),
+  'an added-but-slept member must be revived to receive mail');
 
 // --- the crew survives a restart --------------------------------------
-// #tick only iterates `summoned`; if that were lost, mail to a peasant woken
+// #tick only iterates `added`; if that were lost, mail to an agent woken
 // before the restart would sit unread forever.
 await k.stop();
 
-const k2 = new Kingdom(repo, configPath);
+const k2 = new AgenticOS(repo, configPath);
 await k2.start();
-a.ok(k2.summoned.has('coder'), 'a summoned peasant must still be in service after a restart');
-a.ok(!k2.agents.has('coder'), 'it should be asleep, not eagerly respawned');
+a.ok(k2.added.has('coder'), 'an added agent must still be in service after a restart');
+a.ok(!k2.processes.has('coder'), 'it should be asleep, not eagerly respawned');
 
 k2.bus.post('orchestrator', 'coder', 'still there?');
-a.ok(await until(() => k2.agents.has('coder')),
+a.ok(await until(() => k2.processes.has('coder')),
   'mail after a restart must revive it, not vanish');
 
 // --- a turn that dies outright must not swallow the order -------------
 // The ack happens BEFORE the turn is known to have worked. A 53k-char brief
 // was lost exactly this way: spawn failed, the message was already acked, and
-// the court sat silent. One retry, then it gives up rather than looping.
+// the team sat silent. One retry, then it gives up rather than looping.
 // The stubbed "codex" is plain node given a script that does not exist, so
 // every turn dies with no output — the real failure, end to end.
 {
@@ -205,8 +205,8 @@ a.ok(await until(() => k2.agents.has('coder')),
 // and queued 131 digest turns onto the briefer.
 const fakeOrchestrator = new FakeAgent();
 fakeOrchestrator.busy = true;              // so the batch can never ripen
-k2.agents.get('orchestrator')?.stop();
-k2.agents.set('orchestrator', fakeOrchestrator);
+k2.processes.get('orchestrator')?.stop();
+k2.processes.set('orchestrator', fakeOrchestrator);
 
 let verified = 0;
 k2.on('verified', () => verified++);
@@ -227,10 +227,10 @@ a.equal(verified, 1, `a declare_done must be verified exactly once, got ${verifi
 {
   const errs = [];
   k2.on('error', (e) => errs.push(e));
-  process.env.KINGDOM_SETTLE_MS = String(10 * 60_000);   // far above the backstop
+  process.env.AGENTICOS_SETTLE_MS = String(10 * 60_000);   // far above the backstop
   k2.bus.post('coder', 'orchestrator', 'wake the delivery loop');
   await until(() => errs.length > 0);
-  process.env.KINGDOM_SETTLE_MS = '400';
+  process.env.AGENTICOS_SETTLE_MS = '400';
 
   a.ok(errs.some((e) => /must exceed the settle window/.test(e.message)),
     'a settle window wider than BATCH_MAX_WAIT_MS must be reported, not silently clamped');
@@ -259,26 +259,26 @@ a.equal(verified, 1, `a declare_done must be verified exactly once, got ${verifi
 // `await this.#spawn(name)` inline. Two consequences, both fixed by starting
 // the spawn and letting a later tick deliver:
 //
-//   1. SLOW: waking a peasant validates its worktree (several git subprocesses,
+//   1. SLOW: waking an agent validates its worktree (several git subprocesses,
 //      ~100ms each on Windows) while every other member's mail waited.
 //   2. WEDGED: a spawn that THREW took the whole pass with it, so nobody after
 //      it in the loop was delivered — that tick or any tick after it, if the
 //      failure was persistent. "Degrade, never wedge."
 //
-// A member in `summoned` with no spec in the config makes #spawn throw
+// A member in `added` with no spec in the config makes #spawn throw
 // deterministically, which is the cheapest way to prove the second.
 {
   const errs = [];
   k2.on('error', (e) => errs.push(e));
 
-  // 'ghost' is summoned but does not exist, and is inserted FIRST so the
-  // delivery loop reaches it before the awake member (both rank as peasants,
+  // 'ghost' is added but does not exist, and is inserted FIRST so the
+  // delivery loop reaches it before the awake member (both rank as agents,
   // and the sort is stable, so insertion order decides).
-  k2.summoned.delete('coder');
-  k2.summoned.add('ghost');
-  k2.summoned.add('coder');
+  k2.added.delete('coder');
+  k2.added.add('ghost');
+  k2.added.add('coder');
   const live = new FakeAgent();
-  k2.agents.set('coder', live);
+  k2.processes.set('coder', live);
 
   k2.bus.post('orchestrator', 'ghost', 'you do not exist');
   k2.bus.post('orchestrator', 'coder', 'but you do, and this must still arrive');
@@ -294,7 +294,7 @@ a.equal(verified, 1, `a declare_done must be verified exactly once, got ${verifi
   a.ok(errs.some((e) => /No such team member/.test(e.message)),
     'and the failure must still be reported, not swallowed');
 
-  k2.summoned.delete('ghost');
+  k2.added.delete('ghost');
 }
 
 // --- concurrent wakes must produce ONE agent, not a spawn cascade ------
@@ -305,16 +305,16 @@ a.equal(verified, 1, `a declare_done must be verified exactly once, got ${verifi
 // before. Now delivery no longer awaits and approved crews spawn in parallel,
 // so there are more ways in — the dedupe lives in #spawn itself.
 {
-  k2.agents.delete('coder');
+  k2.processes.delete('coder');
   const [a1, a2, a3] = await Promise.all([k2.wake('coder'), k2.wake('coder'), k2.wake('coder')]);
   a.ok(a1, 'a concurrent wake must still return the agent');
   a.equal(a1, a2, 'every concurrent caller must get the SAME agent');
   a.equal(a2, a3);
-  a.equal(k2.agents.get('coder'), a1, 'and it must be the one in the roster');
+  a.equal(k2.processes.get('coder'), a1, 'and it must be the one in the roster');
   a.equal(k2.spawning.size, 0, 'the in-flight record must be cleared when the spawn settles');
 }
 
 await k2.stop();
-for (const d of [repo, kingdomDir(repo)]) { try { rmSync(d, { recursive: true, force: true }); } catch {} }
+for (const d of [repo, stateDir(repo)]) { try { rmSync(d, { recursive: true, force: true }); } catch {} }
 console.log('t-batching.js OK — messages coalesce, busy agents spared, notices ride along, '
-  + 'a failing spawn cannot starve the court');
+  + 'a failing spawn cannot starve the team');

@@ -18,14 +18,14 @@ const VERBS = {
   todo_list: 'planning',
 };
 
-// Kingdom tools are worth naming individually — "messaging" lighting up is the
-// whole point of this court.
-const KINGDOM_VERBS = {
+// AgenticOS tools are worth naming individually — "messaging" lighting up is the
+// whole point of this team.
+const AGENTICOS_VERBS = {
   send_message: 'messaging', broadcast: 'messaging', brief_orchestrator: 'briefing',
   vault_search: 'consulting', vault_read: 'consulting', vault_write: 'recording',
   read_bus: 'catching up', read_events: 'catching up', roster: 'catching up',
   read_diff: 'reviewing', request_merge: 'proposing', send_back: 'rejecting',
-  declare_done: 'finishing', assign: 'assigning', summon: 'summoning',
+  declare_done: 'finishing', assign: 'assigning', add_agent: 'adding',
   propose_role: 'proposing',
 };
 
@@ -36,7 +36,7 @@ export function verbFor(payload = {}) {
   const name = payload.name;
   if (name === 'mcp_tool_call') {
     const tool = payload.input?.tool ?? payload.input?.name;
-    return KINGDOM_VERBS[tool] ?? 'coordinating';
+    return AGENTICOS_VERBS[tool] ?? 'coordinating';
   }
   return VERBS[name] ?? (name ? 'working' : 'thinking');
 }
@@ -47,7 +47,7 @@ const STATUS_LABELS = Object.freeze({
   busy: 'working', working: 'working', verifying: 'verifying',
   limited: 'rate limited', failed: 'failed', blocked: 'blocked',
 });
-const KNOWN_ACTIVITY = new Set([...Object.values(VERBS), ...Object.values(KINGDOM_VERBS)]);
+const KNOWN_ACTIVITY = new Set([...Object.values(VERBS), ...Object.values(AGENTICOS_VERBS)]);
 
 /** Convert backend state names into short copy safe for the Home surface. */
 export function statusLabel(status) {

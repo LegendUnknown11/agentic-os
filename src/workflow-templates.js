@@ -1,6 +1,6 @@
-// Built-in automations the sovereign can switch on from the Automations view.
+// Built-in automations the user can switch on from the Automations view.
 // Each is an ordinary workflow: installing one saves a copy under a fresh id,
-// which the sovereign then edits (time, weekdays, recipient, prompt) like any
+// which the user then edits (time, weekdays, recipient, prompt) like any
 // other. Nothing here runs until it is installed.
 //
 // Two kinds, and the difference matters:
@@ -67,7 +67,7 @@ export const WORKFLOW_TEMPLATES = [
         config: {
           to: 'orchestrator',
           body: orchestratorPrompt([
-            "Brief the sovereign on today's calendar: each meeting's time, who, and one line of prep.",
+            "Brief the user on today's calendar: each meeting's time, who, and one line of prep.",
             'Use your calendar connector. If you have no calendar connector, reply only that the calendar',
             'brief needs one configured for your CLI, and stop. Never guess or invent meetings.',
           ]),
@@ -88,7 +88,7 @@ export const WORKFLOW_TEMPLATES = [
         config: {
           to: 'orchestrator',
           body: orchestratorPrompt([
-            "Triage this repository's GitHub for the sovereign: open pull requests awaiting their review or",
+            "Triage this repository's GitHub for the user: open pull requests awaiting their review or",
             'with failing checks, and issues assigned to them or opened since yesterday. One line each, most',
             'urgent first. Use gh (or a GitHub connector). If neither is available and signed in, reply only',
             'that GitHub triage needs gh signed in, and stop. Never guess.',

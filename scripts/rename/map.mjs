@@ -28,6 +28,9 @@ export const EXCLUDE = [
 export const KEEP_LINES = [
   [/^src\/roster\.js$/, /scout -> researcher and scribe -> writer/],
   [/^plans\/functionality\/f2-design\.md$/, /scout\/scribe are named researcher\/writer/],
+  // Guards that the OLD vocabulary never comes back: renaming them would ban the new words.
+  [/^test\/t-pages\.js$/, /must use the team vocabulary/],
+  [/^test\/t-theme\.js$/, /the old gold role color must not survive/],
 ];
 
 /** package-lock.json is only ever touched by these exact rules: integrity hashes and package names stay. */
@@ -46,7 +49,7 @@ export const LOCKFILE_RULES = [
 export const PHASE0_GUARD = { file: 'src/agent.js', has: /export class Agent extends/ };
 export const PHASE0 = [
   {
-    files: /^(src\/(agent|kingdom|cli-adapters)\.js|test\/t-(tokens|agy|cli-adapters|context|opencode|agent|codex-args|claude-death|cursor|agent-guard)\.js)$/,
+    files: /^(src\/(agent|kingdom|agenticos|cli-adapters)\.js|test\/t-(tokens|agy|cli-adapters|context|opencode|agent|codex-args|claude-death|cursor|agent-guard)\.js)$/,
     rules: [[/\bAgent\b(?!\s+column)/g, 'AgentProcess']],
   },
   {
@@ -63,9 +66,9 @@ export const PHASE0 = [
   },
   {
     // Code only: a match after `//` or on a JSDoc line is prose and is left for the word pass.
-    files: /^src\/kingdom\.js$/,
+    files: /^src\/(kingdom|agenticos)\.js$/,
     code: true,
-    rules: [[/(?<![.'"`\w])agent(?![\w'"`:])/g, 'proc']],
+    rules: [[/\.\.\.agent\b/g, '...proc'], [/(?<![.'"`\w/])agent(?![\w'"`:])/g, 'proc']],
   },
 ];
 
@@ -78,7 +81,10 @@ export const SCOPED = [
   [/^(\s*)summon: \{/, '$1add_agent: {', /^src\/mcp\/approvals\.js$/],
   [/'summon'(?=[,\]\)])/g, "'add_agent'", /^src\/modes\.js$/],
   [/\bsummon: 'summoning'/, "add_agent: 'adding'", /^ui\/status\.js$/],
-  // `dismiss` in the UI/notification sense is ordinary English and stays.
+  // UI copy addresses the person at the screen: "you", not "the user".
+  [/'Brief the sovereign from live state'/, "'Brief you from live state'", /^ui\/graph\.js$/],
+  [/`sovereign chose /, '`you chose ', /^ui\/main\.js$/],
+  [/\(sender === 'sovereign' \|\| sender === 'user'\)/, "(sender === 'user')", /^ui\/thread\.js$/],
 ];
 
 /** Files where `dismiss` is the ordinary UI word (close a notice), not "remove a member". */
@@ -103,6 +109,7 @@ export const PHRASES = [
   // The budget event's scope: the whole team's spend, not one member's.
   [/scope: 'kingdom'/g, "scope: 'total'"],
   [/scope === 'kingdom'/g, "scope === 'total'"],
+  [/scope, 'kingdom'\)/g, "scope, 'total')"],
   [/\bmaxKingdomUsd\b/g, 'maxTotalUsd'],
   [/#kingdomBudget\b/g, '#totalBudget'],
   [/\bkingdomCap\b/g, 'totalCap'],
@@ -127,6 +134,7 @@ export const PHRASES = [
   [/\bargument-court\b/g, 'argument-panel'],
   // summons, the noun.
   [/\bapproved your summons\b/g, 'approved your request to add agents'],
+  [/\bsummons, but it was not completed/g, 'request to add agents, but it was not completed'],
   [/\bits summons were approved\b/g, 'its add request was approved'],
   [/\bsummons are durable history\b/g, 'adds are durable history'],
   [/\ban unsummoned peasant\b/g, 'an agent that was never added'],
@@ -139,6 +147,13 @@ export const PHRASES = [
   [/\b([Aa]) kingdom(?![.\-\w`"]| MCP)/g, '$1 team'],
   [/\b([Ee]very) kingdom(?![.\-\w`"]| MCP)/g, '$1 team'],
   [/\bkingdom-wide\b/g, 'team-wide'],
+  [/\bagentic kingdom\b/g, 'agentic team'],
+  // The product's name inside a sentence in a string; the identifier stays lowercase.
+  [/\bno kingdom in this directory\b/gi, 'no AgenticOS team in this directory'],
+  [/\bStart a kingdom here\b/g, 'Start a team here'],
+  [/\bkingdom spend ceiling\b/g, 'team spend ceiling'],
+  [/\brepo-relative kingdom\b/g, 'repo-relative team'],
+  [/\bkingdom (tools?|up|state|folder|worktree|methods)\b/g, 'AgenticOS $1'],
   [/\bkingdoms\b/g, 'teams'],
   [/\bKingdom-level\b/g, 'AgenticOS-level'],
   [/\bKINGDOM\b(?!_)/g, 'TEAM'],

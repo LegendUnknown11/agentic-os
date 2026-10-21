@@ -56,13 +56,13 @@ function activeConversationOf(state) {
 
 /** Human-facing state label; resting and off are deliberately distinct. */
 export function displayStatus(member = {}) {
-  const state = member.state ?? (member.awake ? 'awake' : member.summoned ? 'resting' : 'off');
+  const state = member.state ?? (member.awake ? 'awake' : member.added ? 'resting' : 'off');
   const activity = member.status;
   const activityText = statusLabel(activity);
   if (state === 'dead' || state === 'failed' || ['failed', 'rate limited', 'blocked'].includes(activityText)) return 'failed';
   if (state === 'busy' || (activity && !['idle', 'resting', 'off'].includes(activityText))) return 'busy';
   if (state === 'awake' || member.awake) return 'awake';
-  if (state === 'resting' || member.summoned || member.serving) return 'resting';
+  if (state === 'resting' || member.added || member.serving) return 'resting';
   return 'off';
 }
 
@@ -145,9 +145,9 @@ export function mountSidebar(root, options = {}) {
   const conversationList = node('div', 'conversation-list');
   conversations.append(conversationsTitle, conversationList);
 
-  // #41: pausing the court used to have no visible surface at all beyond a
-  // chat notice addressed to the orchestrator — the sovereign had no reason
-  // to be looking at that conversation, so a court paused for its turn
+  // #41: pausing the team used to have no visible surface at all beyond a
+  // chat notice addressed to the orchestrator — the user had no reason
+  // to be looking at that conversation, so a team paused for its turn
   // budget just looked stopped, for no visible reason, with no way back in.
   const pauseBanner = node('div', 'sidebar-pause-banner');
   pauseBanner.hidden = true;
@@ -294,11 +294,11 @@ export function mountSidebar(root, options = {}) {
     const turns = turnsText(currentState.spend);
     spend.textContent = [money, turns].filter(Boolean).join(' · ');
 
-    // Pausing degrades visibly (#41): a court paused for its turn budget (or
-    // by the sovereign's own hand) shows a banner right where the spend
+    // Pausing degrades visibly (#41): a team paused for its turn budget (or
+    // by the user's own hand) shows a banner right where the spend
     // total already lives, instead of only a chat notice nobody may be
     // reading. Reuses the exact `paused` flag and `pause()`/`resume()` pair
-    // the sovereign's manual pause already relies on — this is not a
+    // the user's manual pause already relies on — this is not a
     // second pause mechanism.
     const paused = Boolean(currentState.paused);
     pauseBanner.hidden = !paused;
@@ -355,7 +355,7 @@ export function mountSidebar(root, options = {}) {
       });
     } else if (action === 'raise-turn-budget') {
       // "100 more turns from right now": the daemon adds them to this
-      // session's cap (Kingdom#raiseTurnBudget), relative to its own count.
+      // session's cap (AgenticOS#raiseTurnBudget), relative to its own count.
       raiseButton.disabled = true;
       send(post, 'raiseTurnBudget', { by: 100 }).then((result) => {
         raiseButton.disabled = false;

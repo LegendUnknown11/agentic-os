@@ -2,14 +2,14 @@
 //
 // Same sprite engine as the rail dog (pet.js); what this file adds is the two
 // things a desktop pet needs and a page cannot do on its own: knowing what the
-// court is doing without the throne room being open, and being moved and
+// team is doing without the dashboard being open, and being moved and
 // resized on the desktop.
 //
-// It talks to the court over the same HTTP origin it was served from, so no
+// It talks to the team over the same HTTP origin it was served from, so no
 // IPC is needed for state — only for the window itself.
 import { initPet, setMood, play, moodOf } from './pet.js';
 
-const bridge = window.kingdomPet;   // from electron/pet-preload.cjs
+const bridge = window.agenticosPet;   // from electron/pet-preload.cjs
 const el = initPet(document.body);
 // initPet's tooltip explains him in the rail, where it sits harmlessly beside
 // a list. Here the window IS the dog, so the tooltip lands squarely on top of
@@ -17,20 +17,20 @@ const el = initPet(document.body);
 el.removeAttribute('title');
 document.getElementById('shoo').onclick = () => bridge?.hide();
 
-/* ---------- what the court is doing ---------- */
-// name -> {awake, busy}. Rebuilt from the same events the throne room reads,
+/* ---------- what the team is doing ---------- */
+// name -> {awake, busy}. Rebuilt from the same events the dashboard reads,
 // so the dog is correct whether or not that window is open.
-const court = new Map();
-const sync = () => setMood(moodOf(court.values()));
+const team = new Map();
+const sync = () => setMood(moodOf(team.values()));
 
 function connect() {
   const es = new EventSource('/stream');
   es.onopen = () => document.body.classList.remove('offline');
   es.onerror = () => {
     document.body.classList.add('offline');
-    // EventSource reconnects on its own; until it does, an unknown court is
+    // EventSource reconnects on its own; until it does, an unknown team is
     // reported as a sleeping one rather than as a working one.
-    court.clear();
+    team.clear();
     sync();
   };
   es.onmessage = (e) => {
@@ -38,20 +38,20 @@ function connect() {
     switch (d.type) {
       case 'snapshot':
       case 'roster':
-        court.clear();
-        for (const r of d.roster ?? []) court.set(r.name, { awake: r.awake, busy: false });
+        team.clear();
+        for (const r of d.roster ?? []) team.set(r.name, { awake: r.awake, busy: false });
         break;
       case 'agent':
-        if (d.state === 'awake') court.set(d.name, { awake: true, busy: false });
-        else if (d.state === 'exited') court.set(d.name, { awake: false, busy: false });
+        if (d.state === 'awake') team.set(d.name, { awake: true, busy: false });
+        else if (d.state === 'exited') team.set(d.name, { awake: false, busy: false });
         break;
       case 'event': {
-        const m = court.get(d.name) ?? { awake: true, busy: false };
+        const m = team.get(d.name) ?? { awake: true, busy: false };
         // A turn ending is the only event that means "no longer working"; text
         // and tool events all mean the opposite.
         m.awake = true;
         m.busy = d.kind !== 'turn_end';
-        court.set(d.name, m);
+        team.set(d.name, m);
         break;
       }
       case 'merged':
@@ -68,7 +68,7 @@ connect();
 
 // Opened in an ordinary browser tab rather than the Electron pet window: he
 // has no window to move or resize, so the controls that pretend otherwise go
-// away and he just sits there reporting the court. This page gets opened that
+// away and he just sits there reporting the team. This page gets opened that
 // way by accident often enough — a preview pane, a stray tab — that failing
 // loudly would only look like a bug.
 document.body.classList.toggle('no-bridge', !bridge);

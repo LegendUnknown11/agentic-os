@@ -1,6 +1,6 @@
-// Git worktree isolation: one branch + one checkout per peasant, so two
-// peasants editing the same file cannot corrupt each other. Kingdom state
-// lives OUTSIDE the target repo (a sibling .kingdom dir) — nesting worktrees
+// Git worktree isolation: one branch + one checkout per agent, so two
+// agents editing the same file cannot corrupt each other. AgenticOS state
+// lives OUTSIDE the target repo (a sibling .agenticos dir) — nesting worktrees
 // inside the main checkout makes git status noisy and confuses file tools.
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -10,10 +10,10 @@ import { homedir } from 'node:os';
 
 /**
  * Token store shared by every repo. Per-repo stores override it.
- * KINGDOM_TOKEN_STORE relocates it (an encrypted volume, or test isolation).
+ * AGENTICOS_TOKEN_STORE relocates it (an encrypted volume, or test isolation).
  */
 export const globalTokenStore = () =>
-  process.env.KINGDOM_TOKEN_STORE ?? join(homedir(), '.kingdom', 'tokens.json');
+  process.env.AGENTICOS_TOKEN_STORE ?? join(homedir(), '.agenticos', 'tokens.json');
 
 const exec = promisify(execFile);
 
@@ -21,15 +21,15 @@ const git = (cwd, ...args) => exec('git', args, { cwd, maxBuffer: 64 * 1024 * 10
 
 // Measured locally on 2026-08-21: five bare-repo pushes took 254.5–312.6ms
 // (285.5ms mean). This is a failure bound, not a latency target: it exists so
-// an auth prompt or unreachable remote ends as a blocked approval instead of a wedged court.
+// an auth prompt or unreachable remote ends as a blocked approval instead of a wedged team.
 const pushTimeout = () => {
-  const ms = Number(process.env.KINGDOM_PUSH_TIMEOUT_MS ?? 30_000);
+  const ms = Number(process.env.AGENTICOS_PUSH_TIMEOUT_MS ?? 30_000);
   return Number.isFinite(ms) && ms > 0 ? ms : 30_000;
 };
 
 /**
  * Push only the checked-out base branch through Git's already-configured
- * upstream. It accepts no remote, refspec or force option from the court.
+ * upstream. It accepts no remote, refspec or force option from the team.
  */
 export async function pushBase(repo, base) {
   if (!repo || !base) throw new Error('This workspace has no base repository to push.');
@@ -66,23 +66,23 @@ export async function pushBase(repo, base) {
 }
 
 /**
- * Where this repo's kingdom lives: <repoParent>/.kingdom/<repoName>/
+ * Where this repo's AgenticOS lives: <repoParent>/.agenticos/<repoName>/
  *
  * No repo yet (Chat/Research/Build can run before Code mode ever attaches
  * one) falls back to a single fixed workspace home, same shape as
  * globalTokenStore's homedir fallback above. Goal, roster, vault and research
  * notes are workspace-level, not repo-level, so this state stays put even
- * after a repo is later attached — see Kingdom#attachRepo.
+ * after a repo is later attached — see AgenticOS#attachRepo.
  */
-export function kingdomDir(repo) {
-  if (!repo) return join(homedir(), '.kingdom', 'workspace');
+export function stateDir(repo) {
+  if (!repo) return join(homedir(), '.agenticos', 'workspace');
   const r = resolve(repo);
-  return join(dirname(r), '.kingdom', basename(r));
+  return join(dirname(r), '.agenticos', basename(r));
 }
 
-export const dbPath = (repo) => join(kingdomDir(repo), 'kingdom.db');
-export const worktreePath = (repo, peasant) => join(kingdomDir(repo), 'wt', peasant);
-const branchOf = (peasant) => `kingdom/${peasant}`;
+export const dbPath = (repo) => join(stateDir(repo), 'agenticos.db');
+export const worktreePath = (repo, agent) => join(stateDir(repo), 'wt', agent);
+const branchOf = (agent) => `agenticos/${agent}`;
 
 const safeRunId = (runId) => {
   const value = String(runId ?? '').trim();
@@ -92,9 +92,9 @@ const safeRunId = (runId) => {
   return value;
 };
 
-/** A run branch lives beside peasant worktrees, so integration never touches the sovereign's checkout. */
-export const runBranch = (runId) => `kingdom/run/${safeRunId(runId)}`;
-export const runWorktreePath = (repo, runId) => join(kingdomDir(repo), 'runs', safeRunId(runId));
+/** A run branch lives beside agent worktrees, so integration never touches the user's checkout. */
+export const runBranch = (runId) => `agenticos/run/${safeRunId(runId)}`;
+export const runWorktreePath = (repo, runId) => join(stateDir(repo), 'runs', safeRunId(runId));
 
 /** The commit actually checked by a test run. Keeping this separate from a branch name makes evidence portable. */
 export async function revisionOf(dir, ref = 'HEAD') {
@@ -105,7 +105,7 @@ export async function assertRepo(repo) {
   if (!existsSync(join(repo, '.git'))) throw new Error(`${repo} is not a git repository.`);
   try {
     const { stdout } = await git(repo, 'rev-parse', '--abbrev-ref', 'HEAD');
-    return stdout.trim(); // the base branch the kingdom works against
+    return stdout.trim(); // the base branch the team works against
   } catch (e) {
     if (/ambiguous argument ['"]?HEAD|unknown revision ['"]?HEAD/i.test(e.stderr ?? '')) {
       throw new Error(`${repo} has no commit yet. Create an initial commit before starting Agentic OS.`);
@@ -117,16 +117,16 @@ export async function assertRepo(repo) {
 /**
  * Same contract as assertRepo, but MAKES the repository instead of refusing.
  *
- * The court's whole review loop is git — worktree per peasant, diff against
+ * The team's whole review loop is git — worktree per agent, diff against
  * base, merge on approval — so "work without a repo" would mean a second,
- * weaker court. Creating the repo gets the same result with one mechanism: you
- * point the kingdom at any folder and it becomes reviewable.
+ * weaker team. Creating the repo gets the same result with one mechanism: you
+ * point the team at any folder and it becomes reviewable.
  *
  * Two things it will NOT do. It never initialises inside an existing
  * repository, because a nested repo silently shadows the outer one and the
- * sovereign's real history stops being visible to anything. And it commits the
+ * user's real history stops being visible to anything. And it commits the
  * folder's CURRENT contents as the base rather than an empty tree, or every
- * peasant's first diff would contain the entire existing project.
+ * agent's first diff would contain the entire existing project.
  */
 // resolve() normalises separators and `..`, but NOT Windows 8.3 short names:
 // os.tmpdir() returns C:\Users\RUNNER~1\... on any account whose name is over
@@ -153,13 +153,13 @@ export async function ensureRepo(repo, { onInit } = {}) {
   if (top && canonicalPath(top) !== canonicalPath(repo)) {
     throw new Error(
       `${repo} is inside the git repository at ${top}. Refusing to create a `
-      + `nested repository — point the kingdom at ${top} instead, or move this `
+      + `nested repository — point the team at ${top} instead, or move this `
       + `folder outside it.`);
   }
 
   if (!top) {
     // -b main: git's default branch name is a global setting that may be
-    // anything, and the base branch is written into every peasant's branch.
+    // anything, and the base branch is written into every agent's branch.
     await git(repo, 'init', '-b', 'main');
     onInit?.('created a git repository');
   }
@@ -173,17 +173,17 @@ export async function ensureRepo(repo, { onInit } = {}) {
   // No commit yet. A worktree cannot be cut from nothing, so make the base.
   await git(repo, 'add', '-A').catch(() => {});
   try {
-    await git(repo, 'commit', '-m', 'kingdom: base commit');
+    await git(repo, 'commit', '-m', 'agenticos: base commit');
   } catch (e) {
     // Two ordinary reasons this fails, and both are ours to fix rather than
     // report: an empty folder has nothing to commit, and a machine with no
     // global git identity cannot author one.
     if (/Please tell me who you are|user\.(name|email)/i.test((e.stderr ?? '') + (e.stdout ?? ''))) {
-      await git(repo, 'config', 'user.email', 'kingdom@localhost');
-      await git(repo, 'config', 'user.name', 'Kingdom');
+      await git(repo, 'config', 'user.email', 'agenticos@localhost');
+      await git(repo, 'config', 'user.name', 'AgenticOS');
     }
-    await git(repo, 'commit', '--allow-empty', '-m', 'kingdom: base commit')
-      .catch(async () => { await git(repo, 'commit', '-m', 'kingdom: base commit'); });
+    await git(repo, 'commit', '--allow-empty', '-m', 'agenticos: base commit')
+      .catch(async () => { await git(repo, 'commit', '-m', 'agenticos: base commit'); });
   }
   onInit?.('wrote the base commit');
   return (await git(repo, 'rev-parse', '--abbrev-ref', 'HEAD')).stdout.trim();
@@ -215,17 +215,17 @@ async function reuseWorktree(repo, path, branch, base) {
 }
 
 /**
- * Idempotent: reuses the worktree if this peasant already has one.
+ * Idempotent: reuses the worktree if this agent already has one.
  *
  * "Has one" means a LIVE worktree, not merely a directory. A leftover folder —
  * a `git worktree remove` that failed, a copy, an interrupted run — passes
- * existsSync and is silently handed to the peasant, whose work can then never
+ * existsSync and is silently handed to the agent, whose work can then never
  * be committed, diffed or merged. Found exactly that in the wild
  * (`wt/tester`), so a directory that git does not recognise is rebuilt.
  */
-export async function createWorktree(repo, peasant, base) {
-  const path = worktreePath(repo, peasant);
-  const branch = branchOf(peasant);
+export async function createWorktree(repo, agent, base) {
+  const path = worktreePath(repo, agent);
+  const branch = branchOf(agent);
   if (await reuseWorktree(repo, path, branch, base)) return path;
 
   const { stdout } = await git(repo, 'branch', '--list', branch);
@@ -235,13 +235,13 @@ export async function createWorktree(repo, peasant, base) {
       // A worktree re-cut from a branch lands on that branch's TIP, which is
       // wherever the member last left it — and after a merge that is the past.
       // mergeWork removes the worktree, and `git worktree remove` deletes the
-      // directory, so the next summon finds nothing on disk and never takes the
+      // directory, so the next add finds nothing on disk and never takes the
       // reuse path above. catchUp lived only on that path, so the one member
       // most likely to need current code — one being brought back for a second
       // task — was the one member guaranteed not to get it.
       //
       // Watched live: "coder" wrote lib/format.js, it merged, and coder was
-      // re-summoned to integrate all four modules into a CLI. Its worktree came
+      // re-added to integrate all four modules into a CLI. Its worktree came
       // back seven commits behind master holding only its own format.js. It
       // wrote a CLI importing ./lib/parse, which was not there, burned a full
       // turn, and the whole thing was rejected.
@@ -289,9 +289,9 @@ export async function createRunWorktree(repo, runId, base) {
  * reported on it while `main` had moved to `5f00564` — a whole review of the
  * wrong code, with nothing anywhere saying so.
  */
-export async function behindBase(repo, peasant, base) {
+export async function behindBase(repo, agent, base) {
   try {
-    const { stdout } = await git(repo, 'rev-list', '--count', `${branchOf(peasant)}..${base}`);
+    const { stdout } = await git(repo, 'rev-list', '--count', `${branchOf(agent)}..${base}`);
     return Number(stdout.trim()) || 0;
   } catch {
     return 0; // no branch yet: it will be cut from base anyway
@@ -302,7 +302,7 @@ export async function behindBase(repo, peasant, base) {
  * Bring a reused worktree up to base, but ONLY when there is nothing to lose:
  * a clean tree with no commits of its own. A branch holding unmerged work is
  * left exactly as it is — the caller warns instead. Silently rewriting a
- * peasant's branch to catch it up would destroy work nobody asked to discard.
+ * agent's branch to catch it up would destroy work nobody asked to discard.
  */
 async function catchUp(repo, path, branch, base) {
   const [{ stdout: dirty }, { stdout: ahead }] = await Promise.all([
@@ -336,20 +336,20 @@ export async function retryTransient(fn, { attempts = 5, delayMs = 150 } = {}) {
   }
 }
 
-export async function removeWorktree(repo, peasant) {
-  const path = worktreePath(repo, peasant);
+export async function removeWorktree(repo, agent) {
+  const path = worktreePath(repo, agent);
   if (!existsSync(path)) return;
   await retryTransient(() => git(repo, 'worktree', 'remove', '--force', path));
 }
 
 /**
- * Commit whatever the peasant left lying in its worktree. Peasants edit files
+ * Commit whatever the agent left lying in its worktree. Agents edit files
  * but routinely forget to commit, and `diff base...branch` only sees commits —
  * so without this the orchestrator reviews an empty diff and the merge is a no-op.
  * Idempotent: a clean tree is not an error.
  */
-export async function commitAll(repo, peasant, message) {
-  const path = worktreePath(repo, peasant);
+export async function commitAll(repo, agent, message) {
+  const path = worktreePath(repo, agent);
   await git(path, 'add', '-A');
   try {
     await git(path, 'commit', '-m', message);
@@ -359,25 +359,25 @@ export async function commitAll(repo, peasant, message) {
   }
 }
 
-/** Unified diff of a peasant's branch against the base. */
-export async function diffOf(repo, peasant, base, file = null) {
-  const args = ['diff', `${base}...${branchOf(peasant)}`];
+/** Unified diff of an agent's branch against the base. */
+export async function diffOf(repo, agent, base, file = null) {
+  const args = ['diff', `${base}...${branchOf(agent)}`];
   if (file) args.push('--', file);
   const { stdout } = await git(repo, ...args);
   return stdout;
 }
 
-export async function statOf(repo, peasant, base) {
-  const { stdout } = await git(repo, 'diff', '--stat', `${base}...${branchOf(peasant)}`);
+export async function statOf(repo, agent, base) {
+  const { stdout } = await git(repo, 'diff', '--stat', `${base}...${branchOf(agent)}`);
   return stdout;
 }
 
 /**
- * Would merging this peasant conflict? Answered WITHOUT touching the working
+ * Would merging this agent conflict? Answered WITHOUT touching the working
  * tree — `merge-tree --write-tree` computes the merge in memory (git 2.38+).
  * Returns the conflicted paths, empty when clean.
  */
-export const conflictsWith = (repo, peasant, base) => conflictsBetween(repo, base, branchOf(peasant));
+export const conflictsWith = (repo, agent, base) => conflictsBetween(repo, base, branchOf(agent));
 
 /** The same in-memory check for two arbitrary refs. */
 export async function conflictsBetween(repo, left, right) {
@@ -396,18 +396,18 @@ export async function conflictsBetween(repo, left, right) {
 }
 
 /**
- * Integrate one accepted peasant branch into a run branch. The target is a
+ * Integrate one accepted agent branch into a run branch. The target is a
  * dedicated worktree, so a run can recover and review without changing the
  * original checkout. Duplicate integrations are harmless at the Git level
  * because the source is already an ancestor of the target.
  */
-export async function mergeIntoRun(repo, peasant, runId, { expectedRevision = null } = {}) {
+export async function mergeIntoRun(repo, agent, runId, { expectedRevision = null } = {}) {
   const path = runWorktreePath(repo, runId);
-  const source = branchOf(peasant);
+  const source = branchOf(agent);
   const actual = await revisionOf(repo, source);
   if (expectedRevision && actual !== expectedRevision) {
     throw new Error(
-      `Refusing stale integration for "${peasant}": expected ${expectedRevision}, found ${actual}.`);
+      `Refusing stale integration for "${agent}": expected ${expectedRevision}, found ${actual}.`);
   }
   const { stdout: dirty } = await git(path, 'status', '--porcelain');
   if (dirty.trim()) throw new Error(`Refusing integration: run ${runId} has uncommitted changes.`);
@@ -415,12 +415,12 @@ export async function mergeIntoRun(repo, peasant, runId, { expectedRevision = nu
   const conflicts = await conflictsBetween(repo, target, source);
   if (conflicts.length) {
     throw new Error(
-      `"${peasant}" conflicts with run ${runId} in:\n  ${conflicts.join('\n  ')}\n`
+      `"${agent}" conflicts with run ${runId} in:\n  ${conflicts.join('\n  ')}\n`
       + 'Nothing was changed. Resolve the conflict on the run branch before retrying.');
   }
   try {
     const { stdout } = await git(path, 'merge', '--no-ff', source, '-m',
-      `kingdom: integrate ${peasant} into run ${runId}`);
+      `agenticos: integrate ${agent} into run ${runId}`);
     return { output: stdout, branch: target, revision: await revisionOf(path) };
   } catch (e) {
     await git(path, 'merge', '--abort').catch(() => {});
@@ -429,15 +429,15 @@ export async function mergeIntoRun(repo, peasant, runId, { expectedRevision = nu
 }
 
 /**
- * Merge a peasant onto the base branch, or change nothing at all.
+ * Merge an agent onto the base branch, or change nothing at all.
  *
  * An earlier version ran `checkout base && merge`, which on a conflict left the
  * user's REAL branch sitting in a half-merged state with conflict markers.
- * Parallel peasants touching one file is the normal case here, so that had to
+ * Parallel agents touching one file is the normal case here, so that had to
  * become impossible: conflicts are detected in memory first, a dirty tree is
  * refused outright, and any surprise mid-merge is rolled back.
  */
-export async function mergeWorktree(repo, peasant, base) {
+export async function mergeWorktree(repo, agent, base) {
   const { stdout: dirty } = await git(repo, 'status', '--porcelain');
   if (dirty.trim()) {
     throw new Error(
@@ -445,15 +445,15 @@ export async function mergeWorktree(repo, peasant, base) {
     );
   }
 
-  const conflicts = await conflictsWith(repo, peasant, base);
+  const conflicts = await conflictsWith(repo, agent, base);
   if (conflicts.length) {
     throw new Error(
-      `"${peasant}" conflicts with ${base} in:\n  ${conflicts.join('\n  ')}\n` +
-      `Nothing was changed. Send it back to ${peasant} to rebase on ${base}.`
+      `"${agent}" conflicts with ${base} in:\n  ${conflicts.join('\n  ')}\n` +
+      `Nothing was changed. Send it back to ${agent} to rebase on ${base}.`
     );
   }
 
-  return mergeOntoBase(repo, base, branchOf(peasant), `kingdom: merge work of ${peasant}`, 'Merge');
+  return mergeOntoBase(repo, base, branchOf(agent), `agenticos: merge work of ${agent}`, 'Merge');
 }
 
 /**
@@ -484,7 +484,7 @@ export async function mergeRunBranch(repo, runId, base) {
   // Merge into base explicitly, the same way mergeWorktree does — the only
   // safety check above this compares commit hashes, which stays unchanged if
   // something merely checks out a different branch at the same commit.
-  const output = await mergeOntoBase(repo, base, branch, `kingdom: apply reviewed run ${runId}`, `Applying run ${runId}`);
+  const output = await mergeOntoBase(repo, base, branch, `agenticos: apply reviewed run ${runId}`, `Applying run ${runId}`);
   return { output, revision: await revisionOf(repo) };
 }
 
@@ -522,8 +522,8 @@ export function testCommand(dir) {
   // used to fall all the way through to null.
   //
   // This is the Flutter bug directly below, in the ecosystem this application
-  // is itself written in. Watched live: a peasant wrote lib/select.js and
-  // test/select.test.js, called declare_done, and the crown reported
+  // is itself written in. Watched live: an agent wrote lib/select.js and
+  // test/select.test.js, called declare_done, and the system reported
   // `{ran: false, ok: false, output: 'No test/build command found in this
   // project.'}` — for a repository whose only content was tests and the code
   // they cover. The orchestrator is told to treat that as UNVERIFIED and
@@ -536,8 +536,8 @@ export function testCommand(dir) {
   if (nodeTests(dir)) return ['node', ['--test']];
 
   // Flutter before Dart: a Flutter project has a pubspec too, and `dart test`
-  // cannot load the Flutter test bindings. Without this every peasant in a
-  // Flutter repo is reported to the orchestrator as "TESTS: NONE FOUND" — the court
+  // cannot load the Flutter test bindings. Without this every agent in a
+  // Flutter repo is reported to the orchestrator as "TESTS: NONE FOUND" — the team
   // reviews and merges work that was never verified, in a repo that has a
   // full test suite sitting right there.
   if (existsSync(join(dir, 'pubspec.yaml'))) {

@@ -18,9 +18,9 @@ const tool = (roles) => ({
   run: async () => { runs++; return 'ok'; },
 });
 const comms = {
-  send_message: tool(['peasant']),
-  request_merge: tool(['peasant']),
-  summon: tool(['orchestrator']),
+  send_message: tool(['agent']),
+  request_merge: tool(['agent']),
+  add: tool(['orchestrator']),
 };
 const context = {
   Server: class {
@@ -30,9 +30,9 @@ const context = {
   StdioServerTransport: class {},
   CallToolRequestSchema: 'call', ListToolsRequestSchema: 'list',
   modeOf, toolAllowed, modeNow: () => { modeReads++; return mode; },
-  bus: {}, ME: 'coder', ROLE: 'peasant', comms,
+  bus: {}, ME: 'coder', ROLE: 'agent', comms,
   memory: {}, repo: {}, tasks: {}, approvals: {}, control: {}, workflows: {},
-  process: { env: { KINGDOM_MASK: '0' } },
+  process: { env: { AGENTICOS_MASK: '0' } },
 };
 await runInNewContext(`(async () => { ${source}\n })()`, context);
 const list = handlers.get('list');
@@ -55,14 +55,14 @@ a.equal(denied.isError, true);
 a.match(denied.content[0].text, /Cowork/);
 a.equal(modeReads, 1, 'denial uses one coherent mode snapshot');
 a.equal(runs, 0, 'a previously listed tool cannot bypass a new mode');
-a.equal((await call('summon')).isError, true, 'role gates still apply');
+a.equal((await call('add')).isError, true, 'role gates still apply');
 a.equal((await call('send_message')).content[0].text, 'ok');
 a.equal(runs, 1);
 context.bus = null;
 modeReads = schemaReads = 0;
 await runInNewContext(`(async () => { ${source}\n })()`, context);
 a.deepEqual(names(await handlers.get('list')()), []);
-a.equal(schemaReads, 0, 'a server outside a court does not build tool schemas');
+a.equal(schemaReads, 0, 'a server outside a team does not build tool schemas');
 a.equal(modeReads, 0);
 a.equal((await call('send_message')).isError, true);
 console.log('MCP lists read mode once, reuse schemas, and retain live role/mode gates');

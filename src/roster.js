@@ -1,22 +1,22 @@
 import { createHash } from 'node:crypto';
 
-// The shape of the standing court, as data the code and the tests can check.
+// The shape of the standing team, as data the code and the tests can check.
 //
 // docs/PLAN-team.md replaced a 107-role directory of professions with a small
-// court organised on the stage of work. Measured on 2026-10-21 against the
-// template this replaced: 107 peasants, every one codex / gpt-5.6-luna /
+// team organised on the stage of work. Measured on 2026-10-21 against the
+// template this replaced: 107 agents, every one codex / gpt-5.6-luna /
 // effort max, 97,548 characters of prompts that mostly restated their own
 // descriptions, and an orchestrator code-mode prompt of 10,920 bytes against
 // an 11,000-byte ceiling (test/t-efficiency.js).
 //
-// roles.json and agenticos.config.json's `peasants` carry the roles themselves;
+// roles.json and agenticos.config.json's `agents` carry the roles themselves;
 // this file only names which of them are standing, which tier each belongs to,
 // and why the extra three exist. test/t-roles.js holds both files to it.
 //
-// It also owns the one-time upgrade of a court seeded with the old roster:
+// It also owns the one-time upgrade of a team seeded with the old roster:
 // planRosterMigration below, pure, proven by test/t-roster-migrate.js.
 
-/** Bumped when the shipped roster changes shape. A court's config records the version it is on. */
+/** Bumped when the shipped roster changes shape. A team's config records the version it is on. */
 export const ROSTER_VERSION = 2;
 
 /**
@@ -44,7 +44,7 @@ export const STANDING = [
 /**
  * Roles kept beyond the fifteen because a mode names them. src/modes.js crews
  * Cowork with these three and its pipeline text tells the orchestrator to
- * summon them ("run contestable claims past the fact-checker", "summon a
+ * add them ("run contestable claims past the fact-checker", "add a
  * defendant and a critic"). The plan predates that pipeline; dropping them
  * would leave Cowork's own instructions pointing at nobody.
  */
@@ -153,19 +153,19 @@ export const COVERED_BY = {
 };
 
 /**
- * On the v2 bench but absent from the v1 template, so a v1 court never had the
- * chance to delete it: the migration adds these to a court that held one of the
- * roles they replace. Any other bench role a court lacks was deleted by its
- * sovereign and stays deleted, the same promise #seedRoles makes.
+ * On the v2 bench but absent from the v1 template, so a v1 team never had the
+ * chance to delete it: the migration adds these to a team that held one of the
+ * roles they replace. Any other bench role a team lacks was deleted by its
+ * user and stays deleted, the same promise #seedRoles makes.
  */
 export const NEW_IN_V2 = ['devops-engineer'];
 
 /**
  * sha256-16 of `title\ndescription\nprompt` for every role as SHIPPED before
  * v2: the 107-role template and the 17-role roles.json, both as of
- * origin/functionality e730bb6. A court entry whose text still matches was
- * never edited, so replacing or retiring it loses nothing the sovereign wrote.
- * An entry that does not match is the sovereign's, and its text is left alone.
+ * origin/functionality e730bb6. A team entry whose text still matches was
+ * never edited, so replacing or retiring it loses nothing the user wrote.
+ * An entry that does not match is the user's, and its text is left alone.
  */
 const LEGACY_FINGERPRINTS = {
   'accessibility-engineer': ['db3ffab7a101527a'],
@@ -290,26 +290,26 @@ const triple = (r) => `${r.cli ?? ''}/${r.model ?? ''}/${r.effort ?? ''}`;
 /** Text exactly as some version shipped it. */
 const textUntouched = (p) => (LEGACY_FINGERPRINTS[p.name] ?? []).includes(fingerprint(p));
 
-/** Model as shipped, or as peasantDefaults stamped it at seed time, and not handed to Auto. */
+/** Model as shipped, or as agentDefaults stamped it at seed time, and not handed to Auto. */
 const modelUntouched = (p, defaults) => p.auto !== true
   && (triple(p) === LEGACY_MODEL || triple(p) === triple(defaults));
 
 /**
- * Upgrade a court's roster from v1 to v2 without losing anything.
+ * Upgrade a team's roster from v1 to v2 without losing anything.
  *
  * Pure: the caller supplies `busy(name)`, true while a member has work in
  * flight. Returns null when there is nothing to do, otherwise the new
- * `{ peasants, retiredPeasants, rosterRetiring, rosterVersion, report }`.
+ * `{ agents, retiredAgents, rosterRetiring, rosterVersion, report }`.
  *
  * The rules, each the conservative reading of "upgrade safely":
- *  - a v2 role the court has: its text and its model are replaced only where
+ *  - a v2 role the team has: its text and its model are replaced only where
  *    they are still exactly as shipped. An edited prompt or a chosen model stays.
- *  - a retired v1 role, untouched: archived into `retiredPeasants` with the
+ *  - a retired v1 role, untouched: archived into `retiredAgents` with the
  *    role that now covers it, not deleted. If it is busy it stays on the roster
  *    and is listed in `rosterRetiring`, and a later launch retires it once idle.
- *  - a retired v1 role the sovereign edited, and any role the court invented:
- *    kept as is. Only the sovereign deletes those.
- *  - a NEW_IN_V2 role the court lacks: added, if the court held a v1 role it replaces.
+ *  - a retired v1 role the user edited, and any role the team invented:
+ *    kept as is. Only the user deletes those.
+ *  - a NEW_IN_V2 role the team lacks: added, if the team held a v1 role it replaces.
  * Messages, tasks, events and memory live on the bus and in the vault. This
  * rewrites config only, so it cannot lose any of them.
  */
@@ -318,21 +318,21 @@ export function planRosterMigration(config, { library, busy = () => false }) {
   const pending = Array.isArray(config.rosterRetiring) ? config.rosterRetiring : [];
   if (version >= ROSTER_VERSION && !pending.length) return null;
   const firstPass = version < ROSTER_VERSION;
-  const defaults = config.peasantDefaults ?? {};
+  const defaults = config.agentDefaults ?? {};
   const shipped = new Map(library.map((r) => [r.name, r]));
   const retiring = new Set(firstPass ? [] : pending);
   const report = { upgraded: [], retired: [], keptBusy: [], keptEdited: [], added: [] };
-  const peasants = [];
+  const agents = [];
   const archive = [];
 
-  for (const p of config.peasants ?? []) {
+  for (const p of config.agents ?? []) {
     const lib = shipped.get(p.name);
     if (firstPass && lib) {
       const next = { ...p, tier: lib.tier };
       if (textUntouched(p)) Object.assign(next, { title: lib.title, description: lib.description, prompt: lib.prompt });
       if (modelUntouched(p, defaults)) Object.assign(next, { cli: lib.cli, model: lib.model, effort: lib.effort });
       if (JSON.stringify(next) !== JSON.stringify(p)) report.upgraded.push(p.name);
-      peasants.push(next);
+      agents.push(next);
       continue;
     }
     const legacy = Object.hasOwn(COVERED_BY, p.name);
@@ -341,36 +341,36 @@ export function planRosterMigration(config, { library, busy = () => false }) {
       : retiring.has(p.name);
     if (!candidate) {
       if (firstPass && legacy) report.keptEdited.push(p.name);
-      peasants.push(p);
+      agents.push(p);
       continue;
     }
     if (busy(p.name)) {
       retiring.add(p.name);
       report.keptBusy.push(p.name);
-      peasants.push(p);
+      agents.push(p);
       continue;
     }
     retiring.delete(p.name);
     archive.push({ ...p, retiredFor: COVERED_BY[p.name] ?? null });
     report.retired.push(p.name);
   }
-  // A pending name the sovereign has since removed by hand is no longer pending.
-  for (const n of [...retiring]) if (!peasants.some((p) => p.name === n)) retiring.delete(n);
+  // A pending name the user has since removed by hand is no longer pending.
+  for (const n of [...retiring]) if (!agents.some((p) => p.name === n)) retiring.delete(n);
   if (firstPass) {
-    // Only where a role it replaces was on the court (operator, build-engineer
-    // and the rest that COVERED_BY sends to it): that is a court seeded from the
-    // v1 template. A hand-built court without them chose its own bench.
-    const had = new Set((config.peasants ?? []).map((p) => COVERED_BY[p.name]));
+    // Only where a role it replaces was on the team (operator, build-engineer
+    // and the rest that COVERED_BY sends to it): that is a team seeded from the
+    // v1 template. A hand-built team without them chose its own bench.
+    const had = new Set((config.agents ?? []).map((p) => COVERED_BY[p.name]));
     for (const n of NEW_IN_V2) {
-      if (shipped.has(n) && had.has(n) && !peasants.some((p) => p.name === n)) {
-        peasants.push({ ...defaults, ...shipped.get(n) });
+      if (shipped.has(n) && had.has(n) && !agents.some((p) => p.name === n)) {
+        agents.push({ ...defaults, ...shipped.get(n) });
         report.added.push(n);
       }
     }
   }
   return {
-    peasants,
-    retiredPeasants: [...(Array.isArray(config.retiredPeasants) ? config.retiredPeasants : []), ...archive],
+    agents,
+    retiredAgents: [...(Array.isArray(config.retiredAgents) ? config.retiredAgents : []), ...archive],
     rosterRetiring: [...retiring],
     rosterVersion: ROSTER_VERSION,
     report,

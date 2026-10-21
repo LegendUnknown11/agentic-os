@@ -6,15 +6,15 @@ import {
 
 export const control = {
   goal: {
-    roles: ['orchestrator', 'briefer', 'peasant'],
+    roles: ['orchestrator', 'briefer', 'agent'],
     description:
-      'The court\'s standing goal and its milestones. Read it when you are '
+      'The team\'s standing goal and its milestones. Read it when you are '
       + 'unsure whether a piece of work is worth doing.',
     schema: { type: 'object', properties: {} },
     run: () => {
       const { goal: g, unreadable } = goalNow();
-      if (unreadable) return 'The standing goal is unreadable. Ask the sovereign to set it again.';
-      if (!g) return 'No standing goal. The court works on whatever the sovereign last asked.';
+      if (unreadable) return 'The standing goal is unreadable. Ask the user to set it again.';
+      if (!g) return 'No standing goal. The team works on whatever the user last asked.';
       return `GOAL: ${g.text}\n`
         + (g.milestones ?? []).map((m, i) => `  ${i}. [${m.done ? 'x' : ' '}] ${m.text}`).join('\n');
     },
@@ -22,7 +22,7 @@ export const control = {
 
   milestone_done: {
     // The orchestrator judges completion — it is the one that reviews the work. A
-    // peasant marking its own milestone done is the same failure as a peasant
+    // agent marking its own milestone done is the same failure as an agent
     // declaring its own tests passed.
     roles: ['orchestrator'],
     description:
@@ -51,11 +51,11 @@ export const control = {
   argue: {
     // The orchestrator only. This is three to five one-shot model calls across two
     // vendors, and it is the orchestrator that owns contested decisions — the same
-    // reason summon and propose_role are its alone. A peasant that wants a
+    // reason add_agent and propose_role are its alone. An agent that wants a
     // question settled asks the orchestrator for one.
     roles: ['orchestrator'],
     description:
-      'Put a genuinely contested question to the argument court: two different '
+      'Put a genuinely contested question to the argument panel: two different '
       + 'models argue it and a third judges. Returns immediately — the verdict '
       + 'arrives later as a message. Use it where asking two members would just '
       + 'produce one opinion twice; not for anything you can settle yourself.',
@@ -75,49 +75,49 @@ export const control = {
         return `Nothing was argued: the question is ${q.length} chars, and the limit is 4000. State it shorter.`;
       }
       bus.post(ME, null, JSON.stringify({ question: q }), 'argue');
-      return 'Sent to the argument court. The verdict arrives later as a message — '
+      return 'Sent to the argument panel. The verdict arrives later as a message — '
         + 'do not wait on it, carry on with something else.';
     },
   },
 
   set_mode: {
-    // The orchestrator only. A mode decides who may be summoned, what tools exist and
-    // where notes land — it is the shape of the whole court, not one member.
+    // The orchestrator only. A mode decides who may be added, what tools exist and
+    // where notes land — it is the shape of the whole team, not one member.
     roles: ['orchestrator'],
     description:
-      'Change what shape the court is in. Do this when the work in front of you '
+      'Change what shape the team is in. Do this when the work in front of you '
       + 'is plainly a different KIND of work than the mode allows — a coding job '
       + 'asked for in Chat, a question that wants a research note. Says so to '
       + 'everyone. Code needs a repository attached and comes back refused if '
-      + 'there is none, so do not promise the sovereign a switch you have not made yet.',
+      + 'there is none, so do not promise the user a switch you have not made yet.',
     schema: {
       type: 'object',
       properties: {
         mode: str(`One of: ${MODE_NAMES.join(', ')}`),
-        why: str('One line the rest of the court will read. Optional.'),
+        why: str('One line the rest of the team will read. Optional.'),
       },
       required: ['mode'],
     },
     run: ({ mode, why }) => {
       // Checked against the real list, NOT through modeName(): that falls back
       // to DEFAULT_MODE for anything it does not recognise, so a typo would
-      // quietly put the whole court into Code mode.
+      // quietly put the whole team into Code mode.
       if (!MODE_NAMES.includes(mode)) {
-        return `No such mode: "${mode}". The court has: ${MODE_NAMES.join(', ')}. Nothing changed.`;
+        return `No such mode: "${mode}". The team has: ${MODE_NAMES.join(', ')}. Nothing changed.`;
       }
-      if (mode === modeNow()) return `The court is already in ${modeOf(mode).label} mode.`;
+      if (mode === modeNow()) return `The team is already in ${modeOf(mode).label} mode.`;
       bus.post(ME, null, JSON.stringify({ op: 'mode', mode, why: why ?? '' }), 'control');
       return 'Asked for the switch. It lands within a second and everyone is told; '
         + 'if it is refused you get a message saying why, so carry on rather than waiting on it.';
     },
   },
 
-  wake_member: {
+  wake_agent: {
     roles: ['orchestrator'],
     description:
       'Wake a member that is on the roster but asleep, so it can pick work up '
-      + 'again. This is not summoning: it adds nobody, it only restarts someone '
-      + 'the sovereign already approved.',
+      + 'again. This is not adding: it adds nobody, it only restarts someone '
+      + 'the user already approved.',
     schema: {
       type: 'object',
       properties: { name: str('A name already on the roster') },
@@ -126,20 +126,20 @@ export const control = {
     run: ({ name }) => {
       const known = rosterNow().map((x) => x.name);
       if (!known.includes(name)) {
-        return `Nobody on the roster is called "${name}". The court has: ${known.join(', ')}.`;
+        return `Nobody on the roster is called "${name}". The team has: ${known.join(', ')}.`;
       }
       bus.post(ME, null, JSON.stringify({ op: 'wake', name }), 'control');
       return `Waking ${name}. You get a message when it is up.`;
     },
   },
 
-  dismiss_member: {
+  remove_agent: {
     roles: ['orchestrator'],
     description:
       'Stand a member down when its work is genuinely finished. This is the '
       + 'one cost lever you hold: an idle member still costs a full context '
-      + 'replay every time it wakes. It leaves the roster and must be summoned '
-      + 'again — with the sovereign approving — to come back, so do not use it '
+      + 'replay every time it wakes. It leaves the roster and must be added '
+      + 'again — with the user approving — to come back, so do not use it '
       + 'to park somebody for a minute.',
     schema: {
       type: 'object',
@@ -150,10 +150,10 @@ export const control = {
       required: ['name'],
     },
     run: ({ name }) => {
-      if (name === ME) return 'You cannot stand yourself down. Ask the sovereign.';
+      if (name === ME) return 'You cannot stand yourself down. Ask the user.';
       const known = rosterNow().map((x) => x.name);
       if (!known.includes(name)) {
-        return `Nobody on the roster is called "${name}". The court has: ${known.join(', ')}.`;
+        return `Nobody on the roster is called "${name}". The team has: ${known.join(', ')}.`;
       }
       bus.post(ME, null, JSON.stringify({ op: 'sleep', name }), 'control');
       return `Standing ${name} down.`;
@@ -181,7 +181,7 @@ export const control = {
     run: ({ name, cli, model, effort }) => {
       const known = rosterNow().map((x) => x.name);
       if (!known.includes(name)) {
-        return `Nobody on the roster is called "${name}". The court has: ${known.join(', ')}.`;
+        return `Nobody on the roster is called "${name}". The team has: ${known.join(', ')}.`;
       }
       if (!cli && !model && !effort) return 'Nothing to change: name a cli, a model or an effort.';
       bus.post(ME, null, JSON.stringify({ op: 'model', name, cli, model, effort }), 'control');
@@ -189,33 +189,33 @@ export const control = {
     },
   },
 
-  pause_court: {
+  pause_team: {
     roles: ['orchestrator'],
     description:
-      'Stop handing out new turns to anyone, without dismissing the crew. Nobody mid-turn is interrupted; '
-      + 'this only stops the next one. Cheaper than dismissing everyone when work needs to stop for a beat '
-      + '— a review, a suspected loop, a change the sovereign wants to make first.',
+      'Stop handing out new turns to anyone, without removing the crew. Nobody mid-turn is interrupted; '
+      + 'this only stops the next one. Cheaper than removing everyone when work needs to stop for a beat '
+      + '— a review, a suspected loop, a change the user wants to make first.',
     schema: { type: 'object', properties: { why: str('One line for the record. Optional.') }, required: [] },
     run: ({ why }) => {
       bus.post(ME, null, JSON.stringify({ op: 'pause', why: why ?? '' }), 'control');
-      return 'Pausing the court.';
+      return 'Pausing the team.';
     },
   },
 
-  resume_court: {
+  resume_team: {
     roles: ['orchestrator'],
     description: 'Lift a pause. Everyone resumes exactly where their queued work left off.',
     schema: { type: 'object', properties: {}, required: [] },
     run: () => {
       bus.post(ME, null, JSON.stringify({ op: 'resume' }), 'control');
-      return 'Resuming the court.';
+      return 'Resuming the team.';
     },
   },
 
   set_budget: {
     roles: ['orchestrator'],
     description:
-      'Raise or lower the court-wide spend ceiling live, without a restart. 0 means no ceiling. This does '
+      'Raise or lower the team-wide spend ceiling live, without a restart. 0 means no ceiling. This does '
       + 'not touch any one member\'s own per-member cap.',
     schema: {
       type: 'object',
@@ -227,7 +227,7 @@ export const control = {
         return 'cap_usd must be a number, 0 or more.';
       }
       bus.post(ME, null, JSON.stringify({ op: 'budget', capUsd: cap_usd }), 'control');
-      return `Asked to set the kingdom spend ceiling to ${cap_usd ? '$' + cap_usd : 'unlimited'}.`;
+      return `Asked to set the team spend ceiling to ${cap_usd ? '$' + cap_usd : 'unlimited'}.`;
     },
   },
 };

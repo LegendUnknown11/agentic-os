@@ -8,7 +8,7 @@
 // where a check is `{ level: 'ok'|'warn'|'fail', message }`. Deliberately a
 // SEPARATE module rather than added to doctor.js — the two are checked at
 // different times (once at app boot, the other only when a worker is about
-// to touch a Flutter target) and doctor.js's checks all assume the court's
+// to touch a Flutter target) and doctor.js's checks all assume the team's
 // own CLIs, not a target repository's toolchain.
 //
 // This module never touches the real Habitable checkout and never assumes

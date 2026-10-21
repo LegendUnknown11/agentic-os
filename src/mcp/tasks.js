@@ -10,20 +10,20 @@ const runFor = (requested) => {
   return { id };
 };
 
-// The sovereign's own to-do list (bus my_tasks), not the team queue. The
+// The user's own to-do list (bus my_tasks), not the team queue. The
 // orchestrator reads it to answer "what's on my plate" and adds to it only
-// when the sovereign asks; nothing here assigns work to a member.
+// when the user asks; nothing here assigns work to a member.
 const when = (ts) => (ts == null ? 'no due date' : new Date(ts).toISOString().replace(':00.000Z', 'Z'));
 
 export const tasks = {
   my_tasks: {
     roles: ['orchestrator'],
-    description: "Read the sovereign's own to-do list (not the team queue): open items, due soonest first, "
-      + 'with overdue ones marked. Use it when the sovereign asks what is on their plate.',
+    description: "Read the user's own to-do list (not the team queue): open items, due soonest first, "
+      + 'with overdue ones marked. Use it when the user asks what is on their plate.',
     schema: { type: 'object', properties: {} },
     run: () => {
       const open = bus.myTasks({ includeDone: false });
-      if (!open.length) return "The sovereign's list is empty.";
+      if (!open.length) return "The user's list is empty.";
       const now = Date.now();
       return open.map((t) => `#${t.id} ${t.title} — ${when(t.dueTs)}${t.dueTs != null && t.dueTs <= now ? ' (OVERDUE)' : ''}`
         + `${t.notes ? `\n    ${t.notes}` : ''}`).join('\n');
@@ -32,7 +32,7 @@ export const tasks = {
 
   add_my_task: {
     roles: ['orchestrator'],
-    description: "Add an item to the sovereign's own to-do list. ONLY when the sovereign asked you to note "
+    description: "Add an item to the user's own to-do list. ONLY when the user asked you to note "
       + 'or remind them of something; never to hand them work you could do. due is ISO 8601, optional.',
     schema: {
       type: 'object',
@@ -44,7 +44,7 @@ export const tasks = {
       if (due && !Number.isFinite(dueTs)) return `Not added: "${due}" is not a date. Use ISO 8601, e.g. 2026-10-01T09:00:00Z.`;
       try {
         const t = bus.addMyTask({ title, notes, dueTs, by: ME });
-        return `Added #${t.id} to the sovereign's list (${when(t.dueTs)}).`;
+        return `Added #${t.id} to the user's list (${when(t.dueTs)}).`;
       } catch (e) { return `Not added: ${e.message}`; }
     },
   },
@@ -54,17 +54,17 @@ export const tasks = {
     description: 'Assign a task. Be specific about scope and done-criteria.',
     schema: {
       type: 'object',
-      properties: { to: str('Peasant name'), task: str('The assignment') },
+      properties: { to: str('Agent name'), task: str('The assignment') },
       required: ['to', 'task'],
     },
     run: ({ to, task }) => {
       const roster = stateArray('roster');
       if (!roster) return `Cannot assign to ${to}: roster is unavailable; nothing was sent.`;
       const target = roster.find((member) => member.name === to);
-      const summoned = stateArray('summoned');
-      if (!summoned) return `Cannot assign to ${to}: summoned crew is unavailable; nothing was sent.`;
-      if (target?.role === 'peasant' && !summoned.includes(to)) {
-        return `Cannot assign to ${to}: peasant is not summoned.`;
+      const added = stateArray('added');
+      if (!added) return `Cannot assign to ${to}: added crew is unavailable; nothing was sent.`;
+      if (target?.role === 'agent' && !added.includes(to)) {
+        return `Cannot assign to ${to}: agent is not added.`;
       }
       bus.post(ME, to, task, 'assignment');
       return `Assigned to ${to}.`;
@@ -77,7 +77,7 @@ export const tasks = {
       'Put a unit of work on the shared list. Size it so it has ONE clear deliverable — a function, '
       + 'a test file, a review. Too small and the coordination costs more than the work; too large and '
       + 'nobody checks in until it has gone wrong. Use needs for real ordering only: a task waits until '
-      + 'everything it needs is done, so a false dependency idles a peasant for nothing.',
+      + 'everything it needs is done, so a false dependency idles an agent for nothing.',
     schema: {
       type: 'object',
       properties: {
@@ -89,7 +89,7 @@ export const tasks = {
         },
         require_plan: {
           type: 'boolean',
-          description: 'For risky work: the peasant must submit a plan and have it approved before it may finish',
+          description: 'For risky work: the agent must submit a plan and have it approved before it may finish',
         },
         run_id: str('Optional improvement run id; defaults to the current run'),
       },
@@ -100,7 +100,7 @@ export const tasks = {
       const missing = needs.filter((n) => !known.has(Number(n)));
       if (missing.length) return `No such task: ${missing.map((n) => `#${n}`).join(', ')}. Nothing was added.`;
       // Capped, because the `tasks` tool's output goes in front of the WHOLE
-      // court, on every listing, for as long as the task is open. One verbose
+      // team, on every listing, for as long as the task is open. One verbose
       // orchestrator turn would otherwise put an unbounded string in everyone's
       // context — the same thing memory.js:74 and skills.js:175 cap.
       title = String(title).slice(0, 200);
@@ -113,7 +113,7 @@ export const tasks = {
   },
 
   tasks: {
-    roles: ['orchestrator', 'briefer', 'peasant'],
+    roles: ['orchestrator', 'briefer', 'agent'],
     description: 'The shared task list: what is outstanding, who holds it, and what is blocked.',
     schema: { type: 'object', properties: {}, required: [] },
     run: () => {
@@ -134,7 +134,7 @@ export const tasks = {
   },
 
   claim_task: {
-    roles: ['peasant'],
+    roles: ['agent'],
     description:
       'Take a task off the list. Omit id to take the next available one. Claiming is atomic — if two of '
       + 'you ask at once exactly one gets it, and the other is told who holds it.',
@@ -155,7 +155,7 @@ export const tasks = {
   },
 
   finish_task: {
-    roles: ['peasant'],
+    roles: ['agent'],
     description: 'Mark your task done. Only its owner may, and only once its plan is approved.',
     schema: {
       type: 'object',
@@ -217,9 +217,9 @@ export const tasks = {
   reassign_task: {
     roles: ['orchestrator'],
     description:
-      'Move a task to a different peasant — one stuck with an owner who will not finish it, or one still '
+      'Move a task to a different agent — one stuck with an owner who will not finish it, or one still '
       + 'unclaimed that needs to be placed rather than waited on. Unlike claim_task, which only the '
-      + 'claiming peasant may call, this is an administrative override and works on someone else\'s task.',
+      + 'claiming agent may call, this is an administrative override and works on someone else\'s task.',
     schema: {
       type: 'object',
       properties: { id: { type: 'integer', description: 'Which task' }, to: str('The new owner') },
@@ -240,9 +240,9 @@ export const tasks = {
         }
       }
       if (t.owner === to) return `Task #${id} is already ${to}'s.`;
-      const summoned = stateArray('summoned');
-      if (!summoned) return `Cannot reassign to ${to}: summoned crew is unavailable.`;
-      if (!summoned.includes(to)) return `Cannot reassign to ${to}: not summoned.`;
+      const added = stateArray('added');
+      if (!added) return `Cannot reassign to ${to}: added crew is unavailable.`;
+      if (!added.includes(to)) return `Cannot reassign to ${to}: not added.`;
       const from = t.owner;
       bus.updateTask(id, { owner: to, state: t.state === 'planning' ? 'planning' : 'active' });
       bus.post(ME, to,

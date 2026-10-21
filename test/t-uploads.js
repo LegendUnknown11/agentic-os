@@ -1,10 +1,10 @@
-// A document or image the sovereign uploads (see daemon.js's DOCUMENT/IMAGE
-// sets, /api/assets) must be discoverable by a court member through
+// A document or image the user uploads (see daemon.js's DOCUMENT/IMAGE
+// sets, /api/assets) must be discoverable by a team member through
 // list_uploads — name, kind, and a real path its own file-reading tool can
 // open. Uploads that are neither (audio, video) must not clutter that list.
 //
 //   node test/t-uploads.js
-// Never let a daemon this suite spawns touch the real ~/.kingdom/courts.json
+// Never let a daemon this suite spawns touch the real ~/.agenticos/teams.json
 // on the machine running the tests — see test/t-registry-isolation.js.
 import './isolate-registry.js';
 import { strict as a } from 'node:assert';
@@ -13,8 +13,8 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-const dir = mkdtempSync(join(tmpdir(), 'kingdom-uploads-'));
-const db = join(dir, 'kingdom.db');
+const dir = mkdtempSync(join(tmpdir(), 'agenticos-uploads-'));
+const db = join(dir, 'agenticos.db');
 const assets = join(dir, 'assets');
 mkdirSync(assets, { recursive: true });
 writeFileSync(join(assets, 'spec.pdf'), 'not a real pdf, just bytes');
@@ -32,7 +32,7 @@ function invoke(role) {
   const r = spawnSync(process.execPath, [join(import.meta.dirname, '..', 'src', 'mcp.js')], {
     input: rpc,
     encoding: 'utf8',
-    env: { ...process.env, KINGDOM_AGENT: 'orchestrator', KINGDOM_ROLE: role, KINGDOM_DB: db },
+    env: { ...process.env, AGENTICOS_AGENT: 'orchestrator', AGENTICOS_ROLE: role, AGENTICOS_DB: db },
   });
   a.equal(r.status, 0, `mcp.js exited ${r.status}. stderr: ${r.stderr.slice(0, 400)}`);
   const messages = r.stdout.split(/\r?\n/).filter(Boolean).map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
@@ -49,8 +49,8 @@ try {
   a.ok(!/theme\.mp3/.test(text), 'an upload that is neither a document nor an image (audio/video) must not appear');
 
   // every role that can already vault_search/vault_read can list_uploads too —
-  // it is the same "check what the sovereign left you before doing the work" shape
-  for (const role of ['peasant', 'briefer']) {
+  // it is the same "check what the user left you before doing the work" shape
+  for (const role of ['agent', 'briefer']) {
     a.match(invoke(role), /spec\.pdf/, `${role} must also see uploaded documents`);
   }
 

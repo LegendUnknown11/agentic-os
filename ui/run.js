@@ -140,7 +140,7 @@ export function renderRunOverview(state, options = {}) {
   const status = runStatus(run);
   const evidence = listFor(run, ['verificationEvidence', 'verifiedDeliverables', 'deliverables']);
   const verified = evidence.map((item) => item.status || item.state || item.stage
-    ? item : { ...item, label: `${item.peasant ?? item.name ?? 'Work'} · verification`, status: item.valid ? 'verified' : 'blocked' });
+    ? item : { ...item, label: `${item.agent ?? item.name ?? 'Work'} · verification`, status: item.valid ? 'verified' : 'blocked' });
   const runTaskIds = new Set((run.taskIds ?? []).map(Number));
   const taskRows = Array.isArray(state.tasks) ? state.tasks.filter((task) => !runTaskIds.size || runTaskIds.has(Number(task.id))) : [];
   const currentRows = listFor(run, ['currentWork', 'current', 'activeTasks']);
@@ -191,7 +191,7 @@ export function renderRunReview(state, options = {}) {
   const commands = array(review, ['commands', 'verificationCommands']).length
     ? array(review, ['commands', 'verificationCommands'])
     : array(run, ['verificationEvidence']).map((item) => ({
-      command: item.command ?? item.testCommand ?? `${item.peasant ?? 'worker'} verification`,
+      command: item.command ?? item.testCommand ?? `${item.agent ?? 'worker'} verification`,
       result: item.output ?? item.tests?.output ?? (item.valid ? 'Verified at the recorded revision.' : 'Unverified or stale evidence.'),
       status: item.valid ? 'verified' : 'blocked',
     }));

@@ -1,8 +1,8 @@
-// The kingdom creates the repository instead of demanding one.
+// The team creates the repository instead of demanding one.
 //
-// Every peasant works in a git worktree and every review is a diff, so a folder
+// Every agent works in a git worktree and every review is a diff, so a folder
 // that is not a repo used to be a hard stop: "X is not a git repository." You
-// now point the kingdom at any folder. What this pins is the two ways that can
+// now point the team at any folder. What this pins is the two ways that can
 // go wrong — nesting inside someone else's repo, and a base commit that does
 // not include what was already there.
 //
@@ -16,7 +16,7 @@ import { join, dirname, basename } from 'node:path';
 import { ensureRepo } from '../src/worktree.js';
 
 const git = (cwd, ...x) => execFileSync('git', x, { cwd, stdio: 'pipe' }).toString();
-const tmp = () => mkdtempSync(join(tmpdir(), 'kingdom-repo-'));
+const tmp = () => mkdtempSync(join(tmpdir(), 'agenticos-repo-'));
 
 /* ---------- a plain folder with files in it ----------------------------- */
 const plain = tmp();
@@ -29,10 +29,10 @@ const base = await ensureRepo(plain, { onInit: (w) => created.push(w) });
 
 a.ok(existsSync(join(plain, '.git')), 'the folder must now be a repository');
 a.equal(base, 'main', 'the base branch must be deterministic, not the machine init.defaultBranch');
-a.ok(created.length, 'the sovereign must be told the kingdom created it');
+a.ok(created.length, 'the user must be told the team created it');
 
 // The base commit must CONTAIN what was already in the folder. An empty base
-// would put the entire pre-existing project in every peasant's first diff.
+// would put the entire pre-existing project in every agent's first diff.
 const tracked = git(plain, 'ls-files');
 a.match(tracked, /notes\.md/, 'existing files must be in the base commit');
 a.match(tracked, /sub\/deep\.txt/, 'including nested ones');
@@ -52,8 +52,8 @@ a.equal(git(empty, 'rev-list', '--count', 'HEAD').trim(), '1',
 
 /* ---------- a missing folder becomes a usable repository --------------- */
 // The headless CLI accepts a path for a brand-new toy project. Git cannot use
-// that path as cwd until Kingdom creates it, so this must not surface as the
-// misleading `spawn git ENOENT` seen by a sovereign starting fresh work.
+// that path as cwd until AgenticOS creates it, so this must not surface as the
+// misleading `spawn git ENOENT` seen by a user starting fresh work.
 const missingParent = tmp();
 const missing = join(missingParent, 'new-project');
 a.ok(!existsSync(missing), 'the regression needs an actually absent target directory');
@@ -63,12 +63,12 @@ a.equal(git(missing, 'rev-list', '--count', 'HEAD').trim(), '1',
   'the new target still needs the ordinary usable base commit');
 
 /* ---------- NEVER nest inside an existing repository -------------------- */
-// A nested repo silently shadows the outer one: the sovereign's real history
-// stops being visible to git, to the court, and to their own editor.
+// A nested repo silently shadows the outer one: the user's real history
+// stops being visible to git, to the team, and to their own editor.
 const outer = tmp();
 git(outer, 'init', '-b', 'main');
-git(outer, 'config', 'user.email', 'k@kingdom');
-git(outer, 'config', 'user.name', 'kingdom');
+git(outer, 'config', 'user.email', 'k@agenticos');
+git(outer, 'config', 'user.name', 'agenticos');
 writeFileSync(join(outer, 'README.md'), '# outer\n');
 git(outer, 'add', '-A');
 git(outer, 'commit', '-m', 'init');

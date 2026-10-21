@@ -12,9 +12,9 @@ import {
 
 export const memory = {
   recall: {
-    roles: ['peasant', 'briefer', 'orchestrator'],
+    roles: ['agent', 'briefer', 'orchestrator'],
     description:
-      'Search everything said or done in this court, all history, not just ' +
+      'Search everything said or done in this team, all history, not just ' +
       'recent turns: agent text, tool calls, summaries, and messages.',
     schema: {
       type: 'object',
@@ -34,11 +34,11 @@ export const memory = {
   },
 
   vault_search: {
-    roles: ['peasant', 'briefer', 'orchestrator'],
+    roles: ['agent', 'briefer', 'orchestrator'],
     description:
-      'Search the sovereign\'s notes (models, conventions, past decisions). ' +
+      'Search the user\'s notes (models, conventions, past decisions). ' +
       'Check BEFORE choosing a model, library or approach. To cite a hit when ' +
-      'answering the sovereign, link it as [title](vault:path) — spaces as %20 ' +
+      'answering the user, link it as [title](vault:path) — spaces as %20 ' +
       '— and it renders as a click-through to the real note, not a dead link.',
     schema: {
       type: 'object',
@@ -78,7 +78,7 @@ export const memory = {
   },
 
   vault_read: {
-    roles: ['peasant', 'briefer', 'orchestrator'],
+    roles: ['agent', 'briefer', 'orchestrator'],
     description:
       'Read a vault note by the path vault_search gave. Small notes come back '
       + 'whole. For a LARGE note you get its headings and are asked which one you '
@@ -130,12 +130,12 @@ export const memory = {
   },
 
   vault_write: {
-    roles: ['peasant', 'briefer', 'orchestrator'],
+    roles: ['agent', 'briefer', 'orchestrator'],
     description:
-      `Record something DURABLE in the sovereign's vault — a decision and its ` +
+      `Record something DURABLE in the user's vault — a decision and its ` +
       `reasoning, a gotcha discovered the hard way, a convention worth keeping. ` +
       `Not a progress update and not chatter; those belong on the bus. Notes are ` +
-      `visible to the whole court and to future sessions. Use [[wikilinks]] to ` +
+      `visible to the whole team and to future sessions. Use [[wikilinks]] to ` +
       `connect to existing notes.`,
     schema: {
       type: 'object',
@@ -152,7 +152,7 @@ export const memory = {
       // The FOLDER is the mode's, not a slug the model has to spell right.
       // modeBlock() tells the model its note "goes under Research/" — that was
       // a promise the tool had no way to keep, so a real research turn wrote
-      // straight into Kingdom/ instead of Kingdom/Research/ and nobody was
+      // straight into AgenticOS/ instead of AgenticOS/Research/ and nobody was
       // told it happened. slug() also strips '/', so even a model that tried
       // to type "Research/Title" as the title would have landed flat anyway.
       const writeSub = modeOf(modeNow()).vaultDir;
@@ -167,7 +167,7 @@ export const memory = {
       const stamp = new Date().toISOString().slice(0, 10);
 
       // The search corpus is cached, so a note written here would not be
-      // findable until the cache revalidated. Drop it: what the court just
+      // findable until the cache revalidated. Drop it: what the team just
       // recorded must be searchable by the very next call.
       if (append && existsSync(file)) {
         writeFileSync(file, readFileSync(file, 'utf8') + `\n\n---\n*${ME} · ${stamp}*\n${body}${linkLine}`);
@@ -183,10 +183,10 @@ export const memory = {
   },
 
   remember: {
-    roles: ['peasant', 'briefer', 'orchestrator'],
+    roles: ['agent', 'briefer', 'orchestrator'],
     description:
-      `Propose ONE durable fact the court should not have to learn twice, from a ` +
-      `CLOSED sovereign campaign. The sovereign must approve it before it becomes ` +
+      `Propose ONE durable fact the team should not have to learn twice, from a ` +
+      `CLOSED user campaign. The user must approve it before it becomes ` +
       `memory. Use campaign_history first; preserve the evidence and never turn a ` +
       `transient status, secret, or unverified failure into a durable instruction. ` +
       `At most three proposals may come from one campaign. A good title is the fact ` +
@@ -203,7 +203,7 @@ export const memory = {
       required: ['campaign', 'title', 'body'],
     },
     run: ({ campaign: id, title, body, tags = [] }) => {
-      if (!VAULT) return 'No vault is configured for this kingdom, so there is nowhere to remember.';
+      if (!VAULT) return 'No vault is configured for this team, so there is nowhere to remember.';
       if (typeof title !== 'string' || !title.trim() || typeof body !== 'string' || !body.trim()) {
         return 'A memory proposal needs a non-empty title and body.';
       }
@@ -217,18 +217,18 @@ export const memory = {
         kind: 'memory', campaign: campaign.id, title, body, tags,
         // Existing approval cards deliberately render a named subject and a
         // verdict. Keeping those aliases means this policy change does not
-        // need a second renderer or a brittle special case in the throne room.
-        peasant: title,
+        // need a second renderer or a brittle special case in the dashboard.
+        agent: title,
         verdict: `Campaign #${campaign.id} — proposed by ${ME}\n\n${body}`,
       }), 'approval');
-      return `Memory proposal for campaign #${campaign.id} sent to the sovereign. Nothing was written yet.`;
+      return `Memory proposal for campaign #${campaign.id} sent to the user. Nothing was written yet.`;
     },
   },
 
   skill: {
-    roles: ['peasant', 'briefer', 'orchestrator'],
+    roles: ['agent', 'briefer', 'orchestrator'],
     description:
-      'Load one of the court\'s named procedures in full — the steps, not the '
+      'Load one of the team\'s named procedures in full — the steps, not the '
       + 'summary. Your prompt lists what exists; this is how you get the body. '
       + 'Load one when it applies to the task in front of you, not to browse: a '
       + 'skill you did not need costs exactly as much as one you did. A combo '
@@ -242,7 +242,7 @@ export const memory = {
       const s = composeSkill(VAULT, name);
       if (!s) {
         const near = listSkills(VAULT).map((x) => x.name);
-        return `No skill named "${name}". The court has: ${near.join(', ')}`;
+        return `No skill named "${name}". The team has: ${near.join(', ')}`;
       }
       return `# skill: ${s.name}\n${s.description ? `_${s.description}_\n` : ''}`
         + `${s.parts.length ? `_combo — includes ${s.parts.join(', ')}_\n` : ''}\n${s.text}`;
@@ -250,13 +250,13 @@ export const memory = {
   },
 
   skill_save: {
-    roles: ['orchestrator', 'briefer', 'peasant'],
+    roles: ['orchestrator', 'briefer', 'agent'],
     description:
-      'Write a new named procedure into the court skill set, or replace one. A '
+      'Write a new named procedure into the team skill set, or replace one. A '
       + 'skill is a METHOD followed the same way every time — not knowledge '
-      + '(that is remember) and not a standing rule (those are the sovereign '
-      + 'Court Instructions). Write one when you have just worked out how to do '
-      + 'something the court will do again, and the steps mattered.',
+      + '(that is remember) and not a standing rule (those are the user '
+      + 'Team Instructions). Write one when you have just worked out how to do '
+      + 'something the team will do again, and the steps mattered.',
     schema: {
       type: 'object',
       properties: {
@@ -267,14 +267,14 @@ export const memory = {
       required: ['name', 'description', 'body'],
     },
     run: ({ name, description, body }) => {
-      if (!VAULT) return 'No vault is configured for this kingdom, and skills live in it.';
+      if (!VAULT) return 'No vault is configured for this team, and skills live in it.';
       const slugged = slugSkill(name);
       if (!slugged) return `"${name}" leaves nothing usable as a skill name. Nothing was written.`;
 
-      // Under Kingdom/Skills/ because that is where skills.js reads them from,
+      // Under AgenticOS/Skills/ because that is where skills.js reads them from,
       // and NOT through vault_write: that tool puts the note in the folder the
       // MODE chooses and strips '/' out of the title, so no member could ever
-      // land a file here. A court told it may extend itself, in a Build mode
+      // land a file here. A team told it may extend itself, in a Build mode
       // whose own blurb says "skills, notes, instructions", could not write one.
       const dir = join(VAULT, VAULT_WRITE_DIR, SKILLS_DIR);
       mkdirSync(dir, { recursive: true });
@@ -297,7 +297,7 @@ export const memory = {
 
       return `Saved ${VAULT_WRITE_DIR}/${SKILLS_DIR}/${slugged}.md.`
         + (replaced ? ' It replaced the previous version.' : '')
-        + (shadows ? ' It now overrides the skill the court ships under that name.' : '')
+        + (shadows ? ' It now overrides the skill the team ships under that name.' : '')
         + ` You can load it right now with skill("${slugged}"); everyone else picks it up `
         + 'in their index when they next start.';
     },

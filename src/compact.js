@@ -1,17 +1,17 @@
-// The compaction window: how big a member's context gets before the court
+// The compaction window: how big a member's context gets before the team
 // throws it away and reseeds the successor from a handover note.
 //
-// The kingdom already compacted — `recycleAtTokens` in agenticos.config.json —
+// The team already compacted — `recycleAtTokens` in agenticos.config.json —
 // but the only way to change it was to edit the file and restart, and the
 // number was arrived at by a one-off measurement that nothing re-checks. This
-// is the runtime control: `/autocompact 300k` from the throne room, or
-// `/autocompact auto` to re-derive it from what the court has actually done.
+// is the runtime control: `/autocompact 300k` from the dashboard, or
+// `/autocompact auto` to re-derive it from what the team has actually done.
 //
 // Note what compaction means HERE. Claude Code summarises the old turns and
-// keeps going in the same session; the court retires the session and writes a
+// keeps going in the same session; the team retires the session and writes a
 // handover. That difference is deliberate and measured — see the vault note
 // "Do not add summarization to the recycle path": summarisation elongated
-// trajectories by 13-15% in the published sweeps, and this court's cost is
+// trajectories by 13-15% in the published sweeps, and this team's cost is
 // driven by TURN COUNT, so buying extra turns to save tokens per turn trades
 // the expensive currency for the cheap one.
 
@@ -31,10 +31,10 @@ export const USAGE = `'auto' or ${fmtTokens(MIN)}-${fmtTokens(MAX)} tokens `
 
 /**
  * `300k` · `300000` · `300` · `300k tokens` · `auto` — and `[300k]`, because
- * the usage line shows the argument in brackets and the sovereign pasted it
+ * the usage line shows the argument in brackets and the user pasted it
  * back verbatim five times in a row before finding the form that parsed.
  * Anything else returns an `error` string rather than throwing: a mistyped
- * setting must not take the throne room down.
+ * setting must not take the dashboard down.
  */
 export function parseWindow(arg) {
   const s = String(arg ?? '').trim().toLowerCase()
@@ -84,7 +84,7 @@ function p90(xs) {
  * we are trying to measure: at a window of T, contexts above T barely exist,
  * so a p90 that hugs T is an artefact of the current setting, not evidence
  * about it. Re-running `auto` on censored data would ratchet the window down a
- * little every time until the court did nothing but write handovers.
+ * little every time until the team did nothing but write handovers.
  */
 export function autoWindow(contexts, current = 0, minSamples = 20) {
   const xs = contexts
@@ -115,7 +115,7 @@ if (process.argv[1] && /(^|[\\/])compact\.js$/.test(process.argv[1])) {
   a.deepEqual(parseWindow('300'), { tokens: 300_000 }, 'a bare number under 1000 is thousands');
   a.deepEqual(parseWindow('80'), { tokens: 80_000 });
   a.deepEqual(parseWindow('0.5m'), { tokens: 500_000 });
-  // The exact five failures the sovereign hit: the usage line is bracketed and
+  // The exact five failures the user hit: the usage line is bracketed and
   // gets pasted back with the brackets still on it.
   a.deepEqual(parseWindow('[300k]'), { tokens: 300_000 }, 'a pasted usage placeholder must work');
   a.deepEqual(parseWindow('[auto]'), { auto: true });

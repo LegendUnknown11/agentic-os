@@ -1,7 +1,7 @@
-// The argument court: two models argue a question, a third judges.
+// The argument panel: two models argue a question, a third judges.
 //
-// The court's ordinary failure mode on a contested question is agreement. Every
-// peasant runs the same CLI on the same model with the same house prompt, so
+// The team's ordinary failure mode on a contested question is agreement. Every
+// agent runs the same CLI on the same model with the same house prompt, so
 // asking two of them produces one opinion twice — and the orchestrator, reading two
 // confident answers that match, treats a coin-flip as settled. Independent
 // samples of one model are not independent evidence.
@@ -11,10 +11,10 @@
 // grading its own case is the one arrangement guaranteed to produce a verdict
 // nobody should trust.
 //
-// These are not court members. They have no worktree, no inbox, no MCP tools
+// These are not team members. They have no worktree, no inbox, no MCP tools
 // and no session — they are one-shot text calls through the same `ask()` the
 // advisor and summariser use, and they are gone when the verdict is written.
-// A permanent pair of debating peasants would cost prompt tokens in the orchestrator's
+// A permanent pair of debating agents would cost prompt tokens in the orchestrator's
 // bench forever for something asked a few times a week.
 import { ask } from './advisor.js';
 
@@ -122,7 +122,7 @@ function judgePrompt(question, transcript) {
 export async function argue(question, {
   panel, rounds = DEFAULT_ROUNDS, cwd = process.cwd(), onProgress, onTelemetry,
 } = {}) {
-  if (!panel?.arguers?.length) throw new Error('No panel: the argument court needs at least two models.');
+  if (!panel?.arguers?.length) throw new Error('No panel: the argument panel needs at least two models.');
   const q = String(question ?? '').trim();
   if (!q) throw new Error('Nothing to argue.');
 
@@ -172,8 +172,8 @@ export async function argue(question, {
 export function verdictNote(result, when) {
   const p = result.panel;
   const who = (s) => `${s.cli}/${s.model}`;
-  return `---\ntype: decision\nstatus: active\nupdated: ${when}\nrecorded_by: argument-court\n`
-    + `tags:\n  - kingdom\n  - decision\n---\n\n`
+  return `---\ntype: decision\nstatus: active\nupdated: ${when}\nrecorded_by: argument-panel\n`
+    + `tags:\n  - agenticos\n  - decision\n---\n\n`
     + `**Question:** ${result.question}\n\n`
     + `${result.verdict}\n\n`
     + `---\n\n`

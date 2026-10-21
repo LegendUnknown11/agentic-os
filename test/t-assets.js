@@ -1,10 +1,10 @@
-// Wallpapers and music are the first thing the UI lets the sovereign put on
+// Wallpapers and music are the first thing the UI lets the user put on
 // disk by name, and the name comes from the browser. So the only interesting
 // question is whether a hostile name can escape the assets directory — by
 // upload, by fetch, or by delete.
 //
 //   node test/t-assets.js
-// Never let a daemon this suite spawns touch the real ~/.kingdom/courts.json
+// Never let a daemon this suite spawns touch the real ~/.agenticos/teams.json
 // on the machine running the tests — see test/t-registry-isolation.js.
 import './isolate-registry.js';
 import { strict as a } from 'node:assert';
@@ -13,16 +13,16 @@ import { mkdtempSync, writeFileSync, mkdirSync, rmSync, existsSync, readdirSync,
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { kingdomDir } from '../src/worktree.js';
+import { stateDir } from '../src/worktree.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const repo = mkdtempSync(join(tmpdir(), 'kingdom-assets-'));
+const repo = mkdtempSync(join(tmpdir(), 'agenticos-assets-'));
 const git = (...x) => execFileSync('git', x, { cwd: repo, stdio: 'pipe' });
 git('init', '-q');
-git('config', 'user.email', 'k@kingdom');
-git('config', 'user.name', 'kingdom');
+git('config', 'user.email', 'k@agenticos');
+git('config', 'user.name', 'agenticos');
 writeFileSync(join(repo, 'README.md'), '# t\n');
 git('add', '-A');
 git('commit', '-qm', 'init');
@@ -31,14 +31,14 @@ const cfg = join(repo, 'agenticos.config.json');
 writeFileSync(cfg, JSON.stringify({
   orchestrator: { name: 'orchestrator', cli: 'codex' },
   briefer: { name: 'briefer', cli: 'codex' },
-  peasants: [],
+  agents: [],
   rolesSeeded: true,
   advisor: { promptEngineer: false, autoModel: false },
 }));
 
 const PORT = 7911 + (process.pid % 40);
 const base = `http://127.0.0.1:${PORT}`;
-process.env.KINGDOM_CODEX_BIN = process.execPath;   // stub: never calls an API
+process.env.AGENTICOS_CODEX_BIN = process.execPath;   // stub: never calls an API
 
 const daemon = spawn(process.execPath, [join(HERE, '..', 'src', 'daemon.js'), repo, '--port', String(PORT), '--config', cfg],
   { stdio: 'ignore', env: process.env });
@@ -52,7 +52,7 @@ const up = async () => {
 };
 a.ok(await up(), 'the daemon must come up');
 
-const ASSETS = join(kingdomDir(repo), 'assets');
+const ASSETS = join(stateDir(repo), 'assets');
 const PNG = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
   'base64');
@@ -113,7 +113,7 @@ try {
     }
     a.equal((await put('song.mp3', Buffer.from('x'))).kind, 'audio');
     a.equal((await put('notes.txt', Buffer.from('x'))).kind, 'document',
-      'a document upload is how the court gets something to read, not just look at or hear');
+      'a document upload is how the team gets something to read, not just look at or hear');
     a.equal((await put('report.pdf', Buffer.from('x'))).kind, 'document');
     for (const del of ['notes.txt', 'report.pdf']) {
       await fetch(`${base}/api/assets/delete`, {
@@ -139,7 +139,7 @@ try {
         `${name} was stored as ${r.name}`);
     }
     // Nothing may exist outside the assets dir, and nothing inside may nest.
-    a.ok(!existsSync(join(kingdomDir(repo), 'evil.png')), 'nothing written beside the database');
+    a.ok(!existsSync(join(stateDir(repo), 'evil.png')), 'nothing written beside the database');
     a.ok(!existsSync(join(repo, 'evil.png')), 'nothing written into the repo');
     for (const f of readdirSync(ASSETS, { withFileTypes: true })) {
       a.ok(f.isFile(), `assets must stay flat, found a directory: ${f.name}`);
@@ -151,10 +151,10 @@ try {
   {
     for (const p of [
       '../../../../Windows/win.ini',
-      '..%2f..%2fkingdom.config.json',
-      '....//kingdom.db',
-      '%2e%2e%5ckingdom.db',
-      '../kingdom.db',
+      '..%2f..%2fagenticos.config.json',
+      '....//agenticos.db',
+      '%2e%2e%5cagenticos.db',
+      '../agenticos.db',
       '%ZZ.png',
     ]) {
       const r = await fetch(`${base}/assets/${p}`);
@@ -172,10 +172,10 @@ try {
 
     // .json is a supported document extension now (see DOCUMENT in daemon.js),
     // so this can no longer prove refusal — .ini still isn't in any whitelist.
-    a.equal((await del('../../../kingdom.config.ini')).ok, false, 'a non-media, non-document name is refused');
-    await del('../../kingdom.db');
+    a.equal((await del('../../../agenticos.config.ini')).ok, false, 'a non-media, non-document name is refused');
+    await del('../../agenticos.db');
     a.ok(existsSync(cfg), 'the config survived');
-    a.ok(existsSync(join(kingdomDir(repo), 'kingdom.db')), 'the database survived');
+    a.ok(existsSync(join(stateDir(repo), 'agenticos.db')), 'the database survived');
 
     a.equal((await del('wall paper.png')).ok, true);
     a.equal((await fetch(`${base}/assets/${encodeURIComponent('wall paper.png')}`)).status, 404,
@@ -235,5 +235,5 @@ try {
   daemon.kill();
   await wait(300);
   try { rmSync(repo, { recursive: true, force: true, maxRetries: 10, retryDelay: 150 }); } catch {}
-  try { rmSync(kingdomDir(repo), { recursive: true, force: true, maxRetries: 10, retryDelay: 150 }); } catch {}
+  try { rmSync(stateDir(repo), { recursive: true, force: true, maxRetries: 10, retryDelay: 150 }); } catch {}
 }

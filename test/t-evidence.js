@@ -13,20 +13,20 @@ import { assertRepo, createRunWorktree, revisionOf, runBranch } from '../src/wor
 import { evidenceDir, exportEvidence, timelineOf } from '../src/evidence.js';
 import { removeRepo } from './cleanup.js';
 
-// Sandbox homedir(): the no-repo case below exports into kingdomDir(null),
-// which is the REAL ~/.kingdom/workspace otherwise. os.homedir() reads these
+// Sandbox homedir(): the no-repo case below exports into stateDir(null),
+// which is the REAL ~/.agenticos/workspace otherwise. os.homedir() reads these
 // at call time, so setting them before the export is enough.
-const fakeHome = mkdtempSync(join(tmpdir(), 'kingdom-evidence-home-'));
+const fakeHome = mkdtempSync(join(tmpdir(), 'agenticos-evidence-home-'));
 const savedHome = { USERPROFILE: process.env.USERPROFILE, HOME: process.env.HOME };
 process.env.USERPROFILE = fakeHome;
 process.env.HOME = fakeHome;
 
 // --- a real repo with a real run branch, same shape test/t-merge.js builds.
-const repo = mkdtempSync(join(tmpdir(), 'kingdom-evidence-'));
+const repo = mkdtempSync(join(tmpdir(), 'agenticos-evidence-'));
 const git = (...x) => execFileSync('git', x, { cwd: repo, stdio: 'pipe' });
 git('init', '-q');
-git('config', 'user.email', 'k@kingdom');
-git('config', 'user.name', 'kingdom');
+git('config', 'user.email', 'k@agenticos');
+git('config', 'user.name', 'agenticos');
 writeFileSync(join(repo, 'math.js'), 'export const add = (a,b) => a+b;\n');
 git('add', '-A');
 git('commit', '-qm', 'init');
@@ -36,8 +36,8 @@ const baselineRevision = await revisionOf(repo);
 const runId = 'run-evidence-1';
 const runWt = await createRunWorktree(repo, runId, base);
 writeFileSync(join(runWt, 'subtract.js'), 'export const subtract = (a,b) => a-b;\n');
-// commitAll is peasant-scoped (wt/<peasant>); a run worktree lives under
-// runs/<runId>, so commit onto it directly, same shell shape as the peasant
+// commitAll is agent-scoped (wt/<agent>); a run worktree lives under
+// runs/<runId>, so commit onto it directly, same shell shape as the agent
 // setup above.
 execFileSync('git', ['add', '-A'], { cwd: runWt, stdio: 'pipe' });
 execFileSync('git', ['commit', '-qm', 'add subtract'], { cwd: runWt, stdio: 'pipe' });
@@ -52,7 +52,7 @@ const created = bus.createRun({
   baselineRevision,
   branch: runBranch(runId),
 });
-a.equal(created.branch, `kingdom/run/${runId}`, 'sanity: the run carries the branch its worktree was cut on');
+a.equal(created.branch, `agenticos/run/${runId}`, 'sanity: the run carries the branch its worktree was cut on');
 
 // Recovery history + revision-bound verification evidence, the shape
 // agenticos.js actually writes (see #recordRecovery and finish_task's evidence
@@ -60,7 +60,7 @@ a.equal(created.branch, `kingdom/run/${runId}`, 'sanity: the run carries the bra
 bus.updateRun(runId, {
   recoveryHistory: [{ name: 'coder', operation: 'process', message: 'transient spawn failure, retried', at: created.createdTs + 10 }],
   verificationEvidence: [{
-    peasant: 'coder', ran: true, ok: true, stale: false, valid: true,
+    agent: 'coder', ran: true, ok: true, stale: false, valid: true,
     revision: 'deadbeef', submittedRevision: 'deadbeef', currentRevision: 'deadbeef',
     submittedAt: created.createdTs + 20, submissionId: 1,
     summary: 'subtract helper done', output: 'node --test\n# pass 1',
@@ -68,7 +68,7 @@ bus.updateRun(runId, {
 });
 
 // An approval tied to this run, and its resolution — "what a reviewer said".
-const approvalId = bus.post('orchestrator', 'sovereign', 'Approve the plan for run-evidence-1?', 'approval', 'default', [], runId);
+const approvalId = bus.post('orchestrator', 'user', 'Approve the plan for run-evidence-1?', 'approval', 'default', [], runId);
 bus.set(`resolved:${approvalId}`, 'approved');
 // A turn_end event inside the run's window, so cost has something real to sum.
 bus.logEvent('coder', 'turn_end', { usage: { input_tokens: 1000, output_tokens: 100 } });

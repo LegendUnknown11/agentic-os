@@ -13,10 +13,10 @@ import { snapshotRepo, restoreSnapshot } from '../src/snapshot.js';
 const git = (cwd, ...x) => execFileSync('git', x, { cwd, stdio: 'pipe' }).toString();
 const tmp = (prefix) => mkdtempSync(join(tmpdir(), prefix));
 
-const repo = tmp('kingdom-snap-repo-');
+const repo = tmp('agenticos-snap-repo-');
 git(repo, 'init', '-b', 'main');
-git(repo, 'config', 'user.email', 'k@kingdom');
-git(repo, 'config', 'user.name', 'kingdom');
+git(repo, 'config', 'user.email', 'k@agenticos');
+git(repo, 'config', 'user.name', 'agenticos');
 writeFileSync(join(repo, 'app.js'), 'console.log("v1");\n');
 writeFileSync(join(repo, 'keep.txt'), 'will be deleted before the snapshot\n');
 git(repo, 'add', '-A');
@@ -38,7 +38,7 @@ writeFileSync(join(repo, 'dist', 'bundle.js'), '/* built */\n');
 const beforeStatus = git(repo, 'status', '--porcelain');
 
 /* ---------- snapshot ----------------------------------------------------- */
-const dest = tmp('kingdom-snap-store-');
+const dest = tmp('agenticos-snap-store-');
 const manifest = await snapshotRepo(repo, dest);
 
 a.equal(git(repo, 'status', '--porcelain'), beforeStatus,

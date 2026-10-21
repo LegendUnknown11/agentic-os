@@ -11,7 +11,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-const dir = mkdtempSync(join(tmpdir(), 'kingdom-ctx-'));
+const dir = mkdtempSync(join(tmpdir(), 'agenticos-ctx-'));
 
 /* ---------- a fake `claude` that behaves like the real transport ---------- */
 // Two model calls in one turn, each replaying ~120k of context, then a result
@@ -50,9 +50,9 @@ say({ type: 'item.completed', item: { type: 'agent_message', text: 'done' } });
 say({ type: 'turn.completed', usage: { input_tokens: 9000000, cached_input_tokens: 8000000, output_tokens: 400 } });
 `);
 
-process.env.KINGDOM_CLAUDE_BIN = claudeStub;
-process.env.KINGDOM_CODEX_BIN = codexStub;
-const { Agent } = await import('../src/agent.js');
+process.env.AGENTICOS_CLAUDE_BIN = claudeStub;
+process.env.AGENTICOS_CODEX_BIN = codexStub;
+const { AgentProcess } = await import('../src/agent.js');
 
 const turnEnd = (agent) => new Promise((res, rej) => {
   const t = setTimeout(() => rej(new Error('no turn_end within 10s')), 10_000);
@@ -61,7 +61,7 @@ const turnEnd = (agent) => new Promise((res, rej) => {
 
 /* ---------- claude: exact, from the last per-call usage ------------------- */
 {
-  const agent = new Agent({ name: 'coder', cli: 'claude', prompt: 'p' }, { cwd: tmpdir() });
+  const agent = new AgentProcess({ name: 'coder', cli: 'claude', prompt: 'p' }, { cwd: tmpdir() });
   agent.start();
   const done = turnEnd(agent);
   agent.send('do the thing');
@@ -75,7 +75,7 @@ const turnEnd = (agent) => new Promise((res, rej) => {
 
 /* ---------- codex: estimated, and nowhere near the aggregate -------------- */
 {
-  const agent = new Agent({ name: 'architect', cli: 'codex', prompt: 'p' }, { cwd: tmpdir() });
+  const agent = new AgentProcess({ name: 'architect', cli: 'codex', prompt: 'p' }, { cwd: tmpdir() });
   agent.start();
   const done = turnEnd(agent);
   agent.send('survey');
@@ -90,16 +90,16 @@ const turnEnd = (agent) => new Promise((res, rej) => {
 
 /* ---------- the clamp: an implausible exact value is not believed --------- */
 {
-  const agent = new Agent({ name: 'x', cli: 'claude' }, { cwd: tmpdir() });
+  const agent = new AgentProcess({ name: 'x', cli: 'claude' }, { cwd: tmpdir() });
   agent.ctxChars = 40_000;          // 10k tokens of real traffic
-  agent.ctxExact = 30_378_000;      // the number the sovereign actually saw
+  agent.ctxExact = 30_378_000;      // the number the user actually saw
   a.equal(agent.ctxTokens(), 10_000, 'a >2M context should fall back to the estimate');
   console.log('  clamp: 30378k rejected, fell back to 10000');
 }
 
 /* ---------- a recycle threshold is only meaningful if ctx is sane --------- */
 {
-  const agent = new Agent({ name: 'y', cli: 'claude' }, { cwd: tmpdir() });
+  const agent = new AgentProcess({ name: 'y', cli: 'claude' }, { cwd: tmpdir() });
   agent.ctxExact = 41_000;
   a.ok(agent.ctxTokens() < 70_000, 'a healthy member must not trip the 70k recycle');
 }

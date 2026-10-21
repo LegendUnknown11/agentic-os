@@ -121,7 +121,7 @@ export const section = (title, ...children) => h('section', { class: 'view-secti
 const TONE_LIVE = new Set(['running', 'active', 'working', 'busy', 'verifying', 'requested', 'implemented',
   'reading', 'editing', 'searching', 'delegating', 'thinking', 'speaking', 'messaging', 'briefing',
   'consulting', 'recording', 'catching up', 'reviewing', 'proposing', 'rejecting', 'finishing',
-  'assigning', 'summoning', 'coordinating']);
+  'assigning', 'adding', 'coordinating']);
 const TONE_SETTLED = new Set(['done', 'completed', 'verified', 'merged', 'dropped', 'ready_for_review', 'ok',
   // An approval's resolution is the same question in another domain. "answered"
   // settles a question; "approved" settles a request. "rejected" is a decision,
@@ -224,7 +224,7 @@ export function spendText(spend) {
   if (!Number.isFinite(amount)) return String(spend.text ?? '');
   return money(amount);
 }
-// #41: turns are counted court-wide and shown beside the existing spend
+// #41: turns are counted team-wide and shown beside the existing spend
 // total (state.spend already carries `turns` from every 'spend' event, and
 // `turnBudget` from the session's cap) — nothing to show before the first
 // real turn, and no "/0" once a budget exists but nothing has run yet.

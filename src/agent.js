@@ -1,4 +1,4 @@
-// One Agent = one member of the court (orchestrator, briefer, or peasant), backed by
+// One AgentProcess = one member of the team (orchestrator, briefer, or agent), backed by
 // a CLI adapter (src/cli-adapters.js). Every protocol is normalised to:
 //
 //   ready(sessionId)  text(str)  tool({name,input})  turn_end({usage,costUsd})
@@ -33,7 +33,7 @@ export { AGY_EFFORTS };
 // the flags, and the model name. Above this an agy or opencode brief goes to a file.
 const BRIEF_ARGV_BUDGET = 24_000;
 // A claude member's system prompt is fixed at spawn and grows with the roster
-// (every peasant's name and description) and the court's own state. Above
+// (every agent's name and description) and the team's own state. Above
 // this it goes to a file instead of the command line — claude reads it via
 // --append-system-prompt-file, so unlike the agy/opencode brief fallback the
 // content never has to be summarised down to "go read this file".
@@ -72,14 +72,14 @@ function npmNativeEntry(name) {
  * Resolve a CLI to a REAL executable + prefix args. Never `shell: true` —
  * on Windows that concatenates argv unescaped and shreds JSON arguments
  * like --mcp-config (this cost an afternoon; don't reintroduce it).
- * Override with KINGDOM_CLAUDE_BIN / KINGDOM_CODEX_BIN.
+ * Override with AGENTICOS_CLAUDE_BIN / AGENTICOS_CODEX_BIN.
  */
 export function resolveCli(name) {
   if (cliCache.has(name)) return cliCache.get(name);
 
   const cursor = isCursor(name);
   // Every Cursor alias honours the one canonical override.
-  const envName = cursor ? 'KINGDOM_CURSOR_BIN' : `KINGDOM_${name.toUpperCase()}_BIN`;
+  const envName = cursor ? 'AGENTICOS_CURSOR_BIN' : `AGENTICOS_${name.toUpperCase()}_BIN`;
   const override = process.env[envName];
   // A .js override runs under our own node — spawn cannot execute a script
   // directly, and this is also what lets the offline tests stub a CLI.
@@ -96,7 +96,7 @@ export function resolveCli(name) {
     const dirs = [
       join(homedir(), '.local', 'bin'),
       // The Antigravity CLI installs itself here and does NOT put itself on
-      // PATH, so a court that only searched PATH would report it missing on a
+      // PATH, so a team that only searched PATH would report it missing on a
       // machine where it is installed and working.
       process.env.LOCALAPPDATA && join(process.env.LOCALAPPDATA, 'agy', 'bin'),
       join(homedir(), 'AppData', 'Local', 'agy', 'bin'),
@@ -130,11 +130,11 @@ export function resolveCli(name) {
 }
 
 // A turn-based CLI that hangs looks exactly like thinking: the process is
-// alive, the CPU is idle, and nothing in the court says a word. agy is given
+// alive, the CPU is idle, and nothing in the team says a word. agy is given
 // --print-timeout for this; codex had no bound of any kind, so a wedged turn
 // would hold `busy` forever and the member would never take another message.
 // Not observed hanging in a run — this closes the gap before it is.
-const TURN_TIMEOUT_MS = Number(process.env.KINGDOM_TURN_TIMEOUT_MS ?? 20 * 60_000);
+const TURN_TIMEOUT_MS = Number(process.env.AGENTICOS_TURN_TIMEOUT_MS ?? 20 * 60_000);
 // How long after 'exit' a turn waits for stdout to close before ending anyway.
 const EXIT_DRAIN_MS = 2_000;
 
@@ -160,7 +160,7 @@ function armTurnWatchdog(agent, cli, proc) {
  * emitting 'error'. The turn-based CLIs clear `busy` and end the turn in
  * proc.on('exit') — which never fires for a process that never existed. The
  * member then stays busy forever while the orchestrator has already acked its
- * mail, so the order is lost and the court goes quiet with no explanation.
+ * mail, so the order is lost and the team goes quiet with no explanation.
  * Returns null when the spawn failed; the caller must return.
  */
 function spawnGuarded(agent, cli, command, args, opts) {
@@ -199,7 +199,7 @@ function resolveCliGuarded(agent, cli) {
   }
 }
 
-// Commands a peasant has no business running. Publishing, history rewriting,
+// Commands an agent has no business running. Publishing, history rewriting,
 // and worktree/branch surgery all reach outside its own branch.
 export const DEFAULT_DENY = [
   'Bash(git push:*)',
@@ -214,10 +214,10 @@ export const DEFAULT_DENY = [
 
 // Real auth, which must survive sanitising.
 const AUTH_VARS = /^(CLAUDE_CODE_OAUTH_TOKEN|ANTHROPIC_API_KEY|ANTHROPIC_AUTH_TOKEN|ANTHROPIC_BASE_URL)$/;
-// Host-session markers. If the kingdom is launched from inside a Claude Code or
+// Host-session markers. If the team is launched from inside a Claude Code or
 // Claude Desktop session, children inherit these, believe they are a managed
 // child session, and refuse to authenticate ("OAuth session expired and could
-// not be refreshed"). A peasant must be an independent session.
+// not be refreshed"). An agent must be an independent session.
 const HOST_SESSION_VARS = /^CLAUDE(CODE|_CODE|_PID|_AGENT|_EFFORT|_PREVIEW)/;
 
 export function claudeEnv(extra) {
@@ -230,12 +230,12 @@ export function claudeEnv(extra) {
 
 /**
  * Sandbox modes that make codex deny every MCP tool call. Confining the
- * sandbox silently costs a member all of its kingdom tools, so callers check
+ * sandbox silently costs a member all of its AgenticOS tools, so callers check
  * this and say so out loud rather than letting it be discovered over days.
  */
-export const MUTES_KINGDOM_TOOLS = new Set(['workspace-write', 'read-only']);
+export const MUTES_AGENTICOS_TOOLS = new Set(['workspace-write', 'read-only']);
 
-export class Agent extends EventEmitter {
+export class AgentProcess extends EventEmitter {
   /**
    * @param {object} spec  roster entry: {name, cli, model, prompt, ...}
    * @param {object} opts  {cwd, mcp: {command,args,env}, sessionId}
@@ -248,10 +248,10 @@ export class Agent extends EventEmitter {
     this.cwd = opts.cwd ?? process.cwd();
     this.mcp = opts.mcp ?? null;
     this.addDirs = opts.addDirs ?? [];
-    this.env = opts.env ?? null; // per-agent auth, so the court can spread quota
+    this.env = opts.env ?? null; // per-agent auth, so the team can spread quota
     this.sessionId = opts.sessionId ?? null;
     // An unknown CLI must fail its first turn visibly, not throw out of the
-    // constructor and take the court's spawn path down with it.
+    // constructor and take the team's spawn path down with it.
     try { this.adapter = adapterFor(this.cli); } catch (e) { this.adapter = null; this.adapterError = e; }
     this.proc = null;
     this.busy = false;
@@ -350,7 +350,7 @@ export class Agent extends EventEmitter {
    * spurious `error` that followed had nobody left to catch it on a shutdown
    * path, so Node promoted it to an unhandled 'error' event and killed the
    * process. It failed the suite roughly half the time, in whichever test
-   * happened to stop a court while a turn was in flight.
+   * happened to stop a team while a turn was in flight.
    *
    * Guarding every emit site would be four guards that the fifth exit handler
    * forgets. One gate, where they all pass through.
@@ -375,7 +375,7 @@ export class Agent extends EventEmitter {
     if (this.sysPromptFile) { rmSync(this.sysPromptFile, { force: true }); this.sysPromptFile = null; }
     const prompt = this.spec.prompt ?? '';
     if (prompt.length > CLAUDE_SYSPROMPT_ARGV_BUDGET) {
-      const file = join(tmpdir(), `kingdom-sysprompt-${this.name}-${randomUUID().slice(0, 8)}.md`);
+      const file = join(tmpdir(), `agenticos-sysprompt-${this.name}-${randomUUID().slice(0, 8)}.md`);
       writeFileSync(file, prompt, { encoding: 'utf8', mode: 0o600 });
       this.sysPromptFile = file;
     }
@@ -427,7 +427,7 @@ export class Agent extends EventEmitter {
       this.spec.resume = true;
       // A turn that died mid-flight never reaches the `result` event, so `busy`
       // would stay true forever: the ripeness gate is skipped by the backstop,
-      // every later batch is fed to a corpse and acked, and the sovereign's
+      // every later batch is fed to a corpse and acked, and the user's
       // orders vanish with nothing logged. Say so instead — "produced no
       // output" is what #rewindForRetry already watches for, so the batch is
       // redelivered without a second mechanism.
@@ -454,7 +454,7 @@ export class Agent extends EventEmitter {
     const proc = spawnGuarded(this, cli, command, [...prefixArgs, ...args], {
       cwd: this.cwd,
       stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'],
-      // Otherwise every turn flashes a console window on the sovereign's desktop.
+      // Otherwise every turn flashes a console window on the user's desktop.
       windowsHide: true,
       env: cli === 'claude' ? claudeEnv(this.env) : { ...process.env, ...(this.env ?? {}) },
     });
@@ -502,7 +502,7 @@ export class Agent extends EventEmitter {
       dog.clear();
       // A staged brief is read once, at the start of the turn it belongs to.
       // Leaving them behind would strew 50kB files through temp for every
-      // long order the court ever takes.
+      // long order the team ever takes.
       for (const key of ['briefFile', 'sysPromptFile']) {
         if (this[key]) { rmSync(this[key], { force: true }); this[key] = null; }
       }
@@ -539,20 +539,20 @@ export class Agent extends EventEmitter {
   /**
    * agy and opencode take the prompt only as an argument, so a long brief
    * cannot go on the command line: Windows caps it at 32,767 chars and spawn
-   * throws ENAMETOOLONG. Measured — a 53,214-char sovereign brief died in 0.2s.
+   * throws ENAMETOOLONG. Measured — a 53,214-char user brief died in 0.2s.
    *
    * But both ARE agentic CLIs with file tools, so hand them the brief as a
    * file and ask them to read it. The file goes to the OS temp directory, NEVER the
-   * member's cwd: a peasant's cwd is a git worktree and `commitAll` does
+   * member's cwd: an agent's cwd is a git worktree and `commitAll` does
    * `git add -A`, so a brief written there would be committed into the
-   * sovereign's repository and merged.
+   * user's repository and merged.
    *
    * Returns the prompt to actually pass on the command line.
    */
   #stagedPrompt(cli, prompt) {
     if (prompt.length <= BRIEF_ARGV_BUDGET) return prompt;
     try {
-      const file = join(tmpdir(), `kingdom-brief-${this.name}-${randomUUID().slice(0, 8)}.md`);
+      const file = join(tmpdir(), `agenticos-brief-${this.name}-${randomUUID().slice(0, 8)}.md`);
       writeFileSync(file, prompt, { encoding: 'utf8', mode: 0o600 });
       this.briefFile = file;   // removed when the turn exits
       return `Your full instructions are in a file — they are too long for this command `

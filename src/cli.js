@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Headless driver. The Electron app is the real interface, but this runs the
-// whole kingdom from a terminal — useful for testing and for headless boxes.
+// whole AgenticOS from a terminal — useful for testing and for headless boxes.
 //
 //   node src/cli.js <repo> [--config path] ["initial command to the orchestrator"]
 //
@@ -8,7 +8,7 @@
 // `/approve <id>`, `/reject <id>`, `/roster`, `/quit`.
 import { createInterface } from 'node:readline';
 import { resolve } from 'node:path';
-import { Kingdom, defaultConfigPath } from './agenticos.js';
+import { AgenticOS, defaultConfigPath } from './agenticos.js';
 import { fmt as fmtForecast } from './forecast.js';
 
 const argv = process.argv.slice(2);
@@ -17,10 +17,10 @@ const ci = argv.indexOf('--config');
 const configPath = ci !== -1 ? argv[ci + 1] : defaultConfigPath(repo);
 const initial = argv.find((a, i) => i > 0 && !a.startsWith('--') && argv[i - 1] !== '--config');
 
-const k = new Kingdom(repo, configPath);
+const k = new AgenticOS(repo, configPath);
 const c = { dim: (s) => `\x1b[2m${s}\x1b[0m`, b: (s) => `\x1b[1m${s}\x1b[0m` };
 
-k.on('started', (i) => console.log(c.dim(`kingdom up · base=${i.base} · ${i.dir}`)));
+k.on('started', (i) => console.log(c.dim(`AgenticOS up · base=${i.base} · ${i.dir}`)));
 k.on('agent', (a) => console.log(c.dim(`  · ${a.name} ${a.state}`)));
 k.on('event', ({ name, kind, payload }) => {
   if (kind === 'text') console.log(`${c.b(name)}: ${payload.text.trim()}`);
@@ -28,15 +28,15 @@ k.on('event', ({ name, kind, payload }) => {
   else if (kind === 'error') console.log(`\x1b[31m${name} ERROR: ${payload.message}\x1b[0m`);
 });
 k.on('delivered', ({ to, msg }) => console.log(c.dim(`  ✉ ${msg.sender} → ${to}`)));
-k.on('verified', ({ peasant, tests }) =>
-  console.log(c.dim(`  ⚑ ${peasant} tests: ${tests.ran ? (tests.ok ? 'PASS' : 'FAIL') : 'none'}`)));
+k.on('verified', ({ agent, tests }) =>
+  console.log(c.dim(`  ⚑ ${agent} tests: ${tests.ran ? (tests.ok ? 'PASS' : 'FAIL') : 'none'}`)));
 k.on('approval', (a) => {
-  // The same per-turn burn the throne room puts on the card. A terminal
-  // sovereign trims the crew from exactly the same decision and deserves
+  // The same per-turn burn the dashboard puts on the card. A terminal
+  // user trims the crew from exactly the same decision and deserves
   // exactly the same number — and it must not be able to stop the printout:
   // an approval nobody can read is an approval nobody can answer.
   let cost = null;
-  if (a.kind === 'summon') {
+  if (a.kind === 'add') {
     try {
       cost = fmtForecast(k.forecast(a.names));
     } catch (e) {
@@ -47,7 +47,7 @@ k.on('approval', (a) => {
     + (cost ? `${cost}\n` : '')
     + c.dim(`  /approve ${a.id}   /reject ${a.id}`));
 });
-k.on('merged', ({ peasant }) => console.log(`\x1b[32m✔ merged ${peasant}\x1b[0m`));
+k.on('merged', ({ agent }) => console.log(`\x1b[32m✔ merged ${agent}\x1b[0m`));
 k.on('recycled', ({ name }) => console.log(c.dim(`  ♻ ${name} recycled`)));
 k.on('error', (e) => console.error('\x1b[31morchestrator:', e.message, '\x1b[0m'));
 

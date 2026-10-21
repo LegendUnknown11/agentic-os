@@ -1,4 +1,4 @@
-// The Cursor headless agent (`cursor-agent` / `agent`) as a court backend.
+// The Cursor headless agent (`cursor-agent` / `agent`) as a team backend.
 // Fakes only: a node stub speaks the stream-json protocol the
 // cli-integrations branch recorded. No real Cursor binary, no model call.
 //
@@ -9,7 +9,7 @@ import { mkdtempSync, writeFileSync, readFileSync, rmSync, existsSync, mkdirSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-const dir = mkdtempSync(join(tmpdir(), 'kingdom-cursor-'));
+const dir = mkdtempSync(join(tmpdir(), 'agenticos-cursor-'));
 const record = join(dir, 'argv.json');
 const stub = join(dir, 'cursor-stub.js');
 writeFileSync(stub, `
@@ -21,12 +21,12 @@ say({ type: 'assistant', message: { content: [{ type: 'text', text: 'answer' }] 
 // No final newline: the framing layer must flush on process close.
 process.stdout.write(JSON.stringify({ type: 'result', usage: { inputTokens: 4, outputTokens: 2 } }));
 `);
-process.env.KINGDOM_CURSOR_BIN = stub;
-const { Agent } = await import('../src/agent.js');
+process.env.AGENTICOS_CURSOR_BIN = stub;
+const { AgentProcess } = await import('../src/agent.js');
 
 /* ---------- 1. turns: cwd, flags, resume, staged brief, usage ---------- */
 {
-  const agent = new Agent({ name: 'coder', cli: 'cursor', model: 'fixture', mode: 'plan', sandbox: 'enabled', skipPermissions: false },
+  const agent = new AgentProcess({ name: 'coder', cli: 'cursor', model: 'fixture', mode: 'plan', sandbox: 'enabled', skipPermissions: false },
     { cwd: dir, addDirs: [join(dir, 'wt')] });
   agent.start();
   const texts = [], ends = [], errors = [];
@@ -49,7 +49,7 @@ const { Agent } = await import('../src/agent.js');
     a.deepEqual(recorded.args.slice(recorded.args.indexOf('--workspace'), recorded.args.indexOf('--workspace') + 2), ['--workspace', dir]);
     a.ok(recorded.args.includes('enabled'));
     a.ok(!recorded.args.includes('--force'), 'skipPermissions:false drops --force');
-    a.ok(!recorded.args.includes('--add-dir'), 'unverified --add-dir must not be passed to every peasant');
+    a.ok(!recorded.args.includes('--add-dir'), 'unverified --add-dir must not be passed to every agent');
 
     // A resumed turn that starts with '-' must not be parsed as a flag.
     await turn('--- follow up');
@@ -72,7 +72,7 @@ const { Agent } = await import('../src/agent.js');
 
 /* ---------- 2. an unknown CLI fails its turn visibly, never throws ---------- */
 {
-  const member = new Agent({ name: 'unsupported', cli: 'freebuff' }, { cwd: dir });
+  const member = new AgentProcess({ name: 'unsupported', cli: 'freebuff' }, { cwd: dir });
   const failures = [];
   member.on('error', (e) => failures.push(e));
   member.start();
@@ -87,52 +87,52 @@ const { Agent } = await import('../src/agent.js');
 
 /* ---------- 3. officers: own .cursor/mcp.json; a repo-owned one is never touched */
 {
-  const repo = mkdtempSync(join(tmpdir(), 'kingdom-cursor-officers-'));
+  const repo = mkdtempSync(join(tmpdir(), 'agenticos-cursor-officers-'));
   const git = (...x) => execFileSync('git', x, { cwd: repo, stdio: 'pipe' });
   git('init', '-q');
-  git('config', 'user.email', 'k@kingdom');
-  git('config', 'user.name', 'kingdom');
+  git('config', 'user.email', 'k@agenticos');
+  git('config', 'user.name', 'agenticos');
   writeFileSync(join(repo, 'README.md'), '# t\n');
   git('add', '-A');
   git('commit', '-qm', 'init');
-  // A sovereign-edited exclude with CRLF endings and `.agents` sans slash.
+  // A user-edited exclude with CRLF endings and `.agents` sans slash.
   writeFileSync(join(repo, '.git', 'info', 'exclude'), '# mine\r\n.agents\r\n');
 
   const cfg = join(repo, 'agenticos.config.json');
   writeFileSync(cfg, JSON.stringify({
     orchestrator: { name: 'orchestrator', cli: 'cursor' },
     briefer: { name: 'briefer', cli: 'cursor-agent' },
-    peasants: [],
+    agents: [],
     rolesSeeded: true,
     advisor: { promptEngineer: false, autoModel: false },
     summarizer: { enabled: false },
   }));
-  const { kingdomDir } = await import('../src/worktree.js?cursor-officers');
-  // The briefer's workspace already holds a config that is not the court's.
-  const foreign = join(kingdomDir(repo), 'officers', 'briefer', '.cursor', 'mcp.json');
+  const { stateDir } = await import('../src/worktree.js?cursor-officers');
+  // The briefer's workspace already holds a config that is not the team's.
+  const foreign = join(stateDir(repo), 'officers', 'briefer', '.cursor', 'mcp.json');
   mkdirSync(join(foreign, '..'), { recursive: true });
   const foreignText = JSON.stringify({ mcpServers: { theirs: { command: 'x' } } });
   writeFileSync(foreign, foreignText);
 
-  const { Kingdom } = await import('../src/agenticos.js?cursor-officers');
+  const { AgenticOS } = await import('../src/agenticos.js?cursor-officers');
   const warnings = [];
-  const k = new Kingdom(repo, cfg);
+  const k = new AgenticOS(repo, cfg);
   k.on('error', (e) => warnings.push(String(e?.message ?? e)));
   await k.start();
   await new Promise((r) => setTimeout(r, 400));
   try {
-    const orchFile = join(kingdomDir(repo), 'officers', 'orchestrator', '.cursor', 'mcp.json');
+    const orchFile = join(stateDir(repo), 'officers', 'orchestrator', '.cursor', 'mcp.json');
     a.ok(existsSync(orchFile), 'the orchestrator gets its own .cursor/mcp.json');
-    a.equal(JSON.parse(readFileSync(orchFile, 'utf8')).mcpServers.kingdom.env.KINGDOM_AGENT, 'orchestrator');
-    a.equal(readFileSync(foreign, 'utf8'), foreignText, 'a config the court did not write is left byte-for-byte');
-    a.ok(warnings.some((w) => /briefer.*own \.cursor\/mcp\.json/.test(w)), 'and the lost kingdom tools are said out loud');
+    a.equal(JSON.parse(readFileSync(orchFile, 'utf8')).mcpServers.agenticos.env.AGENTICOS_AGENT, 'orchestrator');
+    a.equal(readFileSync(foreign, 'utf8'), foreignText, 'a config the team did not write is left byte-for-byte');
+    a.ok(warnings.some((w) => /briefer.*own \.cursor\/mcp\.json/.test(w)), 'and the lost AgenticOS tools are said out loud');
     const exclude = readFileSync(join(repo, '.git', 'info', 'exclude'), 'utf8');
     a.equal(exclude.split(/\r?\n/).filter((l) => l.trim() === '.cursor/mcp.json').length, 1);
     a.ok(!/^\.agents\/$/m.test(exclude), '`.agents` without a slash already covers it; no duplicate');
   } finally {
     await k.stop();
     try { rmSync(repo, { recursive: true, force: true, maxRetries: 8 }); } catch {}
-    try { rmSync(kingdomDir(repo), { recursive: true, force: true, maxRetries: 8 }); } catch {}
+    try { rmSync(stateDir(repo), { recursive: true, force: true, maxRetries: 8 }); } catch {}
   }
   console.log('  officers: isolated identities; a foreign .cursor/mcp.json untouched; exclude not duplicated');
 }

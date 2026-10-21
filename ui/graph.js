@@ -77,7 +77,7 @@ export const TYPES = {
     sub: (c) => c.from || '—',
   },
   digest: {
-    blurb: 'Brief the sovereign from live state',
+    blurb: 'Brief you from live state',
     defaults: { of: 'inbox' },
     fields: [['of', 'select', ['inbox', 'team']], ['to', 'text'], ['title', 'text']],
     sub: (c) => (c.of === 'team' ? 'team digest' : 'inbox brief'),
@@ -108,7 +108,7 @@ export const targetsOf = (n) =>
 /**
  * Give every node without coordinates a place, by walking `next` from the start
  * node: depth is the column, arrival order within a depth is the row. Nodes no
- * chain reaches still have to be reachable by the sovereign's mouse, so they
+ * chain reaches still have to be reachable by the user's mouse, so they
  * land in a column of their own past the end rather than stacked on the origin.
  *
  * Nodes that already carry x/y are left exactly where they were put — this runs
@@ -564,7 +564,7 @@ if (typeof process !== 'undefined' && process.argv?.[1]?.endsWith('graph.js')) {
   autoLayout(loop);
   a.equal(loop.filter((n) => typeof n.x === 'number').length, 2, 'a cycle lays out and returns');
 
-  // Positions already set are the sovereign's, not the layout's.
+  // Positions already set are the user's, not the layout's.
   const placed = [{ id: 'p', type: 'log', x: 500, y: 40 }];
   autoLayout(placed);
   a.equal(placed[0].x, 500, 'autoLayout never moves a node that has been placed');

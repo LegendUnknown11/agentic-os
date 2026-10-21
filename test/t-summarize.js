@@ -1,9 +1,9 @@
-// The summariser condenses each turn into one line, so the sovereign reads a
+// The summariser condenses each turn into one line, so the user reads a
 // sentence instead of a wall of tool calls.
 //
 // Two things must hold. It must never cost more than it saves — so the raw
 // turn is collapsed before it is sent, not shipped whole. And it must never
-// break anything — a failed summary is a cosmetic loss, and the court must not
+// break anything — a failed summary is a cosmetic loss, and the team must not
 // notice it happened.
 //
 //   node test/t-summarize.js
@@ -12,9 +12,9 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-const dir = mkdtempSync(join(tmpdir(), 'kingdom-sum-'));
+const dir = mkdtempSync(join(tmpdir(), 'agenticos-sum-'));
 const STUB = join(dir, 'stub.js');
-process.env.KINGDOM_CODEX_BIN = STUB;
+process.env.AGENTICOS_CODEX_BIN = STUB;
 const stub = (body) => writeFileSync(STUB, body);
 const says = (reply) => stub(`
 process.stdout.write(JSON.stringify({ type: 'item.completed',
@@ -65,7 +65,7 @@ const { transcriptOf, clean, fastSummary, summarize, settingsOf, DEFAULTS, EFFOR
 {
   says('Fixed the token-refresh race in session.dart with a mutex.');
   const line = await summarize({ ...DEFAULTS }, {
-    name: 'coder', role: 'peasant',
+    name: 'coder', role: 'agent',
     events: [
       { kind: 'tool', payload: { name: 'Read' } },
       { kind: 'text', payload: { text: 'The refresh races with logout.\nAdding a mutex to session.dart.' } },
@@ -81,9 +81,9 @@ const { transcriptOf, clean, fastSummary, summarize, settingsOf, DEFAULTS, EFFOR
   stub(`require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'called');`);
   const events = [{ kind: 'text', payload: { text: 'Fixed the refresh race in session.dart.' } }];
   a.equal(fastSummary(events, DEFAULTS.maxWords), 'Fixed the refresh race in session.dart.');
-  a.equal(await summarize({ ...DEFAULTS }, { name: 'coder', role: 'peasant', events }),
+  a.equal(await summarize({ ...DEFAULTS }, { name: 'coder', role: 'agent', events }),
     'Fixed the refresh race in session.dart.');
-  a.equal(await summarize({ ...DEFAULTS }, { name: 'coder', role: 'peasant', events: [
+  a.equal(await summarize({ ...DEFAULTS }, { name: 'coder', role: 'agent', events: [
     { kind: 'text', payload: { text: 'Fixed it.' } },
   ] }), 'Fixed it.', 'short clean action sentences must take the free path too');
   a.equal(existsSync(marker), false, 'an already-good action sentence must not spawn a model');
@@ -97,10 +97,10 @@ const { transcriptOf, clean, fastSummary, summarize, settingsOf, DEFAULTS, EFFOR
   // DID, so a turn that produced prose instead of edits looked idle. The
   // prompt must name both kinds of turn.
   const { summarize: s2 } = await import(`../src/summarize.js?p=${Math.random()}`);
-  says('Described the Kingdom project as a coordinated agentic software court.');
+  says('Described the AgenticOS project as a coordinated agentic software team.');
   const line = await s2({ ...DEFAULTS }, {
-    name: 'writer', role: 'peasant',
-    events: [{ kind: 'text', payload: { text: 'The Kingdom project is a coordinated agentic software court.' } }],
+    name: 'writer', role: 'agent',
+    events: [{ kind: 'text', payload: { text: 'The AgenticOS project is a coordinated agentic software team.' } }],
   }, { cwd: dir });
   a.ok(line && !/nothing|no work|idle/i.test(line),
     `an answer-only turn must not be reported as empty, got: ${line}`);
@@ -112,25 +112,25 @@ const { transcriptOf, clean, fastSummary, summarize, settingsOf, DEFAULTS, EFFOR
   console.log('  answer-only turns are summarised by their substance, not called empty');
 }
 
-/* ---------- 4. it must never break the court ---------- */
+/* ---------- 4. it must never break the team ---------- */
 {
   // Disabled: no call at all.
   stub('process.exit(1);');
   a.equal(await summarize({ ...DEFAULTS, enabled: false },
-    { name: 'coder', role: 'peasant', events: [{ kind: 'text', payload: { text: 'a'.repeat(50) } }] },
+    { name: 'coder', role: 'agent', events: [{ kind: 'text', payload: { text: 'a'.repeat(50) } }] },
     { cwd: dir }), null);
 
   // A crash returns null rather than throwing into the turn cycle.
   a.equal(await summarize({ ...DEFAULTS },
-    { name: 'coder', role: 'peasant', events: [{ kind: 'text', payload: { text: 'a'.repeat(50) } }] },
+    { name: 'coder', role: 'agent', events: [{ kind: 'text', payload: { text: 'a'.repeat(50) } }] },
     { cwd: dir }), null, 'a dead summariser is silent, not fatal');
 
   // A turn of nothing but tool calls has no sentence in it; do not pay for one.
   says('SHOULD NOT BE CALLED');
   a.equal(await summarize({ ...DEFAULTS },
-    { name: 'coder', role: 'peasant', events: [{ kind: 'tool', payload: { name: 'Read' } }] },
+    { name: 'coder', role: 'agent', events: [{ kind: 'tool', payload: { name: 'Read' } }] },
     { cwd: dir }), null, 'tools with no prose must not trigger a call');
-  a.equal(await summarize({ ...DEFAULTS }, { name: 'coder', role: 'peasant', events: [] },
+  a.equal(await summarize({ ...DEFAULTS }, { name: 'coder', role: 'agent', events: [] },
     { cwd: dir }), null);
   console.log('  disabled, crashed, and empty turns all cost nothing and raise nothing');
 }
@@ -140,7 +140,7 @@ const { transcriptOf, clean, fastSummary, summarize, settingsOf, DEFAULTS, EFFOR
   // Measured against the live API: gpt-5.4-mini rejects "max" outright
   //   "Unsupported value: 'max' is not supported with the gpt-5.4-mini model.
   //    Supported values are: 'none', 'low', 'medium', 'high', and 'xhigh'."
-  // The rest of the court runs at max, so defaulting to it here would have made
+  // The rest of the team runs at max, so defaulting to it here would have made
   // every summary fail with an invalid_request_error.
   a.ok(!EFFORTS.includes('max'), 'mini has no "max"');
   a.ok(EFFORTS.includes('none'), 'but it does have "none", which is what summarising wants');
@@ -161,7 +161,7 @@ const { transcriptOf, clean, fastSummary, summarize, settingsOf, DEFAULTS, EFFOR
   a.equal(settingsOf({ summarizer: { effort: 'high' } }).effort, 'high',
     'but a real override still overrides');
   a.equal(settingsOf({ summarizer: { enabled: false } }).enabled, false,
-    'and false is a VALUE, not an absence — the sovereign turning it off must stick');
+    'and false is a VALUE, not an absence — the user turning it off must stick');
 }
 
 try { rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 150 }); } catch {}

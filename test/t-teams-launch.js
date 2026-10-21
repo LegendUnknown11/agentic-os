@@ -1,11 +1,11 @@
 // The launch-routing decision behind issue #42's "launching again focuses/
-// opens the right court instead of starting a stray daemon" — a plain
+// opens the right team instead of starting a stray daemon" — a plain
 // function with injected dependencies, the same shape as t-repo-switch.js,
 // so app.requestSingleInstanceLock's 'second-instance' handler in
 // electron/main.js can be a thin wrapper around something this suite
 // actually runs.
 import { strict as a } from 'node:assert';
-import { decideLaunchAction, routeLaunch, requestShutdown, firstLaunchPlan, courtPortOf } from '../electron/teams-launch.js';
+import { decideLaunchAction, routeLaunch, requestShutdown, firstLaunchPlan, teamPortOf } from '../electron/teams-launch.js';
 
 const live = [
   { repo: '/repo/a', port: 7777, startedAt: '2026-01-01T00:00:00Z' },
@@ -16,17 +16,17 @@ const live = [
 a.deepEqual(decideLaunchAction(null, []), { action: 'start', repo: null },
   'nothing running, nothing named -> start fresh with no repo pinned');
 a.deepEqual(decideLaunchAction(null, live), { action: 'focus', port: 7778 },
-  'a bare relaunch with courts already open focuses the most recent one, never a stray daemon');
+  'a bare relaunch with teams already open focuses the most recent one, never a stray daemon');
 a.deepEqual(decideLaunchAction('/repo/a', live), { action: 'focus', port: 7777 },
-  'naming a repo that already has a live court focuses THAT court');
+  'naming a repo that already has a live team focuses THAT team');
 a.deepEqual(decideLaunchAction('/repo/c', live), { action: 'start', repo: '/repo/c' },
-  'naming a repo with no live court starts one for it');
+  'naming a repo with no live team starts one for it');
 
 // --- routeLaunch: focus path never touches the daemon -------------------
 {
   const calls = [];
   const result = await routeLaunch('/repo/a', {
-    listCourts: async () => live,
+    listTeams: async () => live,
     focusWindow: (port) => calls.push(['focus', port]),
     startDaemonFor: async () => { calls.push(['start']); throw new Error('must not be called'); },
     openWindow: () => calls.push(['open']),
@@ -40,7 +40,7 @@ a.deepEqual(decideLaunchAction('/repo/c', live), { action: 'start', repo: '/repo
 {
   const calls = [];
   const result = await routeLaunch(null, {
-    listCourts: async () => [],
+    listTeams: async () => [],
     focusWindow: () => calls.push(['focus']),
     startDaemonFor: async (repo, logPath) => { calls.push(['start', repo, logPath]); return { repo, port: 7780 }; },
     openWindow: (port) => calls.push(['open', port]),
@@ -55,7 +55,7 @@ a.deepEqual(decideLaunchAction('/repo/c', live), { action: 'start', repo: '/repo
 {
   const calls = [];
   const result = await routeLaunch('/repo/c', {
-    listCourts: async () => live,
+    listTeams: async () => live,
     focusWindow: () => calls.push(['focus']),
     startDaemonFor: async () => { throw new Error('Node 24+ must be on PATH.'); },
     openWindow: () => calls.push(['open']),
@@ -76,30 +76,30 @@ a.deepEqual(decideLaunchAction('/repo/c', live), { action: 'start', repo: '/repo
   a.equal(refused.ok, false, 'a refused shutdown must not be reported as success');
   a.match(refused.error, /415/);
   const gone = await requestShutdown('http://x', async () => { throw new Error('ECONNREFUSED'); });
-  a.equal(gone.ok, true, 'a court that no longer answers is already gone');
+  a.equal(gone.ok, true, 'a team that no longer answers is already gone');
 }
 
 // --- the app's own first launch consults the registry before its pinned port ---
 a.deepEqual(firstLaunchPlan('/repo/b', live, { repo: '/repo/a' }), { action: 'focus', port: 7778 },
-  'a named repo already served on a non-default port opens THAT court, not a refused duplicate');
+  'a named repo already served on a non-default port opens THAT team, not a refused duplicate');
 a.deepEqual(firstLaunchPlan('/repo/c', live, { repo: '/repo/a' }), { action: 'start-auto', repo: '/repo/c' },
-  'a default port serving a different repo starts the named repo its own court instead of a dead-end dialog');
+  'a default port serving a different repo starts the named repo its own team instead of a dead-end dialog');
 a.deepEqual(firstLaunchPlan('/repo/c', [], null), { action: 'default' }, 'nothing running: the pinned-port flow');
 a.deepEqual(firstLaunchPlan('/repo/c', [], { repo: null }), { action: 'default' },
-  'a repo-less court on the default port keeps the attach-to-it flow');
+  'a repo-less team on the default port keeps the attach-to-it flow');
 a.deepEqual(firstLaunchPlan(null, live, { repo: '/repo/a' }), { action: 'default' }, 'a bare launch keeps the default flow');
 
-// --- a per-window action targets the court THAT window shows ------------------
-a.equal(courtPortOf('http://127.0.0.1:7779/', 7777), 7779,
-  'a window on a non-default court reports that court\'s port, so a repository switch ends and replaces it — not the default court');
-a.equal(courtPortOf('http://127.0.0.1:7777/#/settings', 7777), 7777, 'the default court window keeps the default port');
-a.equal(courtPortOf('', 7777), 7777, 'a window with nothing loaded yet falls back to the default port');
-a.equal(courtPortOf('https://example.com:8443/', 7777), 7777, 'a non-court URL never names a court port');
+// --- a per-window action targets the team THAT window shows ------------------
+a.equal(teamPortOf('http://127.0.0.1:7779/', 7777), 7779,
+  'a window on a non-default team reports that team\'s port, so a repository switch ends and replaces it — not the default team');
+a.equal(teamPortOf('http://127.0.0.1:7777/#/settings', 7777), 7777, 'the default team window keeps the default port');
+a.equal(teamPortOf('', 7777), 7777, 'a window with nothing loaded yet falls back to the default port');
+a.equal(teamPortOf('https://example.com:8443/', 7777), 7777, 'a non-team URL never names a team port');
 
 // --- electron/main.js only listens for app events Electron has ------------
 // `app.on('browser-window-closed', ...)` was the handler meant to quit once
 // only the floating dog was left — and Electron has no such event, so it never
-// ran and the app could outlive its last court window as an unclosable pet.
+// ran and the app could outlive its last team window as an unclosable pet.
 // Electron cannot launch in every environment this suite runs in, so the
 // check is against the installed typings rather than a live app.
 {
@@ -116,4 +116,4 @@ a.equal(courtPortOf('https://example.com:8443/', 7777), 7777, 'a non-court URL n
   }
 }
 
-console.log('t-teams-launch.js OK — a relaunch focuses a live court by repo (or the most recent one), and only starts a fresh daemon when nothing matches');
+console.log('t-teams-launch.js OK — a relaunch focuses a live team by repo (or the most recent one), and only starts a fresh daemon when nothing matches');

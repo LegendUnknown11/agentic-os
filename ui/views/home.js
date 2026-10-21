@@ -28,7 +28,7 @@ export const taskMeta = (task) => [
 const homeStateKey = (state) => JSON.stringify([
   state.ready, state.mode, state.goal, state.run, state.tasksLoading, state.tasksError, state.tasks,
   state.approvals, state.changes, state.spend, state.inbox, state.homeRuns, state.homeEdit, state.homeStartRun,
-  membersOf(state).map(([name, member]) => [name, member.role, member.summoned, member.awake, member.status,
+  membersOf(state).map(([name, member]) => [name, member.role, member.added, member.awake, member.status,
     state.status?.get?.(name) ?? state.status?.[name], state.log?.get?.(name)?.at?.(-1)?.type]),
 ]);
 
@@ -51,7 +51,7 @@ function nextStepFor({ urgent, changesVisible, changes, goal, actions = {} }) {
   if (!goal?.text) {
     // Tagged, because the ambient card at the foot of the grid says exactly
     // this when there is no objective either. Seen live 2026-09-21 on a fresh
-    // court: "Next step" and "Start here" rendered the same sentence and the
+    // team: "Next step" and "Start here" rendered the same sentence and the
     // same two buttons, one above the other.
     const card = h('section', { class: 'home-card home-next-step' },
       h('h2', { text: 'Next step' }),
@@ -167,7 +167,7 @@ export function render(state, root, actions = {}, queueExpanded = false) {
   const approvals = (state.approvals ?? []).filter((a) => !a.resolved);
   const changes = state.changes?.changed ?? state.changes ?? [];
   const members = membersOf(state);
-  const team = members.filter(([, member]) => member.role === 'peasant' && member.summoned);
+  const team = members.filter(([, member]) => member.role === 'agent' && member.added);
   const currentStatus = (name, member) => state.status?.get?.(name) ?? state.status?.[name] ?? member.status ?? state.log?.get?.(name)?.at?.(-1)?.type ?? 'idle';
   const attention = team.filter(([name, member]) => needsAttention(currentStatus(name, member)));
   const working = team.filter(([name, member]) => member.awake && !needsAttention(currentStatus(name, member))
@@ -277,7 +277,7 @@ export function render(state, root, actions = {}, queueExpanded = false) {
 
   if (changesVisible) {
     const card = h('div', { class: 'home-card' }, h('h2', { text: `Worktree changes · ${changes.length}` }));
-    changes.slice(0, 7).forEach((change) => card.append(button(`${displayName(change.peasant)} · review changes`, open('changes'), 'list-row')));
+    changes.slice(0, 7).forEach((change) => card.append(button(`${displayName(change.agent)} · review changes`, open('changes'), 'list-row')));
     grid.append(card);
   }
 

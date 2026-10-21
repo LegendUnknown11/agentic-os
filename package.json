@@ -1,5 +1,5 @@
 {
-  "name": "kingdom",
+  "name": "agenticos",
   "version": "0.1.0",
   "description": "Agentic OS: a local team of AI coding agents that work a git repository together.",
   "type": "module",
@@ -17,7 +17,7 @@
     "prepare": "husky"
   },
   "build": {
-    "appId": "dev.kingdom.app",
+    "appId": "dev.agenticos.app",
     "productName": "Agentic OS",
     "asar": false,
     "files": [

@@ -119,7 +119,7 @@ export function totalsOf(usage = {}) {
  *
  * This lived only in daemon.js. ctx.js and agenticos.js summed raw, which is why
  * `node src/ctx.js` reported 2.37M for a session whose true total is 1.89M —
- * a 25% overcount that grows with turn count, in the tool the court's whole
+ * a 25% overcount that grows with turn count, in the tool the team's whole
  * cost discipline is built on.
  */
 export function isCumulative(usage = {}) {
@@ -196,7 +196,7 @@ if (process.argv[1]?.endsWith('usage.js')) {
   a.ok(isCumulative({ input_tokens: 5, cache_write_input_tokens: 0 }),
     "codex's write field identifies it even when nothing was cached");
 
-  // The real numbers from E:\AI\.kingdom\Sant Dnyaneshwar — three codex turns,
+  // The real numbers from E:\AI\.agenticos\Sant Dnyaneshwar — three codex turns,
   // climbing. Summed raw they read 2.37M; the truth is the last reading, 1.89M.
   const climb = [
     { input_tokens: 122_491, cached_input_tokens: 106_240, output_tokens: 1_217 },

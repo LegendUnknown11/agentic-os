@@ -137,7 +137,7 @@ async function main() {
       await page.close();
     }
 
-    // Defect 4 (t-theme.js: ".sidebar-scroll"): a populated court at a short
+    // Defect 4 (t-theme.js: ".sidebar-scroll"): a populated team at a short
     // desktop viewport (1280x720, and the enforced 900px minimum) could ask the
     // rail for more height than it had. Before .sidebar-scroll, #sidebar's own
     // overflow: hidden clipped whatever did not fit — measured live at 1280x720:

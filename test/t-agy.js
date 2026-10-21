@@ -1,4 +1,4 @@
-// The Antigravity CLI (`agy`) as a third court member backend.
+// The Antigravity CLI (`agy`) as a third team member backend.
 //
 // Its protocol differs from codex in three ways that each break something if
 // mishandled, so all three are pinned here:
@@ -18,7 +18,7 @@ import { removeRepo } from './cleanup.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const MCP_PROBE = join(HERE, 'fixtures', 'mcp-identity-probe.js');
-const dir = mkdtempSync(join(tmpdir(), 'kingdom-agy-'));
+const dir = mkdtempSync(join(tmpdir(), 'agenticos-agy-'));
 const ARGV = join(dir, 'argv.json');
 
 // A stub speaking the real protocol, captured from agy 1.1.10.
@@ -40,14 +40,14 @@ say({ event: 'result', result: { conversation_id: 'conv-abc', status: 'SUCCESS',
       response: 'Fixed the race in session.dart', num_turns: 1,
       usage: { input_tokens: 18211, output_tokens: 4, total_tokens: 18215 } } });
 `);
-process.env.KINGDOM_AGY_BIN = STUB;
+process.env.AGENTICOS_AGY_BIN = STUB;
 
-const { Agent, AGY_EFFORTS } = await import('../src/agent.js');
+const { AgentProcess, AGY_EFFORTS } = await import('../src/agent.js');
 const turn = (ag) => new Promise((res) => ag.once('turn_end', res));
 
 /* ---------- 1. a first turn, and the shape of what it emits ---------- */
 {
-  const ag = new Agent({ name: 'coder', cli: 'agy', model: 'gemini-3.6-flash-low', effort: 'high',
+  const ag = new AgentProcess({ name: 'coder', cli: 'agy', model: 'gemini-3.6-flash-low', effort: 'high',
     prompt: 'You are the smith.' }, { cwd: dir });
   ag.start();
   const texts = [], tools = [], ready = [];
@@ -88,7 +88,7 @@ const turn = (ag) => new Promise((res) => ag.once('turn_end', res));
 
 /* ---------- 2. a resumed turn ---------- */
 {
-  const ag = new Agent({ name: 'coder', cli: 'agy', model: 'gemini-3.6-flash-low' },
+  const ag = new AgentProcess({ name: 'coder', cli: 'agy', model: 'gemini-3.6-flash-low' },
     { cwd: dir, sessionId: 'conv-existing' });
   ag.start();
   const done = turn(ag);
@@ -110,7 +110,7 @@ const turn = (ag) => new Promise((res) => ag.once('turn_end', res));
     'agy has none of the codex-only levels');
 
   // A member moved from codex keeps effort "max", which agy rejects outright.
-  const ag = new Agent({ name: 'coder', cli: 'agy', effort: 'max' }, { cwd: dir });
+  const ag = new AgentProcess({ name: 'coder', cli: 'agy', effort: 'max' }, { cwd: dir });
   ag.start();
   const done = turn(ag);
   ag.send('go');
@@ -125,8 +125,8 @@ const turn = (ag) => new Promise((res) => ag.once('turn_end', res));
 {
   const dead = join(dir, 'dead.js');
   writeFileSync(dead, "process.stderr.write('boom\\n'); process.exit(3);");
-  process.env.KINGDOM_AGY_BIN = dead;
-  const { Agent: A2 } = await import('../src/agent.js?dead');
+  process.env.AGENTICOS_AGY_BIN = dead;
+  const { AgentProcess: A2 } = await import('../src/agent.js?dead');
 
   const ag = new A2({ name: 'coder', cli: 'agy' }, { cwd: dir });
   ag.start();
@@ -143,31 +143,31 @@ const turn = (ag) => new Promise((res) => ag.once('turn_end', res));
 
 /* ---------- 5. MCP reaches an agy member only through the workspace file --- */
 {
-  const repo = mkdtempSync(join(tmpdir(), 'kingdom-agyrepo-'));
+  const repo = mkdtempSync(join(tmpdir(), 'agenticos-agyrepo-'));
   const git = (...x) => execFileSync('git', x, { cwd: repo, stdio: 'pipe' });
   git('init', '-q');
-  git('config', 'user.email', 'k@kingdom');
-  git('config', 'user.name', 'kingdom');
+  git('config', 'user.email', 'k@agenticos');
+  git('config', 'user.name', 'agenticos');
   writeFileSync(join(repo, 'README.md'), '# t\n');
   git('add', '-A');
   git('commit', '-qm', 'init');
 
-  const vault = mkdtempSync(join(tmpdir(), 'kingdom-agyvault-'));
+  const vault = mkdtempSync(join(tmpdir(), 'agenticos-agyvault-'));
   const cfg = join(repo, 'agenticos.config.json');
   writeFileSync(cfg, JSON.stringify({
     vault,
     orchestrator: { name: 'orchestrator', cli: 'agy' },
     briefer: { name: 'briefer', cli: 'codex' },
-    peasants: [],
+    agents: [],
     rolesSeeded: true,
     advisor: { promptEngineer: false, autoModel: false },
     summarizer: { enabled: false },
   }));
 
-  process.env.KINGDOM_AGY_BIN = STUB;
-  process.env.KINGDOM_CODEX_BIN = process.execPath;
-  const { Kingdom } = await import('../src/agenticos.js?agy');
-  const k = new Kingdom(repo, cfg);
+  process.env.AGENTICOS_AGY_BIN = STUB;
+  process.env.AGENTICOS_CODEX_BIN = process.execPath;
+  const { AgenticOS } = await import('../src/agenticos.js?agy');
+  const k = new AgenticOS(repo, cfg);
   k.on('error', () => {});
   await k.start();
   await new Promise((r) => setTimeout(r, 400));
@@ -175,8 +175,8 @@ const turn = (ag) => new Promise((res) => ag.once('turn_end', res));
   // Headless agy IGNORES a workspace mcp_config.json and honours only the
   // global one, so identity cannot ride in the server's env — it rides in the
   // member's working directory instead.
-  const idFile = join(repo, '.agents', 'kingdom-id.json');
-  a.ok(existsSync(idFile), 'an agy member must get .agents/kingdom-id.json');
+  const idFile = join(repo, '.agents', 'agenticos-id.json');
+  a.ok(existsSync(idFile), 'an agy member must get .agents/agenticos-id.json');
   const id = JSON.parse(readFileSync(idFile, 'utf8'));
   a.equal(id.agent, 'orchestrator', 'the file names the member, because the shared config cannot');
   a.equal(id.role, 'orchestrator');
@@ -204,7 +204,7 @@ const turn = (ag) => new Promise((res) => ag.once('turn_end', res));
 }
 
 /* ---------- a brief too long for a command line goes to a FILE ---------- */
-// agy has no stdin prompt and no --prompt-file, so a 53,214-char sovereign
+// agy has no stdin prompt and no --prompt-file, so a 53,214-char user
 // brief died in 0.2s with ENAMETOOLONG on a real run. It is an agentic CLI
 // with file tools, so it gets the brief as a file instead.
 {
@@ -215,7 +215,7 @@ const turn = (ag) => new Promise((res) => ag.once('turn_end', res));
   const argvFile = join(dir, 'argv.json');
   rm(argvFile, { force: true });
 
-  const big = new Agent({ name: 'orchestrator', cli: 'agy', prompt: 'p' }, { cwd: dir });
+  const big = new AgentProcess({ name: 'orchestrator', cli: 'agy', prompt: 'p' }, { cwd: dir });
   // EventEmitter throws an unhandled 'error' at the process, which would crash
   // this file with a stack trace instead of the assertion that explains why.
   const oops = [];
@@ -233,11 +233,11 @@ const turn = (ag) => new Promise((res) => ag.once('turn_end', res));
   a.ok(argv.join(' ').length < 30_000, 'and the whole argv must fit under the Windows cap');
   a.ok(!printed.includes('BBBB'), 'the brief itself must NOT be on the command line');
 
-  const path = printed.match(/(\S*kingdom-brief-\S*\.md)/)?.[1];
+  const path = printed.match(/(\S*agenticos-brief-\S*\.md)/)?.[1];
   a.ok(path, `the prompt must point at the staged file, got: ${printed.slice(0, 120)}`);
   a.ok(!path.startsWith(dir),
-    'the brief must NOT be staged in the member cwd — a peasant cwd is a worktree '
-    + 'and commitAll would sweep it into the sovereign repository');
+    'the brief must NOT be staged in the member cwd — an agent cwd is a worktree '
+    + 'and commitAll would sweep it into the user repository');
   // turn_end comes from the `result` event on stdout, which arrives BEFORE the
   // process exits — and the cleanup hangs off exit. Wait for it rather than
   // racing, and rather than sleeping a guessed amount.
@@ -246,18 +246,18 @@ const turn = (ag) => new Promise((res) => ag.once('turn_end', res));
   console.log(`  60k brief staged to a file; command line stayed ${printed.length} chars`);
 }
 
-// --- the MCP server outside a kingdom must not crash the client -------
-// agy reads ONE GLOBAL mcp_config.json, so the kingdom server is spawned by
+// --- the MCP server outside a team must not crash the client -------
+// agy reads ONE GLOBAL mcp_config.json, so the team server is spawned by
 // EVERY agy session on the machine, including ones in directories with no
-// court in them. Those have no KINGDOM_* env and no .agents/kingdom-id.json,
+// team in them. Those have no AGENTICOS_* env and no .agents/agenticos-id.json,
 // and `new Bus(undefined)` threw ERR_INVALID_ARG_TYPE out of node:path before
-// any handler ran — which the sovereign saw as a stack trace plus
+// any handler ran — which the user saw as a stack trace plus
 // `connection closed: calling "initialize": client is closing: EOF`.
 //
-// Not being in a kingdom is a normal state, not an error, and it must never
+// Not being in a team is a normal state, not an error, and it must never
 // take down the client's whole MCP connection.
 {
-  const elsewhere = mkdtempSync(join(tmpdir(), 'not-a-kingdom-'));
+  const elsewhere = mkdtempSync(join(tmpdir(), 'not-a-agenticos-'));
   const rpc = [
     { jsonrpc: '2.0', id: 1, method: 'initialize', params: {
       protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'agy', version: '1' } } },
@@ -268,14 +268,14 @@ const turn = (ag) => new Promise((res) => ag.once('turn_end', res));
   ].map((m) => JSON.stringify(m)).join('\n') + '\n';
 
   const env = { ...process.env };
-  for (const k of Object.keys(env)) if (k.startsWith('KINGDOM_')) delete env[k];
+  for (const k of Object.keys(env)) if (k.startsWith('AGENTICOS_')) delete env[k];
 
   const r = spawnSync(process.execPath, [join(HERE, '..', 'src', 'mcp.js')], {
     input: rpc, encoding: 'utf8', cwd: elsewhere, env,
   });
 
   a.ok(!/ERR_INVALID_ARG_TYPE|validateString/.test(r.stderr ?? ''),
-    `the server must not crash outside a kingdom:\n${(r.stderr ?? '').slice(0, 400)}`);
+    `the server must not crash outside a team:\n${(r.stderr ?? '').slice(0, 400)}`);
   a.equal(r.status, 0, `it must exit cleanly, got ${r.status}`);
 
   const replies = r.stdout.split(/\r?\n/).filter(Boolean)
@@ -284,13 +284,13 @@ const turn = (ag) => new Promise((res) => ag.once('turn_end', res));
 
   const list = replies.find((m) => m.id === 2);
   a.ok(list, 'tools/list must be answered');
-  a.equal(list.result.tools.length, 0, 'and must offer no court tools where there is no court');
+  a.equal(list.result.tools.length, 0, 'and must offer no team tools where there is no team');
 
   // A client that calls a tool it was never offered must still get an answer.
   const call = replies.find((m) => m.id === 3);
   a.ok(call, 'a tool call must be answered rather than killing the transport');
   a.equal(call.result.isError, true, 'and must report the tool as unavailable');
-  a.match(call.result.content[0].text, /no kingdom in this directory/i,
+  a.match(call.result.content[0].text, /no AgenticOS team in this directory/i,
     'the reason must say what is actually wrong');
 
   try { rmSync(elsewhere, { recursive: true, force: true, maxRetries: 5 }); } catch {}
@@ -314,4 +314,4 @@ const turn = (ag) => new Promise((res) => ag.once('turn_end', res));
 // Cleanup only — never wrap assertions in this, a swallowed assertion is
 // worse than no test at all.
 try { rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 150 }); } catch {}
-console.log('t-agy.js OK — antigravity speaks the court protocol, and degrades outside one');
+console.log('t-agy.js OK — antigravity speaks the team protocol, and degrades outside one');

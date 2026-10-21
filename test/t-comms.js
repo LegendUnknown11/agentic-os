@@ -1,17 +1,17 @@
-// The test that matters: can two peasants talk to EACH OTHER, without the
-// orchestrator relaying? Uses an all-codex court because claude's OAuth is expired.
+// The test that matters: can two agents talk to EACH OTHER, without the
+// orchestrator relaying? Uses an all-codex team because claude's OAuth is expired.
 //   node test/t-comms.js
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Kingdom } from '../src/agenticos.js';
+import { AgenticOS } from '../src/agenticos.js';
 
-const repo = mkdtempSync(join(tmpdir(), 'kingdom-test-'));
+const repo = mkdtempSync(join(tmpdir(), 'agenticos-test-'));
 const git = (...a) => execFileSync('git', a, { cwd: repo, stdio: 'pipe' });
 git('init', '-q');
-git('config', 'user.email', 'k@kingdom');
-git('config', 'user.name', 'kingdom');
+git('config', 'user.email', 'k@agenticos');
+git('config', 'user.name', 'agenticos');
 writeFileSync(join(repo, 'README.md'), '# test repo\n');
 git('add', '-A');
 git('commit', '-qm', 'init');
@@ -20,10 +20,10 @@ const configPath = join(repo, 'agenticos.config.json');
 writeFileSync(configPath, JSON.stringify({
   orchestrator: { name: 'orchestrator', cli: 'codex', prompt: 'You rule.' },
   briefer: { name: 'briefer', cli: 'codex', prompt: 'You watch.' },
-  peasants: [
+  agents: [
     {
       name: 'alpha', cli: 'codex',
-      prompt: 'You are terse. Do exactly what you are told, using your kingdom tools.',
+      prompt: 'You are terse. Do exactly what you are told, using your AgenticOS tools.',
     },
     {
       name: 'beta', cli: 'codex',
@@ -35,7 +35,7 @@ writeFileSync(configPath, JSON.stringify({
   ],
 }, null, 2));
 
-const k = new Kingdom(repo, configPath);
+const k = new AgenticOS(repo, configPath);
 const seen = [];
 k.on('event', ({ name, type, payload }) => {
   if (type === 'tool') console.log(`  ${name} → ${payload.name}`);
@@ -49,7 +49,7 @@ k.on('delivered', ({ to, msg }) => {
 await k.start();
 await k.wake('alpha');
 await k.wake('beta');
-console.log('court awake, worktrees created');
+console.log('team awake, worktrees created');
 
 k.speakTo('alpha', 'Call send_message with to="beta" and body="PING". Then stop.');
 
@@ -66,7 +66,7 @@ console.log('\n--- bus ---');
 for (const m of k.bus.history({ limit: 50 })) {
   console.log(`#${m.id} ${m.sender} -> ${m.recipient ?? '*'} [${m.kind}] ${m.body.slice(0, 80)}`);
 }
-console.log('\nPEASANT-TO-PEASANT:', done ? 'PASS' : 'FAIL');
+console.log('\nAGENT-TO-AGENT:', done ? 'PASS' : 'FAIL');
 
 await k.stop();
 try { rmSync(repo, { recursive: true, force: true }); } catch {}

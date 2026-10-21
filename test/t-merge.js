@@ -13,11 +13,11 @@ import {
 } from '../src/worktree.js';
 import { removeRepo } from './cleanup.js';
 
-const repo = mkdtempSync(join(tmpdir(), 'kingdom-merge-'));
+const repo = mkdtempSync(join(tmpdir(), 'agenticos-merge-'));
 const git = (...x) => execFileSync('git', x, { cwd: repo, stdio: 'pipe' });
 git('init', '-q');
-git('config', 'user.email', 'k@kingdom');
-git('config', 'user.name', 'kingdom');
+git('config', 'user.email', 'k@agenticos');
+git('config', 'user.name', 'agenticos');
 writeFileSync(join(repo, 'math.js'), 'export const add = (a,b) => a+b;\n');
 writeFileSync(join(repo, 'package.json'), JSON.stringify({
   name: 'demo', type: 'module',
@@ -61,7 +61,7 @@ a.ok(readFileSync(join(repo, 'run-only.txt'), 'utf8').includes('accepted'),
 a.ok(execFileSync('git', ['show', `${base}:run-only.txt`], { cwd: repo }).toString().includes('accepted'),
   'the delta must land on base itself, not a branch that merely happened to be checked out');
 
-// The peasant edits but does NOT commit — the common case.
+// The agent edits but does NOT commit — the common case.
 writeFileSync(join(wt, 'math.js'), 'export const add = (a,b) => a+b;\nexport const subtract = (a,b) => a-b;\n');
 
 // Before auto-commit the branch diff is empty; this is the bug commitAll fixes.
@@ -82,7 +82,7 @@ const stale = await runTests(worktreePath(repo, 'coder'), { revision: 'stale-rev
 a.equal(stale.ok, false, 'evidence for a different revision must not pass');
 a.equal(stale.stale, true, 'revision mismatch must be visible as stale evidence');
 
-// A conflicting peasant must be refused WITHOUT touching the repo -----
+// A conflicting agent must be refused WITHOUT touching the repo -----
 const wt2 = await createWorktree(repo, 'rival', base);
 writeFileSync(join(wt2, 'math.js'), 'export const add = (a,b) => a+b;\nexport const subtract = (a,b) => (a)-(b);\n');
 await commitAll(repo, 'rival', 'rival subtract');
@@ -116,7 +116,7 @@ a.equal(existsSync(worktreePath(repo, 'coder')), false, 'merged worktree must be
 
 // A directory that is not a live worktree must be REBUILT, not handed over.
 // `wt/tester` was found in the wild as a plain folder: existsSync passed, so
-// the peasant got a cwd where nothing it wrote could ever be committed.
+// the agent got a cwd where nothing it wrote could ever be committed.
 {
   const dead = worktreePath(repo, 'ghost');
   mkdirSync(dead, { recursive: true });
@@ -157,7 +157,7 @@ a.equal(existsSync(worktreePath(repo, 'coder')), false, 'merged worktree must be
 
 // ...and a worktree RE-CUT after a merge must be current too, which is the
 // case the reuse test above cannot reach. mergeWork removes the worktree and
-// `git worktree remove` deletes the directory, so the next summon finds nothing
+// `git worktree remove` deletes the directory, so the next add finds nothing
 // on disk, skips the reuse path entirely, and lands on the branch's own tip —
 // wherever the member left it before its work was merged.
 //
@@ -169,18 +169,18 @@ a.equal(existsSync(worktreePath(repo, 'coder')), false, 'merged worktree must be
 // one guaranteed not to get it.
 {
   const wt4 = await createWorktree(repo, 'returner', base);
-  writeFileSync(join(wt4, 'first-task.txt'), 'the work it was summoned for\n');
+  writeFileSync(join(wt4, 'first-task.txt'), 'the work it was added for\n');
   await commitAll(repo, 'returner', 'first task');
   await mergeWorktree(repo, 'returner', base);
   await removeWorktree(repo, 'returner');
   a.equal(existsSync(wt4), false,
-    'sanity: the merge removes the checkout — that is why the next summon cannot reuse it');
+    'sanity: the merge removes the checkout — that is why the next add cannot reuse it');
 
   // Everybody else keeps working while it is away. This is the code it will be
   // asked to build on.
   writeFileSync(join(repo, 'somebody-elses.txt'), 'merged while it was asleep\n');
   git('add', '-A');
-  git('commit', '-qm', 'the rest of the court moves on');
+  git('commit', '-qm', 'the rest of the team moves on');
 
   const again = await createWorktree(repo, 'returner', base);
   a.equal(await behindBase(repo, 'returner', base), 0,
@@ -206,15 +206,15 @@ a.equal(existsSync(worktreePath(repo, 'coder')), false, 'merged worktree must be
 }
 
 // A project with no tests must report unverified, never "passed".
-const bare = mkdtempSync(join(tmpdir(), 'kingdom-bare-'));
+const bare = mkdtempSync(join(tmpdir(), 'agenticos-bare-'));
 const none = await runTests(bare);
 a.equal(none.ran, false);
 a.equal(none.ok, false, 'no tests must never report ok');
 
 // A stdlib-only Node project has no package.json and no test script, and used
 // to be reported as having no tests at all — in a directory whose entire
-// content was tests and the code they cover. Watched live: a peasant wrote
-// lib/select.js and test/select.test.js, called declare_done, and the crown
+// content was tests and the code they cover. Watched live: an agent wrote
+// lib/select.js and test/select.test.js, called declare_done, and the system
 // answered "No test/build command found in this project." The orchestrator is
 // told an unverified done-report must be sent back, so four correct
 // implementations were one turn away from being bounced for missing the tests
@@ -223,7 +223,7 @@ a.equal(none.ok, false, 'no tests must never report ok');
 // Same shape as the Flutter case beside it in testCommand(), in the ecosystem
 // this application is itself written in.
 {
-  const nodeOnly = mkdtempSync(join(tmpdir(), 'kingdom-nodetest-'));
+  const nodeOnly = mkdtempSync(join(tmpdir(), 'agenticos-nodetest-'));
   mkdirSync(join(nodeOnly, 'test'));
   writeFileSync(join(nodeOnly, 'lib.js'), 'module.exports.two = () => 2;\n');
   writeFileSync(join(nodeOnly, 'test', 'lib.test.js'),
@@ -237,7 +237,7 @@ a.equal(none.ok, false, 'no tests must never report ok');
   a.equal(ran.ok, true, `and pass. Output: ${ran.output.slice(0, 300)}`);
 
   // A failing test must still fail — a detector that always says ok is worse
-  // than none, because the court merges on it.
+  // than none, because the team merges on it.
   writeFileSync(join(nodeOnly, 'test', 'lib.test.js'),
     "const a=require('node:assert');const t=require('node:test');\n"
     + "t('two is three', () => a.equal(require('../lib.js').two(), 3));\n");
@@ -252,10 +252,10 @@ a.equal(none.ok, false, 'no tests must never report ok');
     "a project's own test script must outrank the fallback");
 
   // And a directory with no JavaScript tests must stay null, not guess.
-  const notNode = mkdtempSync(join(tmpdir(), 'kingdom-notnode-'));
+  const notNode = mkdtempSync(join(tmpdir(), 'agenticos-notnode-'));
   mkdirSync(join(notNode, 'test'));
   writeFileSync(join(notNode, 'test', 'thing.py'), 'pass\n');
-  a.equal(testCommand(notNode), null, 'a test/ dir of Python must not summon node --test');
+  a.equal(testCommand(notNode), null, 'a test/ dir of Python must not add node --test');
 
   for (const d of [nodeOnly, notNode]) { try { rmSync(d, { recursive: true, force: true }); } catch {} }
   console.log('  node --test found for a stdlib-only project; package.json still wins');
@@ -265,10 +265,10 @@ a.equal(none.ok, false, 'no tests must never report ok');
 // fail with "Permission denied" for a directory that was extremely recently
 // a child process's cwd — even after that process exited and nothing else
 // holds the path. It surfaced live as `wt/bob` refusing to delete right
-// after a court-run test finished inside it. removeWorktree must ride that
+// after a team-run test finished inside it. removeWorktree must ride that
 // out, but a genuine failure (the lock never clears, or an unrelated error)
 // must still reach the caller — swallowing it would just trade a crash for
-// a court that thinks a worktree is gone when it is not.
+// a team that thinks a worktree is gone when it is not.
 {
   const denied = () => {
     const e = new Error("Command failed: git worktree remove --force x\nerror: failed to delete 'x': Permission denied\n");

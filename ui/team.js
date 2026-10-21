@@ -1,27 +1,27 @@
-// Who is in the court, and who matches a search for one.
+// Who is in the team, and who matches a search for one.
 //
 // These two predicates decide what the front door shows, so they live apart
 // from the DOM that renders them and are checked by `npm test` — the rest of
 // ui/ cannot be, because there is no browser in the test run.
 //
-// The rule they encode: the RAIL is the court, the SUMMONING screen is the
+// The rule they encode: the RAIL is the team, the ADDING screen is the
 // roster. Conflating them is what made the app unusable to open. Every role in
 // agenticos.config.json got a permanent rail row, so the live config put 107 rows
 // and 4,179px of scroll behind a 580px viewport, and 105 of them read "not
-// summoned" — a member list that is 98% absence is a wall, not a list.
+// added" — a member list that is 98% absence is a wall, not a list.
 
 /**
- * Is this member part of the working court, and therefore in the rail?
+ * Is this member part of the working team, and therefore in the rail?
  *
- * The throne and the watch are structural: a kingdom always has an orchestrator and a
- * briefer, they are never summoned or dismissed, and hiding them because they
- * happen to be idle would leave a court of nobody. Peasants come and go.
+ * The orchestrator and the monitor are structural: a team always has an orchestrator and a
+ * briefer, they are never added or removed, and hiding them because they
+ * happen to be idle would leave a team of nobody. Agents come and go.
  */
-export const inCourt = (m) =>
-  m.role === 'orchestrator' || m.role === 'briefer' || Boolean(m.summoned);
+export const inTeam = (m) =>
+  m.role === 'orchestrator' || m.role === 'briefer' || Boolean(m.added);
 
 /**
- * Does this member answer a search on the summoning screen?
+ * Does this member answer a search on the adding screen?
  *
  * Searches the description, not just the name. You know you want someone who
  * does Kubernetes long before you know they are filed under "cloud-architect",
@@ -39,29 +39,29 @@ export function matchesQuery(m, q) {
  * `typeof process` guarded, unlike the self-checks in src/. Those files only
  * ever run in Node; this one is imported by the browser too, and a bare
  * `process.argv` there is a ReferenceError that kills the whole module graph —
- * app.js imports this first, so the throne room booted to an empty shell.
+ * app.js imports this first, so the dashboard booted to an empty shell.
  */
 if (typeof process !== 'undefined' && process.argv?.[1]?.endsWith('team.js')) {
   const { strict: a } = await import('node:assert');
 
-  // --- the rail is the court, not the roster ---
-  a.equal(inCourt({ role: 'orchestrator' }), true, 'the orchestrator is always in the rail');
-  a.equal(inCourt({ role: 'briefer' }), true, 'so is the briefer');
-  a.equal(inCourt({ role: 'peasant', summoned: true }), true, 'a summoned peasant is in the court');
-  a.equal(inCourt({ role: 'peasant', summoned: false }), false,
-    'an unsummoned peasant must NOT hold a rail row — this is the whole fix');
-  a.equal(inCourt({ role: 'peasant' }), false, 'and `summoned` absent means absent');
+  // --- the rail is the team, not the roster ---
+  a.equal(inTeam({ role: 'orchestrator' }), true, 'the orchestrator is always in the rail');
+  a.equal(inTeam({ role: 'briefer' }), true, 'so is the briefer');
+  a.equal(inTeam({ role: 'agent', added: true }), true, 'an added agent is in the team');
+  a.equal(inTeam({ role: 'agent', added: false }), false,
+    'an agent that was never added must NOT hold a rail row — this is the whole fix');
+  a.equal(inTeam({ role: 'agent' }), false, 'and `added` absent means absent');
 
   // The regression this exists to prevent, at the scale it actually happened.
   const roster = [
     { name: 'orchestrator', role: 'orchestrator' },
     { name: 'briefer', role: 'briefer' },
-    ...Array.from({ length: 105 }, (_, i) => ({ name: `role-${i}`, role: 'peasant' })),
+    ...Array.from({ length: 105 }, (_, i) => ({ name: `role-${i}`, role: 'agent' })),
   ];
-  a.equal(roster.filter(inCourt).length, 2,
-    '105 configured-but-unsummoned roles must contribute nothing to the rail');
-  roster[7].summoned = true;
-  a.equal(roster.filter(inCourt).length, 3, 'summoning one adds exactly one row');
+  a.equal(roster.filter(inTeam).length, 2,
+    '105 configured-but-not-added roles must contribute nothing to the rail');
+  roster[7].added = true;
+  a.equal(roster.filter(inTeam).length, 3, 'adding one adds exactly one row');
 
   // --- search reaches the description ---
   const cloud = {
@@ -80,5 +80,5 @@ if (typeof process !== 'undefined' && process.argv?.[1]?.endsWith('team.js')) {
   a.equal(matchesQuery({ name: 'coder' }, 'coder'), true, 'a bare member still matches by name');
   a.equal(matchesQuery({ name: 'coder' }, 'kubernetes'), false, 'and does not match by nothing');
 
-  console.log('team.js OK — the rail holds the court, the summoning holds the roster');
+  console.log('team.js OK — the rail holds the team, the adding holds the roster');
 }

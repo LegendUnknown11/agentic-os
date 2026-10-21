@@ -1,4 +1,4 @@
-// The standing goal: the one thing the court knows that survives a restart.
+// The standing goal: the one thing the team knows that survives a restart.
 //
 // Everything else is a message (consumed) or a transcript (recycled away). If
 // the goal does not reach every member's prompt, or does not survive a restart,
@@ -11,18 +11,18 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Kingdom } from '../src/agenticos.js';
-import { kingdomDir } from '../src/worktree.js';
+import { AgenticOS } from '../src/agenticos.js';
+import { stateDir } from '../src/worktree.js';
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-process.env.KINGDOM_CODEX_BIN = process.execPath;
-process.env.KINGDOM_SETTLE_MS = '150';
+process.env.AGENTICOS_CODEX_BIN = process.execPath;
+process.env.AGENTICOS_SETTLE_MS = '150';
 
-const repo = mkdtempSync(join(tmpdir(), 'kingdom-goal-'));
+const repo = mkdtempSync(join(tmpdir(), 'agenticos-goal-'));
 const git = (...x) => execFileSync('git', x, { cwd: repo, stdio: 'pipe' });
 git('init', '-q');
-git('config', 'user.email', 'k@kingdom');
-git('config', 'user.name', 'kingdom');
+git('config', 'user.email', 'k@agenticos');
+git('config', 'user.name', 'agenticos');
 writeFileSync(join(repo, 'README.md'), '# t\n');
 git('add', '-A');
 git('commit', '-qm', 'init');
@@ -31,19 +31,19 @@ const cfg = join(repo, 'agenticos.config.json');
 writeFileSync(cfg, JSON.stringify({
   orchestrator: { name: 'orchestrator', cli: 'codex' },
   briefer: { name: 'briefer', cli: 'codex' },
-  peasants: [{ name: 'coder', cli: 'codex', description: 'writes code' }],
+  agents: [{ name: 'coder', cli: 'codex', description: 'writes code' }],
   rolesSeeded: true,
   advisor: { promptEngineer: false, autoModel: false },
   summarizer: { enabled: false },
 }));
 
 try {
-  const k = new Kingdom(repo, cfg);
+  const k = new AgenticOS(repo, cfg);
   k.on('error', () => {});
   await k.start();
 
   /* ---------- 1. no goal is a normal state ---------- */
-  a.equal(k.goal(), null, 'a court with no goal must not invent one');
+  a.equal(k.goal(), null, 'a team with no goal must not invent one');
   a.ok(!k.briefFor('coder').includes('STANDING GOAL'),
     'no goal means no goal section in the prompt');
 
@@ -66,8 +66,8 @@ try {
     > k.briefFor('coder').indexOf('writes code'),
     'the goal comes after the persona, not before it');
 
-  // And the court is TOLD, on the bus, so a successor can discover it.
-  const said = k.bus.history({ limit: 20 }).filter((m) => m.sender === 'sovereign');
+  // And the team is TOLD, on the bus, so a successor can discover it.
+  const said = k.bus.history({ limit: 20 }).filter((m) => m.sender === 'user');
   a.ok(said.some((m) => m.body.includes('STANDING GOAL')),
     'the goal must be recorded on the bus, not only injected into prompts');
 
@@ -111,14 +111,14 @@ try {
   await k.stop();
 
   /* ---------- 5. it survives a restart — the whole point ---------- */
-  const k2 = new Kingdom(repo, cfg);
+  const k2 = new AgenticOS(repo, cfg);
   k2.on('error', () => {});
   await k2.start();
   const back = k2.goal();
   a.equal(back.text, 'Ship Habitable Tier 2 with green tests.', 'the goal outlives the process');
   a.equal(back.milestones.filter((m) => m.done).length, 2, 'and so does the progress');
   a.ok(k2.briefFor('orchestrator').includes('Ship Habitable Tier 2'),
-    'a restarted court still knows what it is for');
+    'a restarted team still knows what it is for');
   // The bus copy is what the MCP tools read; it must be refreshed on start.
   a.match(k2.bus.get('goal') ?? '', /Habitable Tier 2/,
     'the bus copy must be republished on start or the tools see a stale goal');
@@ -134,9 +134,9 @@ try {
   console.log('  goal reaches every prompt, last, and is recorded on the bus');
   console.log('  milestones normalise, split open/done, and survive a restart');
   console.log('  the orchestrator claims through the bus; the orchestrator applies once');
-  console.log('t-goal.js OK — the court remembers what it is for');
+  console.log('t-goal.js OK — the team remembers what it is for');
 } finally {
-  for (const d of [repo, kingdomDir(repo)]) {
+  for (const d of [repo, stateDir(repo)]) {
     try { rmSync(d, { recursive: true, force: true, maxRetries: 10, retryDelay: 150 }); } catch {}
   }
 }

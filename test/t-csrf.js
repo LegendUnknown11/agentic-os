@@ -1,7 +1,7 @@
 // The daemon binds 127.0.0.1, but that only keeps the outside world off the
 // port — not another tab in the same browser. A POST with content-type:
 // text/plain and a JSON string body is a CORS "simple request": no preflight,
-// so no header this server could ever send stops it. And the court's own
+// so no header this server could ever send stops it. And the team's own
 // agents run unconfined by design (--dangerously-skip-permissions, bypass-
 // Permissions, danger-full-access — src/agent.js), so a drive-by POST to
 // /api/command from any page the user has open is not a UI bug, it is
@@ -10,7 +10,7 @@
 // closes it, and that the UI's own same-origin requests still work.
 //
 //   node test/t-csrf.js
-// Never let a daemon this suite spawns touch the real ~/.kingdom/courts.json
+// Never let a daemon this suite spawns touch the real ~/.agenticos/teams.json
 // on the machine running the tests — see test/t-registry-isolation.js.
 import './isolate-registry.js';
 import { strict as a } from 'node:assert';
@@ -19,16 +19,16 @@ import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { kingdomDir } from '../src/worktree.js';
+import { stateDir } from '../src/worktree.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const repo = mkdtempSync(join(tmpdir(), 'kingdom-csrf-'));
+const repo = mkdtempSync(join(tmpdir(), 'agenticos-csrf-'));
 const git = (...x) => execFileSync('git', x, { cwd: repo, stdio: 'pipe' });
 git('init', '-q');
-git('config', 'user.email', 'k@kingdom');
-git('config', 'user.name', 'kingdom');
+git('config', 'user.email', 'k@agenticos');
+git('config', 'user.name', 'agenticos');
 writeFileSync(join(repo, 'README.md'), '# t\n');
 git('add', '-A');
 git('commit', '-qm', 'init');
@@ -37,7 +37,7 @@ const cfg = join(repo, 'agenticos.config.json');
 writeFileSync(cfg, JSON.stringify({
   orchestrator: { name: 'orchestrator', cli: 'codex' },
   briefer: { name: 'briefer', cli: 'codex' },
-  peasants: [],
+  agents: [],
   rolesSeeded: true,
   advisor: { promptEngineer: false, autoModel: false },
   summarizer: { enabled: false },
@@ -45,7 +45,7 @@ writeFileSync(cfg, JSON.stringify({
 
 const PORT = 7990 + (process.pid % 30);
 const base = `http://127.0.0.1:${PORT}`;
-process.env.KINGDOM_CODEX_BIN = process.execPath;
+process.env.AGENTICOS_CODEX_BIN = process.execPath;
 
 const daemon = spawn(process.execPath,
   [join(HERE, '..', 'src', 'daemon.js'), repo, '--port', String(PORT), '--config', cfg],
@@ -89,7 +89,7 @@ try {
     const r = await fetch(`${base}/api/command`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', origin: 'https://evil.example' },
-      body: JSON.stringify({ text: 'do something the sovereign never asked for' }),
+      body: JSON.stringify({ text: 'do something the user never asked for' }),
     });
     a.equal(r.status, 403, 'a cross-origin POST must be refused, not routed');
     a.equal((await r.json()).ok, false);
@@ -131,14 +131,14 @@ try {
   /* ---------- 6. approve-from-a-phone: refuse to start without a token -- */
   // A daemon told to bind anything but loopback must never fall back to
   // loopback silently, and must never start unauthenticated. Real crypto
-  // generation cannot fail in practice, so KINGDOM_TEST_DISABLE_TOKEN
-  // simulates the "no token" case the same way KINGDOM_CODEX_BIN elsewhere
+  // generation cannot fail in practice, so AGENTICOS_TEST_DISABLE_TOKEN
+  // simulates the "no token" case the same way AGENTICOS_CODEX_BIN elsewhere
   // in this suite stubs a real dependency, to prove the refusal path exists.
   {
     const PORT2 = PORT + 1;
     const refusing = spawn(process.execPath,
       [join(HERE, '..', 'src', 'daemon.js'), repo, '--port', String(PORT2), '--config', cfg, '--bind', '0.0.0.0'],
-      { stdio: 'ignore', env: { ...process.env, KINGDOM_TEST_DISABLE_TOKEN: '1' } });
+      { stdio: 'ignore', env: { ...process.env, AGENTICOS_TEST_DISABLE_TOKEN: '1' } });
     const exited = await new Promise((res) => {
       refusing.on('exit', (code, signal) => res({ code, signal }));
       setTimeout(() => res(null), 5000);
@@ -153,17 +153,17 @@ try {
 
   /* ---------- 7. approve-from-a-phone: token auth on a non-loopback bind - */
   // A separate repo/daemon so this doesn't share a SQLite handle with the
-  // daemon already running above. KINGDOM_TEST_FORCE_REMOTE makes every
+  // daemon already running above. AGENTICOS_TEST_FORCE_REMOTE makes every
   // connection classify as non-loopback (deterministically, regardless of
   // what address it actually arrives from), the same way this suite's other
-  // KINGDOM_* vars stub a real condition rather than depend on real network
+  // AGENTICOS_* vars stub a real condition rather than depend on real network
   // topology or OS-specific loopback-range routing.
   {
-    const repo2 = mkdtempSync(join(tmpdir(), 'kingdom-csrf-remote-'));
+    const repo2 = mkdtempSync(join(tmpdir(), 'agenticos-csrf-remote-'));
     const git2 = (...x) => execFileSync('git', x, { cwd: repo2, stdio: 'pipe' });
     git2('init', '-q');
-    git2('config', 'user.email', 'k@kingdom');
-    git2('config', 'user.name', 'kingdom');
+    git2('config', 'user.email', 'k@agenticos');
+    git2('config', 'user.name', 'agenticos');
     writeFileSync(join(repo2, 'README.md'), '# t\n');
     git2('add', '-A');
     git2('commit', '-qm', 'init');
@@ -171,7 +171,7 @@ try {
     writeFileSync(cfg2, JSON.stringify({
       orchestrator: { name: 'orchestrator', cli: 'codex' },
       briefer: { name: 'briefer', cli: 'codex' },
-      peasants: [],
+      agents: [],
       rolesSeeded: true,
       advisor: { promptEngineer: false, autoModel: false },
       summarizer: { enabled: false },
@@ -181,12 +181,12 @@ try {
     const base3 = `http://127.0.0.1:${PORT3}`;
     const remoteDaemon = spawn(process.execPath,
       [join(HERE, '..', 'src', 'daemon.js'), repo2, '--port', String(PORT3), '--config', cfg2, '--bind', '0.0.0.0'],
-      { stdio: 'ignore', env: { ...process.env, KINGDOM_TEST_FORCE_REMOTE: '1' } });
+      { stdio: 'ignore', env: { ...process.env, AGENTICOS_TEST_FORCE_REMOTE: '1' } });
 
     try {
       // Written before the daemon even calls .listen(), so it settles well
       // before any HTTP request could succeed anyway.
-      const tokenFile = join(kingdomDir(repo2), 'phone-token.txt');
+      const tokenFile = join(stateDir(repo2), 'phone-token.txt');
       let token = '';
       for (let i = 0; i < 60 && !token; i++) {
         try { token = readFileSync(tokenFile, 'utf8').trim(); } catch {}
@@ -247,7 +247,7 @@ try {
     } finally {
       remoteDaemon.kill();
       await wait(300);
-      for (const d of [repo2, kingdomDir(repo2)]) {
+      for (const d of [repo2, stateDir(repo2)]) {
         try { rmSync(d, { recursive: true, force: true, maxRetries: 10, retryDelay: 150 }); } catch {}
       }
     }
@@ -257,7 +257,7 @@ try {
 } finally {
   daemon.kill();
   await wait(300);
-  for (const d of [repo, kingdomDir(repo)]) {
+  for (const d of [repo, stateDir(repo)]) {
     try { rmSync(d, { recursive: true, force: true, maxRetries: 10, retryDelay: 150 }); } catch {}
   }
 }

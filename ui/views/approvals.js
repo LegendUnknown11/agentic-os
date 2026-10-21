@@ -4,7 +4,7 @@ import { statusDot } from '../avatar.js';
 const rows = (value, key = 'rows') => Array.isArray(value) ? value : value?.[key] ?? [];
 const refresh = async (state, key, url) => { const result = await get(url); if (result?.ok !== false) state[key] = result; return result; };
 const rerender = (state, root, render) => { if (root.isConnected) render(state, root); };
-const approvalKind = (kind) => ({ summon: 'Team request', role: 'Role request', merge: 'Merge request', push: 'Push request', question: 'Question' }[kind]
+const approvalKind = (kind) => ({ add: 'Team request', role: 'Role request', merge: 'Merge request', push: 'Push request', question: 'Question' }[kind]
   ?? `${String(kind ?? 'request').replace(/[-_]+/g, ' ')} request`);
 const approvalStatus = (status) => ({ approved: 'Approved', rejected: 'Rejected', blocked: 'Blocked', answered: 'Answered' }[status] ?? 'Decision recorded');
 // approvalStatus() names the decision; tone() decides how it reads. Keeping the
@@ -46,7 +46,7 @@ function approvalCard(state, approval, root) {
     feedback.textContent = message ?? 'The decision could not be recorded. Try again.';
     feedback.hidden = false;
   };
-  const what = approval.names?.length ? approval.names.join(', ') : approval.peasant ?? approval.name ?? approval.reason ?? '';
+  const what = approval.names?.length ? approval.names.join(', ') : approval.agent ?? approval.name ?? approval.reason ?? '';
   if (what) card.append(h('h3', { text: what }));
   if (approval.reason) card.append(h('p', { text: approval.reason }));
   if (approval.forecast?.crew) {

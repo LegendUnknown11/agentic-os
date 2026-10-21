@@ -3,7 +3,7 @@
 //   buildArgs({spec, cwd, sessionId, prompt, promptFile, mcp, addDirs, deny}) -> argv
 //   parseEvent.call(agent, object, state) -> ready/text/tool/turn_end/error events
 //
-// The receiver is the Agent itself: it supplies emit(), ctxTokens(), spec and
+// The receiver is the AgentProcess itself: it supplies emit(), ctxTokens(), spec and
 // the usage/context fields. `state` is per turn (a fresh Map each spawn).
 //
 // Unknown usage stays null. A CLI that reports no token counts must not be
@@ -55,9 +55,9 @@ function codexArgs({ spec = {}, cwd, sessionId, mcp }) {
   if (spec.effort) args.push('-c', `model_reasoning_effort=${JSON.stringify(spec.effort)}`);
   if (mcp) {
     // codex parses -c values as TOML; args/env need TOML array/inline-table.
-    args.push('-c', `mcp_servers.kingdom.command=${JSON.stringify(mcp.command)}`,
-      '-c', `mcp_servers.kingdom.args=${JSON.stringify(mcp.args)}`,
-      '-c', `mcp_servers.kingdom.env={${Object.entries(mcp.env ?? {})
+    args.push('-c', `mcp_servers.agenticos.command=${JSON.stringify(mcp.command)}`,
+      '-c', `mcp_servers.agenticos.args=${JSON.stringify(mcp.args)}`,
+      '-c', `mcp_servers.agenticos.env={${Object.entries(mcp.env ?? {})
         .map(([k, v]) => `${k}=${JSON.stringify(String(v))}`).join(',')}}`);
   }
   // The prompt goes down STDIN, never argv: Windows caps a command line at
@@ -74,7 +74,7 @@ function claudeArgs({ spec = {}, sessionId, promptFile, mcp, addDirs = [], deny 
   if (!json) args.push('--input-format', 'stream-json');
   args.push('--output-format', json ? 'json' : 'stream-json',
     '--permission-mode', spec.permissionMode ?? 'bypassPermissions',
-    // Peasants must not inherit the operator's hooks/plugins/CLAUDE.md.
+    // Agents must not inherit the operator's hooks/plugins/CLAUDE.md.
     '--setting-sources', 'project');
   // append, not --system-prompt: replacing it strips Claude Code's own
   // tool-use guidance. Above the argv budget the caller stages a file.
@@ -91,16 +91,16 @@ function claudeArgs({ spec = {}, sessionId, promptFile, mcp, addDirs = [], deny 
   if (spec.maxBudgetUsd) args.push('--max-budget-usd', String(spec.maxBudgetUsd));
   for (const dir of addDirs) flag(args, '--add-dir', dir);
   if (deny.length) args.push('--disallowed-tools', ...deny);
-  if (mcp) args.push('--mcp-config', JSON.stringify({ mcpServers: { kingdom: mcp } }), '--strict-mcp-config');
+  if (mcp) args.push('--mcp-config', JSON.stringify({ mcpServers: { agenticos: mcp } }), '--strict-mcp-config');
   return args;
 }
 
 /**
  * agy: the prompt is the VALUE of `--print` since agy 1.1.11 (under the old
  * positional form its flag parser read the NEXT FLAG as the prompt). MCP is
- * not passed as a flag at all; agenticos.js writes `.agents/kingdom-id.json`.
+ * not passed as a flag at all; agenticos.js writes `.agents/agenticos-id.json`.
  * No `--add-dir`: it was never passed before and is not verified for agy, and
- * an unknown flag would fail every peasant turn (peasants always get addDirs).
+ * an unknown flag would fail every agent turn (agents always get addDirs).
  */
 function agyArgs({ spec = {}, sessionId, prompt }) {
   const args = ['--print', prompt, '--output-format', spec.outputFormat === 'json' ? 'json' : 'stream-json'];
@@ -134,7 +134,7 @@ function openCodeArgs({ spec = {}, sessionId, prompt }) {
  * the cli-integrations branch's reading of the installed help on 2026-10-10;
  * they are NOT verified in this repository against a real binary.
  * No `--add-dir`: unverified for Cursor, and an unknown flag would fail every
- * peasant turn. MCP comes from `<workspace>/.cursor/mcp.json` (agenticos.js).
+ * agent turn. MCP comes from `<workspace>/.cursor/mcp.json` (agenticos.js).
  */
 function cursorArgs({ spec = {}, cwd, sessionId, prompt, mcp }) {
   const args = ['--print', '--output-format', spec.outputFormat === 'json' ? 'json' : 'stream-json'];
@@ -354,7 +354,7 @@ function agyEvent(o, steps = new Map()) {
 /**
  * opencode `run --format json`. One process may run several model steps,
  * each closing with `step_finish`; usage and cost accumulate across them and
- * the Agent emits the LAST turn_end once, when the process closes.
+ * the AgentProcess emits the LAST turn_end once, when the process closes.
  */
 function openCodeEvent(o, state = new Map()) {
   const sid = o.sessionID ?? o.sessionId ?? o.session_id ?? (o.type === 'session' ? (o.id ?? o.sessionID) : null);
