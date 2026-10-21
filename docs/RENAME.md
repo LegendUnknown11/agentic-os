@@ -1,6 +1,28 @@
 # De-theming: the decided map
 
-Not started. Decided, so it does not have to be re-derived.
+Not started. **Revised 2026-10-21 by the user** (see "2026-10-21 revision"
+below, which wins over the original tables where they differ). Scheduled to
+run on a `rename` branch after the `functionality` threads f1-f4 merge.
+
+## 2026-10-21 revision (wins)
+
+- Product and code name is **AgenticOS**, not AgentOS: class `AgenticOS`
+  (`src/agenticos.js`), `.agenticos/`, `agenticos.db`,
+  `agenticos.config.json`, `AGENTICOS_*` env vars, commit prefix
+  `agenticos:`. On-screen name stays "Agentic OS".
+- `peasant` becomes **`agent`** in code and UI, not `member`. To free the
+  word, the CLI-process class `Agent` in `src/agent.js` (and its `agent` and
+  `agents` variables) is renamed first, to `AgentProcess`, before peasant
+  becomes agent. Existing `member` identifiers (`summon_member` and so on)
+  become `agent` too.
+- `briefer` **stays `briefer`**, because it briefs the orchestrator.
+- **Migrate once, do not orphan.** On first launch, move `.kingdom/` to
+  `.agenticos/`, `kingdom.db` to `agenticos.db` and `kingdom.config.json` to
+  `agenticos.config.json`. Read old `KINGDOM_*` env vars as a fallback with a
+  one-time warning. Rename the git branch prefix `kingdom/` for new branches
+  only, and leave existing worktree branches alone. The migration needs a test.
+- Out of scope: the GitHub repo name, git history and remote branch names.
+- Everything else in the tables below stands.
 
 Scope measured: **2115 occurrences across 111 files.** Mechanical, but large —
 worth starting only with room to finish, because a half-applied rename is worse
