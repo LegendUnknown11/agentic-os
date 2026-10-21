@@ -209,7 +209,23 @@ itself appears to be a board of this kind.
 4. **Review.** "Pin as reference" adds a board item to the run's objective
    context (path plus caption), so the orchestrator's next turn can see it.
 
-### Open questions for the sovereign
+### Decided 2026-10-21
+
+1. **Review surface.** The board is where agent output comes to the user for
+   review. Design (1) above stands, but the board's default framing is
+   "review", and items carry a review state (`open | approved | changes`)
+   that the user sets.
+2. **Free placement.** Cards are placed and resized freely (x/y/w/h), not in
+   a gallery. Keyboard move and resize stay mandatory under `ui-change`.
+3. **Both can add.** Agents (`board_add`) and the user can both add items,
+   and every item records its `author`.
+4. **Both, plus a canvas.** Imports (a Figma or Claude-design link and its
+   thumbnail) *and* a native canvas. The canvas means freehand drawing and
+   annotation over items, which reverses design (3)'s "no freehand in v1".
+   Proposed: an SVG ink layer per board (`kind: 'ink'` items holding path
+   data), so it stays data and can be reviewed and diffed.
+
+### Open questions (original, now answered above)
 
 1. Is the board a **brief** (inputs for agents), a **review** surface (agent
    output for the sovereign), or both?
