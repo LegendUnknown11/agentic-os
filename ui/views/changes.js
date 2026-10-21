@@ -178,7 +178,7 @@ export function renderChanges(state, root, options = {}) {
   } else if (releaseState === 'merge-first') {
     release.append(note('Merge or resolve the listed worktrees before requesting a push.'));
   } else if (releaseState === 'pending') {
-    release.append(note('A push request is waiting for your approval on the Approvals page.'));
+    release.append(note('A push request is waiting for your approval in your Inbox.'));
   } else {
     const request = button('Request push', async () => {
       request.disabled = true;

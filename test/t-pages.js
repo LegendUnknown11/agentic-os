@@ -7,7 +7,7 @@ import { taskMeta, visibleQueueRows } from '../ui/views/home.js';
 import { courtActionError } from '../ui/views/courts.js';
 import { resolvedOutcome } from '../ui/views/approvals.js';
 import { assignable, dueState, loadMyTasks, orderTasks } from '../ui/views/tasks.js';
-import { loadInbox, waitingCount } from '../ui/views/inbox.js';
+import { doctorItem, loadInbox, waitingCount } from '../ui/views/inbox.js';
 import { daysText, parseDays, triggerText } from '../ui/views/automations.js';
 import { draftFrom, loadRunTemplates, runBody } from '../ui/views/start-run.js';
 import { cancelMetrics, cancelRunSpend, loadMetrics, loadRunSpend, metricsView, recommendationFor, spendGeometry, warningFor } from '../ui/views/usage.js';
@@ -591,6 +591,23 @@ a.match(viewSources.tasks, /if \(!editing\(root\)\) renderTasks/, 'live updates 
 a.match(viewSources.tasks, /details\.open = view\[key\]/, 'a stream repaint must not collapse the closed list the sovereign opened');
 a.match(viewSources.tasks, /remembered\(input\('', 'What should the team do\?'\), view, 'team'\)/, 'a half-typed team task survives a stream repaint');
 a.match(viewSources.tasks, /remembered\(input\('', 'Something to remember…'\), view, 'mine'\)/, 'a half-typed task of your own survives a stream repaint');
+// Doctor left the rail for a Settings tab (2026-10-21). A failing environment
+// check must still reach you without a visit: it is an inbox row and it counts
+// on the rail's Inbox badge.
+a.equal(doctorItem(null), null, 'no report, no row');
+a.equal(doctorItem({ ok: true, ready: true, checks: [{ level: 'ok', message: 'git found' }] }), null, 'a passing report adds nothing');
+a.equal(doctorItem({ ok: false, error: 'offline' }), null, 'a failed request is not a failed check');
+{
+  const item = doctorItem({ ready: false, checks: [{ level: 'ok', message: 'git found' }, { level: 'fail', message: 'codex not found on PATH' }, { level: 'warn', message: 'no emulator' }] });
+  a.equal(item.tone, 'attention', 'a failing check needs you');
+  a.equal(item.href, '#doctor', 'the row opens Doctor');
+  a.equal(item.detail, 'codex not found on PATH', 'the row names the first failure');
+  a.equal(item.title, 'The environment check found a problem');
+  a.match(doctorItem({ ready: false, checks: [{ level: 'fail', message: 'a' }, { level: 'fail', message: 'b' }] }).title, /2 problems/);
+}
+a.match(mainSource, /state\.doctor = report; apply\(\{ type: '__doctor__' \}\)/, 'the boot probe keeps its report so the rail and Inbox can read it');
+a.match(sidebarSource, /currentState\.doctor\?\.ready === false/, 'a failing check counts on the rail Inbox badge');
+a.match(viewSources.inbox, /doctorItem\(state\.doctor\)/, 'the Inbox lists a failing check');
 a.match(viewSources.inbox, /if \(timer \|\| now === seen\) return;/, 'the inbox refetches only when what it ranks moved, not on every streamed frame');
 {
   // A view registered for rendering but missing from the shell's route set

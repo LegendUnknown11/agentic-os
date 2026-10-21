@@ -76,7 +76,7 @@ export function renderAgents(state, root) {
         actionMessage.hidden = false;
         power.disabled = false;
       }
-    }, 'primary');
+    });
     power.disabled = !allowed || pending || (!on && !inBench);
     actions.append(power);
     if (on) actions.append(modelControls(state, name, member), button('Review changes', () => setView('changes')));

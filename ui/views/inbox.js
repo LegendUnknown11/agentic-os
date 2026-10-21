@@ -2,7 +2,22 @@ import { h, page, section, empty, note, button, get, subscribe, apiError, reques
 
 // The ranking lives in src/inbox.js on the daemon, so the Inbox view and the
 // morning-brief automation can never disagree about what is waiting.
-const KIND_LABELS = { run: 'Run', approval: 'Decision', question: 'Question', task: 'Your task', message: 'Message' };
+const KIND_LABELS = { run: 'Run', approval: 'Decision', question: 'Question', task: 'Your task', message: 'Message', check: 'Check' };
+
+/**
+ * Doctor left the rail for Settings, so a failing environment check is an inbox
+ * row of its own: it must not be reachable only by someone who goes looking.
+ * Pure, for the suite.
+ */
+export function doctorItem(doctor) {
+  if (!doctor || doctor.ok === false || doctor.ready !== false) return null;
+  const failures = (doctor.checks ?? []).filter((check) => check.level === 'fail');
+  return {
+    id: 'doctor', kind: 'check', tone: 'attention', href: '#doctor',
+    title: failures.length === 1 ? 'The environment check found a problem' : `The environment check found ${failures.length || 'some'} problems`,
+    detail: failures[0]?.message ?? 'Open Doctor to see what needs fixing.',
+  };
+}
 
 export function loadInbox(state, render) {
   const token = requestToken(state, 'inboxRequest');
@@ -29,7 +44,8 @@ function row(item) {
 export function renderInbox(state, root) {
   if (root.isConnected === false) return;
   root.replaceChildren();
-  const items = state.inbox;
+  const issue = doctorItem(state.doctor);
+  const items = state.inbox == null ? null : issue ? [issue, ...state.inbox] : state.inbox;
   const waiting = waitingCount(items ?? []);
   const shell = page('Inbox', 'Everything inside the app that is waiting on you, most urgent first.');
   const refresh = button('Refresh', () => loadInbox(state, () => renderInbox(state, root)));
@@ -52,7 +68,7 @@ export function mountInbox(state, root) {
   // only when one of them did, at most once a second: the store notifies on
   // every frame of member output, and this was a request a second for as long
   // as anyone was typing.
-  const inputs = () => [state.approvals?.length, state.run?.id, state.run?.state, state.myTasks?.length, state.messageCursor].join('|');
+  const inputs = () => [state.approvals?.length, state.run?.id, state.run?.state, state.myTasks?.length, state.messageCursor, state.doctor?.ready].join('|');
   let seen = inputs();
   let timer = null;
   const off = subscribe(() => {

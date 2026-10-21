@@ -215,10 +215,14 @@ async function refreshLists() {
 }
 
 async function maybeOpenDoctor(firstSnapshot) {
-  if (!firstSnapshot || doctorProbe || location.hash.slice(1)) return;
+  if (!firstSnapshot || doctorProbe) return;
   doctorProbe = true;
+  // Doctor is a Settings tab now, so a failing check must reach you without a
+  // visit: the report is kept (state.doctor) and the rail and Inbox read it.
+  const openAtBoot = !location.hash.slice(1);
   const bootEventCount = eventsApplied;
   const report = await get('/api/doctor');
+  if (report && report.ok !== false) { state.doctor = report; apply({ type: '__doctor__' }); }
   // The probe is async and can resolve well after boot. Anything that
   // happened while it was in flight — a run created, an event streamed in —
   // means the sovereign is already mid-task, and grabbing the screen for a
@@ -226,7 +230,7 @@ async function maybeOpenDoctor(firstSnapshot) {
   // interruption. eventsApplied mirrors the connectionAttempt staleness
   // check above: if it moved since the probe started, the probe's result no
   // longer describes "nothing has happened yet" and must not act.
-  if (report?.ready === false && !location.hash.slice(1) && eventsApplied === bootEventCount) navigate('doctor');
+  if (openAtBoot && report?.ready === false && !location.hash.slice(1) && eventsApplied === bootEventCount) navigate('doctor');
 }
 
 function renderShell() {

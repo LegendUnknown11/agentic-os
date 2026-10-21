@@ -140,12 +140,11 @@ export function tone(status) {
 }
 export const empty = (text) => h('p', { class: 'empty', text });
 export const note = (text, cls = '') => h('p', { class: `note ${cls}`, text });
-// Primary buttons carry Editorial's pill-plus-circular-arrow shape; every
-// other variant stays a plain label — see .button.primary in app.css.
+// The one primary action is the white filled button (.button.primary); every
+// other variant stays a plain label. The T3 canvas draws no arrow on it.
 export const button = (label, action, cls = '') => h(
   'button', { class: `button ${cls}`.trim(), type: 'button', on: { click: action } },
   label,
-  cls.split(' ').includes('primary') && h('span', { class: 'button-icon', 'aria-hidden': 'true' }, '→'),
 );
 
 export function field(label, control, hint = '') {

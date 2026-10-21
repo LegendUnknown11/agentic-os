@@ -257,7 +257,8 @@ export function mountSidebar(root, options = {}) {
     workspaceList.textContent = '';
     const page = currentState.view?.page ?? 'home';
     // The badge counts only what needs a decision; news and due-soon items do not.
-    const waiting = (currentState.inbox ?? []).filter?.((item) => item.tone === 'attention').length ?? 0;
+    const waiting = ((currentState.inbox ?? []).filter?.((item) => item.tone === 'attention').length ?? 0)
+      + (currentState.doctor?.ready === false && currentState.doctor?.ok !== false ? 1 : 0);
     const items = [
       ['inbox', 'Inbox', waiting],
       ['team', 'Team'],
