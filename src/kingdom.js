@@ -1145,6 +1145,8 @@ export class Kingdom extends EventEmitter {
       this.bus.set('spentUsd', String(spent));
       const currentRun = this.#activeRun();
       if (currentRun) this.bus.recordRunSpend(currentRun.id, name, cost);
+      // The monotonic ledger "spend today" reads; clearSpend() never touches it.
+      this.bus.recordSpend(name, cost, d.in + d.out);
       const mine = Number(this.bus.get(`spent:${name}`) ?? 0) + cost;
       this.bus.set(`spent:${name}`, String(mine));
 
@@ -1167,6 +1169,10 @@ export class Kingdom extends EventEmitter {
       this.emit('spend', {
         total: spent, tokens, turns: this.turnsThisSession(), lifetimeTurns: this.turnsLifetime(),
         name, ctx, spentByAgent: mine,
+        // The context meter's other half: this member's model window, or null
+        // when kingdom.config.json's `contextWindows` does not name the model.
+        window: this.contextWindowOf(agent.spec?.model ?? spec.model ?? null),
+        today: this.spendToday(),
       });
       this.#enforceTurnBudget();
 
@@ -1399,6 +1405,33 @@ export class Kingdom extends EventEmitter {
   }
 
   /** Reset a member's cumulative spend — the sovereign lifting a ceiling. */
+  /**
+   * The zone "a day" means for spend: `timeZone` in kingdom.config.json when it
+   * names a real IANA zone, else the daemon process's own local zone. Always
+   * returned by name, so a reader never has to guess which midnight it was.
+   */
+  spendTimeZone() {
+    const want = this.config.timeZone;
+    if (want) {
+      // Validated, but returned as written: ICU canonicalises some names
+      // (Asia/Kolkata -> Asia/Calcutta), and the sovereign should read back
+      // the zone they typed.
+      try { new Intl.DateTimeFormat('en-US', { timeZone: want }); return String(want); } catch { /* fall through */ }
+    }
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  }
+
+  /** Spend per local day from the monotonic ledger, newest first. */
+  spendByDay({ days = 14, now = Date.now() } = {}) {
+    return this.bus.spendByDay({ timeZone: this.spendTimeZone(), days, now });
+  }
+
+  /** Today's spend: {day, usd, turns, tokens, timeZone}. */
+  spendToday(now = Date.now()) {
+    const { today, timeZone } = this.spendByDay({ days: 1, now });
+    return { ...today, timeZone };
+  }
+
   clearSpend(name) {
     if (name) this.bus.set(`spent:${name}`, '0');
     else {
@@ -1903,7 +1936,11 @@ export class Kingdom extends EventEmitter {
 
   async createRun(fields = {}) {
     const baselineRevision = fields.baselineRevision ?? (this.repo ? await revisionOf(this.repo) : null);
-    const run = this.bus.createRun({ ...fields, baselineRevision });
+    // A run is the orchestrator's thread, so the orchestrator is its lead
+    // unless a caller names another member of this court. Recorded, so the
+    // Runs table's Agent column reads a fact rather than a guess.
+    const lead = fields.lead && this.specOf(fields.lead) ? fields.lead : this.config.orchestrator.name;
+    const run = this.bus.createRun({ ...fields, lead, baselineRevision });
     await this.#reconcileRun();
     const current = this.bus.run(run.id);
     this.emit('run', current);
@@ -2669,6 +2706,44 @@ export class Kingdom extends EventEmitter {
   }
 
   /**
+   * Compact session, on the sovereign's say: the same recycle the
+   * `recycleAtTokens` threshold fires — handover note, retire, reseed a
+   * successor — triggered by hand. Deliberately no second path: a compaction
+   * that summarised in place would be the thing compact.js's header explains
+   * this court does not do.
+   *
+   * Refuses rather than interrupts. Mid-turn, the handover request would be
+   * injected into a half-finished thought and the turn's work lost with the
+   * session; asleep, there is no live session to hand over from (it resumes
+   * on its next message). Every outcome is a durable `session_compact` event.
+   */
+  async compactSession(name, { by = 'sovereign' } = {}) {
+    if (!this.specOf(name)) throw new Error(`No such team member: ${name}`);
+    const before = this.contextOf(name);
+    const refuse = (reason, message) => {
+      this.bus.logEvent(name, 'session_compact', { by, ok: false, reason, before: before.tokens });
+      const e = new Error(message);
+      e.reason = reason;
+      e.status = 409; // a conflict with the member's state, not a server fault
+      throw e;
+    };
+    const agent = this.agents.get(name);
+    if (!agent) refuse('asleep', `${name} is asleep, so there is no live session to compact. It resumes on its next message.`);
+    if (agent.recycling) refuse('recycling', `${name}'s session is already being handed over.`);
+    if (agent.busy) refuse('busy', `${name} is mid-turn. Compact it once the turn ends, so the turn's work is not lost.`);
+
+    await this.recycleAgent(name);
+    const after = this.contextOf(name);
+    const result = {
+      name, by, ok: true, before: before.tokens, after: after?.tokens ?? 0,
+      window: before.window, conversationId: before.conversationId,
+    };
+    this.bus.logEvent(name, 'session_compact', result);
+    this.emit('compacted', result);
+    return result;
+  }
+
+  /**
    * Move a member's live session to a different conversation.
    *
    * No CLI backend supports holding two sessions open in one process (every
@@ -2969,6 +3044,52 @@ export class Kingdom extends EventEmitter {
     target.recycleAtTokens = tokens;
     this.#persistConfig();
     return tokens;
+  }
+
+  /**
+   * A model's context window, from `contextWindows` in kingdom.config.json.
+   * Unknown model, or one the table does not name, is null: a meter drawn
+   * against a guessed window is worse than no meter.
+   */
+  contextWindowOf(model) {
+    if (!model) return null;
+    const n = Number((this.config.contextWindows ?? {})[model]);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }
+
+  /**
+   * How full one member's CURRENT session is: tokens in it now against its
+   * model's window. Tokens come from the live agent's own measurement
+   * (Agent#ctxTokens) when it is awake, else from the per-conversation `ctx:`
+   * key #record writes after every turn and recycleAgent zeroes — the same
+   * figure the recycle threshold is compared against.
+   */
+  contextOf(name) {
+    const spec = this.specOf(name);
+    if (!spec) return null;
+    const live = this.agents.get(name);
+    const conv = live?.conversationId ?? this.#activeConv(name);
+    const measured = live && typeof live.ctxTokens === 'function' ? live.ctxTokens() : null;
+    const tokens = Math.max(0, Math.round(Number(measured ?? this.bus.get(`ctx:${name}:${conv}`) ?? 0) || 0));
+    const model = live?.spec?.model ?? spec.model ?? this.config.peasantDefaults?.model ?? null;
+    const window = this.contextWindowOf(model);
+    return {
+      name,
+      role: this.roleOf(name),
+      model,
+      tokens,
+      window,
+      pct: window ? Math.min(100, Math.round((tokens / window) * 1000) / 10) : null,
+      recycleAt: this.#recycleThreshold(name),
+      awake: Boolean(live),
+      busy: Boolean(live?.busy),
+      conversationId: conv,
+    };
+  }
+
+  /** Every member's context, the orchestrator first. */
+  contextAll() {
+    return this.#members().map((s) => this.contextOf(s.name)).filter(Boolean);
   }
 
   #recycleThreshold(name) {

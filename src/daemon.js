@@ -158,7 +158,7 @@ function push(type, data) {
   for (const [res, conv] of clients) if (shouldDeliver(conv, type, data)) res.write(line);
 }
 
-for (const ev of ['agent', 'event', 'delivered', 'approval', 'verified', 'merged', 'recycled', 'resolved', 'started', 'failure', 'roster', 'failover', 'mergeFailed', 'pushed', 'pushBlocked', 'spend', 'budget', 'limited', 'advising', 'advisor', 'summarizer', 'goal', 'milestone', 'mode', 'compact', 'argued', 'repo', 'paused', 'run', 'conversationSwitched']) {
+for (const ev of ['agent', 'event', 'delivered', 'approval', 'verified', 'merged', 'recycled', 'resolved', 'started', 'failure', 'roster', 'failover', 'mergeFailed', 'pushed', 'pushBlocked', 'spend', 'budget', 'limited', 'advising', 'advisor', 'summarizer', 'goal', 'milestone', 'mode', 'compact', 'argued', 'repo', 'paused', 'run', 'conversationSwitched', 'compacted']) {
   kingdom.on(ev, (d) => {
     if (ev === 'roster') metricsCache.mark = null;
     push(ev, d ?? {});
@@ -344,6 +344,9 @@ const ACTIONS = {
     return result;
   },
   sleep: (b) => kingdom.sleep(b.name),
+  // Compact session: the recycle recycleAtTokens fires, by hand. 409 with a
+  // reason (busy | asleep | recycling) when the member cannot be compacted now.
+  compactSession: (b) => kingdom.compactSession(b.name, { by: 'sovereign' }),
   pause: (b) => kingdom.pause(b.why ?? ''),
   resume: () => kingdom.resume(),
   setBudget: (b) => kingdom.setBudget(b.capUsd),
@@ -624,6 +627,10 @@ function metrics() {
   const mark = `${kingdom.bus.lastEventId()}:${kingdom.lastPrune ?? 0}`;
   if (metricsCache.mark !== mark) metricsCache = { mark, value: buildMetrics() };
   const base = metricsCache.value;
+  // Live, not cached: a recycle or compaction zeroes a session without
+  // logging a turn, so the event mark above would not move for it.
+  const context = kingdom.contextAll();
+  const contextBy = new Map(context.map((c) => [c.name, c]));
   return {
     ...base,
     members: base.members.map((m) => ({
@@ -631,7 +638,12 @@ function metrics() {
       role: kingdom.roleOf(m.name),
       spent: Number(kingdom.bus.get(`spent:${m.name}`) ?? 0),
       awake: kingdom.agents.has(m.name),
+      context: contextBy.get(m.name) ?? null,
     })),
+    // Every member's session against its model's window, orchestrator first.
+    context,
+    // Spend per local day (named zone) from the ledger clearSpend leaves alone.
+    spendByDay: kingdom.spendByDay(),
     spent: Number(kingdom.bus.get('spentUsd') ?? 0),
     cap: kingdom.config.maxKingdomUsd ?? 0,
     perMemberCap: kingdom.config.maxBudgetUsd ?? 0,
@@ -846,10 +858,15 @@ const READS = {
     const run = id ? kingdom.bus.run(id) : kingdom.bus.currentRun() ?? all.at(-1) ?? null;
     if (id && !run) return [404, { ok: false, error: `No run ${id}.` }];
     const totals = kingdom.bus.runSpendTotals();
+    const agents = kingdom.bus.runAgents();
     const runs = all.slice(-20).reverse().map((r) => ({
       id: r.id, state: r.state, objective: r.objective, createdTs: r.createdTs,
       endedTs: r.completedTs ?? r.cancelledTs ?? null,
       usd: totals[r.id]?.usd ?? 0, turns: totals[r.id]?.turns ?? 0,
+      // Who drove it: the recorded lead (null on runs older than the column)
+      // and every member that spent on it, highest spend first.
+      lead: r.lead ?? null,
+      agents: (agents[r.id] ?? []).map((m) => m.name),
     }));
     return [200, {
       ok: true, cap: Number(kingdom.config.maxRunUsd ?? 0) || 0,
@@ -1118,7 +1135,10 @@ const handle = async (req, res) => {
       spend: {
         turns: kingdom.turnsThisSession(), lifetimeTurns: kingdom.turnsLifetime(),
         turnBudget: kingdom.sessionTurnCap(),
+        today: kingdom.spendToday(),
       },
+      // The context meter: every member's session against its model's window.
+      context: kingdom.contextAll(),
       paused: kingdom.paused ?? false,
       pausedWhy: kingdom.paused ? (kingdom.bus.get('pausedWhy') ?? '') : '',
       mode: kingdom.mode(),
@@ -1311,7 +1331,10 @@ const handle = async (req, res) => {
       const result = await action(input);
       return send(200, { ok: true, ...(result && typeof result === 'object' ? result : {}) });
     } catch (e) {
-      return send(500, { ok: false, error: e.message });
+      // An action may refuse with a status of its own (409 when a member's
+      // state forbids it) and a machine-readable reason beside the message.
+      const status = Number.isInteger(e.status) && e.status >= 400 && e.status < 600 ? e.status : 500;
+      return send(status, { ok: false, error: e.message, ...(e.reason ? { reason: e.reason } : {}) });
     }
   }
 

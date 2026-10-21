@@ -1575,6 +1575,11 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .inspector-empty { margin: 0; color: var(--faint); font-size: var(--t-xs); }
 
+/* The context meter and Compact session sit at the foot of "This session". */
+.inspector-context { display: grid; gap: var(--space-1); }
+
+.inspector-compact { width: 100%; justify-content: center; }
+
 @media (max-width: 1100px) {
   .run-layout { grid-template-columns: minmax(0, 1fr); }
   .run-inspector { position: static; }

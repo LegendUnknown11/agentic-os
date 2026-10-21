@@ -88,7 +88,8 @@ create table if not exists runs (
   applied_ts            integer,
   completed_ts          integer,
   cancelled_ts          integer,
-  blocker               text
+  blocker               text,
+  lead                  text                    -- the member that drove the run; null on pre-lead rows
 );
 -- The sovereign's own to-do list. Separate from tasks, which is the team's
 -- work queue: nothing here is claimable, and nothing here wakes a member.
@@ -111,6 +112,16 @@ create table if not exists run_spend (
   ts      integer not null,
   agent   text    not null,
   usd     real    not null
+);
+-- One row per priced turn, run or no run: the monotonic ledger spend-by-day
+-- reads. Never cleared — clearSpend() zeroes the running counters in state
+-- and leaves this alone, so "spent today" cannot go negative or vanish.
+create table if not exists spend_ledger (
+  id      integer primary key autoincrement,
+  ts      integer not null,               -- epoch ms, UTC; the day is derived at read time
+  agent   text    not null,
+  usd     real    not null,
+  tokens  integer not null default 0
 );
 create table if not exists campaigns (
   id            integer primary key autoincrement,
@@ -148,6 +159,7 @@ create index if not exists idx_evt_agent on events(agent, id);
 create index if not exists idx_task_state on tasks(state, owner);
 create index if not exists idx_conv_member on conversations(member, created_ts);
 create index if not exists idx_run_spend on run_spend(run_id, id);
+create index if not exists idx_spend_ledger_ts on spend_ledger(ts);
 `;
 
 // A pre-conversations db's messages/events tables don't have conversation_id
@@ -262,6 +274,13 @@ export class Bus {
     // showed a blocked run with no reason and no next action.
     this.#migrate('schema:runs:blocker:v1', () => {
       if (!this.#columns('runs').includes('blocker')) this.db.exec('alter table runs add column blocker text');
+    });
+    // Which member drove a run. The T3 Runs table has an Agent column and a
+    // run recorded none. Pre-existing runs stay null — who led them was never
+    // written down, and run_spend's split (served beside it) is what spent,
+    // not who led.
+    this.#migrate('schema:runs:lead:v1', () => {
+      if (!this.#columns('runs').includes('lead')) this.db.exec('alter table runs add column lead text');
     });
     // The sovereign can now reorder the queue; existing tasks start level.
     this.#migrate('schema:tasks:priority:v1', () => {
@@ -622,6 +641,7 @@ export class Bus {
       cancelledTs: row.cancelled_ts,
       blocker,
       blockers: blocker ? [blocker] : [],
+      lead: row.lead ?? null,
     };
   }
 
@@ -629,7 +649,7 @@ export class Bus {
   createRun({
     id = null, objective = '', state = 'planning', sourceSnapshot = {}, approvedPlan = {},
     acceptanceCriteria = [], allowedModels = [], taskIds = [], recoveryHistory = [],
-    verificationEvidence = [], baselineRevision = null, branch = null,
+    verificationEvidence = [], baselineRevision = null, branch = null, lead = null,
   } = {}) {
     if (!RUN_STATES.has(state)) throw new Error(`Unknown run state: ${state}`);
     if (this.currentRun()) throw new Error('An improvement run is already active.');
@@ -638,12 +658,12 @@ export class Bus {
     this.db.prepare(
       `insert into runs
        (id,created_ts,updated_ts,state,objective,source_snapshot,approved_plan,acceptance_criteria,
-        allowed_models,task_ids,recovery_history,verification_evidence,baseline_revision,branch)
-       values (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        allowed_models,task_ids,recovery_history,verification_evidence,baseline_revision,branch,lead)
+       values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     ).run(
       runId, now, now, state, String(objective ?? ''), json(sourceSnapshot, {}), json(approvedPlan, {}),
       json(acceptanceCriteria, []), json(allowedModels, []), json(taskIds, []), json(recoveryHistory, []),
-      json(verificationEvidence, []), baselineRevision, branch,
+      json(verificationEvidence, []), baselineRevision, branch, lead ? String(lead) : null,
     );
     return this.run(runId);
   }
@@ -675,7 +695,7 @@ export class Bus {
       recoveryHistory: 'recovery_history', verificationEvidence: 'verification_evidence',
       baselineRevision: 'baseline_revision', branch: 'branch', approvedTs: 'approved_ts', appliedTs: 'applied_ts',
       finalApproval: 'final_approved', finalApprovedTs: 'final_approved_ts',
-      completedTs: 'completed_ts', cancelledTs: 'cancelled_ts', blocker: 'blocker',
+      completedTs: 'completed_ts', cancelledTs: 'cancelled_ts', blocker: 'blocker', lead: 'lead',
     };
     // A blocker describes the blocked state and nothing else: leaving it (a
     // recovery back to running, a stop) clears it unless the caller sets one.
@@ -847,6 +867,56 @@ export class Bus {
   /** Run-ledger spend since `ts`, across every run. */
   runSpendSince(ts) {
     return this.db.prepare('select coalesce(sum(usd), 0) as usd from run_spend where ts >= ?').get(Number(ts)).usd;
+  }
+
+  /**
+   * Who spent on each run, keyed by run id: members by spend, highest first.
+   * The derived half of "which agent drove this run" — `lead` is the recorded
+   * half.
+   */
+  runAgents() {
+    const out = {};
+    for (const row of this.db.prepare(
+      'select run_id, agent, sum(usd) as usd, count(*) as turns from run_spend group by run_id, agent order by run_id, usd desc, agent',
+    ).all()) {
+      (out[row.run_id] ??= []).push({ name: row.agent, usd: row.usd, turns: row.turns });
+    }
+    return out;
+  }
+
+  /** Append one priced turn to the monotonic spend ledger. */
+  recordSpend(agent, usd, tokens = 0, ts = Date.now()) {
+    this.db.prepare('insert into spend_ledger (ts, agent, usd, tokens) values (?,?,?,?)')
+      .run(Number(ts), String(agent), Number(usd) || 0, Math.max(0, Math.round(Number(tokens) || 0)));
+  }
+
+  /**
+   * Spend per calendar day in `timeZone` (an IANA name), newest first, for
+   * the `days` days ending at `now` — today included even when it is empty.
+   * The day is derived from each row's UTC timestamp at read time, so a
+   * changed time zone re-buckets history rather than needing a migration.
+   */
+  spendByDay({ timeZone, days = 14, now = Date.now() } = {}) {
+    const fmt = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' });
+    const dayOf = (ts) => fmt.format(new Date(ts));
+    const span = Math.max(1, Math.min(366, Math.round(Number(days) || 14)));
+    const today = dayOf(now);
+    // Walk back by calendar day, not by 24h: a DST day is 23 or 25 hours.
+    const keys = [today];
+    for (let t = now; keys.length < span;) {
+      t -= 3_600_000;
+      const key = dayOf(t);
+      if (key !== keys.at(-1)) keys.push(key);
+    }
+    const buckets = new Map(keys.map((day) => [day, { day, usd: 0, turns: 0, tokens: 0 }]));
+    // A day is at most 25h, so this window covers every row the keys can hold.
+    const from = now - (span + 1) * 86_400_000;
+    for (const row of this.db.prepare('select ts, usd, tokens from spend_ledger where ts >= ? and ts <= ?').all(from, now)) {
+      const bucket = buckets.get(dayOf(row.ts));
+      if (!bucket) continue;
+      bucket.usd += row.usd; bucket.turns += 1; bucket.tokens += row.tokens;
+    }
+    return { timeZone, today: buckets.get(today), days: [...buckets.values()] };
   }
 
   /** Spend and turn totals for every run that has any, keyed by run id. */
@@ -1198,6 +1268,29 @@ if (process.argv[1]?.endsWith('bus.js')) {
     a.equal(runs.runSpentUsd(run.id), 5);
     a.equal(runs.runSpentUsd('run-none'), 0, 'a run with no ledger rows has spent nothing');
     a.deepEqual(runs.runSpendTotals(), { [run.id]: { usd: 5, turns: 10 }, 'run-other': { usd: 3, turns: 1 } });
+    a.deepEqual(runs.runAgents()['run-other'], [{ name: 'coder', usd: 3, turns: 1 }], 'who spent on a run, by member');
+
+    // Spend by day, in an explicit time zone. 2026-03-08 is the US spring-
+    // forward day (23 hours long in New York) — the walk back must not skip it.
+    const NOON_9TH = Date.UTC(2026, 2, 9, 16);                       // 12:00 EDT, 2026-03-09
+    runs.recordSpend('coder', 1, 100, NOON_9TH - 3_600_000);         // 11:00 on the 9th
+    runs.recordSpend('orchestrator', 2, 50, Date.UTC(2026, 2, 9, 4, 30)); // 00:30 EDT on the 9th
+    runs.recordSpend('coder', 4, 10, Date.UTC(2026, 2, 9, 3, 30));   // 23:30 EDT on the 8th
+    runs.recordSpend('coder', 8, 1, Date.UTC(2026, 2, 7, 12));       // the 7th
+    const ny = runs.spendByDay({ timeZone: 'America/New_York', days: 3, now: NOON_9TH });
+    a.equal(ny.timeZone, 'America/New_York');
+    a.deepEqual(ny.days.map((d) => [d.day, d.usd, d.turns]),
+      [['2026-03-09', 3, 2], ['2026-03-08', 4, 1], ['2026-03-07', 8, 1]], 'local days, newest first, across a DST change');
+    a.deepEqual(ny.today, { day: '2026-03-09', usd: 3, turns: 2, tokens: 150 });
+    const utc = runs.spendByDay({ timeZone: 'UTC', days: 2, now: NOON_9TH });
+    a.deepEqual(utc.days.map((d) => [d.day, d.usd]), [['2026-03-09', 7], ['2026-03-08', 0]],
+      'the same rows re-bucket under another zone; an empty day is still listed');
+    a.equal(runs.spendByDay({ timeZone: 'UTC', days: 1, now: NOON_9TH + 86_400_000 * 5 }).today.usd, 0,
+      'a day with no turns is zero, not missing');
+    a.equal(run.lead, null, 'a run created with no lead records none');
+    const led = runs.createRun({ id: 'run-led', objective: 'led', lead: 'orchestrator' });
+    a.equal(led.lead, 'orchestrator', 'a run records the member that drove it');
+    a.equal(runs.updateRun(led.id, { lead: 'architect' }).lead, 'architect');
     runs.close();
   }
 
@@ -1253,6 +1346,17 @@ if (process.argv[1]?.endsWith('bus.js')) {
     a.deepEqual(upgraded.updateRun(run.id, { state: 'blocked', blocker }).blocker, blocker,
       'the migration adds a writable blocker column');
     upgraded.close();
+
+    // Same for `lead`: a pre-lead runs table gains the column, its runs read
+    // back with no lead (nothing invented), and the column is writable.
+    const preLead = new DatabaseSync(blockPath);
+    preLead.exec('alter table runs drop column lead');
+    preLead.prepare("delete from state where k = 'schema:runs:lead:v1'").run();
+    preLead.close();
+    const withLead = new Bus(blockPath);
+    a.equal(withLead.run(run.id).lead, null, 'a pre-lead run reads back with no lead');
+    a.equal(withLead.updateRun(run.id, { lead: 'orchestrator' }).lead, 'orchestrator', 'the migration adds a writable lead column');
+    withLead.close();
     rmSync(blockDir, { recursive: true, force: true });
   }
 

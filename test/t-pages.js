@@ -1,9 +1,9 @@
 import { strict as a } from 'node:assert';
 import { readFileSync } from 'node:fs';
 import { changeStage, pushState } from '../ui/views/pages.js';
-import { modelLabel, turnsText } from '../ui/views/util.js';
+import { modelLabel, money, turnsText } from '../ui/views/util.js';
 import { lastMessageIdFor } from '../ui/sidebar.js';
-import { taskMeta, visibleQueueRows } from '../ui/views/home.js';
+import { runAgent, spendToday, taskMeta, visibleQueueRows } from '../ui/views/home.js';
 import { courtActionError } from '../ui/views/courts.js';
 import { resolvedOutcome } from '../ui/views/approvals.js';
 import { assignable, dueState, loadMyTasks, orderTasks } from '../ui/views/tasks.js';
@@ -197,6 +197,17 @@ a.match(homeSource, /home-objective-block/, 'Overview leads with the objective a
 a.match(homeSource, /objectiveSection\(state, /, 'the objective editor is on Overview now, not a page of its own');
 a.match(homeSource, /startRunSection\(state, /, 'Start a run is on Overview now');
 a.match(homeSource, /get\('\/api\/runSpend'\)/, 'the Runs table reads every run and what it spent from the daemon');
+// The canvas's Agent column and "Spend today", now that the daemon records both.
+a.equal(runAgent({ lead: 'orchestrator', agents: ['coder'] }), 'orchestrator', 'a run\'s recorded lead is its agent');
+a.equal(runAgent({ lead: null, agents: ['coder', 'reviewer'] }), 'coder', 'else whoever spent most on it');
+a.equal(runAgent({ lead: null, agents: [] }), '—', 'and nothing invented for a run with neither');
+a.equal(spendToday({ today: { day: '2026-10-21', usd: 1.25 } }), money(1.25));
+a.equal(spendToday({ total: 9 }), '—', 'lifetime spend is never shown as today\'s');
+a.match(homeSource, /stat\('Spend today', spend, 'mono'\)/, 'Overview counts today\'s spend, labelled as such');
+a.match(homeSource, /h\('th', \{ scope: 'col', text: 'Agent' \}\)/, 'the Runs table has the canvas\'s Agent column');
+a.match(threadSource, /action === 'compact-session'/, 'the inspector\'s Compact session button is wired');
+a.match(threadSource, /post\('compactSession', \{ name: member \}\)/, 'it posts the daemon action, not a parallel path');
+a.match(threadSource, /if \(!mounted \|\| root\.isConnected === false\) return;\s*if \(result\?\.ok\)/, 'a late compaction reply never writes to a view that has gone');
 a.match(homeSource, /requestToken\(state, 'homeRunsRequest'\);\s*requestToken\(state, 'runTemplatesRequest'\);/, 'leaving Overview must drop its pending run loads');
 // Seen live 2026-09-21 on a fresh court: the lead "Next step" card and the
 // ambient "Start here" card rendered the same sentence and the same two

@@ -3,7 +3,7 @@
 // lifecycle. Pure, so it is exercised directly.
 //   node test/t-inspector.js
 import { strict as a } from 'node:assert';
-import { progressSteps } from '../ui/inspector.js';
+import { progressSteps, contextReading } from '../ui/inspector.js';
 
 // no run and no tasks: nothing to show, not an invented checklist
 a.deepEqual(progressSteps({}), [], 'nothing in progress is an empty list');
@@ -45,5 +45,16 @@ console.log('  with no tasks, the lifecycle is positioned by the run\'s state');
 // a long task list is bounded
 const many = { tasks: Array.from({ length: 30 }, (_, i) => ({ id: i + 1, title: `T${i + 1}`, state: 'pending' })) };
 a.equal(progressSteps(many).length, 12, 'the card shows at most twelve steps');
+
+// the context meter: tokens against a known window, or plainly unknown
+const known = contextReading({ context: { orchestrator: { tokens: 250_000, window: 1_000_000 } } });
+a.deepEqual([known.tokens, known.window, known.pct], [250_000, 1_000_000, 25]);
+a.equal(known.text, '250k of 1.0M · 25%');
+const unknown = contextReading({ context: { orchestrator: { tokens: 42_000, window: null } } });
+a.equal(unknown.pct, null, 'no window, no percent — never a guessed one');
+a.equal(unknown.text, '42k · window unknown');
+a.equal(contextReading({}).text, 'not measured yet', 'nothing streamed is not zero');
+a.equal(contextReading({ context: { coder: { tokens: 9_000, window: 200_000 } } }, 'coder').pct, 4.5, 'any member can be read');
+console.log('  the context meter reads tokens of a known window, or says the window is unknown');
 
 console.log('t-inspector.js OK — Progress is the run\'s own work, or its lifecycle, and never invented');

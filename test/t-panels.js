@@ -74,6 +74,7 @@ writeFileSync(cfg, JSON.stringify({
   bus.logEvent('coder', 'summoned', { by: 'orchestrator', approvalId: 1 });
   bus.set('spentUsd', '3.50');
   bus.set('spent:orchestrator', '2.00');
+  bus.set('ctx:orchestrator:default', '14000');   // what #record writes after a turn
   bus.logEvent('aux', 'aux_call', {
     purpose: 'summary', success: true, elapsedMs: 10,
     input: 100, cached: 60, written: 5, fresh: 35, output: 4,
@@ -106,7 +107,7 @@ writeFileSync(cfg, JSON.stringify({
   // Two finished runs with ledgers, so the run spend panel has a history.
   bus.createRun({ id: 'run-a', objective: 'first run', state: 'completed' });
   bus.recordRunSpend('run-a', 'coder', 0.25, 1);
-  bus.createRun({ id: 'run-b', objective: 'second run', state: 'cancelled' });
+  bus.createRun({ id: 'run-b', objective: 'second run', state: 'cancelled', lead: 'orchestrator' });
   bus.recordRunSpend('run-b', 'coder', 0.5, 2);
   bus.recordRunSpend('run-b', 'orchestrator', 0.75, 3);
   bus.close();
@@ -163,6 +164,37 @@ try {
     a.equal(m.spent, 3.5);
     a.equal(m.cap, 75);
     a.equal(m.perMemberCap, 5);
+
+    // The context meter, served additively: every member's current session
+    // against its model's window, orchestrator first. No model is named in
+    // this config and so no window — null, never a guessed one.
+    a.ok(Array.isArray(m.context), '/api/metrics carries the context meter');
+    a.equal(m.context[0].name, 'orchestrator', 'the orchestrator is first');
+    // Asleep, the figure is the ctx: key #record wrote. Awake on a FRESH
+    // session (no saved session id here), the live agent's own measurement
+    // wins, and a fresh session holds nothing yet.
+    a.equal(m.context[0].tokens, m.context[0].awake ? 0 : 14_000,
+      'tokens in the session now: the live measurement, else the ctx: key');
+    a.equal(m.context[0].window, null, 'an unknown model has no window');
+    a.equal(m.context[0].pct, null);
+    a.deepEqual(orchestrator.context, m.context[0], 'and per member, beside the existing fields');
+
+    // Compact session is an action. A member that cannot be compacted right
+    // now answers 409 with a reason, not a 500 that reads as a crash.
+    const compact = await fetch(`${base}/api/compactSession`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: 'briefer' }),
+    });
+    const compactBody = await compact.json();
+    if (compact.status === 409) a.ok(['asleep', 'busy', 'recycling'].includes(compactBody.reason), compactBody.error);
+    else a.equal(compactBody.ok, true, `compactSession answered ${compact.status}: ${compactBody.error}`);
+    // Spend by day, from the ledger: the zone is named, today is always there.
+    a.ok(m.spendByDay?.timeZone, 'spendByDay names its time zone');
+    a.equal(m.spendByDay.days.length, 14, 'two weeks of local days, empty ones included');
+    a.equal(m.spendByDay.today.day, m.spendByDay.days[0].day, 'newest first, starting today');
+
+    const missing = await post('/api/compactSession', { name: 'nobody' });
+    a.equal(missing.ok, false);
+    a.match(missing.error, /No such team member/);
 
     // codex has no $/token in this config — quota tracks its real ceiling
     // (the plan's token allowance) instead of inventing a dollar figure.
@@ -518,6 +550,10 @@ try {
     a.deepEqual(r.spend.members.map((m) => m.name), ['orchestrator', 'coder'], 'members rank by spend');
     a.deepEqual(r.runs.map((x) => [x.id, x.usd, x.turns]), [['run-b', 1.25, 2], ['run-a', 0.25, 1]],
       'history lists newest first with each run\'s own total');
+    // The Runs table's Agent column: the recorded lead, and who spent.
+    a.deepEqual(r.runs.map((x) => [x.id, x.lead, x.agents]),
+      [['run-b', 'orchestrator', ['orchestrator', 'coder']], ['run-a', null, ['coder']]],
+      'each run serves its lead (null when never recorded) and its spenders by spend');
     const one = await get('/api/runSpend?id=run-a');
     a.equal(one.spend.usd, 0.25, 'a named run reads its own ledger');
     const missing = await fetch(`${base}/api/runSpend?id=run-none`);
