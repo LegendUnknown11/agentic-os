@@ -37,9 +37,7 @@
 // and deliberately not guessed at. Read T* as "below this, recycling loses
 // money even if catching up were free."
 //
-// Read-only, apart from the one-time move of pre-rename state (src/legacy.js)
-// on first use. Safe to run while the team is working.
-import './legacy-boot.js'; // first: legacy env fallback and home migration, before any module reads env
+// Read-only. Safe to run while the team is working.
 import { DatabaseSync } from 'node:sqlite';
 import { resolve } from 'node:path';
 import { dbPath } from './worktree.js';
@@ -231,9 +229,7 @@ if (process.argv[1]?.endsWith('recycle.js') && process.argv[2]) {
   const { readFileSync } = await import('node:fs');
   const { defaultConfigPath } = await import('./agenticos.js');
   let cfg = {};
-  const { LEGACY } = await import('./legacy.js');
-  // A repo's own config may still carry its pre-rename name: read, never moved, it is the user's file.
-  for (const p of [resolve(repo, 'agenticos.config.json'), resolve(repo, LEGACY.config), defaultConfigPath(repo)]) {
+  for (const p of [resolve(repo, 'agenticos.config.json'), defaultConfigPath(repo)]) {
     try { cfg = JSON.parse(readFileSync(p, 'utf8')); break; } catch { /* try the next */ }
   }
   const cli = process.argv[3] ?? cfg.orchestrator?.cli ?? 'codex';

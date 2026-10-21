@@ -16,7 +16,6 @@
 // tracked repo" rule.
 import { mkdirSync, readFileSync, writeFileSync, rmSync, renameSync, statSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { LEGACY } from './legacy.js';
 import { join, dirname, basename, resolve } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { createServer, request as httpRequest } from 'node:http';
@@ -70,8 +69,7 @@ async function withLock(path, fn) {
 function readRegistryRaw(path) {
   try {
     const parsed = JSON.parse(readFileSync(path, 'utf8'));
-    // A registry written before the rename keeps its rows under the old key.
-    const rows = parsed?.teams ?? parsed?.[LEGACY.registryKey];
+    const rows = parsed?.teams;
     return Array.isArray(rows) ? rows : [];
   } catch {
     return [];

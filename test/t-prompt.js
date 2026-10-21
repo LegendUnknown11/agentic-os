@@ -65,7 +65,7 @@ const sha = (s) => createHash('sha256').update(s, 'utf8').digest('hex').slice(0,
 //
 // Two numbers, not one: a length alone would miss a same-length reordering, and
 // a hash alone tells you nothing about HOW far the prompt moved when it breaks.
-// Re-pinned 2026-10-21 by the de-theming rename (docs/RENAME.md): the words
+// Re-pinned 2026-10-21 by the de-theming rename: the words
 // changed to team/user/agent/add_agent and nothing else, in src/ and in the
 // shipped skills/ index every prompt carries; every prompt got 23-58 bytes
 // shorter (measured: 6926->6873 for code/orchestrator).

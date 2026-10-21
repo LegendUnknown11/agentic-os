@@ -13,7 +13,6 @@
 // hold. So this replays the actual decision instead of approximating it.
 //
 // Read-only. Safe to run while the team is working.
-import './legacy-boot.js'; // first: legacy env fallback and home migration, before any module reads env
 import { DatabaseSync } from 'node:sqlite';
 import { resolve } from 'node:path';
 import { dbPath } from './worktree.js';

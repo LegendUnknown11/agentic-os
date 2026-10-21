@@ -8,7 +8,6 @@
 // Tokens are written to <repoParent>/.agenticos/<repoName>/tokens.json, which
 // lives outside the repo and so can never be committed. Each team member is
 // assigned one token, stably, so several tokens spread the rate limit.
-import './legacy-boot.js'; // first: legacy env fallback and home migration, before any module reads env
 import { readFileSync, writeFileSync, mkdirSync, chmodSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { stateDir, globalTokenStore } from './worktree.js';

@@ -6,7 +6,6 @@
 // It writes straight to the SQLite bus (WAL, multi-process safe). The
 // orchestrator polls for new rows rather than being called back — one less
 // moving part than a socket, and a 300ms poll on a local db is free.
-import './legacy-boot.js'; // first: legacy env fallback and home migration, before any module reads env
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {

@@ -22,7 +22,3 @@ if (!process.env.AGENTICOS_TEAMS_REGISTRY) {
   const dir = mkdtempSync(join(tmpdir(), 'agenticos-test-registry-'));
   process.env.AGENTICOS_TEAMS_REGISTRY = join(dir, 'teams.json');
 }
-
-// Same reason, for the one-time move of pre-rename state (src/legacy.js): a
-// spawned daemon must not move the real home-folder state of whoever runs it.
-process.env.AGENTICOS_SKIP_LEGACY_MIGRATION ??= '1';

@@ -11,7 +11,6 @@
 // Deliberately its own process rather than living inside Electron: the
 // orchestrator needs Node 24's node:sqlite, and this way closing the window
 // does not kill the team.
-import './legacy-boot.js'; // first: legacy env fallback and home migration, before any module reads env
 import { createServer } from 'node:http';
 import { readFile, mkdir, writeFile, readdir, unlink } from 'node:fs/promises';
 import { existsSync, readFileSync, mkdirSync, writeFileSync, unlinkSync } from 'node:fs';

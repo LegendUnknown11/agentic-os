@@ -67,7 +67,7 @@ const digest = (tools) => createHash('sha256')
 
 // `mode/role` -> [tool count, sha256-16 of the sorted shapes].
 // Regenerate with --print.
-// Re-pinned 2026-10-21 by the de-theming rename (docs/RENAME.md): the crew
+// Re-pinned 2026-10-21 by the de-theming rename: the crew
 // tools became add_agent, wake_agent, remove_agent, pause_team and
 // resume_team, and request_merge/read_diff name their member `agent`.
 // Same counts, same tools, same arguments otherwise.

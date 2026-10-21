@@ -31,7 +31,6 @@ import {
   revisionOf, createRunWorktree, mergeIntoRun, mergeRunBranch, runWorktreePath,
 } from './worktree.js';
 import { mirrorToProject, noteWritten } from './vault.js';
-import { migrateConfig, stateFile, LEGACY } from './legacy.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const MCP_PATH = join(HERE, 'mcp.js');
@@ -167,7 +166,6 @@ export class AgenticOS extends EventEmitter {
         + 'choices are in that file if it can be repaired.';
       try { renameSync(configPath, `${configPath}.broken`); } catch { /* nothing to keep */ }
     }
-    this.#migrateRenamedConfig();
     this.#seedRoles();
     // Fixed for the instance's life, like this.bus below — attachRepo() mutates
     // this.repo afterward, but the Bus (and every member's AGENTICOS_DB) must keep
@@ -175,7 +173,6 @@ export class AgenticOS extends EventEmitter {
     // later points.
     this.dbPath = dbPath(repo);
     this.bus = new Bus(this.dbPath);
-    if (this.renameReport?.changed) this.bus.logEvent(SYSTEM, 'config_renamed', this.renameReport.report);
     this.#migrateRoster();
     this.processes = new Map(); // name -> AgentProcess (awake, has a live process)
     this.added = new Set(); // members in service; may be idle-slept and revived
@@ -234,37 +231,6 @@ export class AgenticOS extends EventEmitter {
     // Seeded from the current library, so there is nothing to migrate.
     this.config.rosterVersion = ROSTER_VERSION;
     this.#persistConfig();
-  }
-
-  /**
-   * A config written before the de-theming rename (docs/RENAME.md) gets its
-   * keys renamed and any shipped text it never edited refreshed, once, before
-   * anything reads it. The rules are migrateConfig's, in src/legacy.js; this
-   * only supplies the shipped text and says out loud what it could not do.
-   */
-  #migrateRenamedConfig() {
-    let shipped = {};
-    try {
-      const template = JSON.parse(readFileSync(join(HERE, '..', 'agenticos.config.json'), 'utf8'));
-      const roles = JSON.parse(readFileSync(join(HERE, '..', 'roles.json'), 'utf8')).agents ?? [];
-      shipped = { orchestrator: template.orchestrator, briefer: template.briefer, agents: [...(template.agents ?? []), ...roles] };
-    } catch { /* no shipped text to compare against: the keys still move */ }
-    const result = migrateConfig(this.config, shipped);
-    this.renameReport = result;
-    if (result.changed) this.#persistConfig();
-    const { conflicts, legacyToolsIn } = result.report;
-    if (conflicts.length) {
-      this.#warn(`${this.configPath} has both the old and the new name of ${conflicts.join(', ')}; using the new one, the old one is left in the file.`);
-    }
-    if (legacyToolsIn.length) {
-      this.#warn(`The edited prompt of ${legacyToolsIn.join(', ')} names team tools by their old names; they are now `
-        + 'add_agent, remove_agent, wake_agent, pause_team and resume_team.');
-    }
-    const clash = [this.config.orchestrator?.name, this.config.briefer?.name, ...(this.config.agents ?? []).map((a) => a?.name)]
-      .filter((n) => n === 'user' || n === 'system');
-    if (clash.length) {
-      this.#warn(`A member is named ${clash.join(' and ')}, which is now the name the app itself posts as. Rename the member.`);
-    }
   }
 
   /**
@@ -646,8 +612,7 @@ export class AgenticOS extends EventEmitter {
       if (existsSync(file)) {
         let current = null;
         try { current = JSON.parse(readFileSync(file, 'utf8')); } catch { /* not ours */ }
-        // Ours under either name: a workspace written before the rename used the old key.
-        if (!current?.mcpServers?.agenticos && !current?.mcpServers?.[LEGACY.mcpServer]) {
+        if (!current?.mcpServers?.agenticos) {
           this.#warn(`"${name}" runs Cursor in a workspace with its own .cursor/mcp.json; `
             + 'the team will not modify it, so this member has no AgenticOS tools.');
           return;
@@ -723,10 +688,6 @@ export class AgenticOS extends EventEmitter {
       } catch { /* absent or unreadable: start clean */ }
 
       cfg.mcpServers ??= {};
-      // Our own entry under its pre-rename key would start a second copy of
-      // this server beside the new one. Only ours goes: same script path.
-      const old = cfg.mcpServers[LEGACY.mcpServer];
-      if (old && Array.isArray(old.args) && old.args.includes(MCP_PATH)) delete cfg.mcpServers[LEGACY.mcpServer];
       cfg.mcpServers.agenticos = {
         command: process.execPath,
         args: [MCP_PATH],
@@ -3950,7 +3911,7 @@ export class AgenticOS extends EventEmitter {
  * gives each repo its own state. stateDir is already gitignored.
  */
 export function defaultConfigPath(repo) {
-  const local = stateFile(stateDir(repo), 'agenticos.config.json', LEGACY.config);
+  const local = join(stateDir(repo), 'agenticos.config.json');
   const template = join(HERE, '..', 'agenticos.config.json');
   if (existsSync(local)) return local;
   try {

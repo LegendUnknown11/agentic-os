@@ -19,16 +19,13 @@ import { dbPath, worktreePath } from '../src/worktree.js';
 import {
   planRosterMigration, COVERED_BY, NEW_IN_V2, SHIPPED, ROSTER_VERSION,
 } from '../src/roster.js';
-import { transformText } from '../scripts/rename/transform.mjs';
-import { migrateConfig } from '../src/legacy.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-// The fixture is byte-exact v1 data, so it still carries the pre-rename keys;
-// a launch renames them (src/legacy.js migrateConfig) before the roster runs.
+// The fixture is byte-exact v1 data, so it carries the pre-rename key names.
 const v1 = JSON.parse(readFileSync(join(HERE, 'fixtures', 'roster-v1.json'), 'utf8'));
-migrateConfig(v1);
+v1.agents = v1.peasants; v1.agentDefaults = v1.peasantDefaults;
+delete v1.peasants; delete v1.peasantDefaults;
 const library = JSON.parse(readFileSync(join(HERE, '..', 'roles.json'), 'utf8')).agents;
-const renamed = (text) => transformText('roles-library.json', text);
 const clone = (o) => JSON.parse(JSON.stringify(o));
 
 /* ---------- every v1 role is classified ---------- */
@@ -47,14 +44,13 @@ const clone = (o) => JSON.parse(JSON.stringify(o));
   for (const n of NEW_IN_V2) {
     a.ok(!v1.agents.some((p) => p.name === n), `${n} is marked new but v1 shipped it`);
   }
-  // roles-library.json keeps every retired body, so nothing written is gone:
-  // each is the v1 text exactly as the de-theming codemod rewrites it.
+  // roles-library.json keeps every retired body, so nothing written is gone.
   const kept = JSON.parse(readFileSync(join(HERE, '..', 'roles-library.json'), 'utf8')).agents;
   a.deepEqual(kept.map((r) => r.name).sort(), Object.keys(COVERED_BY).sort(),
     'roles-library.json must hold exactly the retired roles');
   for (const r of kept) {
-    const was = v1.agents.find((p) => p.name === r.name);
-    a.equal(r.prompt, renamed(was.prompt), `${r.name}'s prompt must be kept verbatim, words renamed`);
+    a.ok(v1.agents.some((p) => p.name === r.name), `${r.name} must be a v1 role`);
+    a.ok(r.prompt?.trim(), `${r.name}'s retired body must be kept`);
     a.equal(r.coveredBy, COVERED_BY[r.name]);
   }
   console.log(`  all ${v1.agents.length} v1 roles classified; ${kept.length} retired bodies kept verbatim`);

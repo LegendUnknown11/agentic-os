@@ -3,7 +3,6 @@ import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { migrateBusRows } from './legacy.js';
 
 export const RUN_STATES = new Set([
   'planning', 'running', 'paused', 'blocked', 'verifying',
@@ -294,11 +293,6 @@ export class Bus {
         if (!this.get(`approval:${row.id}`)) this.set(`approval:${row.id}`, JSON.stringify({ ...row, runId: row.run_id ?? null }));
       }
     });
-    // The de-theming rename (docs/RENAME.md): stored sender names, the
-    // `added` event and state key, the spend-ceiling key and approval
-    // payloads take their current names. Last, so every column it touches
-    // exists. A new database has nothing to rename and just records the flag.
-    this.#migrate('schema:rename:v1', () => { this.renameReport = migrateBusRows(this.db); });
   }
 
   #messageRows(rows) {
