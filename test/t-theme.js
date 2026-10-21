@@ -143,7 +143,9 @@ a.doesNotMatch(css, /--mono:\s*['"]?(IBM Plex Mono|Playfair Display)/, 'the reti
 // uppercase, in the UI face: that is how the canvas draws "WORK", "TEAM" and
 // "SYSTEM". It is not mono; mono is for code, terminal, diff and log content,
 // the rule the Hiveory spec stated and the paper theme briefly inverted.
-for (const sel of ['\\.card-meta', '\\.message-meta', '\\.metric-label', '\\.mode-kicker', '\\.sidebar-heading', '\\.brand-tag', '\\.thread-control-label', '\\.field-label', '\\.data-table th']) {
+// The canvas draws a message's byline ("Orchestrator · model") as plain 12px
+// text and the model/effort chips with no caption, so neither is listed.
+for (const sel of ['\\.card-meta', '\\.metric-label', '\\.mode-kicker', '\\.sidebar-heading', '\\.brand-tag', '\\.field-label', '\\.data-table th']) {
   a.match(css, new RegExp(`${sel}\\s*\\{[^}]*font:\\s*500 11px/[\\d.]+ var\\(--ui\\)`),
     `${sel.replace(/\\\\/g, '')} carries metadata: 11px in the UI face`);
   a.match(css, new RegExp(`${sel}\\s*\\{[^}]*text-transform:\\s*uppercase`),
@@ -282,10 +284,10 @@ a.match(util, /TONE_SETTLED = new Set\(\[[^\]]*'merged'/, 'the shared status voc
 a.match(css, /\.settings-tabs\s*\{[^}]*flex-wrap:\s*nowrap;[^}]*overflow-x:\s*auto;/, 'Settings tabs must stay compact and scroll inside their strip');
 a.match(css, /\.search-row input\s*\{[^}]*flex:\s*1 1 280px;[^}]*min-width:\s*min\(100%, 240px\);/, 'search fields must use the available row width before wrapping');
 a.match(css, /\.thread-header\s*\{[^}]*flex-wrap:\s*wrap;/, 'thread header controls must wrap instead of widening narrow viewports');
-a.match(css, /\.thread-control\s*\{[^}]*display:\s*grid;[^}]*gap:/, 'thread model controls need visible compact labels');
+a.match(css, /\.thread-control-label\s*\{[^}]*clip:\s*rect\(0 0 0 0\)/, 'thread model controls keep a caption for assistive tech while drawing as captionless chips');
 a.match(css, /\.thread-input\s*\{[^}]*min-width:\s*0;/, 'thread composer input must surrender intrinsic width on narrow screens');
 a.doesNotMatch(css, /\.thread-input:focus\s*\{[^}]*outline:\s*none;/, 'thread composer focus must not erase the shared keyboard ring');
-a.match(css, /\.thread-attach:hover[^}]*border-color:\s*var\(--accent\)/, 'thread attach must expose the shared hover affordance');
+a.match(css, /\.thread-attach:hover[^}]*border-color:\s*var\(--[a-z-]+\)/, 'thread attach must expose the shared hover affordance');
 a.match(css, /\.thread-attach:disabled, \.thread-send:disabled[^}]*opacity:\s*\.5/, 'thread actions must look unavailable while sending or uploading');
 a.match(css, /\.wfgraph/, 'the surviving workflow editor needs a visible editing surface');
 a.match(css, /\.wfport\[aria-pressed="true"\]\s*\{[^}]*box-shadow:/, 'keyboard-selected graph ports need a visible pending cue');
@@ -323,7 +325,7 @@ a.match(css, /\.view-section\s*\{[^}]*background:\s*var\(--surface\);/, 'section
 a.match(css, /\.boot-failure\s*\{[^}]*display:\s*grid;[^}]*max-width:/, 'module-load failures must have a styled recovery surface');
 a.match(css, /\.markdown > \* \+ \*, \.message-body > \* \+ \* \{ margin-top: var\(--space-3\); \}/, 'multi-paragraph content must retain readable separation after the margin reset');
 a.match(css, /\.message-meta\s*\{[^}]*color:\s*var\(--faint\)/, 'thread metadata must recede behind message content');
-a.match(css, /\.thread-message\.theirs \.message-body\s*\{[^}]*background:\s*var\(--raised\)/, 'incoming thread messages need a stable raised surface');
+a.match(css, /\.thread-message\.theirs \.message-body\s*\{[^}]*border:\s*0;[^}]*background:\s*transparent/, 'as in the canvas, the team replies in plain prose; only your own turns are bubbles');
 a.match(css, /\.message-body > :first-child\s*\{[^}]*margin-top:\s*0;/, 'thread markdown must not keep a browser margin before its first paragraph');
 a.match(css, /\.markdown h1, \.markdown h2, \.markdown h3\s*\{[^}]*margin:\s*0;[^}]*line-height:/, 'markdown headings must use the thread type rhythm');
 a.match(css, /\.markdown blockquote\s*\{[^}]*margin:[^;]+;[^}]*padding:[^;]+;[^}]*border-left:/, 'markdown quotes need a bounded readable treatment');

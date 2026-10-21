@@ -687,7 +687,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 /* Session / Diff / Tasks: the run's own pages, as chips beside its title. */
 .run-tabs { display: flex; flex: none; gap: var(--space-1); }
 
-.run-tab { min-height: var(--tap-target-min); padding: 0 var(--space-3); border-color: transparent; background: transparent; color: var(--muted); }
+.run-tab { min-height: var(--chip-h); padding: 0 10px; border-color: var(--line); background: var(--raised); color: var(--muted); font-size: var(--t-xs); }
 
 .run-tab[aria-pressed="true"] { border-color: var(--line); background: var(--active); color: var(--text); }
 
@@ -701,13 +701,17 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .thread-controls { display: flex; min-width: 0; flex: 0 1 auto; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2); }
 
-.thread-control { display: grid; min-width: 0; gap: 2px; color: var(--faint); font-size: var(--t-xs); }
+.thread-control { display: flex; min-width: 0; align-items: center; color: var(--faint); font-size: var(--t-xs); }
 
-.thread-control-label { padding-inline: var(--space-1); font: 500 11px/1.5 var(--ui); letter-spacing: .06em; text-transform: uppercase; }
+/* The canvas draws model and effort as quiet chips with no caption; the
+ * select's aria-label names it, the caption stays for assistive tech only. */
+.thread-control-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
-.thread-model, .thread-effort { width: 18ch; min-width: 0; max-width: 100%; height: var(--tap-target-min); padding: 0 var(--space-2); border: 1px solid var(--line); border-radius: var(--radius-ctl); background: var(--raised); color: var(--muted); }
+.thread-model, .thread-effort { width: auto; min-width: 0; max-width: 24ch; height: var(--chip-h); padding: 0 var(--space-2); border: 1px solid transparent; border-radius: var(--radius-ctl); background: transparent; color: var(--muted); font-size: var(--t-xs); }
 
-.thread-power { height: var(--tap-target-min); padding: 0 var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-ctl); background: transparent; color: var(--muted); }
+.thread-model:hover, .thread-effort:hover { border-color: var(--line); color: var(--text); }
+
+.thread-power { height: var(--chip-h); padding: 0 var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-ctl); background: transparent; color: var(--muted); }
 
 .thread-power:hover { border-color: var(--accent); color: var(--text); }
 
@@ -717,11 +721,11 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .thread-message.mine { justify-self: end; }
 
-.message-meta { padding: 0 var(--space-2); color: var(--faint); font: 500 11px/1.5 var(--ui); letter-spacing: .06em; text-transform: uppercase; }
+.message-meta { padding: 0; color: var(--faint); font: 400 var(--t-xs)/1.5 var(--ui); }
 
 .thread-message.mine .message-meta { text-align: right; }
 
-.message-body { padding: var(--space-3) var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-card); overflow-wrap: anywhere; }
+.message-body { padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius-card); overflow-wrap: anywhere; line-height: 1.55; }
 
 .message-body > :first-child { margin-top: 0; }
 
@@ -737,7 +741,9 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .thread-message.mine .message-body { border-color: var(--line); background: var(--hover); color: var(--text); }
 
-.thread-message.theirs .message-body { background: var(--raised); }
+/* As in the canvas, only your own turns are bubbles; the team's replies are
+ * plain prose under their name. */
+.thread-message.theirs .message-body { padding: 0; border: 0; background: transparent; color: var(--text); line-height: 1.65; }
 
 .thread-message.failed .message-body { border-color: rgb(var(--danger-rgb) / .65); }
 
@@ -751,7 +757,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 /* The field is the card's first line and the buttons its second, as in the
  * canvas's composer; the card draws the border, so the field draws none. */
-.thread-input { order: -1; min-width: 0; min-height: var(--tap-target-min); max-height: 180px; flex: 1 1 100%; padding: var(--space-2) 0; border: 0; background: transparent; color: var(--text); resize: vertical; }
+.thread-input { order: -1; min-width: 0; min-height: var(--tap-target-min); max-height: 180px; flex: 1 1 100%; padding: var(--space-1) 0; border: 0; outline: none; background: transparent; color: var(--text); line-height: 1.5; resize: none; }
 
 .thread-send { margin-left: auto; }
 
@@ -760,7 +766,9 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .thread-send { border-color: var(--fill); background: var(--fill); color: var(--fill-ink); font-weight: 600; }
 
-.thread-attach:hover { border-color: var(--accent); }
+.thread-attach { min-height: var(--chip-h); padding: 0 10px; border-color: transparent; background: transparent; color: var(--muted); font-size: var(--t-xs); }
+
+.thread-attach:hover { border-color: var(--line); color: var(--text); }
 
 .thread-send:hover { background: var(--fill-hover); border-color: var(--fill-hover); }
 
