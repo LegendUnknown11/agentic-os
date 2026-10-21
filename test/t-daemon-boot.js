@@ -112,7 +112,7 @@ try {
   await wait(300);
   d1 = null;
 
-  a.equal(existsSync(join(kingdomDir(repo), 'kingdom.config.json')), false,
+  a.equal(existsSync(join(kingdomDir(repo), 'agenticos.config.json')), false,
     'a live attach must never create a repo-relative config — state stays at the workspace home');
 
   /* ---------- 2. second boot, still no CLI repo — must rediscover it ------ */
@@ -129,7 +129,7 @@ try {
   a.equal(snap.goal?.text, 'daemon-boot regression check',
     'the goal set before the restart must still be there — proof both boots share one home');
 
-  a.equal(existsSync(join(kingdomDir(repo), 'kingdom.config.json')), false,
+  a.equal(existsSync(join(kingdomDir(repo), 'agenticos.config.json')), false,
     'a restart must not fork into a second, repo-relative kingdom either');
 
   console.log('  live attachRepo state never leaves the workspace home');

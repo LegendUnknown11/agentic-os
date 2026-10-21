@@ -1,6 +1,6 @@
 // A LIVE attach (POST /api/attachRepo, or the saved-repo re-attach at boot)
 // changes what repository a daemon serves — and must claim that repo in the
-// courts registry (src/courts.js) exactly like a fresh daemon does, or two
+// courts registry (src/teams.js) exactly like a fresh daemon does, or two
 // daemons can end up serving the SAME repository with no refusal: a repo-
 // less daemon simply attaches whatever it is given, since Kingdom#attachRepo
 // only refuses a repo DIFFERENT from one it already holds. This is the
@@ -23,7 +23,7 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // Both daemons share one fake home, so they see the SAME
 // ~/.kingdom/courts.json — the whole point of this test — the same trick
-// t-multi-court.js and t-daemon-boot.js use.
+// t-multi-team.js and t-daemon-boot.js use.
 const fakeHome = mkdtempSync(join(tmpdir(), 'kingdom-ra-home-'));
 // Its own port range: parallel suites each have an isolated registry, so two
 // suites auto-picking from 7777 would otherwise answer each other's pings.
@@ -54,7 +54,7 @@ async function pingReady(port, timeoutMs = 20_000) {
   throw new Error(`nothing usable answered on ${port} within ${timeoutMs}ms`);
 }
 
-// Same precedence src/courts.js's own registryPath() uses: an explicit
+// Same precedence src/teams.js's own registryPath() uses: an explicit
 // KINGDOM_COURTS_REGISTRY (set by test/run-all.js's per-suite isolation, or
 // by test/isolate-registry.js's standalone fallback imported above) wins
 // over the HOME-derived path — this must read from wherever the daemons

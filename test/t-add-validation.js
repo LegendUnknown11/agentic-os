@@ -1,6 +1,6 @@
 // Invalid summon requests must not become approval records.
 //
-//   node test/t-summon-validation.js
+//   node test/t-add-validation.js
 import { strict as a } from 'node:assert';
 import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -106,8 +106,8 @@ try {
 
 // --- the orchestrator is whoever the roster says, not the string "orchestrator" ---------
 // declare_done and brief_orchestrator posted to the literal name "orchestrator". The orchestrator's
-// name is configuration (`kingdom.config.json` orchestrator.name), delivery is by
-// recipient, and kingdom.js only treats a `done` as a completion when it
+// name is configuration (`agenticos.config.json` orchestrator.name), delivery is by
+// recipient, and agenticos.js only treats a `done` as a completion when it
 // reaches the orchestrator — so renaming the orchestrator silently threw every completion
 // and every briefing away while the tool answered that it had been notified.
 {
@@ -152,4 +152,4 @@ try {
   try { rmSync(dir2, { recursive: true, force: true }); } catch {}
 }
 
-console.log('t-summon-validation.js OK — invalid payloads rejected, messages reach a real member');
+console.log('t-add-validation.js OK — invalid payloads rejected, messages reach a real member');

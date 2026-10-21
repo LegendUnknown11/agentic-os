@@ -10,7 +10,7 @@
 //   * a flip never lands mid-turn, so nobody finishes under rules it did not
 //     start with;
 //   * a live flip does NOT restart anybody or rewrite a cached prompt — the
-//     measurement in kingdom.js is 96% of a $101 session billed as replay;
+//     measurement in agenticos.js is 96% of a $101 session billed as replay;
 //   * the mode survives a restart, and reaches the bus, which is the only
 //     channel that gets into a member's MCP server.
 //
@@ -20,7 +20,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Kingdom } from '../src/kingdom.js';
+import { Kingdom } from '../src/agenticos.js';
 import { kingdomDir } from '../src/worktree.js';
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -36,7 +36,7 @@ writeFileSync(join(repo, 'README.md'), '# t\n');
 git('add', '-A');
 git('commit', '-qm', 'init');
 
-const cfg = join(repo, 'kingdom.config.json');
+const cfg = join(repo, 'agenticos.config.json');
 writeFileSync(cfg, JSON.stringify({
   orchestrator: { name: 'orchestrator', cli: 'codex' },
   briefer: { name: 'briefer', cli: 'codex' },

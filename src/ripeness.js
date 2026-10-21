@@ -8,7 +8,7 @@
 // bus. Everything it needs is an argument, so t-ripeness.js can drive the whole
 // state space in milliseconds.
 //
-// The constants stay in kingdom.js — they are the sovereign's tuning, and
+// The constants stay in agenticos.js — they are the sovereign's tuning, and
 // passing them in is what lets a test sweep them.
 
 /**

@@ -10,7 +10,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Kingdom } from '../src/kingdom.js';
+import { Kingdom } from '../src/agenticos.js';
 import { removeRepo } from './cleanup.js';
 
 const repo = mkdtempSync(join(tmpdir(), 'kingdom-taskadmin-'));
@@ -21,7 +21,7 @@ git('config', 'user.name', 'kingdom');
 writeFileSync(join(repo, 'README.md'), '# t\n');
 git('add', '-A');
 git('commit', '-qm', 'init');
-const configPath = join(repo, 'kingdom.config.json');
+const configPath = join(repo, 'agenticos.config.json');
 writeFileSync(configPath, JSON.stringify({
   orchestrator: { name: 'orchestrator', cli: 'codex' },
   briefer: { name: 'briefer', cli: 'codex' },

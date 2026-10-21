@@ -8,7 +8,7 @@
 // `/approve <id>`, `/reject <id>`, `/roster`, `/quit`.
 import { createInterface } from 'node:readline';
 import { resolve } from 'node:path';
-import { Kingdom, defaultConfigPath } from './kingdom.js';
+import { Kingdom, defaultConfigPath } from './agenticos.js';
 import { fmt as fmtForecast } from './forecast.js';
 
 const argv = process.argv.slice(2);

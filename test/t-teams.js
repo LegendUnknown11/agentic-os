@@ -1,8 +1,8 @@
-// The court registry (src/courts.js): more than one repository open at once
+// The court registry (src/teams.js): more than one repository open at once
 // (issue #42) depends on this file being honest about which daemons are
 // actually still alive, and on two daemons launched at nearly the same
 // instant never trampling each other's write.
-//   node test/t-courts.js
+//   node test/t-teams.js
 import { strict as a } from 'node:assert';
 import { mkdtempSync, rmSync, readFileSync, mkdirSync, symlinkSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -11,7 +11,7 @@ import { createServer } from 'node:http';
 import {
   registerCourt, unregisterCourt, listCourts, findCourtForRepo,
   firstFreePort, CourtConflictError, registryPath, rowKey, keepLive,
-} from '../src/courts.js';
+} from '../src/teams.js';
 
 const dir = mkdtempSync(join(tmpdir(), 'courts-test-'));
 process.env.KINGDOM_COURTS_REGISTRY = join(dir, 'courts.json');

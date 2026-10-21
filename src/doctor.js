@@ -153,11 +153,11 @@ export async function runDoctor({ repo, detect = detectCli } = {}) {
   }
 
   // The config the court actually runs: the repo's own copy if it has one
-  // (src/kingdom.js defaultConfigPath), else the shipped template. Read only.
-  const local = repo && kingdomDir ? join(kingdomDir(resolve(repo)), 'kingdom.config.json') : null;
+  // (src/agenticos.js defaultConfigPath), else the shipped template. Read only.
+  const local = repo && kingdomDir ? join(kingdomDir(resolve(repo)), 'agenticos.config.json') : null;
   const configured = new Set();
   try {
-    const source = local && existsSync(local) ? local : new URL('../kingdom.config.json', import.meta.url);
+    const source = local && existsSync(local) ? local : new URL('../agenticos.config.json', import.meta.url);
     const cfg = JSON.parse(readFileSync(source, 'utf8'));
     for (const m of [cfg.orchestrator, cfg.briefer, ...cfg.peasants]) configured.add(canonical(m.cli ?? 'claude'));
     // The advisor and the summariser are not court members, but they are real

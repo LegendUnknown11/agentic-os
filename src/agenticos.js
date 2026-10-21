@@ -139,7 +139,7 @@ const DIGEST_DIFF_LIMIT = 12_000; // the briefer is cheap, but this is per-done
 // and — unlike the dollar caps above — ships ON by default: 500 real turns
 // is deliberately generous (a normal working session is a small fraction of
 // that) so it interrupts a genuine runaway before it interrupts real work,
-// not the other way round. `turnBudget: 0` in kingdom.config.json turns it
+// not the other way round. `turnBudget: 0` in agenticos.config.json turns it
 // off, the same convention as every cap above it.
 const DEFAULT_TURN_BUDGET = 500;
 // The pause reason #enforceTurnBudget writes; start() reads it back to tell a
@@ -159,7 +159,7 @@ export class Kingdom extends EventEmitter {
     try {
       this.config = JSON.parse(readFileSync(configPath, 'utf8'));
     } catch (e) {
-      const template = join(HERE, '..', 'kingdom.config.json');
+      const template = join(HERE, '..', 'agenticos.config.json');
       this.config = JSON.parse(readFileSync(template, 'utf8'));
       this.configBroken = `${configPath} could not be read (${e.message}); `
         + 'started from the shipped defaults instead. Your roster, goal and model '
@@ -235,7 +235,7 @@ export class Kingdom extends EventEmitter {
 
   /**
    * Bring a court seeded with an older roster up to the current one (roster v2,
-   * docs/PLAN-court.md). The rules are planRosterMigration's, in src/roster.js;
+   * docs/PLAN-team.md). The rules are planRosterMigration's, in src/roster.js;
    * this only answers its one question about the live court: is a member busy?
    *
    * Busy means work would be stranded if its spec vanished: start() restores
@@ -438,7 +438,7 @@ export class Kingdom extends EventEmitter {
    * auditor, writer and the Cowork trio. They follow the work rather than a layer,
    * and sweeping them with a layer choice is how a reviewer ends up on a model
    * nobody chose for it. Note a backend sweep DOES move architect off its Tier 1
-   * model (docs/PLAN-court.md Q3): that is the pre-v2 default, left as it was.
+   * model (docs/PLAN-team.md Q3): that is the pre-v2 default, left as it was.
    * A member listed in both domains simply takes whichever was applied last.
    */
   domains() {
@@ -462,7 +462,7 @@ export class Kingdom extends EventEmitter {
     return { domain, applied };
   }
 
-  /** Model choices offered in the UI. Editable in kingdom.config.json. */
+  /** Model choices offered in the UI. Editable in agenticos.config.json. */
   models() {
     return this.config.models
       ?? { claude: ['claude-opus-5-5', 'claude-opus-5', 'claude-sonnet-5', 'claude-haiku-4-5', 'claude-fable-5-1'], codex: [] };
@@ -503,7 +503,7 @@ export class Kingdom extends EventEmitter {
   }
 
   /**
-   * The ONLY writer of kingdom.config.json, and it writes atomically.
+   * The ONLY writer of agenticos.config.json, and it writes atomically.
    *
    * This file is rewritten on every model change, goal edit, advisor toggle and
    * milestone tick, and it is read in the CONSTRUCTOR — before any handler
@@ -836,7 +836,7 @@ export class Kingdom extends EventEmitter {
     // sleep() closes the runtime door. This is the other one, and it does not
     // go through sleep() at all: the restore loop above drops any name specOf()
     // no longer answers for, so removing or renaming a peasant in
-    // kingdom.config.json between runs strands everything it had claimed, with
+    // agenticos.config.json between runs strands everything it had claimed, with
     // no dismissal ever happening. Same divergence, same deadlock, different
     // door.
     //
@@ -1186,7 +1186,7 @@ export class Kingdom extends EventEmitter {
         this.emit('failure', { name, message:
           `"${name}" runs ${spec.cli ?? 'claude'}/${spec.model ?? 'default'}, which has no price `
           + `in the rate card. Its spend cannot be tracked, and maxBudgetUsd/maxKingdomUsd `
-          + `CANNOT stop it. Add a "prices" entry for it in kingdom.config.json.` });
+          + `CANNOT stop it. Add a "prices" entry for it in agenticos.config.json.` });
       }
       const cost = priced ?? 0;
       const spent = Number(this.bus.get('spentUsd') ?? 0) + cost;
@@ -1218,7 +1218,7 @@ export class Kingdom extends EventEmitter {
         total: spent, tokens, turns: this.turnsThisSession(), lifetimeTurns: this.turnsLifetime(),
         name, ctx, spentByAgent: mine,
         // The context meter's other half: this member's model window, or null
-        // when kingdom.config.json's `contextWindows` does not name the model.
+        // when agenticos.config.json's `contextWindows` does not name the model.
         window: this.contextWindowOf(agent.spec?.model ?? spec.model ?? null),
         today: this.spendToday(),
       });
@@ -1454,7 +1454,7 @@ export class Kingdom extends EventEmitter {
 
   /** Reset a member's cumulative spend — the sovereign lifting a ceiling. */
   /**
-   * The zone "a day" means for spend: `timeZone` in kingdom.config.json when it
+   * The zone "a day" means for spend: `timeZone` in agenticos.config.json when it
    * names a real IANA zone, else the daemon process's own local zone. Always
    * returned by name, so a reader never has to guess which midnight it was.
    */
@@ -2294,7 +2294,7 @@ export class Kingdom extends EventEmitter {
    * They are addressed to "orchestrator", which is nobody's inbox — no member
    * would ever be delivered them — so they need their own sweep. And the
    * ORCHESTRATOR applies them rather than the MCP server, because it owns
-   * kingdom.config.json; a second writer would lose updates.
+   * agenticos.config.json; a second writer would lose updates.
    */
   #applyMilestones() {
     for (const [m, claim] of this.#sweep('milestone')) {
@@ -2946,7 +2946,7 @@ export class Kingdom extends EventEmitter {
 
   /**
    * `/autocompact 300k` — the compaction window, changed from the throne room
-   * instead of by editing kingdom.config.json and restarting.
+   * instead of by editing agenticos.config.json and restarting.
    *
    * Typed at the orchestrator it sets the court-wide default; typed into a member's own
    * pane it sets that member's, which is how the briefer came to sit at 20k
@@ -3012,7 +3012,7 @@ export class Kingdom extends EventEmitter {
     if (!panel) {
       return this.#compactSay(
         'The argument court needs two different models to argue and a third to judge, '
-        + 'and this kingdom has only one configured. Add models to kingdom.config.json.');
+        + 'and this kingdom has only one configured. Add models to agenticos.config.json.');
     }
 
     const who = (s) => `${s.cli}/${s.model}`;
@@ -3097,7 +3097,7 @@ export class Kingdom extends EventEmitter {
   }
 
   /**
-   * A model's context window, from `contextWindows` in kingdom.config.json.
+   * A model's context window, from `contextWindows` in agenticos.config.json.
    * Unknown model, or one the table does not name, is null: a meter drawn
    * against a guessed window is worse than no meter.
    */
@@ -3157,7 +3157,7 @@ export class Kingdom extends EventEmitter {
 
   /**
    * Change a court member's CLI and/or model from the throne room, persisting
-   * it to kingdom.config.json. An awake member is restarted; it resumes its
+   * it to agenticos.config.json. An awake member is restarted; it resumes its
    * session (and its memory) on the new model, unless the CLI changed — a codex
    * thread id is meaningless to claude, so that starts a fresh session.
    */
@@ -3332,7 +3332,7 @@ export class Kingdom extends EventEmitter {
   }
 
   /**
-   * The court-wide spend ceiling, live. `maxKingdomUsd` in kingdom.config.json
+   * The court-wide spend ceiling, live. `maxKingdomUsd` in agenticos.config.json
    * only ever took effect at the process that read the file — a court running
    * hot had no lever except a restart, which is itself billed and loses no
    * spend at all in the meantime. 0 clears the ceiling.
@@ -3896,7 +3896,7 @@ export class Kingdom extends EventEmitter {
 /**
  * This kingdom's own config, copied from the shipped template the first time.
  *
- * The fallback used to be the app's own kingdom.config.json — the tracked one —
+ * The fallback used to be the app's own agenticos.config.json — the tracked one —
  * and every model change, goal edit, advisor toggle and milestone tick then
  * rewrote it. So the repo carried a 134KB file that produced a diff every
  * session, held one machine's absolute paths (an Obsidian vault on E:), and was
@@ -3907,8 +3907,8 @@ export class Kingdom extends EventEmitter {
  * gives each repo its own state. kingdomDir is already gitignored.
  */
 export function defaultConfigPath(repo) {
-  const local = join(kingdomDir(repo), 'kingdom.config.json');
-  const template = join(HERE, '..', 'kingdom.config.json');
+  const local = join(kingdomDir(repo), 'agenticos.config.json');
+  const template = join(HERE, '..', 'agenticos.config.json');
   if (existsSync(local)) return local;
   try {
     mkdirSync(dirname(local), { recursive: true });

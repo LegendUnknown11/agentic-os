@@ -9,6 +9,7 @@
 //   --dry     count what would change, write nothing
 //   --mv      also apply FILE_RENAMES with `git mv` (after the text pass)
 //   --report  list every changed line (old -> new) on stdout
+//   --paths-only  apply only PATH_RULES (references to renamed files)
 //   prefixes  limit the pass to tracked files under these paths (default: all)
 //
 // Re-runnable: every rule maps an old word to a new one that no rule matches,
@@ -26,6 +27,7 @@ const argv = process.argv.slice(2);
 const DRY = argv.includes('--dry');
 const MV = argv.includes('--mv');
 const REPORT = argv.includes('--report');
+const PATHS_ONLY = argv.includes('--paths-only');
 const prefixes = argv.filter((a) => !a.startsWith('--'));
 
 const git = (...args) => execFileSync('git', args, { cwd: ROOT, encoding: 'utf8' });
@@ -64,6 +66,8 @@ function phase0Applies() {
 function transformLine(f, line, phase0) {
   if (keepLine(f, line)) return line;
   let s = line;
+  for (const [re, to] of M.PATH_RULES) s = s.replace(re, to);
+  if (PATHS_ONLY) return s;
   if (phase0) {
     for (const block of M.PHASE0) {
       if (!block.files.test(f)) continue;
@@ -100,12 +104,13 @@ function isBinary(buf) {
 const files = git('ls-files', '-z').split('\0').filter(Boolean)
   .filter((f) => !prefixes.length || prefixes.some((p) => f === p || f.startsWith(p.endsWith('/') ? p : `${p}/`)));
 
-const phase0 = phase0Applies();
+const phase0 = !PATHS_ONLY && phase0Applies();
 let changedFiles = 0;
 let changedLines = 0;
 for (const f of files) {
   const abs = resolve(ROOT, f);
   if (!existsSync(abs)) continue;
+  if (f === M.LOCKFILE && PATHS_ONLY) continue;
   if (f === M.LOCKFILE) {
     const text = readFileSync(abs, 'utf8');
     const lines = text.split('\n');

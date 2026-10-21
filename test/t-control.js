@@ -14,7 +14,7 @@
 //      wake, dismiss or re-model anybody either. Every one of those is a method
 //      daemon.js already calls for the sovereign. mcp.js runs in its own
 //      process and reaches the court only through the bus, so they travel as
-//      `control` rows that kingdom.js sweeps.
+//      `control` rows that agenticos.js sweeps.
 //
 //   node test/t-control.js
 // Never let a daemon this suite spawns touch the real ~/.kingdom/courts.json
@@ -25,7 +25,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, rmSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Kingdom } from '../src/kingdom.js';
+import { Kingdom } from '../src/agenticos.js';
 import { kingdomDir, dbPath, createWorktree, removeWorktree } from '../src/worktree.js';
 import { listSkills } from '../src/skills.js';
 
@@ -60,7 +60,7 @@ execFileSync('git', ['commit', '-qm', 'init'], { cwd: otherRepo });
 
 const workspace = kingdomDir(null);
 mkdirSync(workspace, { recursive: true });
-const configPath = join(workspace, 'kingdom.config.json');
+const configPath = join(workspace, 'agenticos.config.json');
 writeFileSync(configPath, JSON.stringify({
   orchestrator: { name: 'orchestrator', cli: 'codex' },
   briefer: { name: 'briefer', cli: 'codex' },
@@ -496,7 +496,7 @@ try {
 
   /* ---- 8. a restart must not inherit a task nobody in the court can work -- */
   // sleep() releases what a dismissed member held, but a member can also leave
-  // without ever being dismissed: drop it from kingdom.config.json and the
+  // without ever being dismissed: drop it from agenticos.config.json and the
   // restore loop in start() silently skips it, because specOf() no longer
   // answers for the name. Its claims survive with an owner the court does not
   // have — claimTask refuses an owned task, so nobody may take it, and the
@@ -792,7 +792,7 @@ try {
 
     const bobId = k.bus.post('bob', k.config.orchestrator.name, 'bob: unrelated finished work', 'done');
     await until(() => Boolean(k.bus.get(`done:${bobId}`)));
-    // `done:${bobId}` is set BEFORE #onDone runs (kingdom.js's dedup guard), so it
+    // `done:${bobId}` is set BEFORE #onDone runs (agenticos.js's dedup guard), so it
     // fires the instant the tick claims the message, not once #onDone is done with
     // bob's worktree. Bob's submission is valid, so #onDone never calls #runBlock —
     // there is no run-state transition to wait on the way alice's failure gives us

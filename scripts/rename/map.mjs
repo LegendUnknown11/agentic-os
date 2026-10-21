@@ -89,7 +89,14 @@ export const PHRASES = [
   // Prompt headings and pinned strings.
   [/STATE OF THE KINGDOM AT YOUR ACCESSION/g, 'STATE OF THE TEAM AT YOUR ONBOARDING'],
   [/PEASANT-TO-PEASANT/g, 'AGENT-TO-AGENT'],
-  // The tool names.
+  // The tool names. `summon` the MCP tool becomes add_agent; summon the verb becomes add.
+  [/\bsummon (MCP )?tool\b/g, 'add_agent $1tool'],
+  [/\bwith summon \(/g, 'with add_agent ('],
+  [/cannot see `summon`/g, 'cannot see `add_agent`'],
+  [/\breason summon and propose_role\b/g, 'reason add_agent and propose_role'],
+  [/name: 'summon'/g, "name: 'add_agent'"],
+  [/name === 'summon'/g, "name === 'add_agent'"],
+  [/expose summon\b/g, 'expose add_agent'],
   [/\bsummon_member\b/g, 'add_agent'],
   [/\bdismiss_member\b/g, 'remove_agent'],
   [/\bwake_member\b/g, 'wake_agent'],
@@ -199,6 +206,31 @@ export const WORDS = [
  */
 export const ARTICLES = [
   [/\b([Aa]) (agent|agents'|added|add|AgenticOS|agenticos|orchestrator|onboarding)\b/g, '$1n $2'],
+];
+
+/**
+ * References to the renamed files, by name. `rename.mjs --paths-only --mv`
+ * applies just these with the file moves, so the renames land as their own
+ * commit with every import still resolving; the full pass includes them.
+ */
+export const PATH_RULES = [
+  [/(?<![\w-])kingdom\.config\.json/g, 'agenticos.config.json'],
+  [/(?<![\w-])kingdom\.js\b/g, 'agenticos.js'],
+  [/(?<![\w-])courts\.js\b/g, 'teams.js'],
+  [/(?<![\w-])court\.js\b/g, 'team.js'],
+  [/(?<![\w-])courts-launch\b/g, 'teams-launch'],
+  [/(?<![\w-])court-preload\b/g, 'team-preload'],
+  [/\bt-accession\b/g, 't-onboarding'],
+  [/\bt-courts\b/g, 't-teams'],
+  [/\bt-multi-court\b/g, 't-multi-team'],
+  [/\bt-summon-validation\b/g, 't-add-validation'],
+  [/\bPLAN-court\b/g, 'PLAN-team'],
+  [/\bPROMPT-redesign-the-court\b/g, 'PROMPT-redesign-the-team'],
+  [/(?<=arms\/|\()court\.md\b/g, 'team.md'],
+  // The same names inside a regex literal, dot escaped.
+  [/(?<![\w-])kingdom\\\.js\b/g, 'agenticos\\.js'],
+  [/(?<![\w-])courts\\\.js\b/g, 'teams\\.js'],
+  [/(?<![\w-])court\\\.js\b/g, 'team\\.js'],
 ];
 
 /** File and folder renames, applied with `git mv` by `rename.mjs --mv`. */

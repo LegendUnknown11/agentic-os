@@ -3,7 +3,7 @@
 // port or a sovereign losing track of which court is which.
 //
 // One daemon PROCESS per repository is unchanged — Kingdom#attachRepo still
-// refuses a second repo inside a live process (src/kingdom.js:1546), and
+// refuses a second repo inside a live process (src/agenticos.js:1546), and
 // that stays true. What changes is that starting a NEW process for a
 // DIFFERENT repository is now supported: this module is how each daemon
 // announces itself, how a launcher finds a free port, and how a stale entry
@@ -21,7 +21,7 @@ import { randomBytes } from 'node:crypto';
 import { createServer, request as httpRequest } from 'node:http';
 
 /** Overridable for tests, the same way KINGDOM_TOKEN_STORE overrides the
- *  token file — never read by real callers, only by test/t-courts.js. */
+ *  token file — never read by real callers, only by test/t-teams.js. */
 export function registryPath() {
   return process.env.KINGDOM_COURTS_REGISTRY
     ?? join(homedir(), '.kingdom', 'courts.json');
@@ -261,8 +261,8 @@ export async function firstFreePort(start, liveCourts) {
 }
 
 // ---- self-check -------------------------------------------------------------
-if (basename(process.argv[1] ?? '') === 'courts.js') {
-  const assert = (cond, msg) => { if (!cond) throw new Error(`courts.js self-check failed: ${msg}`); };
+if (basename(process.argv[1] ?? '') === 'teams.js') {
+  const assert = (cond, msg) => { if (!cond) throw new Error(`teams.js self-check failed: ${msg}`); };
 
   assert(sameRepo('/a/b', '/a/b/'), 'trailing slash should still match');
   assert(sameRepo('/a/b', '/a/b'), 'identical paths should match');
@@ -337,5 +337,5 @@ if (basename(process.argv[1] ?? '') === 'courts.js') {
     }
   })();
 
-  console.log('courts.js: self-check passed');
+  console.log('teams.js: self-check passed');
 }

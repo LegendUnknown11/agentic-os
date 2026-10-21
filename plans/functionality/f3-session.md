@@ -24,7 +24,7 @@ There is one new suite, `test/t-session.js`, and it is registered in `test/run-a
 ## API contract (all additive; no existing field changed)
 
 **Context meter**
-- `kingdom.config.json` → new `contextWindows: { "<model id>": tokens }`. The template
+- `agenticos.config.json` → new `contextWindows: { "<model id>": tokens }`. The template
   fills in only the five configured claude models: 1M each, except `claude-haiku-4-5` at 200K. These are the
   Claude API's published maximum input sizes, taken from the claude-api skill's model table (cached
   2026-10-06). The codex, agy and opencode models are left out because I had no source for them. A model
@@ -63,7 +63,7 @@ There is one new suite, `test/t-session.js`, and it is registered in `test/run-a
 - `GET /api/metrics` → new `spendByDay: { timeZone, today, days[14] }`. Each day is
   `{ day: 'YYYY-MM-DD', usd, turns, tokens }`, newest first, and empty days are included.
 - Stream `snapshot.spend` and every `spend` event → new `today: { day, usd, turns, tokens, timeZone }`.
-- **Time zone:** the zone is `kingdom.config.json` `timeZone` if it is a valid IANA name, otherwise the
+- **Time zone:** the zone is `agenticos.config.json` `timeZone` if it is a valid IANA name, otherwise the
   daemon process's local zone. It is always returned by name. Days are bucketed when the data is read, from UTC
   timestamps, so changing the zone re-buckets history. The walk back goes one calendar day at a time, so a 23h or 25h DST day
   is neither skipped nor counted twice.

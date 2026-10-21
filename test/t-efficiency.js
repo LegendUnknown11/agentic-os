@@ -8,7 +8,7 @@ import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Bus } from '../src/bus.js';
-import { Kingdom } from '../src/kingdom.js';
+import { Kingdom } from '../src/agenticos.js';
 import { buildPrompt } from '../src/prompt.js';
 import { cachedTokens, deltaOf, hasUsage, totalsOf } from '../src/usage.js';
 import { costClassOf } from '../src/price.js';
@@ -95,7 +95,7 @@ process.stdout.write(JSON.stringify({ type: 'item.completed', item: {
 
 /* ---------- the full bench remains discoverable under the prompt budget --- */
 {
-  const config = JSON.parse(readFileSync(join(ROOT, 'kingdom.config.json'), 'utf8'));
+  const config = JSON.parse(readFileSync(join(ROOT, 'agenticos.config.json'), 'utf8'));
   // orchestrator was 11_000 against a measured 10,920 with the 107-role bench.
   // Roster v2 (18 roles) measured 7,555 on 2026-10-21; the ceiling is lowered so
   // the bench cannot regrow unnoticed. briefer and peasant do not embed it.
@@ -294,7 +294,7 @@ console.log('  MCP surfaces are under budget and roster supports query, activeOn
   git('add', '-A');
   git('commit', '-qm', 'init');
 
-  const runConfigPath = join(runRepo, 'kingdom.config.json');
+  const runConfigPath = join(runRepo, 'agenticos.config.json');
   writeFileSync(runConfigPath, JSON.stringify({
     maxRunUsd: 1,
     orchestrator: { name: 'orchestrator', cli: 'codex' },
@@ -348,7 +348,7 @@ console.log('  MCP surfaces are under budget and roster supports query, activeOn
   git('add', '-A');
   git('commit', '-qm', 'init');
 
-  const runConfigPath = join(runRepo, 'kingdom.config.json');
+  const runConfigPath = join(runRepo, 'agenticos.config.json');
   writeFileSync(runConfigPath, JSON.stringify({
     maxRunUsd: 1,
     orchestrator: { name: 'orchestrator', cli: 'codex' },
@@ -403,7 +403,7 @@ console.log('  MCP surfaces are under budget and roster supports query, activeOn
   writeFileSync(join(campRepo, 'README.md'), '# t\n');
   git('add', '-A');
   git('commit', '-qm', 'init');
-  const campConfigPath = join(campRepo, 'kingdom.config.json');
+  const campConfigPath = join(campRepo, 'agenticos.config.json');
   writeFileSync(campConfigPath, JSON.stringify({
     orchestrator: { name: 'orchestrator', cli: 'codex' },
     briefer: { name: 'briefer', cli: 'codex' },

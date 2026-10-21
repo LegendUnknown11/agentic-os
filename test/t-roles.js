@@ -9,7 +9,7 @@ import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Kingdom } from '../src/kingdom.js';
+import { Kingdom } from '../src/agenticos.js';
 import { MODES } from '../src/modes.js';
 import { STANDING, MODE_BOUND, SHIPPED, TIERS, ROSTER_VERSION } from '../src/roster.js';
 
@@ -23,7 +23,7 @@ writeFileSync(join(repo, 'a.txt'), 'x\n');
 execFileSync('git', ['add', '-A'], { cwd: repo });
 execFileSync('git', ['commit', '-qm', 'init'], { cwd: repo });
 
-const cfgPath = join(dir, 'kingdom.config.json');
+const cfgPath = join(dir, 'agenticos.config.json');
 const base = {
   peasantDefaults: { cli: 'claude', model: 'haiku', effort: 'low' },
   orchestrator: { name: 'orchestrator', cli: 'codex', prompt: 'k' },
@@ -47,12 +47,12 @@ for (const r of library) {
 console.log(`  library: ${library.length} specialists — ${names.join(', ')}`);
 
 /* ---------- roster v2: fifteen standing roles in five lifecycle tiers ---------- */
-// docs/PLAN-court.md. The old library was a directory of 107 professions, all on
+// docs/PLAN-team.md. The old library was a directory of 107 professions, all on
 // one model at one effort, whose prompts restated their descriptions. Each
 // property below is one of the things that redesign fixed, pinned so it cannot
 // quietly drift back.
 {
-  const template = JSON.parse(readFileSync(join(HERE, '..', 'kingdom.config.json'), 'utf8'));
+  const template = JSON.parse(readFileSync(join(HERE, '..', 'agenticos.config.json'), 'utf8'));
   a.equal(STANDING.length, 15, 'the plan names fifteen standing roles');
   a.deepEqual([...names].sort(), [...SHIPPED].sort(),
     'roles.json must ship exactly the standing roles plus the mode-bound ones');
@@ -91,7 +91,7 @@ console.log(`  library: ${library.length} specialists — ${names.join(', ')}`);
     ['architect', 'auditor', 'strategist']);
   // One roster, two files: the template every new court copies, and the seed
   // for a config that has none. They must not drift.
-  a.deepEqual(template.peasants, library, 'kingdom.config.json peasants must equal roles.json');
+  a.deepEqual(template.peasants, library, 'agenticos.config.json peasants must equal roles.json');
   a.equal(template.rosterVersion, ROSTER_VERSION, 'the template must record the roster version it ships');
   console.log(`  ${STANDING.length} standing + ${MODE_BOUND.length} mode-bound roles across ${TIERS.length} tiers; template matches roles.json`);
 }

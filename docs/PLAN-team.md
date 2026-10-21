@@ -1,4 +1,4 @@
-# PLAN-court.md — Redesign of the Kingdom Court
+# PLAN-team.md — Redesign of the Kingdom Court
 
 *Designed on 2026-08-16 against the live repository at `E:\AI\Agentic OS`.*
 
@@ -16,17 +16,17 @@
 
 ## 1. Executive Summary & Diagnostic Findings
 
-The court of Kingdom orchestrates autonomous agents over direct peer-to-peer MCP messaging. Today, the standing court roster defined in `kingdom.config.json` and seeded from `roles.json` is a legacy artifact: an uncurated directory of 105 job titles generated from uniform templates, completely un-tiered in model and reasoning capacity, and never tested against actual workload history.
+The court of Kingdom orchestrates autonomous agents over direct peer-to-peer MCP messaging. Today, the standing court roster defined in `agenticos.config.json` and seeded from `roles.json` is a legacy artifact: an uncurated directory of 105 job titles generated from uniform templates, completely un-tiered in model and reasoning capacity, and never tested against actual workload history.
 
 ### The Measured Baseline (2026-08-16)
 
 | Metric | Measured Value | Source |
 |---|---|---|
-| **Peasant count** | **105 members** | `kingdom.config.json` |
-| **Peasant model & effort** | **100% `codex / gpt-5.6-luna / max`** (105 of 105) | `kingdom.config.json:87-128` |
-| **Orchestrator system prompt names line** | **1,748 characters** (~437 tokens) | `src/kingdom.js:1044` |
-| **Orchestrator system prompt bench block** | **17,597 characters** (~4,399 tokens) | `src/kingdom.js:1047-1049` |
-| **Total peasant prompt bodies** | **96,624 characters** (median: 994, min: 276, max: 1,103) | `kingdom.config.json` |
+| **Peasant count** | **105 members** | `agenticos.config.json` |
+| **Peasant model & effort** | **100% `codex / gpt-5.6-luna / max`** (105 of 105) | `agenticos.config.json:87-128` |
+| **Orchestrator system prompt names line** | **1,748 characters** (~437 tokens) | `src/agenticos.js:1044` |
+| **Orchestrator system prompt bench block** | **17,597 characters** (~4,399 tokens) | `src/agenticos.js:1047-1049` |
+| **Total peasant prompt bodies** | **96,624 characters** (median: 994, min: 276, max: 1,103) | `agenticos.config.json` |
 | **Production usage history** | **0 peasant events** across all databases | `E:\AI\.kingdom\*\kingdom.db` |
 | **Database `Agentic OS`** | 0 messages, 0 events | `E:\AI\.kingdom\Agentic OS\kingdom.db` |
 | **Database `Sant Dnyaneshwar`** | 3 messages (sovereign→orchestrator), 49 events (all orchestrator) | `E:\AI\.kingdom\Sant Dnyaneshwar\kingdom.db` |
@@ -36,7 +36,7 @@ The court of Kingdom orchestrates autonomous agents over direct peer-to-peer MCP
 1. **Selection noise, not token cost.** Every orchestrator spawn writes 19,345 characters — roughly 4,836 tokens — of peasant names and templated descriptions into the prompt **[measured]**. It is tempting to call that the problem; it is not. Those tokens sit in the cached prefix and bill at $0.20/Mtok on `gpt-5.6-terra`, about **$0.001 per turn** **[measured, from `src/price.js`]**. At a hundred turns a day that is ten cents a month. **The cost argument for shrinking the bench does not survive contact with the price card, and this plan does not rest on it.** The argument that does: 105 near-identical templated descriptions give the orchestrator no basis to choose between them, which is a quality problem, not a billing one. **[estimated — see §6, this has never been A/B tested]**
 2. **No tiering at all.** All 105 peasants are `codex / gpt-5.6-luna / effort: max` **[measured]** — a copywriter and a security auditor are the same machine at the same reasoning effort. Both directions of that look wrong: `max` on a scribe buys reasoning nobody reads, and `luna` on an architect is the cheap model making the decisions that are expensive to get wrong. **How much reasoning `max` actually spends here is unmeasured** — reasoning tokens land in `output_tokens` and no run in this repository has compared one task at two effort levels.
 3. **No Distinction Between Description and Prompt**: In 105 roles, the peasant `prompt` is essentially identical to its `description`. The Orchestrator receives selection blur, while the spawned agent receives generic platitudes instead of an operational methodology.
-4. **Dead Code & Drift**: `roles.json` (132KB) seeds `kingdom.config.json` once (`src/kingdom.js:157`) and is dead at runtime. Because `rolesSeeded: true` is already set in this kingdom, editing `roles.json` changes nothing in production.
+4. **Dead Code & Drift**: `roles.json` (132KB) seeds `agenticos.config.json` once (`src/agenticos.js:157`) and is dead at runtime. Because `rolesSeeded: true` is already set in this kingdom, editing `roles.json` changes nothing in production.
 
 ---
 
@@ -50,7 +50,7 @@ The court of Kingdom orchestrates autonomous agents over direct peer-to-peer MCP
 
 1. **Prompt Prefix Compression** — real, but the *weakest* reason, not the strongest:
    - Current 105-role bench: 17,597 chars + 1,748 chars names = **19,345 characters (~4,836 tokens)** **[measured]**.
-   - Proposed 15-role bench: 3,043 chars + 130 chars names = **3,173 characters (~793 tokens)** **[measured — rendered from the §3 JSON through the same `#promptFor` template at `src/kingdom.js:1047`]**.
+   - Proposed 15-role bench: 3,043 chars + 130 chars names = **3,173 characters (~793 tokens)** **[measured — rendered from the §3 JSON through the same `#promptFor` template at `src/agenticos.js:1047`]**.
    - **Reduction: 83.6%.** An earlier draft claimed 1,890 chars and 89.5%; both were guesses at a string that was sitting in the same document and could have been measured. In cached-prefix dollars this saves about **$0.0008 a turn**. It is a real reduction of a cost that was never material.
 2. **Elimination of Selection Noise** — this is the actual case:
    - 105 roles contain 90 roles that have never been used and do not represent core software delivery workflows (`bioinformatics-specialist`, `climate-modeler`, `neurotechnology-engineer`, `prompt-engineer`, `tax-specialist`, `cad-specialist`, `event-coordinator`, `grant-specialist`, etc.). "Never used" here means **never used by anybody** — there is no usage log at all, so this is a judgement about what belongs in a software court, not a reading of telemetry **[estimated]**.
@@ -75,7 +75,7 @@ The court of Kingdom orchestrates autonomous agents over direct peer-to-peer MCP
 12. `scout` — External research, web exploration, documentation scraping, API verification.
 13. `scribe` — Technical writing, changelogs, READMEs, Obsidian vault knowledge capture.
 14. `strategist` — Goal decomposition, risk analysis, milestone planning, sequence optimization.
-15. `debugger` — Diagnosis of failures with no known cause: intermittent bugs, crashes, hangs, wrong output. Kept because `src/kingdom.js:1109` names it in the orchestrator's own prompt — see §5.
+15. `debugger` — Diagnosis of failures with no known cause: intermittent bugs, crashes, hangs, wrong output. Kept because `src/agenticos.js:1109` names it in the orchestrator's own prompt — see §5.
 
 ---
 
@@ -128,7 +128,7 @@ graph TD
 | **Tier 3** | **Visual & Systems Execution** | `frontend`, `designer`, `devops-engineer` | `codex / gpt-5.6-luna` | `medium` | Iterative work judged by looking at the result. A wrong answer is visible immediately and costs one more turn. |
 | **Tier 4** | **Ingestion, Monitoring & Knowledge** | `briefer`, `scout`, `scribe` | `codex / gpt-5.6-luna` | `low` | Reading, summarising and recording. The briefer runs on almost every turn, so it is the one member whose per-turn cost compounds. |
 
-Every effort value above is valid for its model: `efforts.byModel` in `kingdom.config.json` allows `low, medium, high, xhigh, max` on both `gpt-5.6-luna` and `gpt-5.6-terra`, and `ultra` on `terra` **[measured]**.
+Every effort value above is valid for its model: `efforts.byModel` in `agenticos.config.json` allows `low, medium, high, xhigh, max` on both `gpt-5.6-luna` and `gpt-5.6-terra`, and `ultra` on `terra` **[measured]**.
 
 #### What tiering costs
 
@@ -155,7 +155,7 @@ The same draft's cost table was invented in both rows and, taken at face value, 
 > never stated, so it read as two competing standards.
 >
 > The §3 form is the one to build. A peasant's `prompt` is not free text — it is
-> concatenated into `common` + `byRole` in `#promptFor` (`src/kingdom.js:1050`),
+> concatenated into `common` + `byRole` in `#promptFor` (`src/agenticos.js:1050`),
 > where the member is *already* told about `send_message`, the 4,000-character
 > message cap, sibling worktrees at `../<name>/`, the vault, and `declare_done`.
 > Every exemplar below repeats at least one of those. Repeating the standing
@@ -271,19 +271,19 @@ The same draft's cost table was invented in both rows and, taken at face value, 
 
 The 91 roles being cut carry 91 written system prompts, ~84,000 characters of them. `propose_role` (`src/mcp.js:572`) requires the orchestrator to author a full system prompt from scratch every time it wants a specialist off the standing bench — so "we can always propose one back" quietly means "we can always write one back from nothing." Keeping the bodies in a file that `#seedRoles` never reads costs one file on disk and no tokens anywhere, and turns a re-proposal into a lookup. **Deleting them is the one irreversible act in this whole plan; do not take it to save 84KB.**
 
-**No migration script.** An earlier draft proposed `src/migrate-court.js` with timestamped `kingdom.config.backup.<ts>.json` files. The migration is: replace one array in one JSON file, on one machine, once. That is an edit, not a program — and the backup already exists, because `kingdom.config.json` is tracked in git and `git diff` will show every role removed before anything is committed. A script for a one-time edit is a second thing to test, a second thing to keep working, and a new place for the roster to drift out of sync.
+**No migration script.** An earlier draft proposed `src/migrate-court.js` with timestamped `kingdom.config.backup.<ts>.json` files. The migration is: replace one array in one JSON file, on one machine, once. That is an edit, not a program — and the backup already exists, because `agenticos.config.json` is tracked in git and `git diff` will show every role removed before anything is committed. A script for a one-time edit is a second thing to test, a second thing to keep working, and a new place for the roster to drift out of sync.
 
 #### Technical Rationale:
-1. `src/kingdom.js:157` uses `roles.json` solely as a first-time template:
+1. `src/agenticos.js:157` uses `roles.json` solely as a first-time template:
    ```javascript
    #seedRoles() {
      if (this.config.rolesSeeded) return;
-     // ... copies roles.json into kingdom.config.json and sets rolesSeeded: true
+     // ... copies roles.json into agenticos.config.json and sets rolesSeeded: true
    }
    ```
 2. For *new* kingdoms, `roles.json` defines their initial court. It must reflect the new 15-role roster.
-3. For *existing* kingdoms where `rolesSeeded: true` is already set (such as `E:\AI\Agentic OS\kingdom.config.json`), editing `roles.json` has zero effect.
-4. For *existing* kingdoms the roster is edited in `kingdom.config.json` directly, once, by hand — see §5. There is no migration script.
+3. For *existing* kingdoms where `rolesSeeded: true` is already set (such as `E:\AI\Agentic OS\agenticos.config.json`), editing `roles.json` has zero effect.
+4. For *existing* kingdoms the roster is edited in `agenticos.config.json` directly, once, by hand — see §5. There is no migration script.
 
 ---
 
@@ -324,7 +324,7 @@ Note what is *not* recommended: showing the orchestrator titles only and making 
 
 *Result*: the orchestrator sees the exact specialist for the job at a glance and incurs about **793 tokens** of cached prefix instead of **4,836** **[measured]**.
 
-> The `[Tier 1: terra/high]` annotations shown above are **illustrative only and must not ship in the bench string.** Two reasons. The orchestrator does not choose a member's model — `peasantDefaults` and the per-role entry do, and `setDomainModel` can change them underneath it — so the annotation is a fact the orchestrator cannot act on and that goes stale silently. And telling the orchestrator which members are expensive invites it to optimise for price when its instruction is already to summon the smallest crew that can do the job. The bench renders from `name`, `title` and `description` at `src/kingdom.js:1047`; leave it that way.
+> The `[Tier 1: terra/high]` annotations shown above are **illustrative only and must not ship in the bench string.** Two reasons. The orchestrator does not choose a member's model — `peasantDefaults` and the per-role entry do, and `setDomainModel` can change them underneath it — so the annotation is a fact the orchestrator cannot act on and that goes stale silently. And telling the orchestrator which members are expensive invites it to optimise for price when its instruction is already to summon the smallest crew that can do the job. The bench renders from `name`, `title` and `description` at `src/agenticos.js:1047`; leave it that way.
 
 ---
 
@@ -490,7 +490,7 @@ An earlier draft proposed a new `member_usage` table in `src/bus.js` holding tur
 
 So `src/ctx.js` is already 80% of this report; it groups by member and prices correctly. The honest gap is **one** field:
 
-- **`summons_count`** — who was woken, when, and by which approval. Reconstructing it from the `summoned` state key is lossy (it is a set, not a history) and from approval bodies is fragile. **That is worth an event**: `bus.logEvent(name, 'summoned', {by, approvalId})` at the point of `wake()` in `src/kingdom.js`. One line, one log row, no new table.
+- **`summons_count`** — who was woken, when, and by which approval. Reconstructing it from the `summoned` state key is lossy (it is a set, not a history) and from approval bodies is fragile. **That is worth an event**: `bus.logEvent(name, 'summoned', {by, approvalId})` at the point of `wake()` in `src/agenticos.js`. One line, one log row, no new table.
 
 Then the report is `npm run ctx` extended with a per-role utilisation column, or a `/api/roster/metrics` route reading the same aggregate. **Do not add the pruning rule** ("0 summons in 30 days ⇒ flag for removal") until there is a court that has actually run for 30 days — this one has 0 peasant turns on record, and an automatic pruner fed by an empty log would recommend deleting the entire roster.
 
@@ -498,24 +498,24 @@ Then the report is `npm run ctx` extended with a per-role utilisation column, or
 
 ## 5. Migration Strategy for This Kingdom
 
-**Nothing here may be executed until the sovereign has read this file and said go.** Removing a role from `kingdom.config.json` removes it permanently — `rolesSeeded` is already `true`, so `#seedRoles` will never put it back. Git is the undo path, and only if the removal is committed on its own.
+**Nothing here may be executed until the sovereign has read this file and said go.** Removing a role from `agenticos.config.json` removes it permanently — `rolesSeeded` is already `true`, so `#seedRoles` will never put it back. Git is the undo path, and only if the removal is committed on its own.
 
-1. **`kingdom.config.json` also holds live settings** — `vault`, `speechbird`, `advisor`, `summarizer`, `goal`, `models`, `efforts`. Replace **only** the `peasants` array. It is also currently carrying roughly 1,860 lines of changes that predate this work; commit the roster change **alone**, so `git diff` on it reads as a roster change and nothing else.
+1. **`agenticos.config.json` also holds live settings** — `vault`, `speechbird`, `advisor`, `summarizer`, `goal`, `models`, `efforts`. Replace **only** the `peasants` array. It is also currently carrying roughly 1,860 lines of changes that predate this work; commit the roster change **alone**, so `git diff` on it reads as a roster change and nothing else.
 2. **Sequence:**
    - Move the 91 dropped roles into `roles-library.json`; rewrite `roles.json` with the 14. Neither file affects this kingdom — both are for the *next* one.
-   - Replace `kingdom.config.json.peasants` with the 15-role array from §3, per-role `model` and `effort` as tiered.
+   - Replace `agenticos.config.json.peasants` with the 15-role array from §3, per-role `model` and `effort` as tiered.
    - Set `peasantDefaults` to the Tier 2 values (`codex` / `gpt-5.6-luna` / `high`) so a role that names nothing inherits the workhorse tier rather than `max`.
-   - **Fix the three places in `src/kingdom.js` that name roles being deleted** — see below. This is the step that turns a config edit into a code change, and it was missing from the first draft.
-   - Update `domains()` at `src/kingdom.js:302`. The current default is `frontend: ['designer','coder','frontend']`, `backend: ['backend','dba','architect','devops-engineer']` **[measured]** — every name in both still exists after the cut, so this is optional, not required. `test/t-roles.js` asserts against the roster and will need updating with it.
+   - **Fix the three places in `src/agenticos.js` that name roles being deleted** — see below. This is the step that turns a config edit into a code change, and it was missing from the first draft.
+   - Update `domains()` at `src/agenticos.js:302`. The current default is `frontend: ['designer','coder','frontend']`, `backend: ['backend','dba','architect','devops-engineer']` **[measured]** — every name in both still exists after the cut, so this is optional, not required. `test/t-roles.js` asserts against the roster and will need updating with it.
    - `npm test` — 38 suites, must be green.
 
 ### The code that names roles by hand
 
 Three sites hardcode role names, and a roster change silently breaks all three. Grep before editing; do not trust this list to stay complete.
 
-- **`src/kingdom.js:1109-1110`** — the orchestrator's own prompt reads: *"A refactor is the refactoring-engineer's, not the coder's; a mystery bug is the debugger's; research outside the repo is the scout's."* **`debugger` is not in the proposed 14.** Ship the roster as it stands and the orchestrator is instructed, on every single turn, to summon a member that no longer exists. Either keep `debugger` (it is the debugging role, and this court has no other) or rewrite that sentence in the same commit. **The first draft of this plan cut the role and never touched the sentence.**
-- **`src/kingdom.js:284`** — a comment listing the cross-cutting roles as "tester, reviewer, refactoring-engineer, debugger, scout, scribe". Same `debugger` problem, plus this comment block is currently orphaned: a second `/** */` for `skills()` was inserted between it and `domains()`, so it now documents the wrong function.
-- **`src/kingdom.js:302`** — the `domains()` default, above.
+- **`src/agenticos.js:1109-1110`** — the orchestrator's own prompt reads: *"A refactor is the refactoring-engineer's, not the coder's; a mystery bug is the debugger's; research outside the repo is the scout's."* **`debugger` is not in the proposed 14.** Ship the roster as it stands and the orchestrator is instructed, on every single turn, to summon a member that no longer exists. Either keep `debugger` (it is the debugging role, and this court has no other) or rewrite that sentence in the same commit. **The first draft of this plan cut the role and never touched the sentence.**
+- **`src/agenticos.js:284`** — a comment listing the cross-cutting roles as "tester, reviewer, refactoring-engineer, debugger, scout, scribe". Same `debugger` problem, plus this comment block is currently orphaned: a second `/** */` for `skills()` was inserted between it and `domains()`, so it now documents the wrong function.
+- **`src/agenticos.js:302`** — the `domains()` default, above.
 
 **Recommendation: keep `debugger` and make it 15 roles.** Debugging a failure whose cause is unknown is a different job from writing code and a different job from reviewing a diff, the orchestrator's prompt already knows that, and the alternative is editing the prompt to remove a capability nothing else covers. Tier 2 (`luna` / `high`).
 

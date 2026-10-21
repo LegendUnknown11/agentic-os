@@ -4,7 +4,7 @@
 // only the dedicated "End…" action per row is destructive.
 //
 // This is a thin view onto electron/main.js's `courts:list/open/end` IPC
-// (see electron/court-preload.cjs) backed by src/courts.js's registry — not
+// (see electron/team-preload.cjs) backed by src/teams.js's registry — not
 // a source of truth this file owns. Outside Electron (a plain browser tab,
 // which is how Playwright and a developer verify this UI) `window
 // .kingdomShell` does not exist at all, so this degrades to a visible note

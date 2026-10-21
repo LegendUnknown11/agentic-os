@@ -1,6 +1,6 @@
-// kingdom.config.json at the repo root is TWO things wearing one hat: the
+// agenticos.config.json at the repo root is TWO things wearing one hat: the
 // template defaultConfigPath() copies into every new workspace on first run
-// (src/kingdom.js), and — because it is not gitignored — whatever a live
+// (src/agenticos.js), and — because it is not gitignored — whatever a live
 // session happens to write back to it if ever pointed at directly. The two
 // must never mix: a fresh install inheriting a real vault path, a real
 // dictation-model path, or a live goal with somebody else's timestamp is not
@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, '..');
 
-const cfg = JSON.parse(readFileSync(join(ROOT, 'kingdom.config.json'), 'utf8'));
+const cfg = JSON.parse(readFileSync(join(ROOT, 'agenticos.config.json'), 'utf8'));
 a.deepEqual(cfg.models.cursor, [], 'Cursor model ids are account-specific; populate from cursor-agent models');
 a.deepEqual(cfg.efforts.agy, ['low', 'medium', 'high'], 'agy keeps its measured ladder; it rejects xhigh/max');
 
@@ -28,7 +28,7 @@ a.deepEqual(cfg.efforts.agy, ['low', 'medium', 'high'], 'agy keeps its measured 
   a.equal(cfg.goal.text, '', 'a shipped template must not carry a live standing goal');
   a.equal(cfg.goal.setAt, null, 'and no timestamp from the session that set it');
   a.deepEqual(cfg.advisor.allow, [], 'an unpinned advisor allowlist — allow:[] means "every configured model", '
-    + 'not "none" (src/kingdom.js: a.allow?.length ? filter : allowAll)');
+    + 'not "none" (src/agenticos.js: a.allow?.length ? filter : allowAll)');
 
   const asText = JSON.stringify(cfg);
   a.doesNotMatch(asText, /[A-Za-z]:\\\\/, 'no Windows absolute path anywhere in the shipped template');
@@ -72,13 +72,13 @@ a.deepEqual(cfg.efforts.agy, ['low', 'medium', 'high'], 'agy keeps its measured 
   console.log(`  build.files packages skills/ (${skillFiles.length} files) and roles.json`);
 }
 
-/* ---------- kingdom.js's own fallback default matches the template ------- */
+/* ---------- agenticos.js's own fallback default matches the template ------- */
 // Kingdom#models() falls back to a hardcoded default only when a config
 // carries no `models` key at all (e.g. one built by hand in a test, or an
 // older workspace's config predating this key). That default must not
 // regress to the same bare-alias bug the template was just fixed for.
 {
-  const kingdomSource = readFileSync(join(ROOT, 'src', 'kingdom.js'), 'utf8');
+  const kingdomSource = readFileSync(join(ROOT, 'src', 'agenticos.js'), 'utf8');
   a.match(kingdomSource,
     /claude: \['claude-opus-5-5', 'claude-opus-5', 'claude-sonnet-5', 'claude-haiku-4-5', 'claude-fable-5-1'\]/,
     'Kingdom#models()\'s hardcoded fallback must also name full, versioned, CURRENT model ids');

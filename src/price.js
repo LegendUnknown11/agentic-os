@@ -131,7 +131,7 @@ if (process.argv[1]?.endsWith('price.js')) {
   near(costOf({ in: 1e6, cached: 0, written: 1e6, out: 0 }, 'claude', 'sonnet'),
     2.00 * 1.25, 'cache writes cost 1.25x the input rate');
 
-  // The model selector now offers full ids (kingdom.config.json), so the
+  // The model selector now offers full ids (agenticos.config.json), so the
   // current Fable generation must be priced under its real id, not just its
   // predecessor's — an unpriced current model would silently stop billing.
   a.ok(rateOf('claude', 'claude-fable-5-1'), 'claude-fable-5-1 (the current Fable generation) must have a published price');
@@ -147,7 +147,7 @@ if (process.argv[1]?.endsWith('price.js')) {
   near(costOf({ in: 0, cached: 1e6, written: 0, out: 0 }, 'claude', 'claude-fable-5-1'), 0.25,
     'a million cached Fable 5.1 tokens cost $0.25');
 
-  // #45: the catalogue grew Opus 5.5 (kingdom.js models(), kingdom.config.json)
+  // #45: the catalogue grew Opus 5.5 (agenticos.js models(), agenticos.config.json)
   // without a price, which would have silently stopped billing for it exactly
   // like the Fable case above.
   a.deepEqual(rateOf('claude', 'claude-opus-5-5'), [4.00, 0.20, 20.00],
@@ -161,7 +161,7 @@ if (process.argv[1]?.endsWith('price.js')) {
     'the opus alias must be priced as Opus 5.5, the model the CLI resolves it to');
 
   // Existing configs and members keep working under every id/alias this
-  // catalogue has ever offered — an old kingdom.config.json naming "opus",
+  // catalogue has ever offered — an old agenticos.config.json naming "opus",
   // "sonnet", or "claude-opus-5" must not go unpriced just because a newer
   // model joined the list.
   for (const legacy of ['opus', 'sonnet', 'haiku', 'claude-opus-5', 'claude-sonnet-5', 'claude-haiku-4-5']) {

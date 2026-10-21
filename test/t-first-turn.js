@@ -2,7 +2,7 @@
 // against a real session: "The orchestrator is talking to itself. I didn't
 // give it a command yet."
 //
-// Root cause: kingdom.js#start() unconditionally posts housekeeping notices
+// Root cause: agenticos.js#start() unconditionally posts housekeeping notices
 // to the orchestrator on every daemon boot — "still in service from a
 // previous session" for inherited crew, "nobody is working on this any more"
 // for orphaned tasks — and the orchestrator is registered as `awake` the
@@ -14,7 +14,7 @@
 // answered by a member the sovereign never addressed.
 //
 // This proves the fix end to end against the real bus and the real delivery
-// loop (kingdom.js's `hadReal:` flag feeding ripeness.js's `hadRealTurn`), not
+// loop (agenticos.js's `hadReal:` flag feeding ripeness.js's `hadRealTurn`), not
 // just the pure function in isolation.
 //
 // Uses a stand-in agent — no API, no quota.
@@ -25,7 +25,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Kingdom } from '../src/kingdom.js';
+import { Kingdom } from '../src/agenticos.js';
 import { kingdomDir } from '../src/worktree.js';
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -42,7 +42,7 @@ writeFileSync(join(repo, 'README.md'), '# t\n');
 git('add', '-A');
 git('commit', '-qm', 'init');
 
-const configPath = join(repo, 'kingdom.config.json');
+const configPath = join(repo, 'agenticos.config.json');
 writeFileSync(configPath, JSON.stringify({
   orchestrator: { name: 'orchestrator', cli: 'codex' },
   briefer: { name: 'briefer', cli: 'codex' },

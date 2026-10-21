@@ -1,4 +1,4 @@
-# f2-design — the court redesign (docs/PLAN-court.md), implemented
+# f2-design — the court redesign (docs/PLAN-team.md), implemented
 
 Thread f2-design, branch `f2-design`, cut from `origin/functionality` at
 `e730bb6` on 2026-10-21. `origin/functionality` has since gained `6e67294`,
@@ -10,7 +10,7 @@ which only adds `plans/functionality/specs.md`. This branch is not rebased onto 
 |---|---|
 | `e9dbca7` | Roster and config. `roles.json` and the template's `peasants` become the same 18 roles with tiers. The 90 retired roles move verbatim to `roles-library.json`. Adds `src/roster.js` (STANDING, MODE_BOUND, TIERS, ROSTER_VERSION). `test/t-roles.js` now pins the v2 contract. |
 | `13c2a1a` | Migration. `planRosterMigration` is pure and lives in `src/roster.js`. `Kingdom#migrateRoster` runs on every launch. Adds the new suite `test/t-roster-migrate.js` and its fixture `test/fixtures/roster-v1.json`, which is the real 107-role v1 roster. |
-| `0f72040` | Hand-coded role names and stale figures: `src/prompt.js`, `src/kingdom.js` (domains comment), `src/modes.js` self-check, `src/price.js`, three test fixtures, README. |
+| `0f72040` | Hand-coded role names and stale figures: `src/prompt.js`, `src/agenticos.js` (domains comment), `src/modes.js` self-check, `src/price.js`, three test fixtures, README. |
 | `394a6ed` | Re-pins. The orchestrator prompt ceiling in `test/t-efficiency.js` goes from 11,000 to 8,500. The other pins were examined and left alone (reasons below). |
 | this file | The report. |
 
@@ -137,7 +137,7 @@ notice (the existing orphan rule). As a result, a task-owning member that is
 launch. The task itself is kept, unowned. The test asserts that the task
 survives.
 
-## Deviations from PLAN-court.md (the conservative option, each time)
+## Deviations from PLAN-team.md (the conservative option, each time)
 
 1. **scout/scribe are named researcher/writer.** The repository renamed them
    after the plan was written, and `src/modes.js` crews Cowork with the new
@@ -196,7 +196,7 @@ changed from accessibility-engineer to researcher.
 - Full `npm test` before each commit: 95/96 suites, and only `t-electron.js`
   fails (no display in this container).
 - Flakes, each of which passed when retried alone, as the runner allows:
-  `t-panels` (a run reads `blocked`, not `planning`) and `t-multi-court`.
+  `t-panels` (a run reads `blocked`, not `planning`) and `t-multi-team`.
 - The `t-panels` flake also reproduces on untouched `origin/functionality`
   (1 of 6 runs alone), so this change did not cause it.
 - The new assertions were shown to fail without their change:
@@ -219,15 +219,15 @@ changed from accessibility-engineer to researcher.
 
 ## Open items
 
-- `ui/court.js` (`cloud-architect`) and `ui/names.js` (`release-manager`)
+- `ui/team.js` (`cloud-architect`) and `ui/names.js` (`release-manager`)
   name retired roles, but only as self-check fixtures (search, and the
   unknown-role fallback). They were left alone because `ui/**` is out of
   scope.
 - HANDOFF.md's "Key files" should gain `src/roster.js`, `roles-library.json`
   and `test/t-roster-migrate.js`, and its suite count goes from 95 to 96.
   That file belongs to the coordinator.
-- `.claude/arms/court.md` could point at `src/roster.js`.
-- The plan's §4 `summoned` event already exists (`kingdom.js` logs one), so
+- `.claude/arms/team.md` could point at `src/roster.js`.
+- The plan's §4 `summoned` event already exists (`agenticos.js` logs one), so
   usage evidence can be collected from now on. No usage report was built.
 - `t-panels`'s `planning`/`blocked` race is pre-existing and worth its own
   fix.

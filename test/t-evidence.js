@@ -55,7 +55,7 @@ const created = bus.createRun({
 a.equal(created.branch, `kingdom/run/${runId}`, 'sanity: the run carries the branch its worktree was cut on');
 
 // Recovery history + revision-bound verification evidence, the shape
-// kingdom.js actually writes (see #recordRecovery and finish_task's evidence
+// agenticos.js actually writes (see #recordRecovery and finish_task's evidence
 // object) — not an invented shape.
 bus.updateRun(runId, {
   recoveryHistory: [{ name: 'coder', operation: 'process', message: 'transient spawn failure, retried', at: created.createdTs + 10 }],

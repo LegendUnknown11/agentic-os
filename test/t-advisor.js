@@ -198,7 +198,7 @@ process.stdout.write(JSON.stringify({ type: 'item.completed',
 // that matters — that command() puts the RIGHT text on the bus.
 {
   const { execFileSync } = await import('node:child_process');
-  const { Kingdom } = await import('../src/kingdom.js');
+  const { Kingdom } = await import('../src/agenticos.js');
 
   const repo = mkdtempSync(join(tmpdir(), 'kingdom-adv-repo-'));
   const git = (...x) => execFileSync('git', x, { cwd: repo, stdio: 'pipe' });
@@ -209,7 +209,7 @@ process.stdout.write(JSON.stringify({ type: 'item.completed',
   git('add', '-A');
   git('commit', '-qm', 'init');
 
-  const cfg = join(repo, 'kingdom.config.json');
+  const cfg = join(repo, 'agenticos.config.json');
   const write = (advisor, auto = false) => writeFileSync(cfg, JSON.stringify({
     models: { codex: ['gpt-5.6-luna', 'gpt-5.6-terra'] },
     efforts: { codex: ['low', 'medium'], byModel: {

@@ -11,7 +11,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir, homedir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { Kingdom } from '../src/kingdom.js';
+import { Kingdom } from '../src/agenticos.js';
 import { kingdomDir, dbPath, worktreePath } from '../src/worktree.js';
 
 process.env.KINGDOM_CODEX_BIN = process.execPath;
@@ -33,7 +33,7 @@ process.env.USERPROFILE = fakeHome;
 process.env.HOME = fakeHome;
 
 const workspace = join(fakeHome, '.kingdom', 'workspace');
-const configPath = join(workspace, 'kingdom.config.json');
+const configPath = join(workspace, 'agenticos.config.json');
 mkdirSync(workspace, { recursive: true });
 writeFileSync(configPath, JSON.stringify({
   orchestrator: { name: 'orchestrator', cli: 'codex' },

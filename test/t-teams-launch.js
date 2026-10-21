@@ -5,7 +5,7 @@
 // electron/main.js can be a thin wrapper around something this suite
 // actually runs.
 import { strict as a } from 'node:assert';
-import { decideLaunchAction, routeLaunch, requestShutdown, firstLaunchPlan, courtPortOf } from '../electron/courts-launch.js';
+import { decideLaunchAction, routeLaunch, requestShutdown, firstLaunchPlan, courtPortOf } from '../electron/teams-launch.js';
 
 const live = [
   { repo: '/repo/a', port: 7777, startedAt: '2026-01-01T00:00:00Z' },
@@ -116,4 +116,4 @@ a.equal(courtPortOf('https://example.com:8443/', 7777), 7777, 'a non-court URL n
   }
 }
 
-console.log('t-courts-launch.js OK — a relaunch focuses a live court by repo (or the most recent one), and only starts a fresh daemon when nothing matches');
+console.log('t-teams-launch.js OK — a relaunch focuses a live court by repo (or the most recent one), and only starts a fresh daemon when nothing matches');

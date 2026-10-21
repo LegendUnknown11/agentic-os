@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 const HERE = dirname(fileURLToPath(import.meta.url));
-import { Kingdom } from '../src/kingdom.js';
+import { Kingdom } from '../src/agenticos.js';
 import { kingdomDir } from '../src/worktree.js';
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -46,7 +46,7 @@ writeFileSync(join(repo, 'README.md'), '# t\n');
 git('add', '-A');
 git('commit', '-qm', 'init');
 
-const configPath = join(repo, 'kingdom.config.json');
+const configPath = join(repo, 'agenticos.config.json');
 writeFileSync(configPath, JSON.stringify({
   orchestrator: { name: 'orchestrator', cli: 'codex' },
   briefer: { name: 'briefer', cli: 'codex' },
@@ -242,7 +242,7 @@ a.equal(verified, 1, `a declare_done must be verified exactly once, got ${verifi
 // full context replay to do nothing. Nothing caught it, because each site
 // reads fine on its own — the defect is only visible across all of them.
 {
-  const src = readFileSync(join(HERE, '..', 'src', 'kingdom.js'), 'utf8');
+  const src = readFileSync(join(HERE, '..', 'src', 'agenticos.js'), 'utf8');
   const posts = src.match(/this\.bus\.post\([\s\S]*?\);/g) ?? [];
   const awareness = posts.filter((p) => /AWARENESS/.test(p));
   a.ok(awareness.length >= 8, `expected the awareness posts to be found, got ${awareness.length}`);

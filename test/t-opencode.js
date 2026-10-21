@@ -93,9 +93,9 @@ const turn = (ag) => new Promise((res) => ag.once('turn_end', res));
 {
   // opencode publishes a different reasoning-effort ladder per model (e.g.
   // openrouter/stealth/ox-alpha's is low/high/max, no "medium") — the same
-  // shape as codex's per-model ladder (kingdom.js's effortsFor()). A local
+  // shape as codex's per-model ladder (agenticos.js's effortsFor()). A local
   // low/medium/high allowlist here would silently drop a model's own "max",
-  // so — matching claude/codex — whatever kingdom.js already decided to hand
+  // so — matching claude/codex — whatever agenticos.js already decided to hand
   // this member is forwarded as-is, trusting that single source of truth.
   const ag = new Agent({ name: 'coder', cli: 'opencode', effort: 'max' }, { cwd: dir });
   ag.start();
@@ -104,8 +104,8 @@ const turn = (ag) => new Promise((res) => ag.once('turn_end', res));
   await done;
   const argv = JSON.parse(readFileSync(ARGV, 'utf8'));
   a.deepEqual(argv.slice(argv.indexOf('--variant'), argv.indexOf('--variant') + 2),
-    ['--variant', 'max'], 'an effort kingdom.js already approved for this model must reach opencode, not get re-filtered');
-  console.log('  effort reaches opencode via --variant, unfiltered — kingdom.js is the one place that validates it');
+    ['--variant', 'max'], 'an effort agenticos.js already approved for this model must reach opencode, not get re-filtered');
+  console.log('  effort reaches opencode via --variant, unfiltered — agenticos.js is the one place that validates it');
 }
 
 /* ---------- 4. silence is reported ---------- */
@@ -150,7 +150,7 @@ const turn = (ag) => new Promise((res) => ag.once('turn_end', res));
 {
   // opencode has no --tools flag and no per-process --mcp-config: it reads a
   // FIXED `.opencode.json` from its cwd. Orchestrator and briefer are officers
-  // and historically share the repo root as their cwd (see kingdom.js's
+  // and historically share the repo root as their cwd (see agenticos.js's
   // #doSpawn) — so without per-officer isolation, whichever spawns second
   // overwrites the first's identity file, and the first quietly runs every
   // future turn AS the second (wrong role, wrong toolset, wrong sender on
@@ -167,7 +167,7 @@ const turn = (ag) => new Promise((res) => ag.once('turn_end', res));
   git('add', '-A');
   git('commit', '-qm', 'init');
 
-  const cfg = join(repo, 'kingdom.config.json');
+  const cfg = join(repo, 'agenticos.config.json');
   writeFileSync(cfg, JSON.stringify({
     orchestrator: { name: 'orchestrator', cli: 'opencode' },
     briefer: { name: 'briefer', cli: 'opencode' },
@@ -177,7 +177,7 @@ const turn = (ag) => new Promise((res) => ag.once('turn_end', res));
     summarizer: { enabled: false },
   }));
 
-  const { Kingdom } = await import('../src/kingdom.js?opencode-officers');
+  const { Kingdom } = await import('../src/agenticos.js?opencode-officers');
   const { kingdomDir } = await import('../src/worktree.js?opencode-officers');
   const k = new Kingdom(repo, cfg);
   k.on('error', () => {});

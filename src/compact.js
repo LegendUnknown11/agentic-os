@@ -1,7 +1,7 @@
 // The compaction window: how big a member's context gets before the court
 // throws it away and reseeds the successor from a handover note.
 //
-// The kingdom already compacted — `recycleAtTokens` in kingdom.config.json —
+// The kingdom already compacted — `recycleAtTokens` in agenticos.config.json —
 // but the only way to change it was to edit the file and restart, and the
 // number was arrived at by a one-off measurement that nothing re-checks. This
 // is the runtime control: `/autocompact 300k` from the throne room, or
@@ -22,7 +22,7 @@ export const MAX = 500_000;
 /**
  * `80000` → `80k`. Deliberately not `toLocaleString`: this machine's locale
  * groups by lakh, so the same window printed as "3,00,000" in a toast and
- * "300000" in kingdom.config.json. A window is an order of magnitude, not an
+ * "300000" in agenticos.config.json. A window is an order of magnitude, not an
  * accounting figure — print it the way it is typed.
  */
 export const fmtTokens = (n) => (n % 1000 ? `${Math.round(n / 100) / 10}k` : `${n / 1000}k`);

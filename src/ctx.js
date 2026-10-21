@@ -37,7 +37,7 @@ export function audit(db, since = 0, { config = null } = {}) {
     if (e.type !== 'turn_end') continue;
     const p = JSON.parse(e.payload);
     const u = p.usage ?? {};
-    // All of this comes from usage.js, so this and kingdom.js and daemon.js
+    // All of this comes from usage.js, so this and agenticos.js and daemon.js
     // cannot drift apart again. They already had: counting Anthropic's
     // alongside-cache against an input_tokens-only denominator reported
     // "replay 107.6% of all input" and "genuinely new: -37.94M".
@@ -293,7 +293,7 @@ if (process.argv[1]?.endsWith('ctx.js') && process.argv[2]) {
   // them — so a missing or unreadable config degrades the report, never fails it.
   let config = null;
   try {
-    const { defaultConfigPath } = await import('./kingdom.js');
+    const { defaultConfigPath } = await import('./agenticos.js');
     const { readFileSync } = await import('node:fs');
     config = JSON.parse(readFileSync(defaultConfigPath(repo), 'utf8'));
   } catch { /* unpriced, and the report says so */ }

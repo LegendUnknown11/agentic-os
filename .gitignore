@@ -17,8 +17,8 @@ dist/
 # `git add -A`, so anything untracked here gets committed onto a branch and
 # merged by whoever presses the button.
 .agents/
-kingdom.config.json.tmp
-kingdom.config.json.broken
+agenticos.config.json.tmp
+agenticos.config.json.broken
 
 # Scratch databases from probing a CLI or the MCP server by hand. SQLite leaves
 # -shm/-wal siblings behind, and a pair of them sat in this repo untracked for

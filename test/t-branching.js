@@ -13,7 +13,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Kingdom } from '../src/kingdom.js';
+import { Kingdom } from '../src/agenticos.js';
 import { kingdomDir } from '../src/worktree.js';
 
 process.env.KINGDOM_CODEX_BIN = process.execPath; // stub: never calls an API
@@ -28,7 +28,7 @@ writeFileSync(join(repo, 'README.md'), '# t\n');
 git('add', '-A');
 git('commit', '-qm', 'init');
 
-const configPath = join(repo, 'kingdom.config.json');
+const configPath = join(repo, 'agenticos.config.json');
 writeFileSync(configPath, JSON.stringify({
   models: { claude: ['haiku'], codex: ['gpt-5.6-luna'] },
   orchestrator: { name: 'orchestrator', cli: 'codex' },

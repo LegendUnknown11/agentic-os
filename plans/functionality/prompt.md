@@ -22,7 +22,7 @@ Reduce model-call, token, prompt-cache, and MCP overhead without weakening corre
 ## Your ownership
 
 - `src/**`
-- `kingdom.config.json` only if an essential repository default must change
+- `agenticos.config.json` only if an essential repository default must change
 - `test/t-efficiency.js`
 - `test/t-advisor.js`
 - `test/t-summarize.js`

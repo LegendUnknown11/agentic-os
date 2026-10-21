@@ -1,6 +1,6 @@
 import { h, page, section, empty, note, button, field, input, textarea, select, check, modelLabel, post, subscribe, editing } from './util.js';
 import { setPrefs } from '../store.js';
-import { courtsSwitcher, refreshCourts } from './courts.js';
+import { courtsSwitcher, refreshCourts } from './teams.js';
 import { mountUsage } from './usage.js';
 import { mountDoctor } from './doctor.js';
 
@@ -151,7 +151,7 @@ function repository(state, root) {
       pickerMessage.textContent = result.error ?? 'Could not attach that repository.';
       pickerMessage.hidden = false;
       // attachRepo still refuses to move a LIVE court onto a different repo
-      // (src/kingdom.js) — that message is unchanged. The fix for it no
+      // (src/agenticos.js) — that message is unchanged. The fix for it no
       // longer waits for this exact failure to surface: "End court and
       // switch…" is always available below when the shell bridge exists,
       // and the courts switcher offers the non-destructive alternative

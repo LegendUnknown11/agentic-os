@@ -198,12 +198,12 @@ contract and acceptance evidence: `PLAN.md`'s "Functional revamp" section.
 **Multiple courts reverses the 2026-09-22 decision below** ("Running several
 courts... the sovereign declined it for this round") — the sovereign asked for
 it explicitly the next day. One daemon process per repository, each on its own
-port, tracked in `~/.kingdom/courts.json` (`src/courts.js`); a daemon refuses a
+port, tracked in `~/.kingdom/courts.json` (`src/teams.js`); a daemon refuses a
 second live court for the same repo and names the port it is on; a busy pinned
 port is a clean, visible error; an unpinned port is picked automatically from
 7777 up. Electron gets `app.requestSingleInstanceLock()` and per-port windows
-(`electron/courts-launch.js`, `electron/main.js`); Settings' Repository panel
-gets a switcher (`ui/views/courts.js`) that opens or starts another repo's
+(`electron/teams-launch.js`, `electron/main.js`); Settings' Repository panel
+gets a switcher (`ui/views/teams.js`) that opens or starts another repo's
 court without ending the current one, and no longer waits for attachRepo to
 fail before offering "End court and switch…" (issue #42's fail-first
 complaint). **Electron itself and Windows were not exercised** — this
@@ -223,7 +223,7 @@ without the fix.
 
 **Review fix, same day: the test gate itself wrote to the real registry.**
 Suites that spawn a real daemon (`t-assets`, `t-control`, `t-csrf`,
-`t-daemon-boot`, `t-daemon-conversations`, `t-doctor-api`, `t-multi-court`,
+`t-daemon-boot`, `t-daemon-conversations`, `t-doctor-api`, `t-multi-team`,
 `t-panels`, `t-uploads`, `t-registry-attach`) were registering into the REAL
 `~/.kingdom/courts.json` on whatever machine ran `npm test` — on the
 sovereign's machine, running the gate while the app is open would have
@@ -273,7 +273,7 @@ each with a test that failed first:
   (`t-efficiency.js`).
 - `electron/main.js` listened for `browser-window-closed`, which Electron does
   not emit, so the app could outlive its last court window as a lone pet.
-  Guarded statically in `t-courts-launch.js`. **Not exercised in Electron.**
+  Guarded statically in `t-teams-launch.js`. **Not exercised in Electron.**
 - The overview showed "Recovery underway" for any run that had ever retried,
   completed ones included (`node ui/run.js`).
 
@@ -394,7 +394,7 @@ The combined source gate passed on merged `main`: `npm.cmd test` completed
 **77 suites, 4-wide, 71.6s, all passed** on 2026-09-22, after four backlog
 items landed one at a time with the full gate re-run between each: target-repo
 snapshot/restore (`src/snapshot.js`), a per-run spend ceiling plus a projected
-total measured from the campaign boundary (`src/kingdom.js`, `src/forecast.js`),
+total measured from the campaign boundary (`src/agenticos.js`, `src/forecast.js`),
 bearer-token auth for a non-loopback daemon bind (`src/daemon.js`), and a
 self-contained evidence folder per completed run (`src/evidence.js`). Earlier
 handoffs recorded 73 suites; the runner's array has grown by two
@@ -443,13 +443,13 @@ On `functional-revamp` (2026-09-23, since merged to `main`), the same gate
 printed **84 suites, 4-wide, ~37s, all suites passed** after the two review
 fixes above landed (each its own commit, full gate green before and after —
 see the two "Review fix" paragraphs). The runner's array grew by eight over
-`main`: `t-courts.js`, `t-multi-court.js`, `t-courts-launch.js` (issue #42),
+`main`: `t-teams.js`, `t-multi-team.js`, `t-teams-launch.js` (issue #42),
 `t-pilot-doctor.js`, `t-pilot-evidence.js` (Habitable pilot readiness),
 `t-registry-attach.js` (the live-attach fix), `t-registry-isolation.js` (the
 test-gate isolation fix), plus new cases inside `t-pages.js` and
 `t-evidence.js`. `court registry` and, separately, `a live attach claims the
 registry` were each flagged flaky-in-pool-passed-alone on one run apiece —
-the same pre-existing pool-contention class `src/courts.js`'s `pingCourt`
+the same pre-existing pool-contention class `src/teams.js`'s `pingCourt`
 timeout comment documents, not a regression (both suites passed cleanly, alone
 and in the pool, on other runs the same session). This is source and
 real-subprocess HTTP-level evidence only — Electron and Windows are
@@ -549,14 +549,14 @@ stateDiagram-v2
 | File | Responsibility |
 |---|---|
 | [src/bus.js](src/bus.js) | SQLite schema, migrations, run lifecycle, task and approval associations. |
-| [src/kingdom.js](src/kingdom.js) | Worker lifecycle, recovery, verification, run worktrees, and guarded application. |
+| [src/agenticos.js](src/agenticos.js) | Worker lifecycle, recovery, verification, run worktrees, and guarded application. |
 | [src/worktree.js](src/worktree.js) | Worktree creation, revision-bound tests, conflict-safe integration, and run-branch application. |
 | [src/daemon.js](src/daemon.js) | HTTP actions, run reads, snapshots, SSE run events, and bearer-token auth for a non-loopback bind. |
 | [src/snapshot.js](src/snapshot.js) | Target-repo snapshot/restore before a worker touches it (Habitable pilot step one). Read-only against the repo it snapshots. |
 | [src/evidence.js](src/evidence.js) | Exports one self-contained folder per completed run: objective, diff, tests, reviews, cost, timeline, and an optional pilot section. |
-| [src/courts.js](src/courts.js) | Multiple courts at once (issue #42): the `~/.kingdom/courts.json` registry — register/list/prune, port picking, lockfile + atomic write. Pure core is self-checking (`node src/courts.js`). |
-| [electron/courts-launch.js](electron/courts-launch.js) | The pure decision behind a relaunch or `app.requestSingleInstanceLock`'s second-instance event: focus a live court or start a fresh one. Self-checking (`node electron/courts-launch.js`); see `test/t-courts-launch.js`. |
-| [ui/views/courts.js](ui/views/courts.js) | The court switcher panel in Settings' Repository tab. Degrades to a plain note outside Electron (`window.kingdomShell` absent). |
+| [src/teams.js](src/teams.js) | Multiple courts at once (issue #42): the `~/.kingdom/courts.json` registry — register/list/prune, port picking, lockfile + atomic write. Pure core is self-checking (`node src/teams.js`). |
+| [electron/teams-launch.js](electron/teams-launch.js) | The pure decision behind a relaunch or `app.requestSingleInstanceLock`'s second-instance event: focus a live court or start a fresh one. Self-checking (`node electron/teams-launch.js`); see `test/t-teams-launch.js`. |
+| [ui/views/teams.js](ui/views/teams.js) | The court switcher panel in Settings' Repository tab. Degrades to a plain note outside Electron (`window.kingdomShell` absent). |
 | [src/pilot-doctor.js](src/pilot-doctor.js) | Habitable pilot step two: doctor-style flutter/dart/adb/SDK/emulator detection. `node src/pilot-doctor.js` for a real report; every dependency is injectable for `test/t-pilot-doctor.js`. |
 | [src/pilot-evidence.js](src/pilot-evidence.js) | Habitable pilot steps two and four: the evidence gate — `flutter analyze`, `flutter test --coverage`, a debug APK build, blocked cleanly on missing tooling. Fakes-only in tests; never points at the real Habitable checkout. |
 | [test/isolate-registry.js](test/isolate-registry.js) | Shared test helper: gives a daemon-spawning suite an isolated `KINGDOM_COURTS_REGISTRY` when nothing upstream (`test/run-all.js`) already set one — never touches the real `~/.kingdom/courts.json`. |

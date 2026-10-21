@@ -4,7 +4,7 @@ import { changeStage, pushState } from '../ui/views/pages.js';
 import { modelLabel, money, turnsText } from '../ui/views/util.js';
 import { lastMessageIdFor } from '../ui/sidebar.js';
 import { runAgent, spendToday, taskMeta, visibleQueueRows } from '../ui/views/home.js';
-import { courtActionError } from '../ui/views/courts.js';
+import { courtActionError } from '../ui/views/teams.js';
 import { resolvedOutcome } from '../ui/views/approvals.js';
 import { assignable, dueState, loadMyTasks, orderTasks } from '../ui/views/tasks.js';
 import { doctorItem, loadInbox, waitingCount } from '../ui/views/inbox.js';
@@ -21,7 +21,7 @@ const sidebarSource = readFileSync(new URL('../ui/sidebar.js', import.meta.url),
 const assetsSource = readFileSync(new URL('../ui/assets.js', import.meta.url), 'utf8');
 const graphSource = readFileSync(new URL('../ui/graph.js', import.meta.url), 'utf8');
 const petSource = readFileSync(new URL('../ui/pet.js', import.meta.url), 'utf8');
-const courtPreloadSource = readFileSync(new URL('../electron/court-preload.cjs', import.meta.url), 'utf8');
+const courtPreloadSource = readFileSync(new URL('../electron/team-preload.cjs', import.meta.url), 'utf8');
 const electronMainSource = readFileSync(new URL('../electron/main.js', import.meta.url), 'utf8');
 const threadSource = readFileSync(new URL('../ui/thread.js', import.meta.url), 'utf8');
 const utilSource = readFileSync(new URL('../ui/views/util.js', import.meta.url), 'utf8');
@@ -94,21 +94,21 @@ a.match(electronMainSource, /ipcMain\.on\('pet:open', openPet\)/, 'the native ma
 a.match(electronMainSource, /spawn\(node, \[[\s\S]*?windowsHide: true/, 'the daemon spawn must not flash a console window on Windows startup');
 
 // Issue #42: attachRepo still refuses a live repo swap on purpose
-// (src/kingdom.js, locked in by test/t-control.js's "requires a fresh
+// (src/agenticos.js, locked in by test/t-control.js's "requires a fresh
 // court" pin) — but the app no longer makes the sovereign hit that wall
 // before offering a fix. The fail-first gating that used to hide "End court
 // and switch…" until attachRepo actually failed is gone: it is offered up
 // front, alongside the non-destructive courts switcher (open that repo's OWN
-// court instead of ending this one) — see ui/views/courts.js.
+// court instead of ending this one) — see ui/views/teams.js.
 a.doesNotMatch(settingsSource, /switchRepo\.hidden = false/, 'the repository switcher must no longer be revealed conditionally after a failed attach — it is offered up front');
 a.match(settingsSource, /const switchRepo = window\.kingdomShell\?\.switchRepo \? button\('End workspace and switch to this repository…', async \(\) => \{/, 'the repository switcher must be offered whenever the shell bridge exists, not gated behind a prior failure');
 a.match(settingsSource, /const result = await window\.kingdomShell\.switchRepo\(path\.value\.trim\(\)\);/, 'switching repositories must go through the dedicated shell bridge, not attachRepo');
-a.match(settingsSource, /import \{ courtsSwitcher, refreshCourts \} from '\.\/courts\.js';/, 'the Repository panel must draw its live court list from the courts switcher module');
+a.match(settingsSource, /import \{ courtsSwitcher, refreshCourts \} from '\.\/teams\.js';/, 'the Repository panel must draw its live court list from the courts switcher module');
 a.match(settingsSource, /courtsSwitcher\(state, rerender\)\);/, 'the Repository panel must render the courts switcher');
 a.match(settingsSource, /if \(result\?\.canceled\)/, 'a cancelled repository switch must leave the control usable again, not stuck disabled');
 // Court switcher rows are addressed by PORT: a repo-less court has no path,
 // several can run at once, and passing null used to focus the wrong court.
-const courtsSource = readFileSync(new URL('../ui/views/courts.js', import.meta.url), 'utf8');
+const courtsSource = readFileSync(new URL('../ui/views/teams.js', import.meta.url), 'utf8');
 a.match(courtsSource, /focusCourt\(court\.port\)/, 'Open/Focus must target the selected court by its port');
 a.match(courtsSource, /endCourt\(court\.port\)/, 'End must target the selected court by its port');
 a.doesNotMatch(courtsSource, /openCourt\(court\.repo\)|endCourt\(court\.repo\)/, 'no row action may name a court by its (possibly null) repo');

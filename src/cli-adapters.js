@@ -98,7 +98,7 @@ function claudeArgs({ spec = {}, sessionId, promptFile, mcp, addDirs = [], deny 
 /**
  * agy: the prompt is the VALUE of `--print` since agy 1.1.11 (under the old
  * positional form its flag parser read the NEXT FLAG as the prompt). MCP is
- * not passed as a flag at all; kingdom.js writes `.agents/kingdom-id.json`.
+ * not passed as a flag at all; agenticos.js writes `.agents/kingdom-id.json`.
  * No `--add-dir`: it was never passed before and is not verified for agy, and
  * an unknown flag would fail every peasant turn (peasants always get addDirs).
  */
@@ -134,7 +134,7 @@ function openCodeArgs({ spec = {}, sessionId, prompt }) {
  * the cli-integrations branch's reading of the installed help on 2026-10-10;
  * they are NOT verified in this repository against a real binary.
  * No `--add-dir`: unverified for Cursor, and an unknown flag would fail every
- * peasant turn. MCP comes from `<workspace>/.cursor/mcp.json` (kingdom.js).
+ * peasant turn. MCP comes from `<workspace>/.cursor/mcp.json` (agenticos.js).
  */
 function cursorArgs({ spec = {}, cwd, sessionId, prompt, mcp }) {
   const args = ['--print', '--output-format', spec.outputFormat === 'json' ? 'json' : 'stream-json'];
@@ -146,7 +146,7 @@ function cursorArgs({ spec = {}, cwd, sessionId, prompt, mcp }) {
   if (spec.skipPermissions !== false) args.push('--force');
   // Headless runs cannot answer the workspace-trust or MCP-approval prompts.
   // --approve-mcps approves EVERY server in the workspace config, which is why
-  // kingdom.js refuses to merge into a repository's own .cursor/mcp.json.
+  // agenticos.js refuses to merge into a repository's own .cursor/mcp.json.
   if (spec.trust ?? Boolean(mcp)) args.push('--trust');
   if (spec.approveMcps ?? Boolean(mcp)) args.push('--approve-mcps');
   args.push(positional(prompt));

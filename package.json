@@ -25,7 +25,7 @@
       "src/**",
       "ui/**",
       "skills/**",
-      "kingdom.config.json",
+      "agenticos.config.json",
       "roles.json",
       "package.json"
     ],

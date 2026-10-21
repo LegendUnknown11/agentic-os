@@ -1,6 +1,6 @@
 // Chat mode has no crew (modes.js: crew: []), so an uploaded file the
 // sovereign attaches has nobody to delegate to. The orchestrator's tools:''
-// (kingdom.config.json, agent.js:352-355) is otherwise correct — it enforces
+// (agenticos.config.json, agent.js:352-355) is otherwise correct — it enforces
 // "delegates rather than edits" — but with no exception it can never open
 // what it was just handed. Confirmed live: granting a bare Read tool, and
 // only while the court is in chat mode, lets the orchestrator actually read
@@ -12,7 +12,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Kingdom } from '../src/kingdom.js';
+import { Kingdom } from '../src/agenticos.js';
 import { kingdomDir } from '../src/worktree.js';
 
 process.env.KINGDOM_CLAUDE_BIN = process.execPath;
@@ -29,7 +29,7 @@ async function courtIn(mode) {
   git('add', '-A');
   git('commit', '-qm', 'init');
 
-  const cfg = join(repo, 'kingdom.config.json');
+  const cfg = join(repo, 'agenticos.config.json');
   writeFileSync(cfg, JSON.stringify({
     mode,
     orchestrator: { name: 'orchestrator', cli: 'claude', tools: '' },

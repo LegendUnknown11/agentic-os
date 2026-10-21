@@ -26,13 +26,13 @@ const base = `http://127.0.0.1:${PORT}`;
 const fakeHome = mkdtempSync(join(tmpdir(), 'kingdom-home-'));
 // A codex "CLI" that is really just node given codex's own argv: it exits
 // almost immediately without ever printing a session line, the same stub
-// t-accession.js uses to spawn a member without touching a real API.
+// t-onboarding.js uses to spawn a member without touching a real API.
 const childEnv = {
   ...process.env, USERPROFILE: fakeHome, HOME: fakeHome,
   KINGDOM_CODEX_BIN: process.execPath, KINGDOM_SETTLE_MS: '200',
 };
 
-const configPath = join(fakeHome, 'kingdom.config.json');
+const configPath = join(fakeHome, 'agenticos.config.json');
 writeFileSync(configPath, JSON.stringify({
   orchestrator: { name: 'orchestrator', cli: 'codex' },
   briefer: { name: 'briefer', cli: 'codex' },

@@ -70,7 +70,7 @@ Repeat until stopped or genuinely out of safe work:
   never `--force`, never `push --force`, never rewrite history. Push your
   branch after each commit if you have a remote; do not merge to `main`
   yourself under any circumstance — that decision is the user's.
-- Never touch `kingdom.config.json`, `PLAN.md`, `HANDOFF.md`, `CLAUDE.md`, or
+- Never touch `agenticos.config.json`, `PLAN.md`, `HANDOFF.md`, `CLAUDE.md`, or
   `AGENTS.md`. Those are governing documents; an unsupervised agent does not
   edit its own constitution.
 - Never touch anything under `C:\Users\mayur` outside this repository.

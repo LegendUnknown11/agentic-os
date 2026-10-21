@@ -23,7 +23,7 @@ import { createHash } from 'node:crypto';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Kingdom } from '../src/kingdom.js';
+import { Kingdom } from '../src/agenticos.js';
 import { dbPath } from '../src/worktree.js';
 
 const MCP = join(import.meta.dirname, '..', 'src', 'mcp.js');
@@ -88,7 +88,7 @@ try {
   git('add', '-A');
   git('commit', '-qm', 'init');
 
-  const cfg = join(repo, 'kingdom.config.json');
+  const cfg = join(repo, 'agenticos.config.json');
   writeFileSync(cfg, JSON.stringify({
     orchestrator: { name: 'orchestrator', cli: 'codex' },
     briefer: { name: 'briefer', cli: 'codex' },

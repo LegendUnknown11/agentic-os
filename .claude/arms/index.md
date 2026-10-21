@@ -23,7 +23,7 @@ wins a contradiction.
 | You are working on | Router | First read |
 |---|---|---|
 | The Kingdom source: daemon, UI, tests, build | [[dev]] ([dev.md](dev.md)) | HANDOFF.md key-files table |
-| The court the app runs: roles, its shipped skill set, the vault | [[court]] ([court.md](court.md)) | `src/skills.js`, `src/memory.js` header comments |
+| The court the app runs: roles, its shipped skill set, the vault | [[court]] ([court.md](team.md)) | `src/skills.js`, `src/memory.js` header comments |
 | The Habitable pilot target | [[pilot]] ([pilot.md](pilot.md)) | HANDOFF.md "Habitable pilot" |
 | Connectors, MCP servers, CLIs | [[apps]] ([apps.md](apps.md)) | that file's table |
 

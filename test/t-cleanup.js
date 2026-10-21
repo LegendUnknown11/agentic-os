@@ -6,7 +6,7 @@ import { strict as a } from 'node:assert';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Kingdom } from '../src/kingdom.js';
+import { Kingdom } from '../src/agenticos.js';
 import { kingdomDir } from '../src/worktree.js';
 import { ownKingdomDir, removeRepo } from './cleanup.js';
 
@@ -19,7 +19,7 @@ mkdirSync(sibling);
 writeFileSync(join(repo, 'README.md'), '# mine\n');
 
 // A real Kingdom creates the folder this helper exists to remove.
-const k = new Kingdom(repo, join(repo, 'kingdom.config.json'));
+const k = new Kingdom(repo, join(repo, 'agenticos.config.json'));
 k.bus.set('probe', '1');
 k.bus.close();
 a.ok(existsSync(join(kingdomDir(repo), 'kingdom.db')), 'a Kingdom keeps its db beside the repo, not in it');

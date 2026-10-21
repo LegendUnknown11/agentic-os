@@ -6,7 +6,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Kingdom, CROWN } from '../src/kingdom.js';
+import { Kingdom, CROWN } from '../src/agenticos.js';
 import { Bus } from '../src/bus.js';
 import { kingdomDir } from '../src/worktree.js';
 
@@ -20,7 +20,7 @@ writeFileSync(join(repo, 'README.md'), '# approvals\n');
 execFileSync('git', ['add', '-A'], { cwd: repo });
 execFileSync('git', ['commit', '-qm', 'init'], { cwd: repo });
 
-const configPath = join(dir, 'kingdom.config.json');
+const configPath = join(dir, 'agenticos.config.json');
 writeFileSync(configPath, JSON.stringify({
   orchestrator: { name: 'orchestrator', cli: 'codex' },
   briefer: { name: 'briefer', cli: 'codex' },

@@ -1,5 +1,5 @@
 {
-  "note": "Roles retired from the standing court in roster v2 (docs/PLAN-court.md section 5). Never seeded. Kept so a re-proposal via propose_role is a lookup rather than a rewrite. coveredBy names the standing role that now takes this work.",
+  "note": "Roles retired from the standing court in roster v2 (docs/PLAN-team.md section 5). Never seeded. Kept so a re-proposal via propose_role is a lookup rather than a rewrite. coveredBy names the standing role that now takes this work.",
   "peasants": [
     {
       "name": "accessibility-engineer",

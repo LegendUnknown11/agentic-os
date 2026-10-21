@@ -27,7 +27,7 @@ import { createHash } from 'node:crypto';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Kingdom } from '../src/kingdom.js';
+import { Kingdom } from '../src/agenticos.js';
 import { removeRepo } from './cleanup.js';
 
 process.env.KINGDOM_CODEX_BIN = process.execPath;
@@ -45,7 +45,7 @@ git('commit', '-qm', 'init');
 // Fixed in every respect that reaches the prompt: names, order, descriptions,
 // titles. No vault, no goal, no advisor — each of those is varied deliberately
 // below rather than left to whatever the machine happens to have.
-const cfg = join(repo, 'kingdom.config.json');
+const cfg = join(repo, 'agenticos.config.json');
 writeFileSync(cfg, JSON.stringify({
   orchestrator: { name: 'orchestrator', cli: 'codex' },
   briefer: { name: 'briefer', cli: 'codex' },

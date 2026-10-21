@@ -17,7 +17,7 @@ import { mkdtempSync, writeFileSync, readFileSync, existsSync, rmSync } from 'no
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Kingdom } from '../src/kingdom.js';
+import { Kingdom } from '../src/agenticos.js';
 import { removeRepo } from './cleanup.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -72,7 +72,7 @@ function member(name, role, db) {
   };
 }
 
-const configPath = join(repo, 'kingdom.config.json');
+const configPath = join(repo, 'agenticos.config.json');
 const write = (models) => writeFileSync(configPath, JSON.stringify({
   models,
   orchestrator: { name: 'orchestrator', cli: 'codex' },

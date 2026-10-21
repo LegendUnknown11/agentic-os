@@ -1,6 +1,6 @@
 # Coding CLI agents
 
-Use the existing roster entries in `kingdom.config.json`: `name`, `cli`,
+Use the existing roster entries in `agenticos.config.json`: `name`, `cli`,
 `model`, `prompt`, and CLI-specific options. Credentials stay in the CLI's
 own authentication store or environment. Claude's `CLAUDE_CODE_OAUTH_TOKEN`
 is inherited after host-session markers are removed. Never put credentials

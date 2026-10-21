@@ -222,14 +222,14 @@ if (process.argv[1]?.endsWith('recycle.js') && !process.argv[2]) {
 if (process.argv[1]?.endsWith('recycle.js') && process.argv[2]) {
   const repo = resolve(process.argv[2]);
   const db = new DatabaseSync(dbPath(repo), { readOnly: true });
-  // A worked repo usually has NO kingdom.config.json of its own — the court is
+  // A worked repo usually has NO agenticos.config.json of its own — the court is
   // driven from the orchestrator's. Falling back to it is what makes `current`
   // land, and without `current` the report cannot say the one thing that
   // matters most: whether the threshold was ever reached.
   const { readFileSync } = await import('node:fs');
-  const { defaultConfigPath } = await import('./kingdom.js');
+  const { defaultConfigPath } = await import('./agenticos.js');
   let cfg = {};
-  for (const p of [resolve(repo, 'kingdom.config.json'), defaultConfigPath(repo)]) {
+  for (const p of [resolve(repo, 'agenticos.config.json'), defaultConfigPath(repo)]) {
     try { cfg = JSON.parse(readFileSync(p, 'utf8')); break; } catch { /* try the next */ }
   }
   const cli = process.argv[3] ?? cfg.orchestrator?.cli ?? 'codex';

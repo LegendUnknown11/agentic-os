@@ -46,7 +46,7 @@ export class Speech {
 
   #start() {
     const py = this.python();
-    if (!py) throw new Error('SpeechBird not found — set "speechbird" in kingdom.config.json.');
+    if (!py) throw new Error('SpeechBird not found — set "speechbird" in agenticos.config.json.');
 
     const proc = spawn(py, [WORKER], {
       cwd: this.dir, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true,

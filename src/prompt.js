@@ -2,7 +2,7 @@
 //
 // Extracted from Kingdom because it is the one region of that class that is
 // not welded to the bus: across its whole span it read only `config`, `mode()`
-// and `goal()`. Everything else in kingdom.js touches `this.bus`, `this.emit`
+// and `goal()`. Everything else in agenticos.js touches `this.bus`, `this.emit`
 // and `this.agents` together, so pulling those out would move complexity
 // rather than delete it. This one is a pure function that was wearing a
 // method's clothes.

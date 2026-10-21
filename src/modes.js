@@ -189,7 +189,7 @@ export function toolAllowed(mode, tool) {
  * Baked in at spawn and cached with the rest of the prompt, which is correct
  * here: each mode has its own bench, so a member spawned under one mode is not
  * reused under another. A LIVE mode change is carried by a bus notice instead —
- * see kingdom.js, and the measurement beside it about what rewriting a cached
+ * see agenticos.js, and the measurement beside it about what rewriting a cached
  * prompt costs.
  */
 export function modeBlock(mode) {

@@ -42,7 +42,7 @@ writeFileSync(join(vault, 'References', 'Effort Levels.md'), '# Effort\nluna goe
 writeFileSync(join(vault, 'Roster.md'), '# Roster\nthe coder runs on luna\n');
 writeFileSync(join(vault, '.obsidian', 'workspace.md'), 'luna luna luna\n');
 
-const cfg = join(repo, 'kingdom.config.json');
+const cfg = join(repo, 'agenticos.config.json');
 writeFileSync(cfg, JSON.stringify({
   vault,
   maxKingdomUsd: 75,
@@ -484,7 +484,7 @@ try {
     a.match(note.body, /luna goes to max/);
 
     // The containment rule is the same one the agents get, from vault.js.
-    for (const bad of ['../../../etc/passwd', '..\\..\\secret.md', '/etc/hosts', '../kingdom.config.json']) {
+    for (const bad of ['../../../etc/passwd', '..\\..\\secret.md', '/etc/hosts', '../agenticos.config.json']) {
       const r = await get(`/api/vault?path=${encodeURIComponent(bad)}`);
       a.equal(r.ok, false, `${bad} must not be readable`);
     }

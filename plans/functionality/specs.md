@@ -126,7 +126,7 @@ can look at what the agents built without leaving Agentic OS.
 ### Proposed design
 
 1. **A preview is a declared command, not guesswork.** The target repo
-   declares how to preview it, in `kingdom.config.json`
+   declares how to preview it, in `agenticos.config.json`
    (`preview: {command, cwd?, port?, readyPattern?}`) or a detected
    `package.json` `dev`/`start` script that the sovereign confirms once. The
    daemon never runs an undeclared script.

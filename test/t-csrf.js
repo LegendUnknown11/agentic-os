@@ -33,7 +33,7 @@ writeFileSync(join(repo, 'README.md'), '# t\n');
 git('add', '-A');
 git('commit', '-qm', 'init');
 
-const cfg = join(repo, 'kingdom.config.json');
+const cfg = join(repo, 'agenticos.config.json');
 writeFileSync(cfg, JSON.stringify({
   orchestrator: { name: 'orchestrator', cli: 'codex' },
   briefer: { name: 'briefer', cli: 'codex' },
@@ -167,7 +167,7 @@ try {
     writeFileSync(join(repo2, 'README.md'), '# t\n');
     git2('add', '-A');
     git2('commit', '-qm', 'init');
-    const cfg2 = join(repo2, 'kingdom.config.json');
+    const cfg2 = join(repo2, 'agenticos.config.json');
     writeFileSync(cfg2, JSON.stringify({
       orchestrator: { name: 'orchestrator', cli: 'codex' },
       briefer: { name: 'briefer', cli: 'codex' },

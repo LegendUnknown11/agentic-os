@@ -11,7 +11,7 @@
 // whole respawn.
 //
 // Its own process because IDLE_SLEEP_MS is read once at module load, so the
-// env has to be set before kingdom.js is imported — hence the dynamic import
+// env has to be set before agenticos.js is imported — hence the dynamic import
 // below rather than a section inside t-batching.js.
 //
 //   node test/t-idle-nudge.js
@@ -26,7 +26,7 @@ import { removeRepo } from './cleanup.js';
 process.env.KINGDOM_IDLE_SLEEP_MS = '300';
 process.env.KINGDOM_SETTLE_MS = '200';
 process.env.KINGDOM_CODEX_BIN = process.execPath;
-const { Kingdom } = await import('../src/kingdom.js');
+const { Kingdom } = await import('../src/agenticos.js');
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const until = async (fn, ms = 20_000) => {
@@ -46,7 +46,7 @@ writeFileSync(join(repo, 'README.md'), '# t\n');
 git('add', '-A');
 git('commit', '-qm', 'init');
 
-const configPath = join(repo, 'kingdom.config.json');
+const configPath = join(repo, 'agenticos.config.json');
 writeFileSync(configPath, JSON.stringify({
   orchestrator: { name: 'orchestrator', cli: 'codex' },
   briefer: { name: 'briefer', cli: 'codex' },

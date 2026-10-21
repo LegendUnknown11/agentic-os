@@ -16,7 +16,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const ROOT = join(import.meta.dirname, '..');
-const kingdomSource = readFileSync(join(ROOT, 'src', 'kingdom.js'), 'utf8');
+const kingdomSource = readFileSync(join(ROOT, 'src', 'agenticos.js'), 'utf8');
 const workflowsSource = readFileSync(join(ROOT, 'src', 'workflows.js'), 'utf8');
 
 /* ---- every AWARENESS-styled post must actually be a notice ------------- */
@@ -53,7 +53,7 @@ const workflowsSource = readFileSync(join(ROOT, 'src', 'workflows.js'), 'utf8');
   a.deepEqual(offenders, [],
     `every "AWARENESS" post to a member must pass 'notice' as its kind, or it is real traffic that can buy `
     + `an unprompted turn on the settle window or backstop alone:\n${offenders.join('\n')}`);
-  console.log(`  every AWARENESS-styled post in kingdom.js (${lines.filter((l) => l.includes('bus.post(CROWN')).length} `
+  console.log(`  every AWARENESS-styled post in agenticos.js (${lines.filter((l) => l.includes('bus.post(CROWN')).length} `
     + 'bus.post(CROWN, ...) call sites scanned) is tagged \'notice\'');
 }
 

@@ -472,7 +472,7 @@ the interface contract in sections 1-5 above.
 ### A. Multiple courts at once (closes GitHub issue #42)
 
 **Contract.** One daemon process per repository, each on its own port, tracked
-in a shared registry at `~/.kingdom/courts.json` (`src/courts.js`) alongside the
+in a shared registry at `~/.kingdom/courts.json` (`src/teams.js`) alongside the
 existing `tokens.json` convention. A daemon refuses to start for a repository
 that already has a live court and names the port it is on; a busy pinned port
 (`--port` or `KINGDOM_PORT`) is a clean, visible error, never a silent
@@ -483,7 +483,7 @@ gains a switcher — list running courts, open one, start a court for another
 repository, end one with confirmation — reachable without ending the current
 court, and "End court and switch…" is no longer gated behind attachRepo's
 failure (the fail-first dance issue #42 complained about is gone; attachRepo's
-own refusal to move a live court onto a different repo, `src/kingdom.js`, is
+own refusal to move a live court onto a different repo, `src/agenticos.js`, is
 unchanged and still correct).
 
 **This reverses the 2026-09-22 decision** recorded in the previous revision of
@@ -494,12 +494,12 @@ unchanged and still correct).
 
 | Piece | File |
 |---|---|
-| Registry core: register/list/prune/pick-port, lockfile + atomic write | `src/courts.js` |
+| Registry core: register/list/prune/pick-port, lockfile + atomic write | `src/teams.js` |
 | Daemon wiring: auto/pinned port, conflict refusal, register/unregister | `src/daemon.js` |
 | Live-attach registry claim (POST /api/attachRepo, saved-repo re-attach) | `src/daemon.js` |
-| Launch routing (single-instance, focus-vs-start), pure and fakeable | `electron/courts-launch.js` |
-| Electron: single-instance lock, per-port windows, courts IPC | `electron/main.js`, `electron/court-preload.cjs` |
-| Switcher UI, degrades visibly outside Electron | `ui/views/courts.js`, `ui/views/settings.js` |
+| Launch routing (single-instance, focus-vs-start), pure and fakeable | `electron/teams-launch.js` |
+| Electron: single-instance lock, per-port windows, courts IPC | `electron/main.js`, `electron/team-preload.cjs` |
+| Switcher UI, degrades visibly outside Electron | `ui/views/teams.js`, `ui/views/settings.js` |
 
 **Review fix (2026-09-23, post-implementation): live attach bypassed the
 registry.** `registerCourt` ran once, at listen time, with the boot-time repo —
@@ -515,9 +515,9 @@ claim if the attach itself then fails for an unrelated reason. Covered by
 fix).
 
 **Acceptance evidence.**
-- Source: `test/t-courts.js` (registry unit behaviour), `test/t-multi-court.js`
+- Source: `test/t-teams.js` (registry unit behaviour), `test/t-multi-team.js`
   (two real daemon processes, real conflict/port-busy refusals),
-  `test/t-courts-launch.js` (launch-routing decisions, fakes),
+  `test/t-teams-launch.js` (launch-routing decisions, fakes),
   `test/t-registry-attach.js` (live-attach registry claim, above), plus
   `test/t-pages.js` updates pinning the new Settings source. Suite count: see
   `HANDOFF.md`'s Evidence section for the number printed this round.

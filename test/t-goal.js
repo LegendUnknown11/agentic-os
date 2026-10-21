@@ -3,7 +3,7 @@
 // Everything else is a message (consumed) or a transcript (recycled away). If
 // the goal does not reach every member's prompt, or does not survive a restart,
 // it is worth nothing — those are the two failures pinned here, plus the one
-// that would corrupt state: two writers racing on kingdom.config.json.
+// that would corrupt state: two writers racing on agenticos.config.json.
 //
 //   node test/t-goal.js
 import { strict as a } from 'node:assert';
@@ -11,7 +11,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Kingdom } from '../src/kingdom.js';
+import { Kingdom } from '../src/agenticos.js';
 import { kingdomDir } from '../src/worktree.js';
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -27,7 +27,7 @@ writeFileSync(join(repo, 'README.md'), '# t\n');
 git('add', '-A');
 git('commit', '-qm', 'init');
 
-const cfg = join(repo, 'kingdom.config.json');
+const cfg = join(repo, 'agenticos.config.json');
 writeFileSync(cfg, JSON.stringify({
   orchestrator: { name: 'orchestrator', cli: 'codex' },
   briefer: { name: 'briefer', cli: 'codex' },

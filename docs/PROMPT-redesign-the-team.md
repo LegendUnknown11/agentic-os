@@ -15,7 +15,7 @@ evidence that it is.
 
 ## What the court is, mechanically
 
-A court is defined entirely by `kingdom.config.json` at the repo root. The keys
+A court is defined entirely by `agenticos.config.json` at the repo root. The keys
 that matter to you:
 
 - `orchestrator` — one member. `{name, cli, model, effort, description, prompt}`.
@@ -31,13 +31,13 @@ that matter to you:
   `rolesSeeded`, `goal`, `models`, `efforts`.
 
 `roles.json` (132KB) is the shipped standing library. `#seedRoles()` in
-`src/kingdom.js:157` copies it into a kingdom's config **once**, then sets
+`src/agenticos.js:157` copies it into a kingdom's config **once**, then sets
 `rolesSeeded: true` and never looks at it again — deliberately, so a role the
 sovereign deletes stays deleted. It is already seeded here, so `roles.json` is
 dead at runtime and is now a second copy that will drift. Decide what happens
 to it; do not assume it must be kept in sync.
 
-The orchestrator's system prompt is built in `#promptFor()`, `src/kingdom.js:1043`. Two
+The orchestrator's system prompt is built in `#promptFor()`, `src/agenticos.js:1043`. Two
 things there are derived from the roster and are what make its size a live cost:
 
 - a names line — every peasant name, comma-separated: **1,748 characters**
@@ -125,9 +125,9 @@ cached prefix afterwards.
 ## How to work
 
 Read before you design. At minimum: `AGENTS.md` (its four rules govern this
-change), `src/kingdom.js` `#promptFor` and `#seedRoles`, `src/mcp.js` (what
+change), `src/agenticos.js` `#promptFor` and `#seedRoles`, `src/mcp.js` (what
 tools each role can even see — a peasant cannot summon, only the orchestrator can),
-`src/price.js`, `ui/court.js` (the UI now distinguishes *summoned* members from
+`src/price.js`, `ui/team.js` (the UI now distinguishes *summoned* members from
 the *summonable* roster; a redesign that assumes one list is out of date), and
 `docs/PLAN-saas.md` if a product shape matters to your answer.
 
@@ -143,17 +143,17 @@ Four rules from `AGENTS.md` apply to you specifically:
 
 Two constraints that are not yours to relax:
 
-- **`kingdom.config.json` is written back to disk by the running orchestrator
+- **`agenticos.config.json` is written back to disk by the running orchestrator
   and is not gitignored. Never put a token, key, or secret in it.**
 - It already carries roughly 1,860 lines of uncommitted changes that predate
   this work. Do not fold them into your commit without asking.
 
 ## What to deliver
 
-A written proposal first — `docs/PLAN-court.md` — with the new roster in full,
+A written proposal first — `docs/PLAN-team.md` — with the new roster in full,
 the reasoning for the shape, the per-role model/effort table with costs, and
 the migration (this kingdom is already `rolesSeeded`, so changing `roles.json`
-alone changes nothing here). **Do not edit `kingdom.config.json` until the
+alone changes nothing here). **Do not edit `agenticos.config.json` until the
 sovereign has read the plan and said go.** Deleting a role deletes it
 permanently, and there is no undo path.
 

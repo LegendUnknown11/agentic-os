@@ -17,7 +17,7 @@ import { existsSync, readFileSync, mkdirSync, writeFileSync, unlinkSync } from '
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { join, dirname, resolve, extname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Kingdom, defaultConfigPath } from './kingdom.js';
+import { Kingdom, defaultConfigPath } from './agenticos.js';
 import { TASK_CLOSED } from './bus.js';
 import { kingdomDir, worktreePath, diffOf, statOf } from './worktree.js';
 import { searchVault, recentNotes, readNote } from './vault.js';
@@ -29,7 +29,7 @@ import { inboxBrief, inboxItems, teamDigest } from './inbox.js';
 import { WORKFLOW_TEMPLATES, instantiateTemplate } from './workflow-templates.js';
 import { listWorkflows, saveWorkflow, deleteWorkflow, runWorkflow, tickScheduler, logRun, runHistory, validWorkflowId } from './workflows.js';
 import { runDoctor } from './doctor.js';
-import { registerCourt, unregisterCourt, listCourts, CourtConflictError, firstFreePort } from './courts.js';
+import { registerCourt, unregisterCourt, listCourts, CourtConflictError, firstFreePort } from './teams.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PUBLIC = join(HERE, '..', 'ui');
@@ -58,7 +58,7 @@ const repo = repoArg ? resolve(repoArg) : savedRepo();
 // process pins one) is PINNED: a busy pinned port is a clean, visible error,
 // never a silent fallback to something else. With neither given, the port is
 // chosen automatically — see the courts.firstFreePort() call beside the real
-// .listen() below, once the registry (src/courts.js) can be asked what is
+// .listen() below, once the registry (src/teams.js) can be asked what is
 // already taken. `port` starts as a placeholder and is resolved to its real
 // value before anything binds; see the trap comment there.
 const explicitPort = argv.includes('--port') ? Number(flag('--port'))
@@ -108,7 +108,7 @@ if (!bindIsLoopback && !authToken) {
 }
 
 // The token is generated, never configured: never read from or written to
-// kingdom.config.json, and never printed to stdout/stderr — Electron pipes
+// agenticos.config.json, and never printed to stdout/stderr — Electron pipes
 // both straight into daemon.log (electron/main.js's startDaemon()), so a
 // console.log here would put a working phone credential on disk on every
 // boot. Instead it goes to its own untracked file beside this repo's
@@ -506,13 +506,13 @@ function buildMetrics() {
     let p;
     try { p = typeof ev.payload === 'string' ? JSON.parse(ev.payload) : ev.payload; } catch { continue; }
     const u = p?.usage ?? {};
-    // Via usage.js, like ctx.js and kingdom.js. This was a THIRD hand-rolled
+    // Via usage.js, like ctx.js and agenticos.js. This was a THIRD hand-rolled
     // copy of the rule and it had drifted the same way the first one did: it
     // knew codex's and Anthropic's names for the cache read but not agy's, so
     // the throne room's cost panel scored the orchestrator — the one member on agy —
     // as having replayed nothing at all.
     // The delta rule now lives in usage.js beside the cache rule, because this
-    // was the ONLY copy of it: ctx.js and kingdom.js summed raw and reported a
+    // was the ONLY copy of it: ctx.js and agenticos.js summed raw and reported a
     // 25% overcount on real data. Same class of drift as the cache-field names.
     const d = deltaOf(prev.get(ev.agent), u);
     if (hasUsage(u)) prev.set(ev.agent, totalsOf(u));
@@ -1301,7 +1301,7 @@ const handle = async (req, res) => {
 
     if (!speech.available()) {
       return send(400, { ok: false, error: 'SpeechBird not found. Set "speechbird" in '
-        + 'kingdom.config.json to the folder holding its .venv.' });
+        + 'agenticos.config.json to the folder holding its .venv.' });
     }
     let buf;
     try { buf = await readBody(req, 25 * 1024 * 1024); } // a voice note, not a podcast
@@ -1414,7 +1414,7 @@ server.on('error', (e) => {
     // .start() below is what actually spawns the court's members, and this
     // must come first or a refused daemon would spawn a whole court just to
     // throw it away. A repo-less daemon (Chat/Cowork with nothing attached
-    // yet) still registers, keyed by its port — see courts.js's sameRepo()
+    // yet) still registers, keyed by its port — see teams.js's sameRepo()
     // doc comment for why two repo-less entries never conflict with each
     // other; that is an accepted gap, not a promise this checks.
     try {

@@ -1,6 +1,6 @@
 // `/autocompact` — the sovereign changing the compaction window at runtime.
 //
-// The window used to be reachable only by editing kingdom.config.json and
+// The window used to be reachable only by editing agenticos.config.json and
 // restarting the court. This drives the real Kingdom to check the three things
 // that make a settings command a settings command: it changes the setting, it
 // PERSISTS it, and it never reaches the court as work.
@@ -12,7 +12,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Kingdom } from '../src/kingdom.js';
+import { Kingdom } from '../src/agenticos.js';
 import { removeRepo } from './cleanup.js';
 
 const repo = mkdtempSync(join(tmpdir(), 'kingdom-compact-'));
@@ -24,7 +24,7 @@ writeFileSync(join(repo, 'README.md'), '# t\n');
 git('add', '-A');
 git('commit', '-qm', 'init');
 
-const configPath = join(repo, 'kingdom.config.json');
+const configPath = join(repo, 'agenticos.config.json');
 writeFileSync(configPath, JSON.stringify({
   recycleAtTokens: 80_000,
   orchestrator: { name: 'orchestrator', cli: 'codex' },

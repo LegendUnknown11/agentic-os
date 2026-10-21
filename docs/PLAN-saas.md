@@ -45,7 +45,7 @@ The parts that are a personal project and must be consciously kept or cut: the
 desktop pet window (`ui/pet.js`, `ui/pet-window.js`, `electron/pet-preload.cjs`),
 wallpaper and music assets (`ui/assets.js`, `src/assets`), local dictation
 (`src/stt.js`), the Obsidian vault as the *substrate* for memory rather than an
-optional sync target, and the 105-role bench in `kingdom.config.json` — which is
+optional sync target, and the 105-role bench in `agenticos.config.json` — which is
 a demo of range, not a product surface. None of these are wrong; they are simply
 not things a buyer pays for, and each carries maintenance.
 
@@ -110,7 +110,7 @@ Binding to loopback *is* the security model.
 ### 3. One database, one repo, one process, one court
 
 `dbPath(repo)` (`src/worktree.js:28`) is a single SQLite file per repo, and
-`src/kingdom.js` holds the entire court in process memory for as long as it
+`src/agenticos.js` holds the entire court in process memory for as long as it
 runs. Multi-tenant means: tenant-scoped storage, and a court that can be
 suspended and resumed from the database rather than being a process you must
 keep alive. The bus is already the durable log that makes this possible.
@@ -133,9 +133,9 @@ per-job microVM isolation.
 
 ### 6. Cost enforcement is per-court, not per-tenant
 
-`#enforceBudget` in `src/kingdom.js` now works for the first time (the codex
+`#enforceBudget` in `src/agenticos.js` now works for the first time (the codex
 `costUsd: 0` defect was fixed this session), but caps are currently absent from
-`kingdom.config.json` by choice. In a SaaS, quotas stop being a preference and
+`agenticos.config.json` by choice. In a SaaS, quotas stop being a preference and
 become the thing standing between you and a customer's runaway loop. They must
 be enforced server-side, per tenant, and they must fail closed.
 
@@ -175,7 +175,7 @@ answered.
 
 Nothing customer-visible; everything after depends on it.
 
-- Split the orchestrator cleanly from Electron so `src/kingdom.js` +
+- Split the orchestrator cleanly from Electron so `src/agenticos.js` +
   `src/daemon.js` run as a plain Node service with no desktop assumptions.
 - Add versioned migrations to `src/bus.js`.
 - Add authentication and a tenant scope to every route in `src/daemon.js`, even

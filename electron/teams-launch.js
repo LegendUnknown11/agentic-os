@@ -10,7 +10,7 @@
 // right court instead of starting a stray daemon".
 
 
-import { sameRepo } from '../src/courts.js';
+import { sameRepo } from '../src/teams.js';
 
 /**
  * Decide what a launch (first or second) should do, given the repo it named
@@ -22,7 +22,7 @@ import { sameRepo } from '../src/courts.js';
  *     than nothing).
  *   - no repo named, and none open -> start fresh, unpinned (auto port).
  *   - a repo named that already has a live court -> focus THAT one, never a
- *     second daemon for the same repo (src/courts.js's registerCourt already
+ *     second daemon for the same repo (src/teams.js's registerCourt already
  *     refuses that at the daemon level; this is the same rule one layer up,
  *     so the UI never even tries).
  *   - a repo named with no live court -> start one for it.
@@ -119,8 +119,8 @@ export async function requestShutdown(origin, fetchFn = fetch) {
 
 // ---- self-check -------------------------------------------------------------
 import { basename } from 'node:path';
-if (basename(process.argv[1] ?? '') === 'courts-launch.js') {
-  const assert = (cond, msg) => { if (!cond) throw new Error(`courts-launch.js self-check failed: ${msg}`); };
+if (basename(process.argv[1] ?? '') === 'teams-launch.js') {
+  const assert = (cond, msg) => { if (!cond) throw new Error(`teams-launch.js self-check failed: ${msg}`); };
 
   assert(decideLaunchAction(null, []).action === 'start', 'no repo, nothing live -> start fresh');
   assert(decideLaunchAction(null, []).repo === null, 'a repo-less start must not invent a repo');
@@ -179,5 +179,5 @@ if (basename(process.argv[1] ?? '') === 'courts-launch.js') {
     assert(result.ok === false && result.error === 'boom', 'a failed daemon start must come back as {ok:false, error}');
   })();
 
-  console.log('courts-launch.js: self-check passed');
+  console.log('teams-launch.js: self-check passed');
 }

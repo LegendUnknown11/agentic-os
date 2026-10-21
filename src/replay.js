@@ -16,7 +16,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { resolve } from 'node:path';
 import { dbPath } from './worktree.js';
-import { settleMs, BATCH_MAX_WAIT_MS, NOTICE_HOLD_MS } from './kingdom.js';
+import { settleMs, BATCH_MAX_WAIT_MS, NOTICE_HOLD_MS } from './agenticos.js';
 
 // The RULE below is a deliberate mirror (see replay() ). The NUMBERS are not:
 // they are imported, because a hand-kept copy of them had already drifted —
@@ -45,7 +45,7 @@ export function replay(msgs, opts = {}) {
 
   const queues = new Map();
   const busyUntil = new Map();
-  // Mirrors kingdom.js's `hadReal:` bus flag (see ripeness.js's `hadRealTurn`):
+  // Mirrors agenticos.js's `hadReal:` bus flag (see ripeness.js's `hadRealTurn`):
   // a lone notice may only ripen on its own once this recipient has actually
   // been delivered a real turn — otherwise a member's very first "turn" would
   // be manufactured from housekeeping traffic nobody sent it (#40).
@@ -160,7 +160,7 @@ if (process.argv[1]?.endsWith('replay.js') && !process.argv[2]) {
   a.equal(DEFAULTS.noticeHold, NOTICE_HOLD_MS, 'and the live notice hold');
   a.ok(DEFAULTS.backstop > DEFAULTS.settle,
     'a backstop at or below the window silently clamps it — the same invariant '
-    + 'kingdom.js asserts at delivery time');
+    + 'agenticos.js asserts at delivery time');
 
   // A quiet log: messages far apart, so no window folds anything and both
   // settings cost one turn each.

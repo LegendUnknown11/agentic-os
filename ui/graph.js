@@ -516,7 +516,7 @@ export function mount(host, nodes, { onChange, onSelect } = {}) {
   };
 }
 
-// Self-check, the shape court.js/names.js/overview.js already use: everything
+// Self-check, the shape team.js/names.js/overview.js already use: everything
 // above mount() is pure, and it is the half that decides what actually runs.
 // `typeof process` guard because this module is loaded in a browser too, where
 // a bare `process` reference is a ReferenceError that takes the page with it.

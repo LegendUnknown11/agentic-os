@@ -8,7 +8,7 @@ Its key-files table is the map; this file is the dispatch by task.
 | Task | Enter at | Also touches |
 |---|---|---|
 | Run lifecycle, SQLite schema, migrations | [src/bus.js](../../src/bus.js) | `test/t-tasks.js`, `test/t-merge.js` |
-| Worker spawn, recovery, verification | [src/kingdom.js](../../src/kingdom.js) | `src/worktree.js` |
+| Worker spawn, recovery, verification | [src/agenticos.js](../../src/agenticos.js) | `src/worktree.js` |
 | Worktrees, revision-bound tests, apply | [src/worktree.js](../../src/worktree.js) | `test/t-merge.js`, `test/t-branching.js` |
 | HTTP actions, SSE, snapshots | [src/daemon.js](../../src/daemon.js) | `test/t-daemon-boot.js`, `test/t-csrf.js` |
 | MCP tool surface | [src/mcp.js](../../src/mcp.js), [src/mcp/](../../src/mcp) | `test/t-tool-surface.js`, `test/t-mcp-chain.js` |

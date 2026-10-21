@@ -6,7 +6,7 @@
 //
 // The rule they encode: the RAIL is the court, the SUMMONING screen is the
 // roster. Conflating them is what made the app unusable to open. Every role in
-// kingdom.config.json got a permanent rail row, so the live config put 107 rows
+// agenticos.config.json got a permanent rail row, so the live config put 107 rows
 // and 4,179px of scroll behind a 580px viewport, and 105 of them read "not
 // summoned" — a member list that is 98% absence is a wall, not a list.
 
@@ -41,7 +41,7 @@ export function matchesQuery(m, q) {
  * `process.argv` there is a ReferenceError that kills the whole module graph —
  * app.js imports this first, so the throne room booted to an empty shell.
  */
-if (typeof process !== 'undefined' && process.argv?.[1]?.endsWith('court.js')) {
+if (typeof process !== 'undefined' && process.argv?.[1]?.endsWith('team.js')) {
   const { strict: a } = await import('node:assert');
 
   // --- the rail is the court, not the roster ---
@@ -80,5 +80,5 @@ if (typeof process !== 'undefined' && process.argv?.[1]?.endsWith('court.js')) {
   a.equal(matchesQuery({ name: 'coder' }, 'coder'), true, 'a bare member still matches by name');
   a.equal(matchesQuery({ name: 'coder' }, 'kubernetes'), false, 'and does not match by nothing');
 
-  console.log('court.js OK — the rail holds the court, the summoning holds the roster');
+  console.log('team.js OK — the rail holds the court, the summoning holds the roster');
 }

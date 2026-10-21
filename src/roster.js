@@ -2,14 +2,14 @@ import { createHash } from 'node:crypto';
 
 // The shape of the standing court, as data the code and the tests can check.
 //
-// docs/PLAN-court.md replaced a 107-role directory of professions with a small
+// docs/PLAN-team.md replaced a 107-role directory of professions with a small
 // court organised on the stage of work. Measured on 2026-10-21 against the
 // template this replaced: 107 peasants, every one codex / gpt-5.6-luna /
 // effort max, 97,548 characters of prompts that mostly restated their own
 // descriptions, and an orchestrator code-mode prompt of 10,920 bytes against
 // an 11,000-byte ceiling (test/t-efficiency.js).
 //
-// roles.json and kingdom.config.json's `peasants` carry the roles themselves;
+// roles.json and agenticos.config.json's `peasants` carry the roles themselves;
 // this file only names which of them are standing, which tier each belongs to,
 // and why the extra three exist. test/t-roles.js holds both files to it.
 //
@@ -26,7 +26,7 @@ export const ROSTER_VERSION = 2;
 export const TIERS = ['discovery', 'construction', 'verification', 'protection', 'memory'];
 
 /**
- * The fifteen standing roles of docs/PLAN-court.md section 2, Q1.
+ * The fifteen standing roles of docs/PLAN-team.md section 2, Q1.
  *
  * Two names differ from that plan, deliberately: it was written before the
  * repository renamed scout -> researcher and scribe -> writer, and src/modes.js

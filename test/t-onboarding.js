@@ -6,13 +6,13 @@
 // the sovereign's goal was sent straight to the process so nothing recorded it,
 // and a fresh member got no state at all.
 //
-//   node test/t-accession.js
+//   node test/t-onboarding.js
 import { strict as a } from 'node:assert';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Kingdom } from '../src/kingdom.js';
+import { Kingdom } from '../src/agenticos.js';
 import { kingdomDir } from '../src/worktree.js';
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -28,7 +28,7 @@ writeFileSync(join(repo, 'README.md'), '# t\n');
 git('add', '-A');
 git('commit', '-qm', 'init');
 
-const configPath = join(repo, 'kingdom.config.json');
+const configPath = join(repo, 'agenticos.config.json');
 writeFileSync(configPath, JSON.stringify({
   models: { claude: ['haiku'], codex: ['gpt-5.6-luna'] },
   orchestrator: { name: 'orchestrator', cli: 'codex' },
@@ -216,4 +216,4 @@ a.match(revived.spec.prompt, /Ship tier 1/i,
 
 await k2.stop();
 for (const d of [repo, kingdomDir(repo)]) { try { rmSync(d, { recursive: true, force: true }); } catch {} }
-console.log('t-accession.js OK — goals are recorded, handovers taken, successors oriented');
+console.log('t-onboarding.js OK — goals are recorded, handovers taken, successors oriented');

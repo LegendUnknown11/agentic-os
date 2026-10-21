@@ -3,7 +3,7 @@
 // SECOND daemon for the SAME repo is refused and names the port already
 // serving it, and a daemon pinned to a busy port fails cleanly instead of
 // silently binding somewhere else.
-//   node test/t-multi-court.js
+//   node test/t-multi-team.js
 // Never let a daemon this suite spawns touch the real ~/.kingdom/courts.json
 // on the machine running the tests — see test/t-registry-isolation.js.
 import './isolate-registry.js';
@@ -13,7 +13,7 @@ import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { requestShutdown } from '../electron/courts-launch.js';
+import { requestShutdown } from '../electron/teams-launch.js';
 import { removeRepo } from './cleanup.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -121,7 +121,7 @@ try {
   a.equal(down.ok, true, 'requestShutdown must be accepted by a real daemon');
   a.notEqual(await waitForExit(B.proc, 15_000), null, 'the court must actually exit after requestShutdown');
 
-  console.log('t-multi-court.js OK — one live court per repo, auto ports avoid collision, a busy pinned port refuses cleanly, and ending a court really ends it');
+  console.log('t-multi-team.js OK — one live court per repo, auto ports avoid collision, a busy pinned port refuses cleanly, and ending a court really ends it');
 } finally {
   for (const p of [A?.proc, B?.proc]) { try { p?.kill('SIGKILL'); } catch {} }
   await wait(300);

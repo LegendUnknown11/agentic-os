@@ -11,7 +11,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Kingdom } from '../src/kingdom.js';
+import { Kingdom } from '../src/agenticos.js';
 import { kingdomDir } from '../src/worktree.js';
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -25,7 +25,7 @@ writeFileSync(join(repo, 'README.md'), '# t\n');
 git('add', '-A');
 git('commit', '-qm', 'init');
 
-const configPath = join(repo, 'kingdom.config.json');
+const configPath = join(repo, 'agenticos.config.json');
 writeFileSync(configPath, JSON.stringify({
   maxBudgetUsd: 1,
   maxKingdomUsd: 10,
@@ -167,7 +167,7 @@ writeFileSync(join(repo3, 'README.md'), '# t\n');
 git3('add', '-A');
 git3('commit', '-qm', 'init');
 
-const cfg3 = join(repo3, 'kingdom.config.json');
+const cfg3 = join(repo3, 'agenticos.config.json');
 writeFileSync(cfg3, JSON.stringify({
   // $3, so all three turns land before the cap trips. At $1 it fired on turn
   // one and the differencing below was never exercised.
@@ -234,7 +234,7 @@ writeFileSync(join(repo4, 'README.md'), '# t\n');
 git4('add', '-A');
 git4('commit', '-qm', 'init');
 
-const cfg4 = join(repo4, 'kingdom.config.json');
+const cfg4 = join(repo4, 'agenticos.config.json');
 writeFileSync(cfg4, JSON.stringify({
   recycleAtTokens: 10_000_000,
   quotas: { codex: { label: 'Tiny Test Plan', limitTokens: 20 } },
@@ -288,7 +288,7 @@ writeFileSync(join(repo5, 'README.md'), '# t\n');
 git5('add', '-A');
 git5('commit', '-qm', 'init');
 
-const cfg5 = join(repo5, 'kingdom.config.json');
+const cfg5 = join(repo5, 'agenticos.config.json');
 writeFileSync(cfg5, JSON.stringify({
   maxKingdomUsd: 100,   // high enough that nothing below trips it before the live change
   orchestrator: { name: 'orchestrator', cli: 'codex' },
@@ -342,7 +342,7 @@ writeFileSync(join(repo6, 'README.md'), '# t\n');
 git6('add', '-A');
 git6('commit', '-qm', 'init');
 
-const cfg6 = join(repo6, 'kingdom.config.json');
+const cfg6 = join(repo6, 'agenticos.config.json');
 writeFileSync(cfg6, JSON.stringify({
   turnBudget: 2,   // low and explicit, so the DEFAULT_TURN_BUDGET fallback never matters here
   orchestrator: { name: 'orchestrator', cli: 'codex' },
@@ -448,7 +448,7 @@ writeFileSync(join(repo7, 'README.md'), '# t\n');
 git7('add', '-A');
 git7('commit', '-qm', 'init');
 
-const cfg7 = join(repo7, 'kingdom.config.json');
+const cfg7 = join(repo7, 'agenticos.config.json');
 writeFileSync(cfg7, JSON.stringify({
   turnBudget: 3,
   orchestrator: { name: 'orchestrator', cli: 'codex' },

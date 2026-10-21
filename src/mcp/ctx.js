@@ -33,7 +33,7 @@ export const NOTE_WHOLE_LIMIT = 5000;
  *
  * What rescues it is that the server inherits the agy process's working
  * directory, which is the member's own worktree. So identity travels by
- * directory: kingdom.js drops `.agents/kingdom-id.json` into each member's
+ * directory: agenticos.js drops `.agents/kingdom-id.json` into each member's
  * workspace and this reads it. Without this, every Antigravity member would
  * post to the bus as the same agent — whoever was configured last.
  */
@@ -77,7 +77,7 @@ export const DB = process.env.KINGDOM_DB ?? ID.db;
 export const bus = DB ? new Bus(DB) : null;
 // Same directory daemon.js schedules and serves workflows from. Derived from
 // DB rather than REPO: the kingdom's home directory is fixed for the court's
-// life (kingdom.js), but REPO can change live when a repo is attached after
+// life (agenticos.js), but REPO can change live when a repo is attached after
 // boot (Kingdom#attachRepo) — using REPO here would silently point at a
 // different, empty directory the moment that happens.
 export const WORKFLOWS_DIR = DB ? join(dirname(DB), 'workflows') : null;
@@ -133,7 +133,7 @@ export const boundedLimit = (value, fallback, maximum) => {
 
 // --- who is actually out there ---------------------------------------
 // The roster is published to the bus by the orchestrator on every change
-// (`kingdom.js` roster()), so it is the one view of the court that every
+// (`agenticos.js` roster()), so it is the one view of the court that every
 // member's MCP server shares.
 export const stateArray = (key) => {
   try {
@@ -155,7 +155,7 @@ export const goalNow = () => {
  * The member currently holding an office, by role rather than by name.
  *
  * `declare_done` and `brief_orchestrator` used to post to the literal string "orchestrator".
- * The orchestrator's name is configuration — `kingdom.config.json` has `orchestrator.name`,
+ * The orchestrator's name is configuration — `agenticos.config.json` has `orchestrator.name`,
  * `roleOf()` compares against it, and `#promptFor` tells every member what it
  * is — and delivery is by recipient (`bus.pending(agent)` matches
  * `recipient = ?`). So renaming the orchestrator sent every declare_done and every

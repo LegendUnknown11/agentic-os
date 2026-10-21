@@ -13,7 +13,7 @@ import { mkdtempSync, rmSync, writeFileSync, readFileSync, mkdirSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Kingdom } from '../src/kingdom.js';
+import { Kingdom } from '../src/agenticos.js';
 import { Bus } from '../src/bus.js';
 import { dbPath, worktreePath } from '../src/worktree.js';
 import {
@@ -131,7 +131,7 @@ try {
   execFileSync('git', ['add', '-A'], { cwd: repo });
   execFileSync('git', ['commit', '-qm', 'init'], { cwd: repo });
 
-  const cfgPath = join(dir, 'kingdom.config.json');
+  const cfgPath = join(dir, 'agenticos.config.json');
   const read = () => JSON.parse(readFileSync(cfgPath, 'utf8'));
   writeFileSync(cfgPath, JSON.stringify({
     peasantDefaults: v1.peasantDefaults,

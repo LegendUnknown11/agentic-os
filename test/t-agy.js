@@ -153,7 +153,7 @@ const turn = (ag) => new Promise((res) => ag.once('turn_end', res));
   git('commit', '-qm', 'init');
 
   const vault = mkdtempSync(join(tmpdir(), 'kingdom-agyvault-'));
-  const cfg = join(repo, 'kingdom.config.json');
+  const cfg = join(repo, 'agenticos.config.json');
   writeFileSync(cfg, JSON.stringify({
     vault,
     orchestrator: { name: 'orchestrator', cli: 'agy' },
@@ -166,7 +166,7 @@ const turn = (ag) => new Promise((res) => ag.once('turn_end', res));
 
   process.env.KINGDOM_AGY_BIN = STUB;
   process.env.KINGDOM_CODEX_BIN = process.execPath;
-  const { Kingdom } = await import('../src/kingdom.js?agy');
+  const { Kingdom } = await import('../src/agenticos.js?agy');
   const k = new Kingdom(repo, cfg);
   k.on('error', () => {});
   await k.start();

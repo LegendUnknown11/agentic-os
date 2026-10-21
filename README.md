@@ -81,7 +81,7 @@ all honoured, and take precedence over the stored login (`claude auth status`
 will still say `loggedIn: false` — that's expected, and `npm run doctor` knows
 the difference).
 
-**Never put a token in `kingdom.config.json`.** That file is written back to
+**Never put a token in `agenticos.config.json`.** That file is written back to
 disk whenever you change a model or approve a role, and it is not gitignored.
 
 ### Several tokens, so the team doesn't share one rate limit
@@ -119,7 +119,7 @@ $env:KINGDOM_CLAUDE_TOKENS = "token1,token2"
 ```
 
 Token values are never logged, never sent to the UI, and never written to
-`kingdom.config.json` — only the pool size is ever reported.
+`agenticos.config.json` — only the pool size is ever reported.
 
 Also run everything from a **plain terminal**, not from inside a Claude Code or
 Claude Desktop session. Those set `CLAUDE_CODE_*` variables that put spawned
@@ -143,7 +143,7 @@ Nothing important happens without you:
 | The orchestrator proposes | You see |
 |---|---|
 | `summon` — which agents to wake, and why | a card with the crew and its reasoning |
-| `propose_role` — a brand-new kind of agent | the name, prompt, CLI, and rationale; approving writes it into `kingdom.config.json` permanently |
+| `propose_role` — a brand-new kind of agent | the name, prompt, CLI, and rationale; approving writes it into `agenticos.config.json` permanently |
 | `request_merge` — work it has reviewed and approves of | its verdict, plus a Merge button |
 
 ## The vault
@@ -218,7 +218,7 @@ Claude denials can be extended with `"deny": ["Bash(curl:*)"]`.
 
 **Spend can be capped — it is not capped by default.** Set `maxBudgetUsd`
 (per member, overridable per member) or `maxKingdomUsd` (whole team) in
-`kingdom.config.json` and a looping member stops costing money by itself.
+`agenticos.config.json` and a looping member stops costing money by itself.
 Leave them unset, as shipped, and nothing stops it but you.
 
 Until recently a cap would not have worked anyway on a codex or agy team:
@@ -255,7 +255,7 @@ never "passed".
 
 Every pane header has a **CLI + model dropdown**. Change it and that member
 restarts immediately on the new model, keeping its memory — the choice is
-written back to `kingdom.config.json`, so it survives restarts.
+written back to `agenticos.config.json`, so it survives restarts.
 
 Switching a member's **CLI** (claude ⇄ codex) is the one case that costs
 memory: a codex thread id means nothing to claude, so it starts a fresh
@@ -264,7 +264,7 @@ session. The UI says which happened.
 `custom…` lets you type any `cli:model` pair for a model not in the list
 (Electron has no `window.prompt`, so it swaps in a text box).
 
-The dropdown's contents come from `models` in `kingdom.config.json` — add
+The dropdown's contents come from `models` in `agenticos.config.json` — add
 model names there rather than editing code:
 
 ```json
@@ -276,7 +276,7 @@ model names there rather than editing code:
 
 ## The roster
 
-`kingdom.config.json` — edit by hand any time, or let the orchestrator propose
+`agenticos.config.json` — edit by hand any time, or let the orchestrator propose
 additions. Each member picks its own CLI and model:
 
 ```json
@@ -315,11 +315,11 @@ Memory persists identically either way. Put your chattiest roles on claude.
 | `src/cli-detection.js` | bounded, non-billing status checks with private raw output |
 | `src/mcp.js` | the MCP server every agent gets; toolset varies by role |
 | `src/worktree.js` | git worktrees, test discovery, merging |
-| `src/kingdom.js` | the orchestrator: roster, delivery loop, approvals, briefer recycling |
+| `src/agenticos.js` | the orchestrator: roster, delivery loop, approvals, briefer recycling |
 | `src/daemon.js` | HTTP + SSE server |
 | `src/cli.js` | terminal interface |
 | `ui/` | the app interface (no framework) |
-| `ui/court.js` | who belongs in the rail vs. the summoning screen — pure, and tested |
+| `ui/team.js` | who belongs in the rail vs. the summoning screen — pure, and tested |
 | `ui/feel.js` | the weight: arrival/departure motion, and the horn cues on a summon or a ruling |
 | `electron/main.js` | thin shell; spawns the daemon and shows the UI |
 

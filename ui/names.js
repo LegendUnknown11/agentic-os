@@ -64,7 +64,7 @@ if (typeof process !== 'undefined' && process.argv?.[1]?.endsWith('names.js')) {
   const a = assert.default ?? assert;
 
   // Every role the orchestrator can hand the UI resolves to a word. `roleOf`
-  // in src/kingdom.js returns exactly these three, and upsertNode defaults an
+  // in src/agenticos.js returns exactly these three, and upsertNode defaults an
   // unknown one to 'peasant'.
   for (const role of ['orchestrator', 'briefer', 'peasant']) {
     a.ok(ROLE_WORD[role], `${role} has a word`);

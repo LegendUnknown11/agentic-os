@@ -13,7 +13,7 @@ box (load average 8-9 at times).
 | 2e6cecd | perf(mcp): compact JSON for structured tool results |
 | b34effb | fix(spend): campaign spend survives clearSpend |
 | feb7f1a | test: each suite removes its own `<tmp>/.kingdom/<repo>` folder |
-| 7a8bace | test: fake-home cleanup in t-multi-court and t-registry-attach is best effort |
+| 7a8bace | test: fake-home cleanup in t-multi-team and t-registry-attach is best effort |
 | 5fe0d06 | fix(mcp): release the vault watcher when the client closes stdin |
 
 The repo's husky pre-commit hook runs the full `npm test`, which always fails
@@ -75,7 +75,7 @@ across 13 suites. The new `test/cleanup.js` provides `removeRepo(...repos)`,
 which deletes a repo plus exactly its own `kingdomDir(repo)`. It refuses a
 null repo (that is the workspace home under the real homedir) and refuses any
 path that is not `<parent>/.kingdom/<repo-name>`. It is used in t-efficiency,
-t-registry-attach, t-multi-court, t-prompt, t-task-admin, t-opencode,
+t-registry-attach, t-multi-team, t-prompt, t-task-admin, t-opencode,
 t-idle-nudge, t-merge, t-compact, t-argue, t-agy, t-advisor and t-evidence.
 The new suite `t-cleanup` proves three things: a real Kingdom's folder is
 removed, a sibling repo's folder and the shared parent survive, and null is
@@ -87,7 +87,7 @@ Found along the way:
   no-repo export case did this on every gate run. It now sandboxes
   HOME/USERPROFILE and asserts the export landed in the sandbox. That
   assertion fails without the sandbox.
-- **t-multi-court failed once standalone with ENOTEMPTY** on its fake-home
+- **t-multi-team failed once standalone with ENOTEMPTY** on its fake-home
   `rmSync`, after it had already printed OK: a killed daemon was still writing
   into that folder. That cleanup, and the same one in t-registry-attach, are
   now best effort with retries, like the other four fake-home suites.

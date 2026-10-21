@@ -372,11 +372,11 @@ export class Bus {
    * next tick: 300ms later, and in order.
    *
    * `conversation`, when given, scopes only `assignment` rows (the sovereign's
-   * actual chat turns, posted by kingdom.js#command/#speakTo) to one thread.
+   * actual chat turns, posted by agenticos.js#command/#speakTo) to one thread.
    * Everything else — notices, approvals, system, escalation, done, brief,
    * and plain inter-member `message` chatter — is court-wide and must reach a
    * member regardless of which conversation it currently has active (a member
-   * only ever has one live session at a time, see kingdom.js#switchConversation,
+   * only ever has one live session at a time, see agenticos.js#switchConversation,
    * so this is the delivery-side half of that: a stray "mode: research" notice
    * must not wait for the sovereign to switch back to whatever thread happened
    * to be active when it was sent). An inclusion list, not an exclusion one —
@@ -1479,7 +1479,7 @@ if (process.argv[1]?.endsWith('bus.js')) {
     a.equal(c.events({ conversation: convA.id }).length, 1, 'events() must isolate too');
 
     // pending(): a real sovereign chat turn (kind 'assignment', what
-    // kingdom.js#command actually posts) is scoped to the active conversation,
+    // agenticos.js#command actually posts) is scoped to the active conversation,
     // but a court-wide notice reaches the member regardless of which
     // conversation they were last in.
     c.post('orchestrator', 'coder', 'mode: research', 'notice', convA.id);

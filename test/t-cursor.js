@@ -98,7 +98,7 @@ const { Agent } = await import('../src/agent.js');
   // A sovereign-edited exclude with CRLF endings and `.agents` sans slash.
   writeFileSync(join(repo, '.git', 'info', 'exclude'), '# mine\r\n.agents\r\n');
 
-  const cfg = join(repo, 'kingdom.config.json');
+  const cfg = join(repo, 'agenticos.config.json');
   writeFileSync(cfg, JSON.stringify({
     orchestrator: { name: 'orchestrator', cli: 'cursor' },
     briefer: { name: 'briefer', cli: 'cursor-agent' },
@@ -114,7 +114,7 @@ const { Agent } = await import('../src/agent.js');
   const foreignText = JSON.stringify({ mcpServers: { theirs: { command: 'x' } } });
   writeFileSync(foreign, foreignText);
 
-  const { Kingdom } = await import('../src/kingdom.js?cursor-officers');
+  const { Kingdom } = await import('../src/agenticos.js?cursor-officers');
   const warnings = [];
   const k = new Kingdom(repo, cfg);
   k.on('error', (e) => warnings.push(String(e?.message ?? e)));

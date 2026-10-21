@@ -12,8 +12,8 @@ import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { assertRepo } from '../src/worktree.js';
 import { switchRepo } from './switch-repo.js';
-import { listCourts } from '../src/courts.js';
-import { routeLaunch, requestShutdown, firstLaunchPlan, courtPortOf } from './courts-launch.js';
+import { listCourts } from '../src/teams.js';
+import { routeLaunch, requestShutdown, firstLaunchPlan, courtPortOf } from './teams-launch.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.KINGDOM_PORT ?? 7777);
@@ -49,7 +49,7 @@ const originFor = (port) => `http://127.0.0.1:${port}`;
 
 /**
  * The native folder picker, on demand — Code mode asks for this through the
- * `repo:choose` IPC channel (via court-preload.cjs) instead of the app
+ * `repo:choose` IPC channel (via team-preload.cjs) instead of the app
  * blocking behind it before the window even opens. Returns a validated path,
  * or null on cancel / an error message on an invalid pick — the renderer
  * decides what to do with either, this never retries on its own.
@@ -152,7 +152,7 @@ async function spawnDaemon(repo, logPath, extraArgs, ready, what) {
  * from the switcher, or a bare relaunch routed by routeLaunch() below). No
  * --port is passed, so src/daemon.js picks the next free one itself (see
  * courts.firstFreePort()); readiness is read off the SAME registry that
- * choice was written to (src/courts.js), matched by this child's pid, since
+ * choice was written to (src/teams.js), matched by this child's pid, since
  * the port is not known until the daemon has already picked it.
  */
 async function startDaemonAuto(repo, logPath) {
@@ -205,7 +205,7 @@ function openWindow(port = PORT) {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      preload: join(HERE, 'court-preload.cjs'),
+      preload: join(HERE, 'team-preload.cjs'),
     },
   });
   win.setMenuBarVisibility(false);
@@ -454,7 +454,7 @@ ipcMain.handle('court:switchRepo', async (event, rawPath) => {
 });
 
 // ---- multiple courts at once (issue #42) -----------------------------------
-// The switcher reachable from Settings' Repository panel (ui/views/courts.js)
+// The switcher reachable from Settings' Repository panel (ui/views/teams.js)
 // talks to these three. Unlike court:switchRepo above, none of them end the
 // CURRENT court — "open that repo's court" coexists with whatever is already
 // running instead of replacing it.
