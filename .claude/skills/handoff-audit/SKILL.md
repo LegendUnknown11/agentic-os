@@ -23,7 +23,7 @@ printed. Do not soften a contradicted claim into a hedge; replace it.
 ## What not to do
 
 Keep `HANDOFF.md` and `PLAN.md` as the only active instruction documents.
-`AGENTS.md` and `docs/HANDOFF.md` are pointers, and `CLAUDE.md` holds standing
+`AGENTS.md` is a pointer, and `CLAUDE.md` holds standing
 discipline and points here. A correction goes into the file that owns the fact.
 Creating a third instruction document to hold it is the failure this repository
 has already recovered from once.

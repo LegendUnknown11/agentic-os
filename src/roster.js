@@ -31,7 +31,7 @@ export const TIERS = ['discovery', 'construction', 'verification', 'protection',
  * Two names differ from that plan, deliberately: it was written before the
  * repository renamed scout -> researcher and scribe -> writer, and src/modes.js
  * crews Cowork from the new names. Keeping the names the code already uses was
- * the conservative choice; plans/functionality/f2-design.md records it.
+ * the conservative choice.
  */
 export const STANDING = [
   'researcher', 'strategist', 'architect',
