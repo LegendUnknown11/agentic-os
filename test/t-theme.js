@@ -270,16 +270,16 @@ a.match(util, /TONE_ATTENTION = new Set\(\[[^\]]*'blocked'/, 'the shared status 
 a.match(util, /TONE_IDLE = new Set\(\[[^\]]*'planning'/, 'the shared status vocabulary must classify planning work as idle, not live');
 a.match(css, /\.task-row > span:not\(\.status-dot\)\s*\{[^}]*flex:\s*1;[^}]*text-align:\s*left;/, 'queue titles must scan from the status label into a readable left-aligned measure');
 a.match(css, /\.question-option/, 'inline question choices need an intentional control treatment');
-a.match(css, /\.question label\s*\{[^}]*display:\s*flex;[^}]*padding:\s*var\(--space-2\);[^}]*border:/, 'approval question choices must read as interactive rows');
-a.match(css, /\.question label input\s*\{[^}]*accent-color:\s*var\(--accent\)/, 'approval question controls must use the shared accent');
+a.match(css, /\.question label\s*\{[^}]*display:\s*flex;[^}]*padding:[^;]+;[^}]*border:/, 'approval question choices must read as interactive rows');
+a.match(css, /\.question label input\s*\{[^}]*accent-color:\s*var\(--fill\)/, 'approval question controls are the canvas white, the primary fill');
 a.match(css, /\.note\s*\{[^}]*margin:\s*0;/, 'inline notes must not inherit browser paragraph margins');
 a.match(css, /\.button-row > \.note\s*\{[^}]*min-width:\s*0;[^}]*flex:\s*1 1 240px;[^}]*overflow-wrap:\s*anywhere;/, 'long action feedback must wrap without displacing its retry control');
 // Merge results and timeline rows both render as .activity-row, so one shared
 // tone treatment (not a per-domain merged/failed/requested or error/done
 // selector) now covers both.
-a.match(css, /\.activity-row\.settled\s*\{[^}]*border-left-color:\s*var\(--ok\)/, 'merged work and completed timeline entries need a positive result cue');
-a.match(css, /\.activity-row\.attention\s*\{[^}]*border-left-color:\s*var\(--tone-attention\)/, 'failed merges and timeline errors need a danger result cue');
-a.match(css, /\.activity-row\.live\s*\{[^}]*border-left-color:\s*var\(--accent\)/, 'pending merges need an accent result cue');
+a.match(css, /\.activity-row\.settled \.card-meta\s*\{[^}]*color:\s*var\(--ok\)/, 'merged work and completed timeline entries need a positive result cue');
+a.match(css, /\.activity-row\.attention \.card-meta\s*\{[^}]*color:\s*var\(--tone-attention\)/, 'failed merges and timeline errors need a danger result cue');
+a.match(css, /\.activity-row\.live \.card-meta\s*\{[^}]*color:\s*var\(--accent\)/, 'pending merges need an accent result cue');
 a.match(util, /TONE_SETTLED = new Set\(\[[^\]]*'merged'/, 'the shared status vocabulary must classify merged results as settled');
 a.match(css, /\.settings-tabs\s*\{[^}]*flex-wrap:\s*nowrap;[^}]*overflow-x:\s*auto;/, 'Settings tabs must stay compact and scroll inside their strip');
 a.match(css, /\.search-row input\s*\{[^}]*flex:\s*1 1 280px;[^}]*min-width:\s*min\(100%, 240px\);/, 'search fields must use the available row width before wrapping');
