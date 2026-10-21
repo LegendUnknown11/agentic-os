@@ -66,15 +66,16 @@ const sha = (s) => createHash('sha256').update(s, 'utf8').digest('hex').slice(0,
 // Two numbers, not one: a length alone would miss a same-length reordering, and
 // a hash alone tells you nothing about HOW far the prompt moved when it breaks.
 // Re-pinned 2026-10-21 by the de-theming rename (docs/RENAME.md): the words
-// changed to team/user/agent/add_agent and nothing else; every prompt got
-// 18-53 bytes shorter (measured: 6926->6878 at the largest).
+// changed to team/user/agent/add_agent and nothing else, in src/ and in the
+// shipped skills/ index every prompt carries; every prompt got 23-58 bytes
+// shorter (measured: 6926->6873 for code/orchestrator).
 const EXPECT = {
-  'code/orchestrator': ['432791accf642d8c', 6878],
-  'code/briefer': ['6535ee2cacbc774c', 3785],
-  'code/coder': ['20c66556be3d19e1', 7172],
-  'chat/orchestrator': ['05b754ff7dd1847b', 7230],
-  'chat/briefer': ['0450ce1473e7c71a', 4137],
-  'chat/coder': ['71f20e7b65547431', 7524],
+  'code/orchestrator': ['ed7136c7ef7cd20a', 6873],
+  'code/briefer': ['826cdfe3d56f2606', 3780],
+  'code/coder': ['c63816523ff9c2ad', 7167],
+  'chat/orchestrator': ['77dd97142ebb9f70', 7225],
+  'chat/briefer': ['35d23ebf097048e9', 4132],
+  'chat/coder': ['bd5b13fa56d7e5ba', 7519],
 };
 
 const PRINT = process.argv.includes('--print');

@@ -94,7 +94,7 @@ restarts, so resumed sessions stay valid):
 npm run token -- --global sk-ant-oat01-AAA sk-ant-oat01-BBB
 ```
 
-Stored once in `~/.kingdom/tokens.json` and used by **every** repo, every
+Stored once in `~/.agenticos/tokens.json` and used by **every** repo, every
 launch — no env var, no re-entering. Add more later with the same command
 (deduped), or wipe with `-- --global --clear`.
 
@@ -102,10 +102,10 @@ Scope one repo differently by naming it instead of `--global`; a per-repo store
 overrides the global one. Resolution order:
 
 ```
-KINGDOM_CLAUDE_TOKENS  →  <repoParent>/.kingdom/<repo>/tokens.json  →  ~/.kingdom/tokens.json
+AGENTICOS_CLAUDE_TOKENS  →  <repoParent>/.agenticos/<repo>/tokens.json  →  ~/.agenticos/tokens.json
 ```
 
-That writes `<repoParent>/.kingdom/<repoName>/tokens.json` — **outside your
+That writes `<repoParent>/.agenticos/<repoName>/tokens.json` — **outside your
 repo**, so it can never be committed:
 
 ```json
@@ -115,7 +115,7 @@ repo**, so it can never be committed:
 Or pass them in the environment instead, which takes precedence:
 
 ```powershell
-$env:KINGDOM_CLAUDE_TOKENS = "token1,token2"
+$env:AGENTICOS_CLAUDE_TOKENS = "token1,token2"
 ```
 
 Token values are never logged, never sent to the UI, and never written to
@@ -142,7 +142,7 @@ Nothing important happens without you:
 
 | The orchestrator proposes | You see |
 |---|---|
-| `summon` — which agents to wake, and why | a card with the crew and its reasoning |
+| `add` — which agents to wake, and why | a card with the crew and its reasoning |
 | `propose_role` — a brand-new kind of agent | the name, prompt, CLI, and rationale; approving writes it into `agenticos.config.json` permanently |
 | `request_merge` — work it has reviewed and approves of | its verdict, plus a Merge button |
 
@@ -151,7 +151,7 @@ Nothing important happens without you:
 Point Agentic OS at an Obsidian vault and the whole team can use it:
 
 ```json
-{ "vault": "E:\\Notes\\Obsidian Vault", "vaultWriteDir": "Kingdom" }
+{ "vault": "E:\\Notes\\Obsidian Vault", "vaultWriteDir": "AgenticOS" }
 ```
 
 - `vault_search` / `vault_read` — **the whole vault, read-only.** Members are
@@ -190,14 +190,14 @@ Agentic OS is built around that fact:
 | **Busy agents aren't interrupted** | Delivery waits for idle (up to 90s), so no replay is spent on a half-finished thought. |
 | **Notices ride along** | Pure FYI never buys its own turn; it waits for real traffic (or 3 min). |
 | **4000-char message cap** | Pasting a file through the bus replays it into someone's context. Write a file, send the path — agents can read each other's worktrees. |
-| **Idle sleep** | Untouched members stop after 15 min (`KINGDOM_IDLE_SLEEP_MS`, 0 disables) and revive with memory on the next message. |
+| **Idle sleep** | Untouched members stop after 15 min (`AGENTICOS_IDLE_SLEEP_MS`, 0 disables) and revive with memory on the next message. |
 | **`effort` per role** | `"effort": "low"` for mechanical roles. |
 | **Live spend** | The header shows `$0.000 · N turns` as it happens. |
 | **`maxBudgetUsd`** | Per member. **Off unless you set it** — there is no default. |
 
 **The biggest lever is the roster.** That run woke seven agents; a tester doing
-42 tool calls on a design task is pure cost. The orchestrator is now told to summon the
-smallest crew that can do the job — but you approve every summon, so trim the
+42 tool calls on a design task is pure cost. The orchestrator is now told to add the
+smallest crew that can do the job — but you approve every add, so trim the
 crew there.
 
 ## Safety and limits
@@ -217,7 +217,7 @@ using the [CLI options](docs/cli-agents.md); enforcement belongs to the CLI.
 Claude denials can be extended with `"deny": ["Bash(curl:*)"]`.
 
 **Spend can be capped — it is not capped by default.** Set `maxBudgetUsd`
-(per member, overridable per member) or `maxKingdomUsd` (whole team) in
+(per member, overridable per member) or `maxTotalUsd` (whole team) in
 `agenticos.config.json` and a looping member stops costing money by itself.
 Leave them unset, as shipped, and nothing stops it but you.
 
@@ -286,14 +286,14 @@ additions. Each member picks its own CLI and model:
 
 Configuring a role does not put it on the team — it makes it **available**.
 The rail on the left holds the members actually serving; everyone else lives
-behind **Summon** (Alt+E), which searches names, titles and descriptions, so
+behind **Add** (Alt+E), which searches names, titles and descriptions, so
 you can find the person who does CI or packaging without knowing they are filed
-under `devops-engineer`. Summoning is `wake`, dismissing is `sleep`; both are
-reversible and a dismissed member keeps its transcript.
+under `devops-engineer`. Adding is `wake`, removing is `sleep`; both are
+reversible and a removed member keeps its transcript.
 
 This split is the point: the shipped roster was once 105 roles, and a rail
 that listed them all was 4,179px of scroll in a 580px viewport with 105 rows
-reading "not summoned". Roster v2 ships 18 (15 standing roles in five lifecycle
+reading "not added". Roster v2 ships 18 (15 standing roles in five lifecycle
 tiers, plus the three Cowork argument roles; `roles.json`, `src/roster.js`);
 the retired ones are kept, unseeded, in `roles-library.json`.
 
@@ -319,11 +319,11 @@ Memory persists identically either way. Put your chattiest roles on claude.
 | `src/daemon.js` | HTTP + SSE server |
 | `src/cli.js` | terminal interface |
 | `ui/` | the app interface (no framework) |
-| `ui/team.js` | who belongs in the rail vs. the summoning screen — pure, and tested |
-| `ui/feel.js` | the weight: arrival/departure motion, and the horn cues on a summon or a ruling |
+| `ui/team.js` | who belongs in the rail vs. the adding screen — pure, and tested |
+| `ui/feel.js` | the weight: arrival/departure motion, and the horn cues on an add or a ruling |
 | `electron/main.js` | thin shell; spawns the daemon and shows the UI |
 
-State lives **outside** your repo, in `<repoParent>/.kingdom/<repoName>/` —
+State lives **outside** your repo, in `<repoParent>/.agenticos/<repoName>/` —
 worktrees, the database, everything. Your repo stays clean.
 
 ### Why the daemon is a separate process
@@ -361,4 +361,4 @@ node test/dump.js <repo>   # peek at a workspace's bus
 re-run alone before it is reported, because several of them use real resources —
 the live tick loop, git, ports, a Whisper model — and lose races for them under
 load; a failure that passes on the retry is printed as `flaky`, not as a pass.
-Set `KINGDOM_TEST_WIDTH=1` for the old one-at-a-time run.
+Set `AGENTICOS_TEST_WIDTH=1` for the old one-at-a-time run.

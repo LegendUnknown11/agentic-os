@@ -69,26 +69,26 @@ Prompts that start with `-` are passed to argument-based CLIs (OpenCode,
 Cursor) with a leading newline so they cannot be parsed as an option. Codex
 prompts stay off argv. Large prompts for argument-based CLIs are staged in
 private (0600) temporary files and removed when the turn ends. Every
-turn-based invocation has the existing watchdog (`KINGDOM_TURN_TIMEOUT_MS`).
+turn-based invocation has the existing watchdog (`AGENTICOS_TURN_TIMEOUT_MS`).
 
 ## Workspaces and MCP
 
 The child's working directory is always the assigned workspace. Codex receives
 `-C` only on a new session; its resume accepts a narrower flag set. Cursor also
 receives `--workspace`. OpenCode and Cursor officers each use their own
-directory under the kingdom dir to prevent identity collisions.
+directory under the team dir to prevent identity collisions.
 
-Cursor reads `.cursor/mcp.json` from its workspace. The court writes one with
+Cursor reads `.cursor/mcp.json` from its workspace. The team writes one with
 the member's identity, and `--trust --approve-mcps` by default so headless runs
 are not stopped by prompts. `--approve-mcps` approves every server in that
-file, so the court **never modifies an existing `.cursor/mcp.json` it did not
-write** (a repository's own, checked out into a peasant worktree): that member
-runs without kingdom tools and a warning says so. `.cursor/mcp.json` is added
+file, so the team **never modifies an existing `.cursor/mcp.json` it did not
+write** (a repository's own, checked out into an agent worktree): that member
+runs without AgenticOS tools and a warning says so. `.cursor/mcp.json` is added
 to `.git/info/exclude`.
 
 Neither Antigravity nor Cursor is given `--add-dir`: neither flag is verified,
-and peasants always receive extra directories, so an unknown flag would fail
-every peasant turn. A Cursor or Antigravity peasant therefore cannot be assumed
+and agents always receive extra directories, so an unknown flag would fail
+every agent turn. A Cursor or Antigravity agent therefore cannot be assumed
 to read its siblings' worktrees.
 
 ## Binaries
@@ -96,13 +96,13 @@ to read its siblings' worktrees.
 Detection searches `~/.local/bin`, agy's install directory and PATH, preserving
 existing Windows native and npm entry resolution. For Cursor, `cursor-agent` is
 searched in every directory before the generic `agent`. Override a binary with
-`KINGDOM_CODEX_BIN`, `KINGDOM_CLAUDE_BIN`, `KINGDOM_AGY_BIN`,
-`KINGDOM_OPENCODE_BIN` or `KINGDOM_CURSOR_BIN` (every Cursor alias). A `.js`
+`AGENTICOS_CODEX_BIN`, `AGENTICOS_CLAUDE_BIN`, `AGENTICOS_AGY_BIN`,
+`AGENTICOS_OPENCODE_BIN` or `AGENTICOS_CURSOR_BIN` (every Cursor alias). A `.js`
 override runs with Node and is used by offline tests.
 
 On Windows only `.exe` files are found: `.cmd`/`.ps1` shims would need a shell,
 which shreds JSON arguments. If Cursor installs only a shim there, point
-`KINGDOM_CURSOR_BIN` at its `.js` entry or native executable. This is not
+`AGENTICOS_CURSOR_BIN` at its `.js` entry or native executable. This is not
 verified on Windows.
 
 ## Doctor
@@ -115,7 +115,7 @@ model prompt. Raw output is parsed privately and never included in the report.
 |---|---|
 | Codex | `codex login status` |
 | Claude | `claude auth status`; env credentials reported as supplied, unverified |
-| Antigravity | `agy models` (stdin detached, 25 s cap); also checks the global kingdom MCP declaration |
+| Antigravity | `agy models` (stdin detached, 25 s cap); also checks the global AgenticOS MCP declaration |
 | OpenCode | `opencode auth list`; a positive stored-credential count confirms, zero stays unverified (env-var providers are not counted) |
 | Cursor | `cursor-agent status --format json`; `CURSOR_API_KEY` reported as supplied, unverified |
 

@@ -11,7 +11,7 @@
 //
 //   fresh input   1.0x      cache write  1.25x      cache read  0.1x
 //
-// Measured on a real 3-turn session (E:\AI\.agenticos\Sant Dnyaneshwar), 95.2%
+// Measured on a real 3-turn session (E:\AI\.kingdom\Sant Dnyaneshwar), 95.2%
 // of all input was cache READ. Counted as tokens that looks like a session
 // paying to re-read itself; priced, those tokens are ~34% of the input bill —
 // the session cost $0.604 on the orchestrator's terra, against $3.93 if those same

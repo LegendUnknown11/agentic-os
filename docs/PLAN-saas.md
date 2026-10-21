@@ -1,11 +1,11 @@
-# Kingdom as a product — what it would take
+# AgenticOS as a product — what it would take
 
 *Written 2026-08-16 against the working tree at `E:\AI\Agentic OS`. Every file
 and line reference below was checked; nothing here is inferred from memory.*
 
 ## The short version
 
-Kingdom today is a **single-user Electron app that drives CLI binaries you have
+AgenticOS today is a **single-user Electron app that drives CLI binaries you have
 already installed and logged into, on your own machine, against your own disk.**
 Every one of those clauses is load-bearing, and every one of them is false in a
 SaaS. That is not a criticism — it is why the thing works at all — but it means
@@ -55,7 +55,7 @@ The same codebase supports three genuinely different businesses. Choosing is the
 whole plan; everything below assumes **B**.
 
 **A — Hosted autonomous engineering** (the Devin/Factory shape). Customer
-connects a GitHub repo, you run the court in your cloud. Highest ceiling and
+connects a GitHub repo, you run the team in your cloud. Highest ceiling and
 highest cost: you take custody of customer source, run untrusted generated code
 on your infrastructure, and pay for inference you must resell at a margin. It
 needs container/microVM isolation, egress control, SOC2-shaped answers, and a
@@ -63,7 +63,7 @@ gross-margin model that survives a customer whose agent loops. Do not start
 here.
 
 **B — Hosted control plane, customer-side execution** ("bring your own
-compute"). You host accounts, projects, the throne room, the chronicle, memory,
+compute"). You host accounts, projects, the dashboard, the chronicle, memory,
 skills, cost analytics and team collaboration. A small runner on the customer's
 machine or in their CI holds their keys and does the actual work, connecting
 outbound to you. You never hold their source or their model credentials, and
@@ -107,11 +107,11 @@ open. There is no user, no session, no tenant, no authorization check on
 `/api/approvals`, `/api/diff`, `/api/vault` or the POST fallthrough at `:447`.
 Binding to loopback *is* the security model.
 
-### 3. One database, one repo, one process, one court
+### 3. One database, one repo, one process, one team
 
 `dbPath(repo)` (`src/worktree.js:28`) is a single SQLite file per repo, and
-`src/agenticos.js` holds the entire court in process memory for as long as it
-runs. Multi-tenant means: tenant-scoped storage, and a court that can be
+`src/agenticos.js` holds the entire team in process memory for as long as it
+runs. Multi-tenant means: tenant-scoped storage, and a team that can be
 suspended and resumed from the database rather than being a process you must
 keep alive. The bus is already the durable log that makes this possible.
 
@@ -131,7 +131,7 @@ unacceptable hosted one. Product B avoids the problem entirely by keeping
 execution on the customer's side; product A cannot avoid it and must pay for
 per-job microVM isolation.
 
-### 6. Cost enforcement is per-court, not per-tenant
+### 6. Cost enforcement is per-team, not per-tenant
 
 `#enforceBudget` in `src/agenticos.js` now works for the first time (the codex
 `costUsd: 0` defect was fixed this session), but caps are currently absent from
@@ -155,7 +155,7 @@ no CI catching regressions — `.github/` does not exist.
 ### 9. Nothing is observable from outside
 
 No structured logs, no traces, no error reporting, no uptime signal. The
-chronicle is the closest thing and it is per-court and local. You cannot operate
+chronicle is the closest thing and it is per-team and local. You cannot operate
 a service you cannot see.
 
 ## Phased plan
@@ -196,29 +196,29 @@ bound directly rather than over a subprocess. Per-turn usage flows into the
 APIs report usage per turn and unambiguously, so the cumulative-vs-per-turn trap
 disappears for this backend.
 
-**Done when:** a court completes a real multi-member task with no `codex`,
+**Done when:** a team completes a real multi-member task with no `codex`,
 `claude` or `agy` binary installed anywhere, and `npm run ctx` prices it.
 
 ### Phase 3 — Control plane (3–4 weeks)
 
 Accounts, organisations, projects, invitations. Per-tenant quotas enforced
 server-side on top of the corrected cost pipeline. Billing. Structured logging
-and error reporting. The throne room UI moves from "talks to my local daemon" to
+and error reporting. The dashboard UI moves from "talks to my local daemon" to
 "talks to an API with a session" — `ui/` is vanilla JS with no build step, which
 makes this less painful than it sounds, but plan for it rather than discovering
 it.
 
-**Done when:** two separate accounts can run courts that cannot see each other,
+**Done when:** two separate accounts can run teams that cannot see each other,
 and one of them can be cut off by hitting a quota.
 
 ### Phase 4 — The runner (2–3 weeks)
 
-A small daemon the customer installs (`npx @kingdom/runner`, or a container in
+A small daemon the customer installs (`npx @agenticos/runner`, or a container in
 their CI). It holds their model credentials and their checkout, opens an
 outbound connection to your control plane, receives work, streams events back.
 No inbound ports, no source code leaving their network.
 
-**Done when:** a customer on a machine you have never touched runs a court from
+**Done when:** a customer on a machine you have never touched runs a team from
 your hosted UI, and you can prove from your side that you never received their
 source.
 
@@ -237,8 +237,8 @@ cannot see it."** `npm run ctx` on a real session already produces a sentence a
 head of engineering would forward to their CFO. Lead with the ledger.
 
 Under product B you are not reselling inference, so the natural shape is
-**per-seat with a court-hours or turn-count allowance**, plus a free tier that
-runs one court against one repo — which is also the best possible demo, because
+**per-seat with a team-hours or turn-count allowance**, plus a free tier that
+runs one team against one repo — which is also the best possible demo, because
 it costs you nothing and costs the customer only their own key.
 
 Charge more for what only you have: cross-agent messaging, the cost ledger,
@@ -252,7 +252,7 @@ shared skills and memory across a team, and audit of what every member did.
 - **Do not ship product A first.** Holding customer source and paying for their
   inference are the two things that turn a promising solo agent product into an
   unfundable one.
-- **Do not scale the peasant bench as a feature.** 105 roles is a demo. Teams buy
+- **Do not scale the agent bench as a feature.** 105 roles is a demo. Teams buy
   five agents that reliably finish, not a hundred that might.
 - **Do not build the billing system before Phase 2.** Every metering decision
   depends on how the API-backed runtime reports usage, and guessing costs you the

@@ -1,5 +1,5 @@
 # The suite asserts against module SOURCE TEXT (test/t-pages.js:191 matches
-# /toast, refreshLists,\n\s+sovereign/), so a checkout that rewrites LF to CRLF
+# /toast, refreshLists,\n\s+user/), so a checkout that rewrites LF to CRLF
 # fails tests that pass on the machine that wrote them. core.autocrlf=true did
 # exactly that on the first commit+checkout round-trip here, and would do it to
 # every Windows clone and to CI. Pin the working tree to LF instead.

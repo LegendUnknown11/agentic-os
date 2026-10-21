@@ -20,7 +20,7 @@ Companion to [SKILL.md](SKILL.md). Run these from the repository root.
   PR record is the record.
 - **A slow test run is not a failing one.** The same suite set has printed 36.8s
   and 179.6s on this machine under 4-wide contention.
-- **`court self-control` is the known flaky suite.** Read the runner's retry
+- **`team self-control` is the known flaky suite.** Read the runner's retry
   result before recording a failure.
 - **Tooling presence is not readiness.** `flutter` on PATH does not mean an
   emulator is available, a device is attached, or signing is configured. Correct

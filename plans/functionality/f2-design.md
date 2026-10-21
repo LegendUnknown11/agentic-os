@@ -1,4 +1,4 @@
-# f2-design — the court redesign (docs/PLAN-team.md), implemented
+# f2-design — the team redesign (docs/PLAN-team.md), implemented
 
 Thread f2-design, branch `f2-design`, cut from `origin/functionality` at
 `e730bb6` on 2026-10-21. `origin/functionality` has since gained `6e67294`,
@@ -8,8 +8,8 @@ which only adds `plans/functionality/specs.md`. This branch is not rebased onto 
 
 | Commit | What it does |
 |---|---|
-| `e9dbca7` | Roster and config. `roles.json` and the template's `peasants` become the same 18 roles with tiers. The 90 retired roles move verbatim to `roles-library.json`. Adds `src/roster.js` (STANDING, MODE_BOUND, TIERS, ROSTER_VERSION). `test/t-roles.js` now pins the v2 contract. |
-| `13c2a1a` | Migration. `planRosterMigration` is pure and lives in `src/roster.js`. `Kingdom#migrateRoster` runs on every launch. Adds the new suite `test/t-roster-migrate.js` and its fixture `test/fixtures/roster-v1.json`, which is the real 107-role v1 roster. |
+| `e9dbca7` | Roster and config. `roles.json` and the template's `agents` become the same 18 roles with tiers. The 90 retired roles move verbatim to `roles-library.json`. Adds `src/roster.js` (STANDING, MODE_BOUND, TIERS, ROSTER_VERSION). `test/t-roles.js` now pins the v2 contract. |
+| `13c2a1a` | Migration. `planRosterMigration` is pure and lives in `src/roster.js`. `AgenticOS#migrateRoster` runs on every launch. Adds the new suite `test/t-roster-migrate.js` and its fixture `test/fixtures/roster-v1.json`, which is the real 107-role v1 roster. |
 | `0f72040` | Hand-coded role names and stale figures: `src/prompt.js`, `src/agenticos.js` (domains comment), `src/modes.js` self-check, `src/price.js`, three test fixtures, README. |
 | `394a6ed` | Re-pins. The orchestrator prompt ceiling in `test/t-efficiency.js` goes from 11,000 to 8,500. The other pins were examined and left alone (reasons below). |
 | this file | The report. |
@@ -33,10 +33,10 @@ which only adds `plans/functionality/specs.md`. This branch is not rebased onto 
 That is 15 standing roles plus 3 mode-bound roles. Each role's tier is stored in its `tier` field.
 
 **Descriptions versus prompts (plan Q4).** A description is a selection
-trigger: when to summon the role, its scope, and a named
+trigger: when to add the role, its scope, and a named
 `not for ... (other-role)` boundary. A prompt holds the role's doctrine,
 what it must not do, and how it knows it is finished. Prompts do not repeat
-anything `src/prompt.js` already tells every peasant (`declare_done`,
+anything `src/prompt.js` already tells every agent (`declare_done`,
 `../<name>/`, `send_message`, `finish_task`).
 
 `test/t-roles.js` enforces all of this:
@@ -44,7 +44,7 @@ anything `src/prompt.js` already tells every peasant (`declare_done`,
 - no prompt restates its description or the shared block;
 - every effort is valid for its model, and no role is on `max`;
 - terra is used only by architect, auditor and strategist;
-- the template's peasants equal `roles.json`.
+- the template's agents equal `roles.json`.
 
 ## Old → new role map
 
@@ -91,18 +91,18 @@ caveat on one of them: v1's `researcher` was *user* research. In v2 it is
 external technical research, matching what `roles.json` and Cowork already
 meant by the name.
 
-## Migration (existing courts)
+## Migration (existing teams)
 
-**Why it is needed.** A court's config is copied from the template once
+**Why it is needed.** A team's config is copied from the template once
 (`defaultConfigPath`), and `rolesSeeded` is already `true`. Changing the
-shipped files alone therefore changes no existing court.
+shipped files alone therefore changes no existing team.
 
 **How it is recorded.** The repository's migration pattern is a once-flag. A
 config-level marker is used here because the config is the thing being
 migrated:
-- `rosterVersion: 2` in the court's config;
+- `rosterVersion: 2` in the team's config;
 - `rosterRetiring: [...]` while members are pending retirement;
-- `retiredPeasants: [...]` as the archive;
+- `retiredAgents: [...]` as the archive;
 - one `roster_migrated` bus event as the audit record.
 
 **Rules (`planRosterMigration`, pure):**
@@ -110,30 +110,30 @@ migrated:
   shipped fingerprint. The fingerprint is sha256-16 of title, description
   and prompt, taken from the v1 template and v1 `roles.json`. The model is
   replaced only where it is still `codex/gpt-5.6-luna/max` (or equals
-  `peasantDefaults`) and the role is not on Auto. An edited prompt or a
+  `agentDefaults`) and the role is not on Auto. An edited prompt or a
   chosen model stays as it is.
-- **Retired roles, untouched and idle.** Archived to `retiredPeasants` with
+- **Retired roles, untouched and idle.** Archived to `retiredAgents` with
   `retiredFor`. They are never deleted.
 - **Busy members** are kept on the roster and listed in `rosterRetiring`. A
   later launch retires them once they are idle. A member is busy if it:
-  - is in the saved `summoned` crew,
+  - is in the saved `added` crew,
   - owns a task that is not closed, or
   - holds a worktree, which means unmerged work.
-- **Edited legacy roles and court-invented roles** are kept untouched.
+- **Edited legacy roles and team-invented roles** are kept untouched.
 - **`devops-engineer`** (new in v2, absent from the v1 template) is added
-  only to a court that held a role it replaces (operator, build-engineer and
-  so on). A hand-built court is left alone.
-- **No resurrection.** Any other bench role a court lacks was deleted by its
-  sovereign, and stays deleted.
+  only to a team that held a role it replaces (operator, build-engineer and
+  so on). A hand-built team is left alone.
+- **No resurrection.** Any other bench role a team lacks was deleted by its
+  user, and stays deleted.
 - **Bus and vault are never touched.** Messages, events, tasks and memory
   cannot be lost by this change.
-- **Failure degrades.** If the migration fails, the court keeps its old
+- **Failure degrades.** If the migration fails, the team keeps its old
   roster and `start()` shows a warning.
 
 **One interaction found, and kept as designed.** `start()` already releases
 any task held by a member who is not in service back to the pool, with a
 notice (the existing orphan rule). As a result, a task-owning member that is
-*not* summoned becomes idle after one `start()` and retires on the next
+*not* added becomes idle after one `start()` and retires on the next
 launch. The task itself is kept, unowned. The test asserts that the task
 survives.
 
@@ -145,7 +145,7 @@ survives.
 2. **The bench has 18 entries, not 15.** fact-checker, defendant and critic
    are kept. Cowork's crew and its pipeline text name them; the plan predates
    that pipeline. They are labelled `MODE_BOUND`.
-3. **`peasantDefaults` is left at claude/haiku/low.** The plan asked for
+3. **`agentDefaults` is left at claude/haiku/low.** The plan asked for
    luna/high. The efficiency pass set the current value after the plan, and
    every shipped role now names its own tier, so the defaults only reach
    roles added later via `propose_role`.
@@ -154,10 +154,10 @@ survives.
    Changing the officers is out of scope for the 15 roles.
 5. **A migration program exists after all.** The plan said "no migration
    script, one hand edit", but that assumed one machine with one tracked
-   config. Today every court has its own copy under `.kingdom/`, which makes
-   a hand edit unsafe for courts with work in flight.
+   config. Today every team has its own copy under `.agenticos/`, which makes
+   a hand edit unsafe for teams with work in flight.
 6. **devops-engineer is added only where a predecessor existed.** An earlier
-   draft added it to every v1 court, which grew the t-prompt fixture's
+   draft added it to every v1 team, which grew the t-prompt fixture's
    orchestrator prompt by 46 bytes. That draft was rejected.
 7. **The bench string stays `name (Title)` only.** The plan's §3/Q6 bench
    with descriptions was superseded by the efficiency pass, where full text
@@ -170,10 +170,10 @@ survives.
 
 | Measure | Before | After |
 |---|---|---|
-| Template peasants | 107 | 18 |
+| Template agents | 107 | 18 |
 | `roles.json` roles | 17 (no tiers, no debugger) | 18 (tiered) |
 | Model / effort spread | 107 × luna/max | 3 terra/high, 8 luna/high, 5 luna/medium, 2 luna/low |
-| Peasant prompt bodies | 97,548 chars | 8,902 chars |
+| Agent prompt bodies | 97,548 chars | 8,902 chars |
 | Descriptions | 13,944 chars | 4,462 chars |
 | Orchestrator bench (names + titles) | 3,910 chars | 545 chars |
 | Orchestrator prompt, code | 10,920 B | 7,555 B |
@@ -181,13 +181,13 @@ survives.
 | Orchestrator prompt, chat | 11,277 B | 7,912 B |
 | Briefer prompt, code | 3,962 B | 3,962 B |
 | `roster(detail:true)` payload | 41,226 chars | 9,451 chars |
-| `tools/list`, code orch / briefer / peasant | 38 tools 15,698 B / 19 tools 7,791 B / 19 tools 7,580 B | unchanged |
-| `tools/list`, cowork orch / briefer / peasant | 41 tools 16,500 B / 19 / 19 | unchanged |
+| `tools/list`, code orch / briefer / agent | 38 tools 15,698 B / 19 tools 7,791 B / 19 tools 7,580 B | unchanged |
+| `tools/list`, cowork orch / briefer / agent | 41 tools 16,500 B / 19 / 19 | unchanged |
 | t-prompt pinned prompts | 6 | 6, bytes unchanged |
 | Suites | 95 | 96 (+ t-roster-migrate) |
 
-The code-mode peasant prompt figure (8,276 → 7,627 B) is not a like-for-like
-comparison, because it is measured on the template's *first* peasant, which
+The code-mode agent prompt figure (8,276 → 7,627 B) is not a like-for-like
+comparison, because it is measured on the template's *first* agent, which
 changed from accessibility-engineer to researcher.
 
 ## Evidence held / not held
@@ -205,17 +205,17 @@ changed from accessibility-engineer to researcher.
   - the t-efficiency ceiling fails on the old template.
 
 **Not held:**
-- **Any real court run.** No provider calls were made, so there is no
+- **Any real team run.** No provider calls were made, so there is no
   evidence of selection quality, actual cost per tier, or whether
   luna/medium is good enough for frontend or designer. The plan's own
-  measurement (one short real court run per tiering, priced with
+  measurement (one short real team run per tiering, priced with
   `node src/ctx.js`) has still not been done.
 - **The UI with an 18-role roster.** There is no visual or Electron
   evidence.
 - **Windows.**
-- **A migration against a real user's `.kingdom/` config.** Only the
+- **A migration against a real user's `.agenticos/` config.** Only the
   fixture copy of the v1 template was exercised.
-- **The sovereign's acceptance** of the role set and texts.
+- **The user's acceptance** of the role set and texts.
 
 ## Open items
 
@@ -227,7 +227,7 @@ changed from accessibility-engineer to researcher.
   and `test/t-roster-migrate.js`, and its suite count goes from 95 to 96.
   That file belongs to the coordinator.
 - `.claude/arms/team.md` could point at `src/roster.js`.
-- The plan's §4 `summoned` event already exists (`agenticos.js` logs one), so
+- The plan's §4 `added` event already exists (`agenticos.js` logs one), so
   usage evidence can be collected from now on. No usage report was built.
 - `t-panels`'s `planning`/`blocked` race is pre-existing and worth its own
   fix.

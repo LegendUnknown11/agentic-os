@@ -28,19 +28,19 @@ default, **L** robustness or clarity.
 | # | Sev | Finding | Disposition |
 |---|---|---|---|
 | 1 | H | Turn end moved from `exit` to `close` only. A grandchild that inherited stdout (a shell the agent left running) keeps the pipe open, `close` never fires, the member stays busy forever. | Fixed: finish on `close`, fallback 2 s after `exit`. Fakes test with exit-and-no-close. |
-| 2 | H | agy and Cursor were given `--add-dir` for every `addDirs` entry. Peasants always get addDirs; agy never received the flag before and neither is verified. An unknown flag fails every peasant turn. | Dropped for both. Recorded as an open capability gap. |
-| 3 | H | `adapterFor()` in the Agent constructor throws for an unknown CLI, out of Kingdom's spawn path. | Fixed: the first turn fails visibly ("Unsupported agent CLI"). |
+| 2 | H | agy and Cursor were given `--add-dir` for every `addDirs` entry. Agents always get addDirs; agy never received the flag before and neither is verified. An unknown flag fails every agent turn. | Dropped for both. Recorded as an open capability gap. |
+| 3 | H | `adapterFor()` in the Agent constructor throws for an unknown CLI, out of AgenticOS's spawn path. | Fixed: the first turn fails visibly ("Unsupported agent CLI"). |
 | 4 | M | Unknown usage fabricated as zeros: opencode `step_finish` without tokens became `{input:0,output:0,total:0}`; `cursorUsage` defaulted `output_tokens: 0`. Reads as a free turn in the spend ledger. | Fixed: unknown → `null`; only reported fields carried. |
 | 5 | M | opencode cache tokens mapped to codex's nested `cached_input_tokens`. opencode's `input` excludes the cache read (remembered from opencode's usage code), so `usage.js` would undercount input. | Fixed: mapped to the alongside fields `cache_read_input_tokens` / `cache_creation_input_tokens`. Not verified against a real stream. |
 | 6 | M | `continue: true` → `codex exec resume --last` / `--continue`. Officers share a cwd, so "latest session" can be another member's. | Dropped for all CLIs; saved ids are the only resume. |
-| 7 | M | `#writeCursorMcp` merged into an existing `.cursor/mcp.json`. In a peasant worktree that file is the repo's tracked one: the court's DB path and member identity would be committed by `git add -A`, and `--approve-mcps` auto-approves every server the repo lists. | Fixed: an existing file without a kingdom entry is left byte-for-byte and the member is warned to have no kingdom tools. |
+| 7 | M | `#writeCursorMcp` merged into an existing `.cursor/mcp.json`. In an agent worktree that file is the repo's tracked one: the team's DB path and member identity would be committed by `git add -A`, and `--approve-mcps` auto-approves every server the repo lists. | Fixed: an existing file without a team entry is left byte-for-byte and the member is warned to have no AgenticOS tools. |
 | 8 | M | agy effort ladder widened to xhigh/max on the author's reading of help; the repo's earlier measurement says agy rejects them outright. | Reverted to measured `low/medium/high` (config + adapter). Open item to re-measure. |
-| 9 | M | Doctor rewrite removed credential-expiry warnings, token-pool report, agy global-MCP check and claude's logged-out guidance, and read config from `<repo>/agenticos.config.json`, which does not exist (the court's config lives in `kingdomDir(repo)`). | Restored all four (pool counted, no longer created); config read from `kingdomDir`. |
+| 9 | M | Doctor rewrite removed credential-expiry warnings, token-pool report, agy global-MCP check and claude's logged-out guidance, and read config from `<repo>/agenticos.config.json`, which does not exist (the team's config lives in `stateDir(repo)`). | Restored all four (pool counted, no longer created); config read from `stateDir`. |
 | 10 | M | Doctor probed every known CLI, so a machine with claude+codex got warnings for absent agy/opencode/cursor/freebuff. | Absent optional CLIs are silent; installed ones are reported as optional. |
 | 11 | M | opencode `auth list` with 0 stored credentials → `authenticated: false` → a configured opencode **fails** readiness even when it authenticates from env-var providers. | 0 stays `null` (unverified, warn). |
 | 12 | L | `jsonStream` let handler throws escape a stdout `data` handler (old `jsonLines` swallowed them — an `error` emitted with no listener would kill the daemon). Also a stray `{` banner line swallowed every later event. | Fixed both; tests. |
 | 13 | L | Positional prompts (opencode, Cursor) starting with `-` would be parsed as an option. | Leading newline prefix. |
-| 14 | L | Cursor resolution searched `cursor-agent` then `agent` per directory, so an unrelated `agent` early on PATH shadowed `cursor-agent`; missing-binary message named `KINGDOM_CURSOR-AGENT_BIN`. | `cursor-agent` searched in all dirs first; every alias uses `KINGDOM_CURSOR_BIN`. |
+| 14 | L | Cursor resolution searched `cursor-agent` then `agent` per directory, so an unrelated `agent` early on PATH shadowed `cursor-agent`; missing-binary message named `AGENTICOS_CURSOR-AGENT_BIN`. | `cursor-agent` searched in all dirs first; every alias uses `AGENTICOS_CURSOR_BIN`. |
 | 15 | L | New "exited (code)" error fired even after a completed turn; with codex `turn.failed` it doubled errors into recovery accounting. | Only when no completion and no error already this turn. |
 | 16 | L | `.git/info/exclude` check became exact-match: CRLF files and `.agents` (no slash) re-appended lines on every spawn. | CRLF/slash-tolerant. |
 | 17 | L | Doctor auth parse for claude used whole-output `JSON.parse`; a warning line before the JSON gave "unknown". | First `{…}` span. `agy models` keeps its measured 25 s cap (branch used 8 s). |
@@ -92,7 +92,7 @@ Held (source / fakes only):
   parsing, the in-process lifecycle (multi-step opencode, incomplete protocol,
   json-mode claude/cursor resume, exit-without-close, non-zero exits).
 - `test/t-cursor.js`: stub-binary turns (cwd, flags, resume, dash-safe prompt,
-  staged brief), unknown CLI, Kingdom officers with a foreign `.cursor/mcp.json`
+  staged brief), unknown CLI, AgenticOS officers with a foreign `.cursor/mcp.json`
   and a CRLF exclude file.
 - `test/t-doctor-api.js`: daemon route, no-prompt/no-write source checks,
   absent/logged-out/env-token cases via injected detection.
@@ -110,7 +110,7 @@ Not held:
 1. Re-measure `agy --help` for xhigh/max; widen `AGY_EFFORTS` only on a read.
 2. Verify Cursor flags (`--workspace`, `--trust`, `--approve-mcps`, `--mode`,
    `--sandbox`, any `--add-dir`) against a real `cursor-agent --help`.
-3. Cursor/agy peasants cannot be assumed to read sibling worktrees (no
+3. Cursor/agy agents cannot be assumed to read sibling worktrees (no
    `--add-dir`); decide whether reviews need another path for them.
 4. Windows Cursor install layout: find its real executable or `.js` entry.
 5. Out-of-quota is no longer caught pre-flight; consider a user-triggered,

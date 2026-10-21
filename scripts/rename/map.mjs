@@ -36,6 +36,18 @@ export const KEEP_LINES = [
   [/^test\/t-theme\.js$/, /the old gold role color must not survive/],
 ];
 
+/**
+ * Spans inside a line that stay byte-for-byte, while the rest of the line is
+ * renamed: paths measured on a real disk (they named what was there then),
+ * the user's own folder names, and quoted commit subjects.
+ */
+export const PROTECT = [
+  /`[A-Z]:\\[^`]*`/g,                                         // `E:\AI\.kingdom\...\kingdom.db`, measured
+  /[A-Z]:\\AGIOS Kingdom\\[^`\s]*/g,                           // the user's own vault folder
+  /[A-Z]:\\AI\\\.kingdom\\[A-Za-z ]+/g,                        // a measured session folder, unquoted
+  /(?<=^\|\s*`?[0-9a-f]{7,40}`?\s*\|)\s*[a-z-]+(\([^)]*\))?: [^|]*/g, // | sha | subject: as committed |
+];
+
 /** package-lock.json is only ever touched by these exact rules: integrity hashes and package names stay. */
 export const LOCKFILE = 'package-lock.json';
 export const LOCKFILE_RULES = [
@@ -91,7 +103,7 @@ export const SCOPED = [
 ];
 
 /** Files where `dismiss` is the ordinary UI word (close a notice), not "remove a member". */
-export const DISMISS_IS_ORDINARY = /^(ui\/(feel\.js|pet\.html|notify\.js)|src\/mcp\/approvals\.js|test\/t-pages\.js|electron\/main\.js|roles-library\.json)$/;
+export const DISMISS_IS_ORDINARY = /^(ui\/(pet\.html|notify\.js)|src\/mcp\/approvals\.js|test\/t-pages\.js|electron\/main\.js|roles-library\.json)$/;
 
 /** Exact phrases, before the word list. [regex, replacement]. */
 export const PHRASES = [

@@ -1,6 +1,6 @@
 ---
 name: ship-it
-description: putting work in front of the sovereign or onto a branch
+description: putting work in front of the user or onto a branch
 ---
 # ship-it
 

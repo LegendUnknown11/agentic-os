@@ -55,35 +55,35 @@ Nothing was dropped.
 ## 2. Campaign spend vs clearSpend
 
 The reproducing test came first. In t-efficiency, three campaigns run around a
-real `Kingdom.clearSpend()`. Before the fix, the campaign spanning the clear
+real `AgenticOS.clearSpend()`. Before the fix, the campaign spanning the clear
 read **-3.75** for $0.25 of real spend.
 
 The fix: `bus.lifetimeSpentUsd()` returns `spentUsd + spentUsdCleared`, and
 `bus.clearSpentUsd()` atomically moves the zeroed amount into
 `spentUsdCleared`. `beginCampaign` and `campaigns()` take their snapshots from
 the lifetime figure. I did not use `run_spend` because it records turns only
-while a run is current, and campaigns cover all court spend. No migration is
+while a run is current, and campaigns cover all team spend. No migration is
 needed: the cleared key reads 0 until the first clear, so existing snapshots
 stay consistent. A campaign that already spanned a clear before this landed
-stays wrong, and that history cannot be recovered. `spentUsd`, `maxKingdomUsd`
+stays wrong, and that history cannot be recovered. `spentUsd`, `maxTotalUsd`
 and the usage readouts are unchanged.
 
 ## 3. Test hygiene
 
-Before this change, `<tmp>/.kingdom` held 206 leftovers from 15 prefixes
+Before this change, `<tmp>/.agenticos` held 206 leftovers from 15 prefixes
 across 13 suites. The new `test/cleanup.js` provides `removeRepo(...repos)`,
-which deletes a repo plus exactly its own `kingdomDir(repo)`. It refuses a
+which deletes a repo plus exactly its own `stateDir(repo)`. It refuses a
 null repo (that is the workspace home under the real homedir) and refuses any
-path that is not `<parent>/.kingdom/<repo-name>`. It is used in t-efficiency,
+path that is not `<parent>/.agenticos/<repo-name>`. It is used in t-efficiency,
 t-registry-attach, t-multi-team, t-prompt, t-task-admin, t-opencode,
 t-idle-nudge, t-merge, t-compact, t-argue, t-agy, t-advisor and t-evidence.
-The new suite `t-cleanup` proves three things: a real Kingdom's folder is
+The new suite `t-cleanup` proves three things: a real AgenticOS's folder is
 removed, a sibling repo's folder and the shared parent survive, and null is
 refused.
 
 Found along the way:
 
-- **t-evidence wrote into the real `~/.kingdom/workspace/evidence`.** Its
+- **t-evidence wrote into the real `~/.agenticos/workspace/evidence`.** Its
   no-repo export case did this on every gate run. It now sandboxes
   HOME/USERPROFILE and asserts the export landed in the sandbox. That
   assertion fails without the sandbox.
@@ -93,7 +93,7 @@ Found along the way:
   now best effort with retries, like the other four fake-home suites.
 
 Verification: each patched suite was run alone with a private `TMPDIR`, and
-each left no new entry in its own `.kingdom`. Runs against the shared `/tmp`
+each left no new entry in its own `.agenticos`. Runs against the shared `/tmp`
 were too noisy to use, because sibling worktrees running unpatched suites were
 creating entries at the same time.
 
@@ -120,14 +120,14 @@ creating entries at the same time.
 | final (`5fe0d06`) | 97 | t-electron.js only (no display) |
 
 The two new suites are t-mcp-listing and t-cleanup. During the gates,
-"court self-control" (baseline) and "metrics, diff and vault panels" (once)
+"team self-control" (baseline) and "metrics, diff and vault panels" (once)
 failed in the pool and passed when retried alone. That happened under load
 from sibling gates; neither suite spawns mcp.js.
 
 ## Evidence
 
 - **Held:** source evidence from the full no-quota suite on Linux, plus direct
-  command-line measurements (the unref probe, per-call spawn timings, `.kingdom`
+  command-line measurements (the unref probe, per-call spawn timings, `.agenticos`
   listings under a private TMPDIR).
 - **Not held:** Electron or visual evidence (no display), Windows evidence,
   provider/CLI evidence (no real claude or codex session ran against the
@@ -144,9 +144,9 @@ from sibling gates; neither suite spawns mcp.js.
 - `get_workflow` (`src/mcp/workflows.js`) still returns its own indented JSON
   string. It is consistent with string results staying verbatim, but it is a
   further saving if wanted.
-- Suites still leave other temp folders behind that are not `.kingdom`
-  folders, for example `kingdom-test-registry-*` from standalone runs and
-  t-evidence's run worktree branches. Only `.kingdom/<repo>` was in scope.
+- Suites still leave other temp folders behind that are not `.agenticos`
+  folders, for example `agenticos-test-registry-*` from standalone runs and
+  t-evidence's run worktree branches. Only `.agenticos/<repo>` was in scope.
 - HANDOFF.md's "Test-hygiene trap", its "campaigns() ... noted, not changed"
   line, and the t-vault/t-batching timing notes in `test/run-all.js` comments
   are now stale. I did not edit HANDOFF.md, per the rules.

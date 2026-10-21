@@ -34,8 +34,17 @@ function splitCode(line) {
  * @param f      repo-relative path, which selects file-scoped rules
  * @param opts   { phase0: run PHASE0 too, pathsOnly: PATH_RULES only }
  */
-export function transformLine(f, line, { phase0 = false, pathsOnly = false } = {}) {
+export function transformLine(f, line, opts = {}) {
   if (keepLine(f, line)) return line;
+  // Mask protected spans with placeholders no rule can match, restore after.
+  const kept = [];
+  let masked = line;
+  for (const re of M.PROTECT) masked = masked.replace(re, (m) => `\u0000${kept.push(m) - 1}\u0000`);
+  const out = transformMasked(f, masked, opts);
+  return kept.length ? out.replace(/\u0000(\d+)\u0000/g, (_, i) => kept[Number(i)]) : out;
+}
+
+function transformMasked(f, line, { phase0 = false, pathsOnly = false } = {}) {
   let s = line;
   for (const [re, to] of M.PATH_RULES) s = s.replace(re, to);
   if (pathsOnly) return s;

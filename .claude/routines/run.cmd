@@ -15,8 +15,8 @@ REM package.json it sees, so resolve the repo from this script rather than
 REM trusting whatever was current when the scheduler fired.
 cd /d "%~dp0..\.." || exit /b 1
 
-if not exist ".kingdom\routines" mkdir ".kingdom\routines"
-set "LOG=.kingdom\routines\%~1.log"
+if not exist ".agenticos\routines" mkdir ".agenticos\routines"
+set "LOG=.agenticos\routines\%~1.log"
 >>"%LOG%" echo [%DATE% %TIME%] %~1
 
 if /i "%~1"=="handoff-sweep" goto handoff_sweep

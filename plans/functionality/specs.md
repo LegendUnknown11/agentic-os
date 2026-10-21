@@ -1,7 +1,7 @@
 # Specs — the three canvas features not built on `T3-code`
 
 Written 2026-10-21 on the `functionality` branch (based on `T3-code` at
-`e730bb6`). These are **specs, not implementations**. The sovereign chose
+`e730bb6`). These are **specs, not implementations**. The user chose
 "spec them now" over building them, because each one has product decisions
 that only they can make. Those decisions are listed under **Open questions**,
 and nothing should be built until they are answered.
@@ -21,7 +21,7 @@ wrong guess is easy to spot and correct.
 ### What exists (read)
 
 - `src/daemon.js` already has a phone-approval mode. `--bind <addr>` (or
-  `KINGDOM_BIND`) binds off-loopback. Every launch generates a random 32-byte
+  `AGENTICOS_BIND`) binds off-loopback. Every launch generates a random 32-byte
   bearer token, and it is never written to disk. A connection that did not
   arrive over loopback must present the token (`bearerAuthorized`, compared in
   constant time). With a valid token it can reach only `GET /api/ping`,
@@ -31,13 +31,13 @@ wrong guess is easy to spot and correct.
 - The daemon refuses a non-loopback bind if no token was generated.
 - Missing pieces: the bind is fixed at launch, so it can't be switched while
   running, and nothing in the UI shows the token, the URL or a QR code.
-- Tests: `test/t-csrf.js`, which uses the `KINGDOM_TEST_FORCE_REMOTE` and
-  `KINGDOM_TEST_DISABLE_TOKEN` test seams.
+- Tests: `test/t-csrf.js`, which uses the `AGENTICOS_TEST_FORCE_REMOTE` and
+  `AGENTICOS_TEST_DISABLE_TOKEN` test seams.
 
 ### What the canvas's toggle is assumed to mean
 
 A Remote control switch in the run's session inspector. When it's on, the
-sovereign can follow the run and act on its gates from another device.
+user can follow the run and act on its gates from another device.
 
 ### Proposed design
 
@@ -53,7 +53,7 @@ sovereign can follow the run and act on its gates from another device.
    (`#t=…`, so it never reaches a server log) plus a QR code drawn locally with
    no network call.
 3. **A remote surface that grows one step at a time.** Proposed tiers, which
-   the sovereign picks:
+   the user picks:
    - **Approve** (today's surface): approvals list, approve, reject, answer.
    - **Watch**: adds read-only `GET /api/state`-equivalent run status, the
      run's blocker, spend, and a filtered `/stream` limited to run and approval
@@ -80,14 +80,14 @@ sovereign can follow the run and act on its gates from another device.
 
 ### Security notes
 
-- Nothing is reachable off-machine until the sovereign turns the switch on,
+- Nothing is reachable off-machine until the user turns the switch on,
   and it is always time-bounded.
 - A plain-HTTP token on a LAN can be sniffed. Options: (a) accept that and say
   it in the UI, (b) a self-signed TLS listener with the fingerprint in the QR
   code, (c) leave transport to the user (Tailscale or similar) and bind only to
   that interface. **Proposed: (c) as the default, with (a)'s warning shown.**
 
-### Open questions for the sovereign
+### Open questions for the user
 
 1. Which tier is the ceiling: Approve, Watch or Steer?
 2. Transport: LAN HTTP with a warning, self-signed TLS, or "bring your own
@@ -110,9 +110,9 @@ sovereign can follow the run and act on its gates from another device.
 
 ### What exists (read)
 
-- Each member works in its own git worktree (`src/worktree.js`). Kingdom state
-  lives outside the target repo in a sibling `.kingdom` directory.
-- The Electron court window uses `contextIsolation: true` and
+- Each member works in its own git worktree (`src/worktree.js`). AgenticOS state
+  lives outside the target repo in a sibling `.agenticos` directory.
+- The Electron team window uses `contextIsolation: true` and
   `nodeIntegration: false` with a preload (`electron/main.js`). No `webview`,
   `BrowserView` or `WebContentsView` is used.
 - Nothing starts, tracks or proxies a target app's dev server.
@@ -120,7 +120,7 @@ sovereign can follow the run and act on its gates from another device.
 ### What the canvas's board is assumed to mean
 
 A pane beside the run thread that shows the *target repository's* running app,
-such as its dev server, as it is now inside the run's worktree. The sovereign
+such as its dev server, as it is now inside the run's worktree. The user
 can look at what the agents built without leaving Agentic OS.
 
 ### Proposed design
@@ -128,11 +128,11 @@ can look at what the agents built without leaving Agentic OS.
 1. **A preview is a declared command, not guesswork.** The target repo
    declares how to preview it, in `agenticos.config.json`
    (`preview: {command, cwd?, port?, readyPattern?}`) or a detected
-   `package.json` `dev`/`start` script that the sovereign confirms once. The
+   `package.json` `dev`/`start` script that the user confirms once. The
    daemon never runs an undeclared script.
 2. **One process per run worktree.** The daemon spawns the command in the
    run's worktree with `PORT` set to a free port (reusing
-   `courts.firstFreePort`'s approach). It waits for `readyPattern` or for the
+   `teams.firstFreePort`'s approach). It waits for `readyPattern` or for the
    port to open, keeps a 200-line log ring buffer, and kills the process tree
    when the run closes or the preview is stopped. Windows needs tree-kill and
    `.cmd` shims, which are traps in HANDOFF.md.
@@ -143,7 +143,7 @@ can look at what the agents built without leaving Agentic OS.
    - *Electron:* a `WebContentsView` docked beside the thread, with
      `contextIsolation`, no preload, no Node, `sandbox: true`, and navigation
      locked to the preview origin. The preview's content is untrusted code and
-     must never reach the court preload.
+     must never reach the team preload.
 4. **Agents can see it too (optional).** An MCP tool `preview_status` returns
    `{url, ready, lastLogLines}`, so a verifier can check the app boots. A
    screenshot tool would need Playwright and would be a separate decision.
@@ -154,7 +154,7 @@ can look at what the agents built without leaving Agentic OS.
   `GET /api/preview?runId=` return `{state: 'stopped'|'starting'|'ready'|'failed', url, pid, log}`.
 - Stream events `preview` with `{runId, state}`.
 
-### Open questions for the sovereign
+### Open questions for the user
 
 1. Is "preview" the target app's dev server (assumed), or something else, such
    as rendering changed HTML or Markdown files?
@@ -173,7 +173,7 @@ can look at what the agents built without leaving Agentic OS.
   killed when the run ends, with no orphan process. That's tested on Linux, and
   on Windows CI for tree-kill.
 - Browser: the link opens a working page. Electron: the docked view loads, and
-  it can't navigate away or reach `window.kingdom`.
+  it can't navigate away or reach `window.agenticos`.
 
 ---
 
@@ -181,7 +181,7 @@ can look at what the agents built without leaving Agentic OS.
 
 ### What exists (read)
 
-- Uploads go to `<kingdomDir>/assets`, named so they can't escape it, through
+- Uploads go to `<stateDir>/assets`, named so they can't escape it, through
   `/api/assets` (GET and POST) and are served at `/assets/*`.
 - No board, layout or design-review surface exists. Agents can't attach images
   to a run.
@@ -190,18 +190,18 @@ can look at what the agents built without leaving Agentic OS.
 
 This is the least certain of the three. The best guess is a per-run visual
 board: images, mockups and screenshots, placed freely and annotated, that the
-sovereign and agents share as a design brief and review surface. The canvas
+user and agents share as a design brief and review surface. The canvas
 itself appears to be a board of this kind.
 
 ### Proposed design (minimal and useful)
 
 1. **The board is data.** A `run_boards` table, or one JSON file per run under
-   `<kingdomDir>/boards/<runId>.json`, holds items
+   `<stateDir>/boards/<runId>.json`, holds items
    `{id, kind: 'image'|'note'|'link', assetId?, text?, x, y, w, h, author, createdAt}`.
    Images use the existing asset store, so there's no new upload path.
 2. **Agents can read and write it.** MCP tools `board_read` (items plus
    readable image paths) and `board_add` (note, or image from a worktree file
-   copied into assets). A designer role, if f2's court has one, gets them by
+   copied into assets). A designer role, if f2's team has one, gets them by
    default.
 3. **The UI is a run chip, "Board".** A pannable grid of cards with 44px
    handles, drag-to-place, and keyboard move (arrow keys), following
@@ -228,10 +228,10 @@ itself appears to be a board of this kind.
 ### Open questions (original, now answered above)
 
 1. Is the board a **brief** (inputs for agents), a **review** surface (agent
-   output for the sovereign), or both?
+   output for the user), or both?
 2. Is free placement needed, or is an ordered gallery with captions enough?
    A gallery is far cheaper and fully keyboard-accessible.
-3. Should agents be able to add to it, or only the sovereign?
+3. Should agents be able to add to it, or only the user?
 4. Is this the same thing as a Figma or Claude-design import? If so, the
    board would hold links and thumbnails, not a canvas engine.
 

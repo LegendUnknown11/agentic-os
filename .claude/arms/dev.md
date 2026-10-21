@@ -1,4 +1,4 @@
-# dev — the Kingdom source
+# dev — the AgenticOS source
 
 Parent: [[index]] ([index.md](index.md)). Authority: [HANDOFF.md](../../HANDOFF.md).
 Its key-files table is the map; this file is the dispatch by task.
@@ -16,7 +16,7 @@ Its key-files table is the map; this file is the dispatch by task.
 | Any visual or stylesheet change | [ui/app.css](../../ui/app.css) | run [ui-change](../skills/ui-change/SKILL.md) first |
 | A view's behaviour | [ui/views/](../../ui/views) | `test/t-pages.js`, `test/t-panels.js` |
 | Mode table, crew, vault directory | [src/modes.js](../../src/modes.js) | self-checking; `node src/modes.js` |
-| Ending a court and switching repository | [electron/switch-repo.js](../../electron/switch-repo.js) | `test/t-repo-switch.js` |
+| Ending a team and switching repository | [electron/switch-repo.js](../../electron/switch-repo.js) | `test/t-repo-switch.js` |
 | Rendered layout, as opposed to CSS source text | [test/t-theme-geometry.js](../../test/t-theme-geometry.js) | needs Chromium; skips itself without one |
 
 ## Gate

@@ -1,5 +1,38 @@
 # Agentic OS handoff
 
+## Current state (rename, 2026-10-21)
+
+The `rename` branch is cut from `functionality` at `fe9c67e` and replaces
+every word of the project's original themed vocabulary with a plain one, per
+[docs/RENAME.md](docs/RENAME.md) (its 2026-10-21 revision). It is **not
+merged**, and no PR has been opened. The thread report,
+[plans/functionality/rename.md](plans/functionality/rename.md), owns the
+detail: the map as applied, the words the map did not cover and what each
+became, the file renames, the migration design, the re-pins, the final grep
+and its allowlist, and the evidence held and not held.
+
+- The product's code name is AgenticOS: `src/agenticos.js` (class
+  `AgenticOS`), `<parent>/.agenticos/<repo>/agenticos.db`,
+  `agenticos.config.json`, `AGENTICOS_*` env vars, branches
+  `agenticos/<name>`, commits `agenticos:`. On screen it stays Agentic OS.
+- In code and UI: team (not the old word for it), user (UI copy says you),
+  agent for a worker (the CLI-process class is `AgentProcess`, its map
+  `this.processes`), system for the app's own sender, add/remove for crew
+  changes (MCP tools `add_agent`, `remove_agent`, `wake_agent`,
+  `pause_team`, `resume_team`), dashboard for the main window.
+- **Migrate once, never orphan** (`src/legacy.js`, `test/t-legacy-migrate.js`):
+  old state folders, db, config, registry, token store, Electron userData,
+  env vars, stored sender names, approval payloads and worktree links carry
+  over on first launch. When an old and a new copy both exist the new one
+  wins and the old one is kept. Existing old-prefix branches keep working.
+- `scripts/rename/rename.mjs` is the re-runnable codemod; its map is
+  `scripts/rename/map.mjs`.
+
+**Gate: 102 suites** (101 plus `t-legacy-migrate.js`), every one passing
+except `t-electron.js` (no display). **Not held:** Electron, Windows, a
+real user's pre-rename state on disk, a real agy or Cursor MCP config, the
+user's acceptance.
+
 ## Current state (functionality, 2026-10-21)
 
 The `functionality` branch is cut from `T3-code` at `e730bb6`, so it carries
@@ -10,8 +43,8 @@ decisions and deviations it made, and the evidence it holds and lacks.
 
 | Thread | Branch | Report | In short |
 |---|---|---|---|
-| f1 performance | `f1-performance` | [f1-performance.md](plans/functionality/f1-performance.md) | Codex MCP listing and compact-JSON commits brought in. `campaigns()` survives `clearSpend()` (`spentUsdCleared`). `test/cleanup.js` stops the `<tmp>/.kingdom` leak. The vault watcher is released on stdin close, which fixed an MCP-process leak on Linux and took the vault suite from about 36s to 7s. |
-| f2 design | `f2-design` | [f2-design.md](plans/functionality/f2-design.md) | The court goes from 107 to 18 tiered roles (`src/roster.js`). The 90 retired roles are in `roles-library.json`. Existing courts migrate on launch (`Kingdom#migrateRoster`, `test/t-roster-migrate.js`), and members with work in flight are kept until idle. The orchestrator prompt drops by about 3.4KB. |
+| f1 performance | `f1-performance` | [f1-performance.md](plans/functionality/f1-performance.md) | Codex MCP listing and compact-JSON commits brought in. `campaigns()` survives `clearSpend()` (`spentUsdCleared`). `test/cleanup.js` stops the `<tmp>/.agenticos` leak. The vault watcher is released on stdin close, which fixed an MCP-process leak on Linux and took the vault suite from about 36s to 7s. |
+| f2 design | `f2-design` | [f2-design.md](plans/functionality/f2-design.md) | The team goes from 107 to 18 tiered roles (`src/roster.js`). The 90 retired roles are in `roles-library.json`. Existing teams migrate on launch (`AgenticOS#migrateRoster`, `test/t-roster-migrate.js`), and members with work in flight are kept until idle. The orchestrator prompt drops by about 3.4KB. |
 | f3 session | `f3-session` | [f3-session.md](plans/functionality/f3-session.md) | Context-window meter (`contextWindows` in config, claude models only). Compact session (`POST /api/compactSession`, through `recycleAgent`). `runs.lead` (`schema:runs:lead:v1`). A `spend_ledger` table and `spendByDay`. The T3 inspector and Overview show all of them. |
 | f4 CLI | `f4-cli` | [f4-cli.md](plans/functionality/f4-cli.md) | `codex/cli-integrations` integrated with 19 review defects fixed. Cursor added. Freebuff dropped (it was a stub). Doctor no longer spends quota on a live model call. |
 
@@ -19,8 +52,9 @@ Specs that are not built yet are in
 [plans/functionality/specs.md](plans/functionality/specs.md): Remote
 control, Browser preview and Design canvas. The Design canvas decisions are
 recorded there; the other two still have open questions. The full rename
-away from Kingdom-era words is decided in [docs/RENAME.md](docs/RENAME.md)
-(its 2026-10-21 revision wins) and is the next step, on a `rename` branch.
+away from the project's original themed vocabulary, decided in
+[docs/RENAME.md](docs/RENAME.md), is done on the `rename` branch (see the
+section above).
 
 **Gate after the last merge (`56b64be`): 101 suites, 4-wide, 41.7s.** Every
 suite passed except `t-electron.js`, which cannot open a window in this
@@ -29,7 +63,7 @@ went in with `--no-verify` for that reason alone, and its message says so.
 The container runs Node 22.22.0, but `package.json` asks for `>=24`.
 
 **Not held:** Electron or Windows CI on this branch. Any real Cursor,
-opencode or agy CLI. A real court run on the 18-role roster. A migration of
+opencode or agy CLI. A real team run on the 18-role roster. A migration of
 a real user's config. Context-window figures for non-claude models; f2 put
 every specialist on codex, so their meters read "window unknown". The user's
 own acceptance.
@@ -37,7 +71,7 @@ own acceptance.
 ## Current state (T3-code, 2026-10-21)
 
 The `T3-code` branch (nine commits on `main` at `62561d3`, the last being these docs) carries the redesign
-the sovereign asked for from the Claude design canvas "Agentic OS - T3 Code
+the user asked for from the Claude design canvas "Agentic OS - T3 Code
 style". It is **not merged**; no PR has been opened. [PLAN.md](PLAN.md)'s "T3
 Code redesign" section is the contract, the decisions made without asking, the
 commit table and the evidence. In short:
@@ -55,9 +89,9 @@ commit table and the evidence. In short:
   Compact session were later built on `functionality` by f3. The other three
   are specced in `plans/functionality/specs.md`.)*
 - **Held:** 95 suites in the Linux container, all passing but `t-electron.js`
-  (no display); a seeded-court audit of every route at three viewports in real
+  (no display); a seeded-team audit of every route at three viewports in real
   Chromium. **Not held:** Electron and Windows (push the branch and read the
-  `windows-latest` job), and the sovereign's acceptance of the look.
+  `windows-latest` job), and the user's acceptance of the look.
 
 Where this file below still says paper, glass or More tools, it describes what
 `main` was; those paragraphs are history, marked where they are false.
@@ -98,7 +132,7 @@ Electron shell. The Habitable pilot has not begun.
 The approved next body of work is a full interface rebuild. [PLAN.md](PLAN.md)
 holds its contract and acceptance criteria.
 
-**Its design system source reversed on 2026-09-21.** The sovereign supplied
+**Its design system source reversed on 2026-09-21.** The user supplied
 `Prototype.zip` — the Cold-Call Workflow kit that PLAN.md section 1 had retired
 on 2026-09-17 — and asked for the app redesigned on it outright. That was the
 system the app ran until 2026-10-21 (paper, not a dark shell); the `T3-code`
@@ -159,13 +193,13 @@ flat, unchanged. `test/t-theme.js` intentionally replaces a 2026-09-21 guard
 that pinned `backdrop-filter` absent from the whole stylesheet; that guard
 predates this direction and is superseded by it, not weakened.
 
-**That first pass audited an empty demo court, and it hid real defects.**
+**That first pass audited an empty demo team, and it hid real defects.**
 Corrected the same session, in a second round recorded in PLAN.md's "UI
-revamp round 2": seeded the demo court with a real objective, a run that
+revamp round 2": seeded the demo team with a real objective, a run that
 travelled through `blocked` with recovery history plus a second completed
 run in history, tasks in every state, three approvals, twelve conversations,
 a thread with a real code block and a deliberately long URL, and a real
-three-file diff from a summoned peasant's worktree
+three-file diff from an added agent's worktree
 (`/home/user/wt-ui-shots/seed.mjs`), then re-audited at 1440x900, 1280x720,
 and 720x900. Found and fixed five more defects invisible against an empty
 state: the rail's footer and conversation list clipped under real height
@@ -191,32 +225,32 @@ card; `align-items: start` was already correct).
 ## Current state (functional-revamp, 2026-09-23)
 
 Two pieces of the 2026-09-23 "functional revamp" landed on `main` from
-`functional-revamp`: multiple courts at once (closes GitHub issue #42) and Habitable pilot
+`functional-revamp`: multiple teams at once (closes GitHub issue #42) and Habitable pilot
 readiness (tooling detection plus an evidence gate, source-side only). Full
 contract and acceptance evidence: `PLAN.md`'s "Functional revamp" section.
 
-**Multiple courts reverses the 2026-09-22 decision below** ("Running several
-courts... the sovereign declined it for this round") — the sovereign asked for
+**Multiple teams reverses the 2026-09-22 decision below** ("Running several
+teams... the user declined it for this round") — the user asked for
 it explicitly the next day. One daemon process per repository, each on its own
-port, tracked in `~/.kingdom/courts.json` (`src/teams.js`); a daemon refuses a
-second live court for the same repo and names the port it is on; a busy pinned
+port, tracked in `~/.agenticos/teams.json` (`src/teams.js`); a daemon refuses a
+second live team for the same repo and names the port it is on; a busy pinned
 port is a clean, visible error; an unpinned port is picked automatically from
 7777 up. Electron gets `app.requestSingleInstanceLock()` and per-port windows
 (`electron/teams-launch.js`, `electron/main.js`); Settings' Repository panel
 gets a switcher (`ui/views/teams.js`) that opens or starts another repo's
-court without ending the current one, and no longer waits for attachRepo to
-fail before offering "End court and switch…" (issue #42's fail-first
+team without ending the current one, and no longer waits for attachRepo to
+fail before offering "End team and switch…" (issue #42's fail-first
 complaint). **Electron itself and Windows were not exercised** — this
 environment cannot launch Electron; that acceptance work is still owed.
 
 **Review fix, same day: a LIVE attach bypassed the registry.**
-`registerCourt` only ran once, at daemon boot, with whatever repo was known
+`registerTeam` only ran once, at daemon boot, with whatever repo was known
 then — a repo-less daemon that later got `POST /api/attachRepo` (or the
 saved-repo re-attach at boot) never updated or conflict-checked the registry.
 That let two daemons end up serving the SAME repository with no refusal, and
 left a stale `repo: null` row the switcher could never match. Fixed: the
 attach handler now claims the repo under the registry's lock BEFORE
-`kingdom.attachRepo` does any work, refuses naming the other court's port on
+`agenticos.attachRepo` does any work, refuses naming the other team's port on
 conflict, and rolls back the claim if the attach itself then fails.
 `test/t-registry-attach.js` (two real daemons) covers it, confirmed to fail
 without the fix.
@@ -225,10 +259,10 @@ without the fix.
 Suites that spawn a real daemon (`t-assets`, `t-control`, `t-csrf`,
 `t-daemon-boot`, `t-daemon-conversations`, `t-doctor-api`, `t-multi-team`,
 `t-panels`, `t-uploads`, `t-registry-attach`) were registering into the REAL
-`~/.kingdom/courts.json` on whatever machine ran `npm test` — on the
-sovereign's machine, running the gate while the app is open would have
+`~/.agenticos/teams.json` on whatever machine ran `npm test` — on the
+user's machine, running the gate while the app is open would have
 mutated their live registry. Fixed at the runner: `test/run-all.js` now
-spawns every suite with its own isolated `KINGDOM_COURTS_REGISTRY` (one
+spawns every suite with its own isolated `AGENTICOS_TEAMS_REGISTRY` (one
 per-suite temp file, so concurrent suites never share or race over one), and
 `test/isolate-registry.js` gives the same isolation to a suite run standalone
 (`node test/t-x.js`). `test/t-registry-isolation.js` is the guard, proving a
@@ -259,7 +293,7 @@ each with a test that failed first:
 - A completed or cancelled run came back to life on the next worker error:
   `#activeRun` fell back to a stale mirrored `run` bus key. Runs now live in the
   run table only (`t-control.js`).
-- Pausing the court moved a `planning` run to `paused` and resume moved it to
+- Pausing the team moved a `planning` run to `paused` and resume moved it to
   `running`, skipping plan approval; only `running ⇄ paused` moves now.
 - `applyRun`'s source-drift refusal never blocked the run, because `#runBlock`
   ignored `ready_for_review`.
@@ -272,7 +306,7 @@ each with a test that failed first:
 - `read_diff` was never masked: `MASKABLE` named three tools that do not exist
   (`t-efficiency.js`).
 - `electron/main.js` listened for `browser-window-closed`, which Electron does
-  not emit, so the app could outlive its last court window as a lone pet.
+  not emit, so the app could outlive its last team window as a lone pet.
   Guarded statically in `t-teams-launch.js`. **Not exercised in Electron.**
 - The overview showed "Recovery underway" for any run that had ever retried,
   completed ones included (`node ui/run.js`).
@@ -285,9 +319,9 @@ run lifecycle. The pet-only quit path has not been run in a live window.
 
 Follow-up on the same branch, 2026-09-25:
 - Issue #47: text people read now says workspace (a running instance per
-  repository), team (the agents), you (the sovereign) and Agentic OS. The
-  installer is "Agentic OS Setup". Code identifiers, config keys, `.kingdom/`,
-  `KINGDOM_*`, `appId` and agent prompts are unchanged. The packaged app's
+  repository), team (the agents), you (the user) and Agentic OS. The
+  installer is "Agentic OS Setup". Code identifiers, config keys, `.agenticos/`,
+  `AGENTICOS_*`, `appId` and agent prompts are unchanged. The packaged app's
   userData folder follows `productName`, so an existing install starts with a
   fresh `daemon.log` and pet position.
 - CI: `actions/checkout` and `setup-node` are now v5, and `runTests` no longer
@@ -334,34 +368,34 @@ section.
   the way: a run-scope `budget` event read "undefined hit its ceiling".
 
 Evidence: see the Evidence section below for the count. The Run spend section
-was checked in real Chromium at 1440x900 and 720x900 against a seeded court.
+was checked in real Chromium at 1440x900 and 720x900 against a seeded team.
 That check found three layout defects, all fixed before commit. No desktop
 notification was observed on a real OS, and none of this was run in Electron
 or on Windows.
 
 ## Current state (feature-implementation, round 2, 2026-09-25)
 
-Six more commits on the same branch and PR (#82), asked for by the sovereign
+Six more commits on the same branch and PR (#82), asked for by the user
 after an interview: built-in assistant features, run templates, and the
 Electron sections. Contract and evidence: `PLAN.md`'s "Assistant features"
 section.
 
-- **Tasks view** (`ui/views/tasks.js`). *Team queue:* the sovereign creates,
+- **Tasks view** (`ui/views/tasks.js`). *Team queue:* the user creates,
   assigns, reprioritises, drops and reopens the team's tasks
-  (`Kingdom.manageTask`, `POST /api/task`). Every change is messaged to the
+  (`AgenticOS.manageTask`, `POST /api/task`). Every change is messaged to the
   member it affects. Tasks gained a `priority` column, and free tasks are
   offered highest priority first. `dropped` is a closed state beside `done`
   (`TASK_CLOSED` in `src/bus.js`): it releases the tasks that waited on it,
   lists under CLOSED in the `tasks` tool, and is not open in any count. A task
   whose dependencies are unfinished cannot be assigned, the same refusal as
-  `claim_task`. *My tasks:* the sovereign's own list
+  `claim_task`. *My tasks:* the user's own list
   (`my_tasks` table, `/api/myTasks`, `POST /api/myTask`), with due, done and
   snooze. It is kept out of the team queue. The orchestrator gained
   `my_tasks` and `add_my_task`: 49 tools, up from 47. This was a deliberate
   re-pin, and the payload stayed under the unchanged byte ceilings.
 - **Inbox** (`src/inbox.js`, `ui/views/inbox.js`, `/api/inbox`). One ranked
-  list of what is waiting on the sovereign inside the app. The rail shows a
-  count. It holds no email: the sovereign chose "in-app only".
+  list of what is waiting on the user inside the app. The rail shows a
+  count. It holds no email: the user chose "in-app only".
 - **Automation templates** (`src/workflow-templates.js`, a Templates shelf in
   Automations, which is visible in Cowork mode only, like the rest of
   Automations). Morning inbox brief, daily team digest and a weekly
@@ -379,14 +413,14 @@ section.
     (`ui/main.js`).
 
 **Test-hygiene trap, found this round.** `t-electron.js` used to delete
-`join(repo, '..', '.kingdom')`. Its repo is in the temp dir, so that was the
-`.kingdom` shared by every temp workspace, and it wiped other suites' state
-and a demo court twice. It now deletes only its own `kingdomDir(repo)`. That
+`join(repo, '..', '.agenticos')`. Its repo is in the temp dir, so that was the
+`.agenticos` shared by every temp workspace, and it wiped other suites' state
+and a demo team twice. It now deletes only its own `stateDir(repo)`. That
 wide delete had been hiding a second problem: other suites leave their own
-`<tmp>/.kingdom/<name>` folders behind, and those now accumulate in the temp
+`<tmp>/.agenticos/<name>` folders behind, and those now accumulate in the temp
 dir. They are harmless, but they are not cleaned up. That is a follow-up, not
 fixed here. *(Fixed on `functionality` by f1 with `test/cleanup.js`. Temp
-folders outside `.kingdom` are still left behind.)*
+folders outside `.agenticos` are still left behind.)*
 
 ## Evidence
 
@@ -447,9 +481,9 @@ see the two "Review fix" paragraphs). The runner's array grew by eight over
 `t-pilot-doctor.js`, `t-pilot-evidence.js` (Habitable pilot readiness),
 `t-registry-attach.js` (the live-attach fix), `t-registry-isolation.js` (the
 test-gate isolation fix), plus new cases inside `t-pages.js` and
-`t-evidence.js`. `court registry` and, separately, `a live attach claims the
+`t-evidence.js`. `team registry` and, separately, `a live attach claims the
 registry` were each flagged flaky-in-pool-passed-alone on one run apiece —
-the same pre-existing pool-contention class `src/teams.js`'s `pingCourt`
+the same pre-existing pool-contention class `src/teams.js`'s `pingTeam`
 timeout comment documents, not a regression (both suites passed cleanly, alone
 and in the pool, on other runs the same session). This is source and
 real-subprocess HTTP-level evidence only — Electron and Windows are
@@ -463,7 +497,7 @@ spread is machine load under 4-wide contention, not
 regression — `test/run-all.js` documents the same effect and measures it. Do
 not treat a slower run as a failure on its own.
 
-`court self-control` failed inside the pool and passed when retried alone on
+`team self-control` failed inside the pool and passed when retried alone on
 the 2026-09-21 run. The runner reports that as `flaky`, and it is the one suite
 known to do this. Treat a bare pool failure there as unproven until the retry
 result is read.
@@ -484,15 +518,15 @@ device, signing, provider, or human-acceptance evidence.
 ## What the application does
 
 Agentic OS is a local multi-agent coding orchestrator. An Electron shell hosts a
-vanilla JavaScript UI; a Node daemon owns the court, HTTP/SSE transport, and
+vanilla JavaScript UI; a Node daemon owns the team, HTTP/SSE transport, and
 SQLite state; members work in Git worktrees and communicate directly through
-MCP. State lives outside a target repository in its `.kingdom` directory.
+MCP. State lives outside a target repository in its `.agenticos` directory.
 
 ```mermaid
 flowchart TD
-  U[Sovereign] --> UI[Electron and vanilla UI]
+  U[User] --> UI[Electron and vanilla UI]
   UI <-->|HTTP and SSE| D[Node daemon]
-  D --> K[Kingdom controller]
+  D --> K[AgenticOS controller]
   K --> B[(SQLite bus)]
   K --> W[Isolated worker worktrees]
   W --> M[Members communicate through MCP]
@@ -550,16 +584,18 @@ stateDiagram-v2
 |---|---|
 | [src/bus.js](src/bus.js) | SQLite schema, migrations, run lifecycle, task and approval associations. |
 | [src/agenticos.js](src/agenticos.js) | Worker lifecycle, recovery, verification, run worktrees, and guarded application. |
+| [src/legacy.js](src/legacy.js) | The one-time move from the pre-rename names: state folders, db, config keys and text, registry, env vars, stored senders, worktree links. The only module that names the old words; `test/t-legacy-migrate.js`. |
+| [scripts/rename/rename.mjs](scripts/rename/rename.mjs) | The rename codemod (`map.mjs` is its word map, `transform.mjs` its pure core). Re-runnable; a second run changes nothing. |
 | [src/worktree.js](src/worktree.js) | Worktree creation, revision-bound tests, conflict-safe integration, and run-branch application. |
 | [src/daemon.js](src/daemon.js) | HTTP actions, run reads, snapshots, SSE run events, and bearer-token auth for a non-loopback bind. |
 | [src/snapshot.js](src/snapshot.js) | Target-repo snapshot/restore before a worker touches it (Habitable pilot step one). Read-only against the repo it snapshots. |
 | [src/evidence.js](src/evidence.js) | Exports one self-contained folder per completed run: objective, diff, tests, reviews, cost, timeline, and an optional pilot section. |
-| [src/teams.js](src/teams.js) | Multiple courts at once (issue #42): the `~/.kingdom/courts.json` registry — register/list/prune, port picking, lockfile + atomic write. Pure core is self-checking (`node src/teams.js`). |
-| [electron/teams-launch.js](electron/teams-launch.js) | The pure decision behind a relaunch or `app.requestSingleInstanceLock`'s second-instance event: focus a live court or start a fresh one. Self-checking (`node electron/teams-launch.js`); see `test/t-teams-launch.js`. |
-| [ui/views/teams.js](ui/views/teams.js) | The court switcher panel in Settings' Repository tab. Degrades to a plain note outside Electron (`window.kingdomShell` absent). |
+| [src/teams.js](src/teams.js) | Multiple teams at once (issue #42): the `~/.agenticos/teams.json` registry — register/list/prune, port picking, lockfile + atomic write. Pure core is self-checking (`node src/teams.js`). |
+| [electron/teams-launch.js](electron/teams-launch.js) | The pure decision behind a relaunch or `app.requestSingleInstanceLock`'s second-instance event: focus a live team or start a fresh one. Self-checking (`node electron/teams-launch.js`); see `test/t-teams-launch.js`. |
+| [ui/views/teams.js](ui/views/teams.js) | The team switcher panel in Settings' Repository tab. Degrades to a plain note outside Electron (`window.agenticosShell` absent). |
 | [src/pilot-doctor.js](src/pilot-doctor.js) | Habitable pilot step two: doctor-style flutter/dart/adb/SDK/emulator detection. `node src/pilot-doctor.js` for a real report; every dependency is injectable for `test/t-pilot-doctor.js`. |
 | [src/pilot-evidence.js](src/pilot-evidence.js) | Habitable pilot steps two and four: the evidence gate — `flutter analyze`, `flutter test --coverage`, a debug APK build, blocked cleanly on missing tooling. Fakes-only in tests; never points at the real Habitable checkout. |
-| [test/isolate-registry.js](test/isolate-registry.js) | Shared test helper: gives a daemon-spawning suite an isolated `KINGDOM_COURTS_REGISTRY` when nothing upstream (`test/run-all.js`) already set one — never touches the real `~/.kingdom/courts.json`. |
+| [test/isolate-registry.js](test/isolate-registry.js) | Shared test helper: gives a daemon-spawning suite an isolated `AGENTICOS_TEAMS_REGISTRY` when nothing upstream (`test/run-all.js`) already set one — never touches the real `~/.agenticos/teams.json`. |
 | [src/modes.js](src/modes.js) | The mode table: crew, worktrees, merge, tasks, vault directory. Pure and self-checking. |
 | [src/mcp/tasks.js](src/mcp/tasks.js) | Run-owned task submission and controller-owned closure. |
 | [src/mcp/approvals.js](src/mcp/approvals.js), [src/mcp/comms.js](src/mcp/comms.js) | Run association for approvals and direct messages. |
@@ -582,7 +618,7 @@ stateDiagram-v2
 | [test/t-electron.js](test/t-electron.js) | Launches the real Electron binary with `playwright-core` and reads what Chromium painted. Sections: the shell, the run lifecycle, a blocked run's recovery, the collapsed rail, the 720px drawer by keyboard, and reduced motion. |
 | [src/inbox.js](src/inbox.js) | Pure: the ranked in-app inbox, its text brief, and the team digest. Shared by `/api/inbox` and the `digest` workflow node. |
 | [src/workflow-templates.js](src/workflow-templates.js) | The built-in automations the Automations Templates shelf installs as ordinary, editable workflows. |
-| [ui/views/tasks.js](ui/views/tasks.js) | The Tasks view: the sovereign's own list and the team queue's controls. |
+| [ui/views/tasks.js](ui/views/tasks.js) | The Tasks view: the user's own list and the team queue's controls. |
 | [test/run-all.js](test/run-all.js) | A hardcoded suite array, not glob discovery. A new suite must be added by hand. |
 
 ## Commands and evidence
@@ -614,7 +650,7 @@ spend real subscription quota.
 3. Degrade visibly. A failed spawn, test, merge, tool, or provider must close
    the turn with preserved work and a concrete next action.
 4. Preserve dirty source checkouts. A run applies only its delta after the
-   sovereign gives final approval and the captured baseline still matches.
+   user gives final approval and the captured baseline still matches.
 5. Keep direct MCP member-to-member messaging, role/mode filtering, the
    framework-free renderer, and one shared stream/poll lifecycle.
 6. Edit each selector at its declaration in `ui/app.css`; do not append override
@@ -698,7 +734,7 @@ current proof; refresh them before the snapshot.
 
 - **T3-code (2026-10-21).** Push the branch and read the `windows-latest` job: the
   Electron suite has never run against it, and it touches the rail, header and
-  Overview that `t-electron.js` drives. Then the sovereign's own look at the
+  Overview that `t-electron.js` drives. Then the user's own look at the
   result. The two Electron checks most likely to move are the collapsed rail
   (it needs at least four nav buttons at 44px; there are exactly four) and the
   run lifecycle's `onScreen` text checks, which now also see the Runs table.
@@ -726,8 +762,8 @@ current proof; refresh them before the snapshot.
   resolved without moving either: the rail's own 16px inset drops to 8px when
   collapsed, which was the only axis with slack. Buttons now measure 47x44 and
   the rail is still 64px. Both numbers are pinned in `test/t-theme.js`.
-- Watch the two fixes in `6bec8c8` in a live court. Both are proven by source
-  tests only: that the crown's replies now reach an orchestrator whose name is
+- Watch the two fixes in `6bec8c8` in a live team. Both are proven by source
+  tests only: that the system's replies now reach an orchestrator whose name is
   "orchestrator", and that releasing a departed member's work names the
   verification it discarded instead of silently collapsing it.
 - Run the Habitable pilot preparation above. Its backlog needs approval before
@@ -735,12 +771,12 @@ current proof; refresh them before the snapshot.
   separate from the pilot unless explicitly added.
 - Validate live subscription-model pool behavior without paid API fallback when
   a real approved run is started.
-- Multiple courts at once (issue #42, `functional-revamp`, 2026-09-23) needs
+- Multiple teams at once (issue #42, `functional-revamp`, 2026-09-23) needs
   Electron and Windows acceptance: the single-instance lock, per-port windows,
   the native "End this workspace?" confirmations, and media-permission scoping per
-  court window were never run — this environment cannot launch Electron. A
+  team window were never run — this environment cannot launch Electron. A
   developer machine must exercise: two repositories open at once, a relaunch
-  focusing the right court instead of starting a stray daemon, and the
+  focusing the right team instead of starting a stray daemon, and the
   switcher's open/end actions in a real window.
 - The Habitable pilot's tooling doctor and evidence gate (steps two and four,
   `functional-revamp`, 2026-09-23) are built and tested with fakes only. They

@@ -31,7 +31,7 @@ There is one new suite, `test/t-session.js`, and it is registered in `test/run-a
   the table does not list gets `window: null`, and the meter says "window unknown". Existing
   workspaces copied the template before this key existed, so they have no table and every window
   is `null` until it is added.
-- `Kingdom#contextOf(name)` / `#contextAll()` →
+- `AgenticOS#contextOf(name)` / `#contextAll()` →
   `{ name, role, model, tokens, window, pct, recycleAt, awake, busy, conversationId }`.
   The orchestrator comes first. `tokens` is the live agent's `ctxTokens()` when the member is awake, otherwise the
   `ctx:<name>:<conv>` key, which is the same figure the recycle threshold reads.
@@ -39,7 +39,7 @@ There is one new suite, `test/t-session.js`, and it is registered in `test/run-a
 - Stream `snapshot` → new `context: [...]`. Each `spend` event → new `window`.
 
 **Compact session**
-- `Kingdom#compactSession(name)` calls the existing `recycleAgent`: it captures a handover note,
+- `AgenticOS#compactSession(name)` calls the existing `recycleAgent`: it captures a handover note,
   retires the session and reseeds a successor. It is the same path that `recycleAtTokens` fires; there is no second path.
 - `POST /api/compactSession {name}` → `200 {ok, name, by, before, after, window, conversationId}`.
   It refuses with `409 {ok:false, error, reason}`, where `reason` is one of:
@@ -56,7 +56,7 @@ There is one new suite, `test/t-session.js`, and it is registered in `test/run-a
 - Run rows (`/api/run`, `/api/runs`, the `run` event) → new `lead` (string or null).
 - `GET /api/runSpend` `runs[]` → new `lead` and `agents` (the members that spent on the run, highest
   spend first, from the new `Bus#runAgents()` over `run_spend`).
-- `Kingdom#createRun` records the orchestrator as lead, or another member of the court if
+- `AgenticOS#createRun` records the orchestrator as lead, or another member of the team if
   the caller names one. The HTTP body cannot set it.
 
 **Spend by day**
@@ -118,11 +118,11 @@ There is one new suite, `test/t-session.js`, and it is registered in `test/run-a
 
 **Not held**
 - **Electron and Windows:** `t-electron.js` cannot launch here.
-- **A real member's compaction:** a real member is a live claude or codex session writing a real handover. The Kingdom-level tests use
+- **A real member's compaction:** a real member is a live claude or codex session writing a real handover. The AgenticOS-level tests use
   stand-in agents, and the browser run's "handover" came from a node stand-in.
 - **Context window figures:** the `contextWindows` numbers are API maxima. A subscription CLI session may run with a smaller
   effective window, and nothing here measures that.
-- **The sovereign's acceptance** of how the meter, button, Agent column and "Spend today" look.
+- **The user's acceptance** of how the meter, button, Agent column and "Spend today" look.
 
 ## Open items
 

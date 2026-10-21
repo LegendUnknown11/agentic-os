@@ -20,7 +20,7 @@ written nowhere else.
 
 ## Which system this is
 
-The T3 Code canvas ("Agentic OS - T3 Code style"), adopted at the sovereign's
+The T3 Code canvas ("Agentic OS - T3 Code style"), adopted at the user's
 direction on 2026-10-21. It **reverses** the Cold-Call Workflow paper theme of
 2026-09-21, which had itself reversed Hiveory on 2026-09-17. PLAN.md section 1
 keeps the two earlier specs and its last section is the contract for this one.
