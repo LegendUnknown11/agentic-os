@@ -87,6 +87,10 @@ function activeConversation(state, options) {
     ?? c?.active ?? c?.activeId ?? 'default';
 }
 
+// Approvals render as cards and notices as banners; as /api/log does, they are
+// machinery, not narrative, and never appear as raw JSON in the transcript.
+const MACHINERY = new Set(['approval', 'notice', 'milestone']);
+
 function rawEntries(state, name, conversationId) {
   const sources = [];
   const log = state?.log;
@@ -96,7 +100,9 @@ function rawEntries(state, name, conversationId) {
   if (transcript instanceof Map) sources.push(transcript.get(name));
   else if (transcript && typeof transcript === 'object') sources.push(transcript[name]);
   if (name && Array.isArray(state?.events)) sources.push(state.events.filter((e) => e.agent === name));
-  if (name && Array.isArray(state?.messages)) sources.push(state.messages.filter((m) => m.recipient === name || m.sender === name));
+  if (name && Array.isArray(state?.messages)) {
+    sources.push(state.messages.filter((m) => (m.recipient === name || m.sender === name) && !MACHINERY.has(m.kind)));
+  }
   const rows = sources.flatMap((source) => Array.isArray(source) ? source : []);
   return rows.filter((row) => {
     const id = row.conversationId ?? row.conversation_id ?? row.payload?.conversationId ?? row.payload?.conversation_id;
@@ -128,6 +134,8 @@ function entriesFor(state, name, conversationId) {
   rows.sort((a, b) => Number(a.ts || 0) - Number(b.ts || 0));
   const seen = new Set();
   return rows.filter((row) => {
+    // Bookkeeping events (added, run_created, tool) carry no text to show.
+    if (!row.text.trim() && !row.attachments?.length && !row.failed) return false;
     // Event and message tables have independent primary keys; a bare id can
     // make an event with id 1 erase a message with id 1 from the transcript.
     const key = row.id != null ? `${row.kind}:${row.id}` : `${row.ts}|${row.kind}|${row.text}`;

@@ -110,6 +110,20 @@ state.log.set('orchestrator', [{ id: 1, kind: 'text', payload: { text: 'event wi
 state.messages = [{ id: 1, sender: 'user', recipient: 'orchestrator', body: 'message with id one', conversation_id: 'a', ts: 2 }];
 a.deepEqual(entriesFor(state, 'orchestrator', 'a').map((entry) => entry.text), ['event with id one', 'message with id one'],
   'event and message tables must not collide when their independent IDs match');
+{
+  // Approvals stream as messages whose body is JSON; bookkeeping events carry
+  // no text. Neither may reach the transcript as a bubble.
+  const withMachinery = {
+    ...state,
+    log: new Map([['orchestrator', [{ id: 2, kind: 'added', payload: { names: ['coder'] }, conversation_id: 'a', ts: 3 }]]]),
+    messages: [
+      { id: 2, sender: 'orchestrator', recipient: null, kind: 'approval', body: '{"kind":"add","names":["coder"]}', conversation_id: 'a', ts: 4 },
+      { id: 3, sender: 'orchestrator', recipient: 'user', kind: 'message', body: 'narrative', conversation_id: 'a', ts: 5 },
+    ],
+  };
+  a.deepEqual(entriesFor(withMachinery, 'orchestrator', 'a').map((entry) => entry.text), ['narrative'],
+    'approval JSON and empty bookkeeping events must stay out of the transcript');
+}
 
 const root = new FakeElement('main');
 const composer = new FakeElement('div');
