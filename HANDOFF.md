@@ -1,5 +1,33 @@
 # Agentic OS handoff
 
+## Current state (remote-control, 2026-10-21)
+
+The `remote-control` branch is cut from `main` at `ce2937d`. It builds §1 of
+[plans/functionality/specs.md](plans/functionality/specs.md), whose "Decided"
+and "API (as built)" sections own the detail. It is **not merged**, and no PR
+has been opened.
+
+- Settings → Remote control starts a second listener (`src/remote.js`) on
+  the machine's Tailscale address, so a phone can reach it from anywhere on
+  the user's tailnet. Each "on" mints an in-memory token, handed out once as
+  a link (`/remote#t=…`) and a QR code (`ui/qr.js`, vendored, no dependency).
+  Off, a new link, or a daemon exit kills the token. There's no idle timeout,
+  by the user's decision.
+- A token reaches Steer only: approvals and answers, run pause and resume,
+  run status, and the user↔orchestrator thread with messages to it. The
+  phone page `ui/remote.html` and `ui/remote.js` polls
+  `GET /api/remote/state` and never opens `/stream`. The older `--bind`
+  phone-approval path is unchanged.
+- **Held:** `test/t-remote.js` (pure gate and QR golden checks, plus a real
+  daemon: allowed and refused routes, re-mint, close). Real headless
+  Chromium: the Settings QR as rendered decodes back to the link (jsQR, run
+  from the scratchpad, not a repo dependency), the phone page at 390px has no
+  overflow and no button under 44px, it wipes the token from the address bar,
+  sends a message, and reports a replaced or closed link.
+  **Not held:** a real phone over a real tailnet, Electron, Windows, an
+  approval card on the phone page (no approval in the fixture), and the
+  user's acceptance.
+
 ## Current state (rename, 2026-10-21)
 
 The `rename` branch is cut from `functionality` at `fe9c67e` and replaces
@@ -86,8 +114,9 @@ commit table and the evidence. In short:
   session inspector (`ui/inspector.js`) read only from state the daemon streams.
 - **Not built, by decision:** the canvas's Browser preview, Design canvas,
   context-window meter, Compact session and Remote control. *(The meter and
-  Compact session were later built on `functionality` by f3. The other three
-  are specced in `plans/functionality/specs.md`.)*
+  Compact session were later built on `functionality` by f3. Remote control
+  was built on `remote-control`, see above. The other two are specced in
+  `plans/functionality/specs.md`.)*
 - **Held:** 95 suites in the Linux container, all passing but `t-electron.js`
   (no display); a seeded-team audit of every route at three viewports in real
   Chromium. **Not held:** Electron and Windows (push the branch and read the
@@ -588,6 +617,7 @@ stateDiagram-v2
 | [scripts/rename/rename.mjs](scripts/rename/rename.mjs) | The rename codemod (`map.mjs` is its word map, `transform.mjs` its pure core). Re-runnable; a second run changes nothing. |
 | [src/worktree.js](src/worktree.js) | Worktree creation, revision-bound tests, conflict-safe integration, and run-branch application. |
 | [src/daemon.js](src/daemon.js) | HTTP actions, run reads, snapshots, SSE run events, and bearer-token auth for a non-loopback bind. |
+| [src/remote.js](src/remote.js) | Remote control: the second, token-gated listener on the Tailscale address, and the Steer allowlist (`steerGate`). `test/t-remote.js`. |
 | [src/snapshot.js](src/snapshot.js) | Target-repo snapshot/restore before a worker touches it (Habitable pilot step one). Read-only against the repo it snapshots. |
 | [src/evidence.js](src/evidence.js) | Exports one self-contained folder per completed run: objective, diff, tests, reviews, cost, timeline, and an optional pilot section. |
 | [src/teams.js](src/teams.js) | Multiple teams at once (issue #42): the `~/.agenticos/teams.json` registry — register/list/prune, port picking, lockfile + atomic write. Pure core is self-checking (`node src/teams.js`). |
@@ -606,6 +636,8 @@ stateDiagram-v2
 | [ui/views/tabs.js](ui/views/tabs.js) | The tab host for Inbox, Team and Knowledge: each body keeps its own mount and cleanup. |
 | [ui/palette.js](ui/palette.js) | Ctrl K: every page and run, with a pure matcher. `test/t-palette.js`. |
 | [ui/inspector.js](ui/inspector.js) | The run's session inspector; `progressSteps` is pure. `test/t-inspector.js`. |
+| [ui/remote.js](ui/remote.js) | The phone page for remote control (`ui/remote.html`): standalone, polls `/api/remote/state`, takes its token from the link's fragment. |
+| [ui/qr.js](ui/qr.js) | Vendored QR encoder (byte mode, level M, versions 1–10) for the remote-control link; pinned by golden matrices in `test/t-remote.js`. |
 | [ui/fonts](ui/fonts) | Inter and JetBrains Mono (variable woff2, latin) and their OFL licences. |
 | [ui/views/util.js](ui/views/util.js) | The shared view primitives every view composes from. |
 | [ui/run.js](ui/run.js) | Run status, controls, final-review evidence, and rendering helpers. |

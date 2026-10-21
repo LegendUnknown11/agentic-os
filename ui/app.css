@@ -1584,3 +1584,37 @@ body.sidebar-collapsed .app-identity { display: grid; }
   .run-layout { grid-template-columns: minmax(0, 1fr); }
   .run-inspector { position: static; }
 }
+
+/* Remote control. The phone page (ui/remote.html) is its own document, not
+ * the shell: one column, no rail, scrolls as a page. The Settings tab draws
+ * the link's QR code as an SVG; it stays on a light quiet zone because a
+ * scanner needs dark-on-light contrast whatever the theme. */
+body.remote-page { display: block; overflow: auto; }
+
+.remote-shell { padding: var(--space-4); }
+
+.remote-heading { display: grid; gap: var(--space-1); }
+
+.remote-heading h1 { color: var(--text); font-family: var(--display); font-size: 22px; font-weight: 600; letter-spacing: -.02em; line-height: 1.2; }
+
+.remote-heading p { color: var(--muted); }
+
+.remote-status { display: flex; align-items: center; gap: var(--space-2); text-transform: capitalize; }
+
+.remote-objective { color: var(--muted); overflow-wrap: anywhere; }
+
+.remote-thread { display: grid; gap: var(--space-2); max-height: 50vh; overflow: auto; }
+
+.remote-message { display: grid; gap: var(--space-1); }
+
+.remote-message.from-user .message-body { background: var(--raised); }
+
+.remote-message .message-body { margin: 0; white-space: pre-wrap; }
+
+.remote-draft { width: 100%; min-height: 88px; padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-ctl); background: var(--raised); color: var(--text); resize: vertical; }
+
+.remote-qr { width: 220px; max-width: 100%; height: auto; padding: var(--space-3); border-radius: var(--radius-ctl); background: var(--fill); }
+
+.remote-qr path { fill: var(--fill-ink); }
+
+.remote-link { font-family: var(--mono); font-size: var(--t-xs); overflow-wrap: anywhere; user-select: all; }

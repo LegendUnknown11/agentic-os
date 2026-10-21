@@ -78,6 +78,37 @@ user can follow the run and act on its gates from another device.
 - `GET /api/remote` (loopback only) returns `{on, tier, bind, port, lastSeenAt,
   expiresAt}` and never the token.
 
+### API (as built, 2026-10-21)
+
+No tier and no expiry, per the decisions above. The switch moved off
+`POST /api/remote` because the daemon's GET table matches by path whatever
+the method, so a POST to a path that is also a read would answer as the read.
+
+- `POST /api/remote/switch {on: true, bind?, port?}` (loopback only) starts or
+  restarts the listener and returns `{on, bind, port, tailscale, interfaces,
+  url}`. `bind` defaults to the Tailscale address. It answers 409 with
+  `reason: 'no-tailscale'` when there is none and no address was given, and
+  400 for an address that isn't this machine's. `port` defaults to 0 (any
+  free port), and Settings passes the current port on "New link". `url` is
+  `http://<bind>:<port>/remote#t=<token>`, and only this answer ever
+  carries it.
+- `POST /api/remote/switch {on: false}` closes the listener and drops its
+  connections and token.
+- `GET /api/remote` (loopback only) returns `{on, bind, port, tailscale,
+  interfaces}`. It never returns the token.
+- `GET /api/remote/state?since=<id>` (Steer) returns `{cursor, messages,
+  approvals, run, paused, spend}`. `messages` is the user↔orchestrator thread
+  only, and `approvals` holds the pending ones only.
+- `POST /api/remote/message {text}` (Steer) is `command` without a
+  conversation choice or attachments.
+- On the remote listener: `GET /remote`, `/remote.js`, `/app.css` and
+  `/fonts/*` load without a token. `/api/ping`, `/api/approvals`,
+  `/api/remote/state`, `approve`, `reject`, `answerQuestion`,
+  `run/pause | runPause`, `run/resume | runResume` and `remote/message` need
+  the token (401 without it). Everything else answers 403. Code:
+  `src/remote.js` (`STEER_READS`, `STEER_ACTIONS`, `steerGate`). Test:
+  `test/t-remote.js`.
+
 ### Security notes
 
 - Nothing is reachable off-machine until the user turns the switch on,
@@ -87,7 +118,35 @@ user can follow the run and act on its gates from another device.
   code, (c) leave transport to the user (Tailscale or similar) and bind only to
   that interface. **Proposed: (c) as the default, with (a)'s warning shown.**
 
-### Open questions for the user
+### Decided 2026-10-21 (built on the `remote-control` branch)
+
+1. **Steer is the ceiling, and the only tier.** A remote device can read the
+   pending approvals and act on them, read run status (state, blocker,
+   pause, spend), pause and resume the run, and send a message to the
+   orchestrator. It sees the user↔orchestrator thread and nothing else: no
+   worker chatter, diffs, tool output, config or repo controls.
+2. **Transport: Tailscale.** The goal is to work from anywhere, not just the
+   LAN. The listener binds to the machine's Tailscale address, which is
+   detected from the `100.64.0.0/10` range. Another local interface can be
+   chosen if needed. Tailscale's WireGuard tunnel encrypts the plain-HTTP
+   token, so no TLS is built here.
+3. **The switch lives in Settings**, under a "Remote control" tab, because
+   it's global daemon state.
+4. **No idle timeout.** Remote control stays on until the user turns it off
+   or the daemon exits. The token lives in memory only, so a restart always
+   ends it. Turning it off and on mints a new token and kills the old one,
+   and that is the revoke.
+5. **No extra safeguards** such as an activity log or a separate revoke
+   button. The user declined them.
+6. **The phone polls instead of streaming.** The remote page polls one
+   compact endpoint, `GET /api/remote/state`, instead of subscribing to
+   `/stream`. The full stream carries every member's content, and filtering
+   it per client would be a second code path to keep correct. Polling a
+   purpose-built read keeps worker content off the link by construction.
+7. **QR code:** a small vendored encoder (`ui/qr.js`, no dependency) draws
+   the link as SVG in Settings.
+
+### Open questions for the user (original, now answered above)
 
 1. Which tier is the ceiling: Approve, Watch or Steer?
 2. Transport: LAN HTTP with a warning, self-signed TLS, or "bring your own

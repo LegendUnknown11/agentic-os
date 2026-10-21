@@ -31,6 +31,7 @@ import { WORKFLOW_TEMPLATES, instantiateTemplate } from './workflow-templates.js
 import { listWorkflows, saveWorkflow, deleteWorkflow, runWorkflow, tickScheduler, logRun, runHistory, validWorkflowId } from './workflows.js';
 import { runDoctor } from './doctor.js';
 import { registerTeam, unregisterTeam, listTeams, TeamConflictError, firstFreePort } from './teams.js';
+import { RemoteControl, steerGate } from './remote.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PUBLIC = join(HERE, '..', 'ui');
@@ -415,6 +416,23 @@ const ACTIONS = {
   // Answer first, then go: the caller must not get a dead socket for a
   // shutdown that actually worked.
   shutdown: () => { setTimeout(() => shutdown(0), 150); },
+  // Remote control's switch (Settings). Loopback only: it is in neither
+  // remote allowlist. The "on" answer is the one place the token is handed
+  // out, inside `url`; see src/remote.js.
+  'remote/switch': async (b) => {
+    if (b.on) return remoteControl.start({ bind: b.bind || null, port: b.port ?? 0 });
+    await remoteControl.stop();
+    return remoteControl.status();
+  },
+  // A message to the orchestrator from the phone. The same path as `command`,
+  // minus conversation choice and attachments, which the phone page has no
+  // way to pick or upload.
+  'remote/message': (b) => {
+    const text = typeof b.text === 'string' ? b.text.trim() : '';
+    if (!text) throw Object.assign(new Error('Message text is required.'), { status: 400 });
+    if (text.length > 20_000) throw Object.assign(new Error('Message is too long.'), { status: 413 });
+    agenticos.command(text).catch((e) => push('error', { message: e.message }));
+  },
 };
 
 // Each run action answers to two spellings: `run/create` (the HTTP-shaped
@@ -659,6 +677,7 @@ function metrics() {
 /** Ends the team for real. The window closing no longer does this. */
 async function shutdown(code = 0) {
   speech.stop();
+  try { await remoteControl.stop(); } catch { /* exiting anyway; the socket dies with the process */ }
   await agenticos.stop();
   // Best-effort: a clean exit should not leave a corpse for the next
   // listTeams() to have to detect and prune itself, but shutdown must never
@@ -723,6 +742,10 @@ const REMOTE_ACTIONS = new Set(['approve', 'reject', 'answerQuestion']);
  * otherwise: {status, error} — refuse verbatim, before any route runs.
  */
 function remoteGate(req, url) {
+  // The remote-control listener has its own token and its own, wider (Steer)
+  // allowlist; see src/remote.js. Its requests never fall through to the
+  // older --bind path below.
+  if (remoteControl.owns(req)) return steerGate(req.method, url.pathname, remoteControl.authorized(req));
   if (!remoteConnection(req)) return null;
   if (!bearerAuthorized(req)) return { status: 401, error: 'missing or invalid bearer token' };
   const allowedRead = req.method === 'GET' && REMOTE_READS.has(url.pathname);
@@ -819,6 +842,37 @@ const READS = {
     }
     rows.reverse();
     return [200, { ok: true, approvals: rows, pending: [...agenticos.approvals.keys()] }];
+  },
+
+  // Remote control's state for Settings. Never the token. Loopback only.
+  '/api/remote': async (url, req) => [200, { ok: true, ...remoteControl.status() }],
+
+  // Everything the phone page shows, in one poll: the run, its pause and
+  // spend, the approvals still waiting, and the user<->orchestrator thread
+  // since `since`. Nothing else from the bus — no worker traffic, diffs or
+  // tool output — so the remote link carries only what Steer needs.
+  '/api/remote/state': async (url, req) => {
+    const orch = agenticos.config.orchestrator.name;
+    const requested = Number(url.searchParams.get('since') || 0);
+    const since = Number.isSafeInteger(requested) && requested > 0 ? requested : 0;
+    const rows = since
+      ? agenticos.bus.history({ agent: 'user', since, limit: 200 })
+      : agenticos.bus.history({ agent: 'user', limit: 200, tail: true });
+    const messages = rows
+      .filter((m) => (m.sender === 'user' && m.recipient === orch) || (m.sender === orch && m.recipient === 'user'))
+      .slice(-50)
+      .map((m) => ({ id: m.id, ts: m.ts, from: m.sender === 'user' ? 'user' : 'orchestrator', body: m.body }));
+    const [, approvals] = await READS['/api/approvals'](url, req);
+    const run = agenticos.bus.currentRun();
+    return [200, {
+      ok: true,
+      cursor: rows.length ? rows.at(-1).id : since,
+      messages,
+      approvals: (approvals.approvals ?? []).filter((a) => !a.resolved),
+      run: run ? { id: run.id, state: run.state, objective: run.objective, blocker: run.blocker ?? null } : null,
+      paused: agenticos.paused ?? false,
+      spend: { today: agenticos.spendToday(), turns: agenticos.turnsThisSession() },
+    }];
   },
 
   // ---- the shared task list --------------------------------------------
@@ -1062,7 +1116,7 @@ const handle = async (req, res) => {
     res.writeHead(code, { 'content-type': 'application/json' }).end(JSON.stringify(o));
 
   const remote = remoteGate(req, url);
-  if (remote && remote !== 'authorized') return send(remote.status, { ok: false, error: remote.error });
+  if (remote && remote !== 'authorized' && remote !== 'page') return send(remote.status, { ok: false, error: remote.error });
   const bearerAuthed = remote === 'authorized';
 
   if (req.method === 'POST' && url.pathname.startsWith('/api/')) {
@@ -1351,7 +1405,7 @@ const handle = async (req, res) => {
   }
 
   // static
-  const file = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
+  const file = url.pathname === '/' ? 'index.html' : url.pathname === '/remote' ? 'remote.html' : url.pathname.slice(1);
   try {
     const buf = await readFile(join(PUBLIC, file));
     res.writeHead(200, {
@@ -1371,11 +1425,14 @@ const handle = async (req, res) => {
   }
 };
 
-const server = createServer((req, res) => handle(req, res).catch((e) => {
+const handleSafely = (req, res) => handle(req, res).catch((e) => {
   console.error(e?.stack ?? e);
   if (!res.headersSent) res.writeHead(e?.status ?? 500, { 'content-type': 'application/json' });
   res.end(JSON.stringify({ ok: false, error: String(e?.message ?? e) }));
-}));
+});
+const server = createServer(handleSafely);
+// Off until the user turns it on in Settings; see src/remote.js.
+const remoteControl = new RemoteControl(handleSafely);
 
 // A clean, visible error either way: a PINNED port that is busy names itself
 // and refuses rather than binding somewhere the launcher never asked for; an

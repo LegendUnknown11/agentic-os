@@ -134,6 +134,8 @@ const suites = [
   // lives in. See src/evidence.js.
   ['run evidence export', join(HERE, 't-evidence.js')],
   ['cross-origin POSTs are refused', join(HERE, 't-csrf.js')],
+  // Steer a run from a phone over Tailscale: a second, token-gated listener.
+  ['remote control is gated to Steer', join(HERE, 't-remote.js')],
   ['the shipped config template is clean', join(HERE, 't-config-template.js')],
   ['doctor report, structured and served live', join(HERE, 't-doctor-api.js')],
   ['antigravity (agy) backend', join(HERE, 't-agy.js')],

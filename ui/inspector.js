@@ -7,7 +7,8 @@ import { runStatus } from './run.js';
 // tasks and lifecycle, changed worktrees, the team, spend, and each member's
 // context against its model's window). Compact session posts the daemon's
 // compactSession action — the same recycle `recycleAtTokens` fires. The
-// canvas's Remote control toggle is not drawn: nothing does it yet.
+// canvas's Remote control toggle is not drawn here: by the user's decision it
+// lives in Settings → Remote control, since it is global daemon state.
 
 const LIFECYCLE = [['planning', 'Plan'], ['running', 'Run'], ['verifying', 'Verify'], ['ready_for_review', 'Review'], ['completed', 'Done']];
 const STAGE_OF = { planning: 0, running: 1, paused: 1, blocked: 1, verifying: 2, ready_for_review: 3, completed: 4, cancelled: 4 };

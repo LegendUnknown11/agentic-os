@@ -1,4 +1,5 @@
-import { h, page, section, empty, note, button, field, input, textarea, select, check, modelLabel, post, subscribe, editing } from './util.js';
+import { h, page, section, empty, note, button, field, input, textarea, select, check, modelLabel, get, post, subscribe, editing, requestToken } from './util.js';
+import { qrMatrix } from '../qr.js';
 import { setPrefs } from '../store.js';
 import { teamsSwitcher, refreshTeams } from './teams.js';
 import { mountUsage } from './usage.js';
@@ -20,7 +21,7 @@ const loadDependencies = () => dependencies ??= Promise.all([
 const TABS = [
   ['repo', 'Repository'], ['efficiency', 'Models & efficiency'], ['appearance', 'Appearance'],
   ['music', 'Music'], ['documents', 'Documents'], ['notifications', 'Notifications'], ['sounds', 'Sounds'], ['pet', 'Desk pet'],
-  ['usage', 'Usage'], ['doctor', 'Doctor'],
+  ['remote', 'Remote control'], ['usage', 'Usage'], ['doctor', 'Doctor'],
 ];
 const models = (state) => Object.entries(state.models ?? {}).flatMap(([cli, list]) => (list ?? []).map((model) => [`${cli}:${model}`, `${cli} · ${modelLabel(model)}`]));
 const fileList = (kind) => Assets.list().filter((asset) => asset.kind === kind);
@@ -327,6 +328,96 @@ function pet(state) {
   return section('Desk pet', field('Show the desk pet', enabled), button('Open desk pet', () => window.agenticosShell?.openPet ? window.agenticosShell.openPet() : window.open('/pet.html', 'agenticos-pet')), note('Close the pet window with its own shoo button.'));
 }
 
+// Remote control (src/remote.js): steer the team from a phone over Tailscale.
+// The link carries the token, and the daemon hands it out only on the answer
+// that turns the switch on — so it lives in this tab's memory and nowhere
+// else. A reload loses it on purpose; "New link" mints another.
+function qrSvg(text) {
+  const grid = qrMatrix(text);
+  const quiet = 4;
+  const size = grid.length + quiet * 2;
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('viewBox', `0 0 ${size} ${size}`);
+  svg.setAttribute('class', 'remote-qr');
+  svg.setAttribute('role', 'img');
+  svg.setAttribute('aria-label', 'QR code for the remote control link');
+  svg.setAttribute('shape-rendering', 'crispEdges');
+  let d = '';
+  grid.forEach((row, y) => row.forEach((dark, x) => { if (dark) d += `M${x + quiet} ${y + quiet}h1v1h-1z`; }));
+  const path = document.createElementNS(ns, 'path');
+  path.setAttribute('d', d);
+  svg.append(path);
+  return svg;
+}
+
+function remote(state, root) {
+  const rerender = () => { if (root?.isConnected) renderSettings(state, root); };
+  if (state.remoteStatus === undefined) {
+    state.remoteStatus = null;
+    const token = requestToken(state, 'remoteRequest');
+    get('/api/remote').then((result) => {
+      if (state.remoteRequest !== token || root.isConnected === false) return;
+      state.remoteStatus = result?.ok === false ? { error: result.error ?? 'Remote control status could not be read.' } : result;
+      rerender();
+    });
+  }
+  const status = state.remoteStatus;
+  const intro = note('Approve requests, pause or resume the run, and message the orchestrator from your phone, anywhere, through Tailscale.');
+  if (!status) return section('Remote control', intro, note('Loading…'));
+  if (status.error) return section('Remote control', intro, note(status.error, 'danger'));
+
+  const feedback = note('', 'danger');
+  feedback.hidden = !state.remoteError;
+  feedback.textContent = state.remoteError ?? '';
+  const addresses = (status.interfaces ?? []).map((i) => [i.address, `${i.address} · ${i.tailscale ? 'Tailscale' : i.internal ? 'this computer only' : i.name}`]);
+  const chosen = status.bind ?? state.remoteBind ?? status.tailscale ?? addresses[0]?.[0] ?? '';
+  const address = select(addresses, chosen);
+  address.disabled = status.on;
+  address.addEventListener('change', () => { state.remoteBind = address.value; });
+  const enabled = check(Boolean(status.on));
+  const turn = async (on, control) => {
+    control.disabled = true;
+    // A new link while on keeps the port, so a phone still holding the old
+    // link reaches the listener and is told plainly that it was replaced.
+    const result = await post('remote/switch', on ? { on: true, bind: address.value, port: status.on ? status.port : 0 } : { on: false });
+    if (result?.ok === false) {
+      state.remoteError = result.error ?? 'Remote control could not be changed.';
+    } else {
+      state.remoteError = null;
+      state.remoteStatus = { ...status, ...result };
+      state.remoteLink = on ? result.url ?? null : null;
+    }
+    rerender();
+  };
+  enabled.addEventListener('change', () => turn(enabled.checked, enabled));
+
+  const parts = [intro];
+  if (status.tailscale) parts.push(note(`Tailscale found: ${status.tailscale}. Your phone must be signed in to the same tailnet.`, 'success'));
+  else parts.push(note('Tailscale was not found on this computer. Install it here and on your phone, sign both in to the same account, then reopen this tab.', 'danger'));
+  parts.push(field('Address', address, 'Where the phone connects. Choose the Tailscale address to reach this computer from anywhere.'));
+  parts.push(field('Remote control', enabled, 'Off by default. It stays on until you turn it off or quit Agentic OS.'));
+  if (status.on) {
+    if (state.remoteLink) {
+      const copy = button('Copy link', async () => {
+        try { await navigator.clipboard.writeText(state.remoteLink); copy.textContent = 'Copied'; }
+        catch { copy.textContent = 'Copy failed: select the link instead'; }
+      });
+      parts.push(note('Scan this with your phone camera. Anyone holding this link can steer the team until you turn remote control off.'),
+        qrSvg(state.remoteLink),
+        h('p', { class: 'remote-link', text: state.remoteLink }));
+      const fresh = button('New link', (event) => turn(true, event.currentTarget));
+      parts.push(h('div', { class: 'button-row' }, copy, fresh));
+    } else {
+      const fresh = button('New link', (event) => turn(true, event.currentTarget), 'primary');
+      parts.push(note(`On at ${status.bind}:${status.port}. The link is shown only when it is made. Make a new one to see it here; the old link stops working.`),
+        h('div', { class: 'button-row' }, fresh));
+    }
+  }
+  parts.push(feedback);
+  return section('Remote control', ...parts);
+}
+
 // Usage and Doctor left the rail and live here. Each keeps its own view, mounted
 // into a panel after the page is drawn, so its subscriptions and request tokens
 // are its own; the embed's cleanup runs before every repaint and on unmount.
@@ -334,7 +425,7 @@ const EMBEDS = { usage: mountUsage, doctor: mountDoctor };
 let stopEmbed = () => {};
 const embedPanel = (key) => () => h('div', { class: 'settings-embed', 'data-embed': key });
 
-const BUILDERS = { repo: repository, efficiency, appearance, music, documents, notifications, sounds, pet, usage: embedPanel('usage'), doctor: embedPanel('doctor') };
+const BUILDERS = { repo: repository, efficiency, remote, appearance, music, documents, notifications, sounds, pet, usage: embedPanel('usage'), doctor: embedPanel('doctor') };
 
 export function renderSettings(state, root) {
   if (dependencyError) {
@@ -366,7 +457,12 @@ export function renderSettings(state, root) {
   shell.classList.add('settings-shell');
   const nav = h('nav', { class: 'settings-tabs', 'aria-label': 'Settings sections' });
   for (const [key, label] of TABS) {
-    const tab = button(label, () => { state.settingsSection = key; renderSettings(state, root); }, key === active ? 'selected' : '');
+    const tab = button(label, () => {
+      state.settingsSection = key;
+      // Remote control's state lives in the daemon; read it fresh on every visit.
+      if (key === 'remote') state.remoteStatus = undefined;
+      renderSettings(state, root);
+    }, key === active ? 'selected' : '');
     if (key === active) tab.setAttribute('aria-current', 'page');
     nav.append(tab);
   }
