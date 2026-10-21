@@ -35,6 +35,20 @@ const warnings = [];
 const warn = (m) => warnings.push(m);
 const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: 'pipe' }).trim();
 const repos = [];
+// One spelling of a path, to compare what git prints with what join() built.
+// On Windows git prints forward slashes and long names, while the runner's
+// temp dir comes back as an 8.3 short name (RUNNER~1); realpath.native
+// expands that, and the drive letter's case is not significant.
+// A path that no longer exists (a stale, unrepaired entry) keeps its own
+// spelling, so it reads as "not there" rather than throwing.
+const canonical = (p) => {
+  let real = p;
+  try { real = realpathSync.native(p); } catch { /* stale entry */ }
+  real = real.replace(/\\/g, '/');
+  return process.platform === 'win32' ? real.toLowerCase() : real;
+};
+const worktreePaths = (repo) => git(repo, 'worktree', 'list', '--porcelain').split(/\r?\n/)
+  .filter((l) => l.startsWith('worktree ')).map((l) => canonical(l.slice('worktree '.length)));
 
 function makeRepo(parent, name) {
   const repo = join(parent, name);
@@ -123,7 +137,7 @@ try {
   a.equal(existsSync(join(parent, LEGACY.dir, 'other', 'marker')), true, 'a sibling repo is not moved until it is opened');
   a.equal(r.repaired.length, 1, 'the agent worktree was re-linked');
   const newWt = join(newDir, 'wt', 'coder');
-  a.ok(git(repo, 'worktree', 'list', '--porcelain').includes(newWt), 'git knows the worktree at its new path');
+  a.ok(worktreePaths(repo).includes(canonical(newWt)), 'git knows the worktree at its new path');
   a.equal(git(newWt, 'status', '--porcelain'), '', 'and the moved worktree is a working checkout');
   a.equal(await branchFor(repo, 'coder'), `${LEGACY.branchPrefix}coder`, 'an existing old branch keeps being used');
   a.equal(await branchFor(repo, 'tester'), 'agenticos/tester', 'a new agent gets the new prefix');
