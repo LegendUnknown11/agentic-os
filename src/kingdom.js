@@ -23,6 +23,7 @@ import { ripeness, checkTiming } from './ripeness.js';
 import { argue, pickPanel, verdictNote } from './argue.js';
 import { modeOf, modeName, modeBlock, canSummon } from './modes.js';
 import { buildPrompt } from './prompt.js';
+import { ROSTER_VERSION } from './roster.js';
 import {
   assertRepo, ensureRepo, behindBase, commitAll, createWorktree, dbPath, diffOf, statOf, kingdomDir,
   globalTokenStore, mergeWorktree, removeWorktree, pushBase, runTests, worktreePath,
@@ -225,6 +226,8 @@ export class Kingdom extends EventEmitter {
       ...library.filter((r) => !have.has(r.name)).map((r) => ({ ...defaults, ...r })),
     ];
     this.config.rolesSeeded = true;
+    // Seeded from the current library, so there is nothing to migrate.
+    this.config.rosterVersion = ROSTER_VERSION;
     this.#persistConfig();
   }
 

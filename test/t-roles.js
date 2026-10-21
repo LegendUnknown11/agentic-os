@@ -11,6 +11,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Kingdom } from '../src/kingdom.js';
 import { MODES } from '../src/modes.js';
+import { STANDING, MODE_BOUND, SHIPPED, TIERS, ROSTER_VERSION } from '../src/roster.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const dir = mkdtempSync(join(tmpdir(), 'kingdom-roles-'));
@@ -24,7 +25,7 @@ execFileSync('git', ['commit', '-qm', 'init'], { cwd: repo });
 
 const cfgPath = join(dir, 'kingdom.config.json');
 const base = {
-  peasantDefaults: { cli: 'codex', model: 'gpt-5.6-luna', effort: 'high' },
+  peasantDefaults: { cli: 'claude', model: 'haiku', effort: 'low' },
   orchestrator: { name: 'orchestrator', cli: 'codex', prompt: 'k' },
   briefer: { name: 'briefer', cli: 'codex', prompt: 'j' },
   peasants: [{ name: 'coder', cli: 'claude', model: 'opus', prompt: 'MY OWN CODER' }],
@@ -44,6 +45,56 @@ for (const r of library) {
   a.ok(r.title, `${r.name} needs a court title`);
 }
 console.log(`  library: ${library.length} specialists — ${names.join(', ')}`);
+
+/* ---------- roster v2: fifteen standing roles in five lifecycle tiers ---------- */
+// docs/PLAN-court.md. The old library was a directory of 107 professions, all on
+// one model at one effort, whose prompts restated their descriptions. Each
+// property below is one of the things that redesign fixed, pinned so it cannot
+// quietly drift back.
+{
+  const template = JSON.parse(readFileSync(join(HERE, '..', 'kingdom.config.json'), 'utf8'));
+  a.equal(STANDING.length, 15, 'the plan names fifteen standing roles');
+  a.deepEqual([...names].sort(), [...SHIPPED].sort(),
+    'roles.json must ship exactly the standing roles plus the mode-bound ones');
+  for (const tier of TIERS) {
+    a.ok(library.some((r) => r.tier === tier && STANDING.includes(r.name)),
+      `lifecycle tier "${tier}" has no standing role`);
+  }
+  for (const r of library) {
+    a.ok(TIERS.includes(r.tier), `${r.name} names no lifecycle tier (got ${r.tier})`);
+    // Tiered, and tiered onto something the court can actually run: a model
+    // the template offers, at an effort that model accepts.
+    a.ok(r.cli && r.model && r.effort, `${r.name} must name its own cli/model/effort`);
+    a.ok(template.models[r.cli]?.includes(r.model), `${r.name}: ${r.cli}/${r.model} is not in the template's models`);
+    a.ok((template.efforts.byModel[r.model] ?? template.efforts[r.cli]).includes(r.effort),
+      `${r.name}: ${r.model} does not accept effort "${r.effort}"`);
+    a.notEqual(r.effort, 'max', `${r.name} is still on effort max — the tiering exists to end that`);
+
+    // The description is what the orchestrator selects on; it must say when NOT
+    // to pick this role and whom to pick instead, and that role must exist.
+    const not = r.description.match(/not for [^.]*?\(([a-z, -]+)\)/i);
+    a.ok(not, `${r.name}'s description names no negative boundary ("not for ... (role)")`);
+    for (const other of not[1].split(',').map((s) => s.trim())) {
+      a.ok(names.includes(other), `${r.name}'s description points at "${other}", which is not on the bench`);
+    }
+    // The prompt is what the member becomes. It must not be the description
+    // twice, and it must not restate what src/prompt.js already tells every
+    // peasant — two authorities on one rule is how they drift apart.
+    a.ok(!r.prompt.includes(r.description.slice(0, 40)), `${r.name}'s prompt restates its description`);
+    for (const shared of ['declare_done', '../<name>', 'send_message', 'finish_task']) {
+      a.ok(!r.prompt.includes(shared), `${r.name}'s prompt repeats the shared block's "${shared}"`);
+    }
+  }
+  // Only the roles whose mistakes propagate into everyone else's work pay for
+  // the expensive model (plan section 2, Q3, Tier 1).
+  a.deepEqual(library.filter((r) => r.model === 'gpt-5.6-terra').map((r) => r.name).sort(),
+    ['architect', 'auditor', 'strategist']);
+  // One roster, two files: the template every new court copies, and the seed
+  // for a config that has none. They must not drift.
+  a.deepEqual(template.peasants, library, 'kingdom.config.json peasants must equal roles.json');
+  a.equal(template.rosterVersion, ROSTER_VERSION, 'the template must record the roster version it ships');
+  console.log(`  ${STANDING.length} standing + ${MODE_BOUND.length} mode-bound roles across ${TIERS.length} tiers; template matches roles.json`);
+}
 
 /* ---------- every mode's crew is drawn from that library ---------- */
 // A typo in a crew list is not a crash: canSummon just refuses everybody with
@@ -69,11 +120,17 @@ const coder = cfg.peasants.find((p) => p.name === 'coder');
 a.equal(coder.prompt, 'MY OWN CODER', 'a configured role must not be overwritten by the library');
 a.equal(coder.model, 'opus', 'nor its model');
 
-// library roles inherit peasantDefaults
+// Library roles are merged over peasantDefaults ({...defaults, ...role}). Since
+// roster v2 every shipped role names its own tier, so the role's tier must WIN:
+// the fixture's defaults deliberately differ from every tier in roles.json.
 const refactoringEngineer = cfg.peasants.find((p) => p.name === 'refactoring-engineer');
-a.equal(refactoringEngineer.cli, 'codex', 'library roles take the court default cli');
-a.equal(refactoringEngineer.model, 'gpt-5.6-luna', 'and the default model');
+const shippedRe = library.find((r) => r.name === 'refactoring-engineer');
+a.equal(refactoringEngineer.cli, shippedRe.cli, 'a library role keeps its own tier cli over peasantDefaults');
+a.equal(refactoringEngineer.model, shippedRe.model, 'and its own tier model');
+a.equal(refactoringEngineer.effort, shippedRe.effort, 'and its own tier effort');
+a.notEqual(refactoringEngineer.model, base.peasantDefaults.model, 'sanity: the defaults really do differ');
 a.ok(refactoringEngineer.prompt.length > 80, 'and keep their own prompt');
+a.equal(cfg.rosterVersion, ROSTER_VERSION, 'a freshly seeded court is already on the current roster');
 console.log(`  seeded ${cfg.peasants.length}; coder kept the sovereign's prompt`);
 k.bus.close();
 
