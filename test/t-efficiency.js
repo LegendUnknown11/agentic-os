@@ -386,5 +386,58 @@ console.log('  MCP surfaces are under budget and roster supports query, activeOn
   console.log('  the run ceiling reads the run\'s own spend ledger, so clearSpend cannot disarm it');
 }
 
+/* ---------- clearSpend cannot corrupt campaign spend --------------------- */
+// campaigns() measured spend as the lifetime counter now minus the counter
+// when the campaign began. clearSpend() zeroes that counter, so a campaign
+// spanning a clear read negative and the one before it read wrong.
+{
+  const campRepo = mkdtempSync(join(tmpdir(), 'kingdom-campclear-'));
+  const git = (...x) => execFileSync('git', x, { cwd: campRepo, stdio: 'pipe' });
+  git('init', '-q');
+  git('config', 'user.email', 'k@kingdom');
+  git('config', 'user.name', 'kingdom');
+  writeFileSync(join(campRepo, 'README.md'), '# t\n');
+  git('add', '-A');
+  git('commit', '-qm', 'init');
+  const campConfigPath = join(campRepo, 'kingdom.config.json');
+  writeFileSync(campConfigPath, JSON.stringify({
+    orchestrator: { name: 'orchestrator', cli: 'codex' },
+    briefer: { name: 'briefer', cli: 'codex' },
+    peasants: [{ name: 'coder', cli: 'codex' }],
+  }));
+
+  const ck = new Kingdom(campRepo, campConfigPath);
+  ck.on('error', () => {});
+  await ck.start();
+  await ck.wake('coder');
+  const coder = ck.agents.get('coder');
+  coder.send = () => {};
+  const turn = (usd) => coder.emit('turn_end', { usage: { input_tokens: 10 }, costUsd: usd });
+
+  const first = ck.bus.beginCampaign('before any spend');
+  turn(2); turn(2);
+  await wait(100);
+  const second = ck.bus.beginCampaign('spans the clear');
+  ck.clearSpend();
+  turn(0.25);
+  await wait(100);
+  const third = ck.bus.beginCampaign('after the clear');
+  turn(0.5); turn(0.25);
+  await wait(100);
+
+  const byId = Object.fromEntries(ck.bus.campaigns().map((c) => [c.id, c]));
+  const near = (x, y) => Math.abs(x - y) < 1e-9;
+  a.ok(near(byId[first.id].spentUsd, 4), `the first campaign spent $4, got ${byId[first.id].spentUsd}`);
+  a.ok(near(byId[second.id].spentUsd, 0.25),
+    `a campaign spanning clearSpend keeps its own spend, got ${byId[second.id].spentUsd}`);
+  a.ok(near(byId[third.id].spentUsd, 0.75), `the current campaign spent $0.75, got ${byId[third.id].spentUsd}`);
+  a.equal(byId[third.id].current, true);
+  a.equal(Number(ck.bus.get('spentUsd')), 1, 'clearSpend still resets the lifetime counter it lifts');
+
+  await ck.stop();
+  rmSync(campRepo, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  console.log('  campaign spend survives clearSpend: no campaign reads negative or loses its spend');
+}
+
 rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 console.log('t-efficiency.js OK — accounting, telemetry, routing, budgets, roster and masking contracts hold');
