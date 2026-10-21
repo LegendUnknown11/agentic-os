@@ -245,7 +245,7 @@ a.match(mainSource, /state\.view\?\.page === 'thread'[\s\S]*?setView\(previousVi
 a.match(mainSource, /event\.target\?\.closest\?\.\('\.vault-link'\)/, 'vault citations must be intercepted before the hash changes');
 a.match(mainSource, /\/api\/vault\?path=\$\{encodeURIComponent\(notePath\)\}/, 'vault citations must load the selected note by path');
 a.match(mainSource, /detail\?\.ok === false/, 'vault citation failures must stay distinct from note content');
-a.match(mainSource, /if \(name !== 'notes'\) noteRequest\+\+/, 'leaving Notes must invalidate a slow vault detail request');
+a.match(mainSource, /if \(!\(route\.page === 'knowledge' && route\.tab === 'notes'\)\) noteRequest\+\+/, 'leaving Knowledge > Notes must invalidate a slow vault detail request, and opening a note must not');
 // Issue #43: the advisor can flip the court from Chat into Cowork or Code on
 // its own reading of one plain message (Kingdom#queueMode, by: 'advisor'),
 // which is how a sovereign who typed a single line ends up with delegation,
@@ -586,10 +586,13 @@ a.match(viewSources.tasks, /remembered\(input\('', 'Something to remember…'\),
 a.match(viewSources.inbox, /if \(timer \|\| now === seen\) return;/, 'the inbox refetches only when what it ranks moved, not on every streamed frame');
 {
   // A view registered for rendering but missing from the shell's route set
-  // silently falls back to Overview (found live for #tasks, 2026-09-25).
-  const routes = new Set(JSON.parse(/const VIEWS = new Set\((\[[^\]]*\])\)/.exec(mainSource)[1].replace(/'/g, '"')));
+  // silently falls back to Overview (found live for #tasks, 2026-09-25). The
+  // route table moved to ui/routes.js on 2026-10-21 so it can be exercised
+  // without a DOM (test/t-routes.js); this keeps the original guard on it.
+  const { PAGES } = await import('../ui/routes.js');
   const { renderers } = await import('../ui/views/index.js');
-  for (const name of Object.keys(renderers)) a.ok(routes.has(name), `the shell must route #${name}, or it silently shows Overview`);
+  for (const name of Object.keys(renderers)) a.ok(PAGES.includes(name), `the shell must route #${name}, or it silently shows Overview`);
+  a.match(mainSource, /import \{ canonicalHash, hashFor, parseHash \} from '\.\/routes\.js'/, 'the shell must route through the shared route table');
 }
 a.match(sidebarSource, /\['tasks', 'Tasks'\]/, 'Tasks is reachable from the rail');
 a.match(usageSource, /dashboard\.append\(runSpendSection\(state\)\)/, 'Usage must show the run spend section');

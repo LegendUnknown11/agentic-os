@@ -203,5 +203,20 @@ export function mountTasks(state, root) {
   const off = subscribe(() => { if (!editing(root)) renderTasks(state, root); });
   return () => { requestToken(state, 'myTasksRequest'); off?.(); };
 }
+
+/** Your own list on its own, as the Inbox's "My tasks" tab (no team queue). */
+export function renderMyTasks(state, root) {
+  if (root.isConnected === false) return;
+  root.replaceChildren();
+  const refresh = () => { if (root.isConnected !== false) renderMyTasks(state, root); };
+  root.append(h('div', { class: 'view-page' }, myTasks(state, refresh)));
+}
+
+export function mountMyTasks(state, root) {
+  renderMyTasks(state, root);
+  void loadMyTasks(state, () => { if (root.isConnected !== false && !editing(root)) renderMyTasks(state, root); });
+  const off = subscribe(() => { if (!editing(root)) renderMyTasks(state, root); });
+  return () => { requestToken(state, 'myTasksRequest'); off?.(); };
+}
 export const render = renderTasks;
 export const mount = mountTasks;

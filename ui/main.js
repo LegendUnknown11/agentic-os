@@ -3,6 +3,7 @@ import { modeOf } from '/modes.js';
 import { attachHoverTips, modePermissionText } from './views/util.js';
 import * as Assets from './assets.js';
 import * as Notify from './notify.js';
+import { canonicalHash, hashFor, parseHash } from './routes.js';
 
 // The public and backend vocabulary are the same three choices.
 export const USER_MODES = Object.freeze([
@@ -28,29 +29,15 @@ const loadUI = () => uiReady ??= Promise.all([
 });
 
 const $ = (id) => document.getElementById(id);
-const VIEWS = new Set(['home', 'thread', 'approvals', 'changes', 'usage', 'activity', 'messages', 'agents', 'objective', 'memory', 'notes', 'automations', 'doctor', 'settings', 'tasks', 'inbox']);
 const KEYS = { a: 'approvals', d: 'changes', m: 'usage', c: 'activity', b: 'messages', e: 'agents', g: 'objective', r: 'memory', v: 'notes', f: 'automations' };
-const decodePart = (value) => {
-  try { return decodeURIComponent(value); } catch { return value; }
-};
-function routeOf() {
-  const parts = location.hash.slice(1).replace(/^\/+/, '').split('/');
-  const page = decodePart(parts.shift() ?? '');
-  if (page.startsWith('agent:')) return {
-    page: 'thread', member: decodePart(page.slice(6)), conversation: decodePart(parts.join('/') || 'default'),
-  };
-  if (page === 'thread') return {
-    page,
-    member: decodePart(parts.shift() || 'orchestrator'),
-    conversation: decodePart(parts.join('/') || 'default'),
-  };
-  return { page: VIEWS.has(page) ? page : 'home' };
-}
+// The route table lives in routes.js so the suite can exercise it without a
+// DOM. A retired id (approvals, agents, usage, ...) is an alias there.
+const routeOf = () => parseHash(location.hash);
 const viewName = () => routeOf().page;
 function routeFor(view) {
   const value = typeof view === 'object' && view ? view : { page: view };
   const page = String(value.page || 'home').replace(/^#?\/?/, '');
-  if (page !== 'thread') return page;
+  if (page !== 'thread') return canonicalHash(typeof view === 'object' && view ? { ...value, page } : page);
   return ['thread', encodeURIComponent(value.member ?? state.view?.member ?? 'orchestrator'),
     encodeURIComponent(value.conversation ?? state.view?.conversation ?? 'default')].join('/');
 }
@@ -411,6 +398,11 @@ export async function mount(name = viewName()) {
   const route = routeOf();
   setView(route.page === 'thread' && name === 'thread' ? route : name);
   syncStreamScope();
+  if (route.tab) state.tabs = { ...state.tabs, [route.page]: route.tab };
+  if (route.section) state.settingsSection = route.section;
+  // A retired id (#usage, #approvals) is rewritten to the address of the page
+  // that hosts it, so a reload or a copied link names where the view lives now.
+  if (route.page !== 'thread' && location.hash.slice(1) !== hashFor(route)) history.replaceState(null, '', `#${hashFor(route)}`);
   state.modeDef = modeOf(state.mode);
   const host = $('view');
   if (!host) return;
@@ -426,6 +418,7 @@ export async function mount(name = viewName()) {
   const context = {
     state, root, header: $('header'), composer: $('composer'), post, get, navigate, toast, refreshLists,
     sovereign: !state.view?.member || state.view.member === 'orchestrator',
+    tab: route.tab,
   };
   const listsRefresh = refreshLists();
   const mounted = name === 'thread'
@@ -445,7 +438,10 @@ export async function mount(name = viewName()) {
 }
 
 function mountRoute(name = viewName()) {
-  if (name !== 'notes') noteRequest++;
+  // Opening a vault note navigates to Knowledge > Notes and starts its own
+  // load first; any other landing invalidates a note load still in flight.
+  const route = routeOf();
+  if (!(route.page === 'knowledge' && route.tab === 'notes')) noteRequest++;
   const sequence = mountSequence + 1;
   return mount(name).catch((error) => showViewFailure(error, sequence));
 }

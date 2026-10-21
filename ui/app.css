@@ -1154,7 +1154,15 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .settings-tabs button { flex: 0 0 auto; min-height: var(--tap-target-min); padding: var(--space-2) var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-ctl); background: transparent; color: var(--muted); white-space: nowrap; }
 
-.settings-tabs button.selected, .settings-tabs button:hover { background: var(--raised); color: var(--text); }
+.settings-tabs button.selected { border-color: var(--line); background: var(--active); color: var(--text); }
+
+.settings-tabs button:hover { background: var(--hover); color: var(--text); }
+
+/* Tabbed pages (Inbox, Team, Knowledge) and the embedded Settings tabs mount a
+ * view that was a page of its own; its heading would repeat the host's h1. */
+.tab-panel .view-heading, .settings-embed .view-heading { display: none; }
+
+.tab-panel > .view-page, .settings-embed > .view-page { max-width: none; margin: 0; }
 
 .settings-group { display: grid; min-width: 0; gap: var(--space-3); margin: 0; padding: var(--space-3); border: 1px solid var(--line-soft); border-radius: var(--radius-ctl); }
 

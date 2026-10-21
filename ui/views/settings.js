@@ -1,6 +1,8 @@
 import { h, page, section, empty, note, button, field, input, textarea, select, check, modelLabel, post, subscribe, editing } from './util.js';
 import { setPrefs } from '../store.js';
 import { courtsSwitcher, refreshCourts } from './courts.js';
+import { mountUsage } from './usage.js';
+import { mountDoctor } from './doctor.js';
 
 let Assets, Notify, soundOn, setSound, cue;
 let dependencies;
@@ -18,6 +20,7 @@ const loadDependencies = () => dependencies ??= Promise.all([
 const TABS = [
   ['repo', 'Repository'], ['efficiency', 'Models & efficiency'], ['appearance', 'Appearance'],
   ['music', 'Music'], ['documents', 'Documents'], ['notifications', 'Notifications'], ['sounds', 'Sounds'], ['pet', 'Desk pet'],
+  ['usage', 'Usage'], ['doctor', 'Doctor'],
 ];
 const models = (state) => Object.entries(state.models ?? {}).flatMap(([cli, list]) => (list ?? []).map((model) => [`${cli}:${model}`, `${cli} · ${modelLabel(model)}`]));
 const fileList = (kind) => Assets.list().filter((asset) => asset.kind === kind);
@@ -324,7 +327,14 @@ function pet(state) {
   return section('Desk pet', field('Show the desk pet', enabled), button('Open desk pet', () => window.kingdomShell?.openPet ? window.kingdomShell.openPet() : window.open('/pet.html', 'kingdom-pet')), note('Close the pet window with its own shoo button.'));
 }
 
-const BUILDERS = { repo: repository, efficiency, appearance, music, documents, notifications, sounds, pet };
+// Usage and Doctor left the rail and live here. Each keeps its own view, mounted
+// into a panel after the page is drawn, so its subscriptions and request tokens
+// are its own; the embed's cleanup runs before every repaint and on unmount.
+const EMBEDS = { usage: mountUsage, doctor: mountDoctor };
+let stopEmbed = () => {};
+const embedPanel = (key) => () => h('div', { class: 'settings-embed', 'data-embed': key });
+
+const BUILDERS = { repo: repository, efficiency, appearance, music, documents, notifications, sounds, pet, usage: embedPanel('usage'), doctor: embedPanel('doctor') };
 
 export function renderSettings(state, root) {
   if (dependencyError) {
@@ -339,6 +349,8 @@ export function renderSettings(state, root) {
     });
     return;
   }
+  stopEmbed();
+  stopEmbed = () => {};
   root.replaceChildren();
   const requested = state.settingsSection ?? 'repo';
   const active = requested === 'summary' || requested === 'advisor' ? 'efficiency' : requested;
@@ -360,6 +372,8 @@ export function renderSettings(state, root) {
   }
   shell.append(nav, BUILDERS[active]?.(state, root) ?? empty('Unknown settings section.'));
   root.append(shell);
+  const panel = shell.querySelector('[data-embed]');
+  if (panel && EMBEDS[panel.dataset.embed]) stopEmbed = EMBEDS[panel.dataset.embed](state, panel) ?? (() => {});
 }
 
 export function mountSettings(state, root) {
@@ -406,6 +420,8 @@ export function mountSettings(state, root) {
   void start();
   return () => {
     active = false;
+    stopEmbed();
+    stopEmbed = () => {};
     offStore?.();
     offAssets?.();
     offMusic?.();
