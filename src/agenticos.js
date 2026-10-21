@@ -1010,7 +1010,7 @@ export class AgenticOS extends EventEmitter {
     // to isolate from, and every member works directly in the workspace home.
     const inWorktree = role === 'agent' && modeOf(this.mode()).worktrees && Boolean(this.repo);
     // opencode has no --tools flag to strip native tools the way claude does,
-    // and it discovers MCP config from a fixed `.opencode.json` in its cwd —
+    // and its private MCP config is selected through OPENCODE_CONFIG —
     // so orchestrator and briefer, who otherwise share the repo root as their
     // cwd, would clobber each other's identity file on every restart (whoever
     // spawns second overwrites the first's AGENTICOS_AGENT, silently handing
@@ -1099,7 +1099,8 @@ export class AgenticOS extends EventEmitter {
           ...(role === 'agent' && this.repo ? [join(stateDir(this.repo), 'wt')] : []),
           ...(this.config.vault && existsSync(this.config.vault) ? [this.config.vault] : []),
         ],
-        env: (spec.cli ?? 'claude') === 'claude' ? this.authEnvFor(name) : null,
+        env: (spec.cli ?? 'claude') === 'claude' ? this.authEnvFor(name)
+          : spec.cli === 'opencode' ? { OPENCODE_CONFIG: join(cwd, '.opencode.json') } : null,
         mcp: {
           command: process.execPath,
           args: [MCP_PATH],
@@ -2645,6 +2646,8 @@ export class AgenticOS extends EventEmitter {
   /** agent done -> run its tests -> hand the diff to the briefer to digest. */
   async #onDone(msg) {
     const agent = msg.sender;
+    const submittedRun = this.#activeRun();
+    const submittedRunId = submittedRun && msg.ts >= submittedRun.createdTs ? submittedRun.id : null;
     this.emit('agent', { name: agent, state: 'verifying' });
 
     // No repo, no worktree — nothing to commit, test or diff. The deliverable
@@ -2686,7 +2689,8 @@ export class AgenticOS extends EventEmitter {
     // immutable submission key so a later task cannot overwrite its evidence.
     this.bus.set(`verification:${agent}`, JSON.stringify(evidence));
     this.bus.set(`verification:${agent}:${msg.id}`, JSON.stringify(evidence));
-    const activeRun = this.#activeRun();
+    // Verification can finish after a different run starts; keep the submission's run.
+    const activeRun = submittedRunId ? this.bus.run(submittedRunId) : null;
     if (activeRun) {
       const verificationEvidence = [...activeRun.verificationEvidence, { agent, ...evidence }];
       // A run already blocked on something else — or in any state this

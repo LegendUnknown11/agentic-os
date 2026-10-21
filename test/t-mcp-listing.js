@@ -13,7 +13,9 @@ const tool = (roles) => ({
   roles, description: 'A test tool with a stable description.',
   get schema() {
     schemaReads++;
-    return { type: 'object', properties: {}, required: [] };
+    return { type: 'object', properties: {
+      description: { type: 'string', description: 'A '.repeat(100) },
+    }, required: [] };
   },
   run: async () => { runs++; return 'ok'; },
 });
@@ -43,6 +45,10 @@ a.equal(readsAtStartup, 2, 'hidden roles do not pay schema compaction costs');
 modeReads = 0;
 const first = await list();
 a.deepEqual(names(first), ['send_message', 'request_merge']);
+a.equal(first.tools[0].inputSchema.properties.description.type, 'string',
+  'an input named description remains a schema object, not a compacted string');
+a.ok(first.tools[0].inputSchema.properties.description.description.length <= 72,
+  'schema description text is still compacted');
 a.equal(modeReads, 1, 'one mode read per list, independent of tool count');
 const second = await list();
 a.equal(schemaReads, readsAtStartup, 'repeated lists never rebuild schemas');

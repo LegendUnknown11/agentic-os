@@ -1,5 +1,44 @@
 # Agentic OS handoff
 
+## Desktop verification (2026-10-21)
+
+PR #88 is merged as `ce2937d` on `main`; the unmerged-branch statements in
+the historical sections below predate that merge. The desktop's divergent
+design/preview work is preserved on `codex/preserved-desktop-20261021` and
+`codex/desktop-before-sync-20261021`, plus a verified pre-setup Git bundle.
+
+Fresh Windows gate after the live-discovered fixes: **102 suites, 4-wide,
+156.5s; all suites passed**, including real Chromium geometry and Electron
+acceptance. Chromium installation is now an explicit Windows CI step.
+
+Real Codex (`gpt-6.1-sol`), agy (`gemini-3.8-flash-low`), OpenCode
+(`opencode/big-pickle`) and native Windows Cursor Agent (`auto`) each passed
+a two-turn response/resume check against one saved session. Cursor was
+installed from its official Windows installer; its supported JavaScript
+binary override is configured per user. This is live provider evidence,
+separate from the adapter fixtures.
+
+Live MCP discovery exposed two defects: schema compaction converted a
+property named `description` to a string, which Cursor rejected, and OpenCode
+never loaded its private `.opencode.json`. Compaction now changes only
+description strings; OpenCode gets `OPENCODE_CONFIG`. Their owning regression
+tests fail without the fixes, and real Cursor lists the team tools while
+real OpenCode reports the server connected. A further reproducible panel
+failure came from verification of an older submission attaching to a newer
+run; verification now retains the run captured before its asynchronous work
+and excludes submissions predating that run.
+
+Actual legacy home/repository state was backed up and migrated. Both SQLite
+databases pass integrity checks; every original message, event, task and
+conversation ID remains, message text is unchanged, and token bytes match
+the backup. The home database retains 107 messages and eight conversations;
+its two additional events record config and roster migration. Both migrated
+workspace configurations now have the 18-role roster and verified backends.
+
+The full real-team lifecycle, final installer upgrade and installed-app
+profile/visual checks are still in progress; do not infer them from the
+passing automated gate or individual CLI checks.
+
 ## Current state (rename, 2026-10-21)
 
 The `rename` branch is cut from `functionality` at `fe9c67e` and replaces

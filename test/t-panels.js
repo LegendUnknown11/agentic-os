@@ -648,7 +648,7 @@ try {
     const { template } = saved;
     const started = await post('/api/runCreate', { objective: template.objective, acceptanceCriteria: template.acceptanceCriteria, allowedModels: template.allowedModels });
     a.ok(started.ok, started.error);
-    a.equal(started.run.state, 'planning');
+    a.equal(started.run.state, 'planning', JSON.stringify(started.run.blocker));
     a.deepEqual(started.run.acceptanceCriteria, ['tests pass', 'changelog'], 'the run carries the template criteria');
     const second = await post('/api/runCreate', { objective: 'another' });
     a.equal(second.ok, false, 'a second run is refused while one is active');

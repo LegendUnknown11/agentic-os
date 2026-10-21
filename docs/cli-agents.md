@@ -86,6 +86,9 @@ write** (a repository's own, checked out into an agent worktree): that member
 runs without AgenticOS tools and a warning says so. `.cursor/mcp.json` is added
 to `.git/info/exclude`.
 
+OpenCode receives its private `.opencode.json` path through `OPENCODE_CONFIG`;
+that hidden filename is not discovered automatically by the CLI.
+
 Neither Antigravity nor Cursor is given `--add-dir`: neither flag is verified,
 and agents always receive extra directories, so an unknown flag would fail
 every agent turn. A Cursor or Antigravity agent therefore cannot be assumed

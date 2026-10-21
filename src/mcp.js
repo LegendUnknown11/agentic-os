@@ -57,7 +57,7 @@ const compactSchema = (value) => {
   if (Array.isArray(value)) return value.map(compactSchema);
   return Object.fromEntries(Object.entries(value).map(([key, item]) => [
     key,
-    key === 'description' ? compactText(item, 72) : compactSchema(item),
+    key === 'description' && typeof item === 'string' ? compactText(item, 72) : compactSchema(item),
   ]));
 };
 

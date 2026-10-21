@@ -149,7 +149,7 @@ const turn = (ag) => new Promise((res) => ag.once('turn_end', res));
 /* ---------- 6. orchestrator and briefer do not clobber each other's identity --- */
 {
   // opencode has no --tools flag and no per-process --mcp-config: it reads a
-  // FIXED `.opencode.json` from its cwd. Orchestrator and briefer are officers
+  // private `.opencode.json` selected by OPENCODE_CONFIG. Orchestrator and briefer are officers
   // and historically share the repo root as their cwd (see agenticos.js's
   // #doSpawn) — so without per-officer isolation, whichever spawns second
   // overwrites the first's identity file, and the first quietly runs every
@@ -188,6 +188,9 @@ const turn = (ag) => new Promise((res) => ag.once('turn_end', res));
   const briefFile = join(stateDir(repo), 'officers', 'briefer', '.opencode.json');
   a.ok(existsSync(orchFile), 'orchestrator gets its own .opencode.json, not the shared repo root');
   a.ok(existsSync(briefFile), 'briefer gets its own .opencode.json, not the shared repo root');
+  a.equal(k.processes.get('orchestrator').env?.OPENCODE_CONFIG, orchFile,
+    'OpenCode must be told to load the private config; .opencode.json is not auto-discovered');
+  a.equal(k.processes.get('briefer').env?.OPENCODE_CONFIG, briefFile);
 
   const orchId = JSON.parse(readFileSync(orchFile, 'utf8'));
   const briefId = JSON.parse(readFileSync(briefFile, 'utf8'));

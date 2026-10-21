@@ -38,4 +38,5 @@ jobs:
       # ship in the app. Measured 2026-09-17: 0 findings at --audit-level=high
       # with --omit=dev.
       - run: npm audit --omit=dev --audit-level=high
+      - run: npx playwright install chromium
       - run: npm test
