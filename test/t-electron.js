@@ -214,7 +214,7 @@ try {
 
   console.log('collapsed rail');
 
-  await check('collapsing keeps every rail control at the 44px tap target, with drawn tips', async () => {
+  await check('collapsing keeps every rail control at the 32px tap target, with drawn tips', async () => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.locator('.sidebar-collapse').click();
     await page.waitForFunction(() => document.body.classList.contains('sidebar-collapsed'));
@@ -224,7 +224,7 @@ try {
       .map((e) => { const r = e.getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height), e.hasAttribute('title')]; }));
     a.ok(sizes.length >= 4, `nav buttons are still reachable collapsed (${sizes.length})`);
     for (const [w, h, title] of sizes) {
-      a.ok(w >= 44 && h >= 44, `a collapsed nav button measured ${w}x${h}, under 44x44`);
+      a.ok(w >= 32 && h >= 32, `a collapsed nav button measured ${w}x${h}, under 32x32`);
       a.equal(title, false, 'no native title tooltip (garbled on Windows); the rail draws .hover-tip');
     }
     await page.locator('.sidebar-collapse').click();

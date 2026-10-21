@@ -20,7 +20,7 @@ const token = (name) => new RegExp(`${name}\\s*:\\s*([^;]+);`).exec(root)?.[1].t
 // branch. It reverses the Cold-Call Workflow paper theme of 2026-09-21 (PLAN.md
 // section 1), exactly as that one reversed Hiveory. Dark, neutral and flat.
 // This app's own token discipline (:root, -rgb twins, no literal colour outside
-// :root, gold identifies the orchestrator alone, 44px enforced) is unaffected
+// :root, gold identifies the orchestrator alone) is unaffected
 // by which system supplies the values.
 a.equal(token('color-scheme'), 'dark');
 a.equal(token('--bg'), '#0a0a0a', 'the canvas page ground');
@@ -87,7 +87,7 @@ a.equal(token('--radius-pill'), '999px');
 // The spacing scale is unchanged from the paper theme and still widens faster
 // than linear on purpose; a return to 4/8/12/16 is a regression.
 a.deepEqual([1, 2, 3, 4, 5, 6, 7, 8].map((n) => token(`--space-${n}`)), ['4px', '8px', '16px', '24px', '32px', '48px', '64px', '88px']);
-a.equal(token('--tap-target-min'), '44px');
+a.equal(token('--tap-target-min'), '32px');
 a.equal(token('--t-md'), '14px', 'the canvas body size');
 a.equal(token('--ease'), 'ease', 'plain ease, as in the canvas');
 a.equal(token('--fast'), '150ms', 'hover/press transitions run at 0.15s');
@@ -114,11 +114,11 @@ a.doesNotMatch(css, /:root\[data-theme=|data-palette=|prefers-color-scheme/, 'on
 a.doesNotMatch(css, /--dark-|--ed-/, 'neither the retired --dark- convention nor the editorial --ed- namespace belongs in this palette');
 a.match(css, /body \{[^}]*background:\s*var\(--bg\);/, 'the page is the flat canvas ground: no grain, no wash');
 a.doesNotMatch(rules, /linear-gradient|radial-gradient/, 'no rule may invent a gradient of its own');
-a.match(css, /\.task-manage-controls select \{ height: var\(--tap-target-min\)/, 'task row controls must meet the 44px tap target, not browser-default selects');
+a.match(css, /\.task-manage-controls select \{ height: var\(--tap-target-min\)/, 'task row controls must meet the tap target, not browser-default selects');
 a.match(css, /\.run-spend-line\s*\{[^}]*stroke:\s*var\(--accent\)/, 'the run spend line wears the accent, the one series colour');
 a.match(css, /\.run-spend-cap\s*\{[^}]*stroke:\s*var\(--tone-attention\)[^}]*stroke-dasharray/, 'the run ceiling is a dashed attention line');
 a.match(css, /\.run-spend-line\s*\{[^}]*vector-effect:\s*non-scaling-stroke/, 'a stretched chart must not stretch its 2px line');
-a.match(css, /\.mode-switcher\s*\{[^}]*border-radius:\s*var\(--radius-pill\)/, 'work modes must read as one segmented control');
+a.match(css, /\.mode-switcher\s*\{[^}]*border-radius:\s*8px/, 'work modes must read as one segmented control, drawn like the canvas header chips');
 a.match(css, /\.mode-option\.selected\s*\{[^}]*background:\s*var\(--active\)/, 'the active work mode is the current-item fill, as in the canvas rail; the accent is reserved for live work');
 // 2026-09-23: reverses the line above. Read against a populated demo team,
 // "AGENTIC OS / WORKSPACE" repeated identically on all 14 views carried no
@@ -136,7 +136,7 @@ a.match(css, /\.view-heading h1\s*\{[^}]*font-size:\s*clamp\(18px, 2vw, 22px\);/
 a.match(css, /\.thread-header\s*\{[^}]*border-bottom:\s*1px solid var\(--line-soft\);[^}]*background:\s*transparent/, 'the run header sits flat over its transcript, divided by a hairline, as the canvas draws it');
 a.match(css, /\.thread-composer\s*\{[^}]*border-radius:\s*14px;[^}]*background:\s*var\(--raised\)/, 'the composer is one rounded card: the field on its first line, the buttons on its second');
 a.match(css, /\.view-heading\s*\{[^}]*clip:\s*rect\(0 0 0 0\)/, 'a page names itself for assistive tech; the header draws the title once');
-a.match(css, /\.header-search-box\s*\{[^}]*min-height:\s*28px/, 'the search chip paints at 28px inside a 44px button');
+a.match(css, /\.header-search-box\s*\{[^}]*min-height:\s*var\(--chip-h\)/, 'the search chip paints at the 28px chip height');
 a.doesNotMatch(css, /--mono:\s*['"]?(IBM Plex Mono|Playfair Display)/, 'the retired kit faces must not return to the mono stack');
 
 // Metadata (eyebrows, board names, form labels, table heads) is 11px, tracked,
@@ -183,7 +183,7 @@ a.match(css, /\.sidebar-nav-button\s*\{[^}]*display:\s*flex;[^}]*align-items:\s*
 a.match(css, /\.sidebar-nav-button \.icon\s*\{[^}]*flex:\s*none;/, 'navigation icons must not collapse before their labels');
 a.match(css, /\.sidebar-heading\s*\{[^}]*margin:\s*0;/, 'sidebar headings must not retain browser margins');
 a.match(css, /\.sidebar-empty\s*\{[^}]*margin:\s*0;[^}]*padding:/, 'sidebar empty states must use the shell spacing rhythm');
-a.match(css, /\.sidebar-new\s*\{[^}]*padding:\s*0 var\(--space-3\);/, 'the new-conversation control must have an intentional hit area');
+a.match(css, /\.sidebar-new\s*\{[^}]*padding:\s*0 [^;]+;/, 'the new-conversation control must have an intentional hit area');
 a.match(css, /\.sidebar-brand\s*\{[^}]*min-width:\s*0;[^}]*overflow:\s*hidden;[^}]*text-overflow:\s*ellipsis;[^}]*white-space:\s*nowrap;/, 'narrow drawers must let the brand yield to its controls');
 a.match(css, /\.sidebar-new\s*\{[^}]*min-width:\s*0;[^}]*overflow:\s*hidden;[^}]*text-overflow:\s*ellipsis;[^}]*white-space:\s*nowrap;/, 'narrow drawers must keep the new-conversation control inside the header');
 a.match(css, /\.app-identity\s*\{[^}]*display:\s*none;/, 'expanded desktop must not repeat the rail identity in the main header');
@@ -248,7 +248,7 @@ a.match(css, /\.visually-hidden\s*\{[^}]*clip:\s*rect\(0 0 0 0\)/, 'the Overview
 // at 1080px the grid held four 261px columns and the Queue card rendered in
 // one of them, four words wide, beside 800px of nothing.
 a.match(css, /\.home-grid\s*\{[^}]*minmax\(min\(100%, 420px\), 1fr\)/, 'the Home grid must size its columns for cards that share a row with the full-width run panel');
-a.match(css, /\.approval-card, \.agent-card, \.home-card,[^}]*align-content:\s*start;/, 'a card must hug its content rather than spread it down the height of its tallest neighbour');
+a.match(css, /\.approval-card, \.agent-card, \.home-card[^{]*\{[^}]*align-content:\s*start;/, 'a card must hug its content rather than spread it down the height of its tallest neighbour');
 a.match(css, /\.view-section\s*\{[^}]*align-content:\s*start;/, 'a view section must hug its content');
 a.match(css, /\.run-grid\s*\{[^}]*align-items:\s*start;/, 'run panels must be as tall as what they hold, not as tall as their tallest neighbour');
 a.match(css, /\.home-attention\s*\{[^}]*border-color:\s*rgb\(var\(--tone-attention-rgb\)/, 'Home attention states need a local attention treatment');

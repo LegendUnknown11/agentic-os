@@ -13,11 +13,12 @@
  * Where the artifact's own values fail this app's rules the app's rule wins and
  * the number is recorded here. The canvas sets metadata in #737373, which is
  * 4.10:1 on --surface, under the 4.5:1 AA minimum; --faint is #8a8a8a, 5.63:1.
- * Its 26-32px chips and rows keep their look but sit inside 44px hit areas.
+ * Sizes are the canvas's own (the user's call, 2026-10-21): 32px rows and
+ * controls, 28px chips.
  *
  * This app's own discipline survives the swap unchanged: no literal colour
  * outside this block, every colour carries an -rgb channel twin, gold
- * identifies the orchestrator alone, 44px is enforced rather than suggested.
+ * identifies the orchestrator alone.
  *
  * Contrast computed 2026-10-21 (WCAG relative luminance) on --surface #0d0d0d,
  * the ground under the rail and every section, with the same pairing on --bg
@@ -138,7 +139,8 @@
   --space-6: 48px;
   --space-7: 64px;
   --space-8: 88px;
-  --tap-target-min: 44px;      /* enforced, not suggested */
+  --tap-target-min: 32px;      /* the canvas's row and control height */
+  --chip-h: 28px;              /* the canvas's chip and segmented-tab height */
   --t-xs: 12px;
   --t-sm: 13px;
   --t-md: 14px;
@@ -221,8 +223,8 @@ a:focus-visible, summary:focus-visible, button:focus-visible, input:focus-visibl
   min-width: 0;
   min-height: 0;
   flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--space-3);
+  gap: var(--space-2);
+  padding: 12px 10px;
   border-right: 1px solid var(--line-soft);
   background: rgb(var(--surface-rgb) / var(--surface-alpha));
   overflow: hidden;
@@ -256,7 +258,7 @@ a:focus-visible, summary:focus-visible, button:focus-visible, input:focus-visibl
   min-width: 0;
   min-height: 0;
   overflow: auto;
-  padding: clamp(var(--space-4), 4vw, var(--space-6));
+  padding: 28px var(--space-4);
   scrollbar-width: thin;
   transition: opacity var(--view) var(--ease), transform var(--view) var(--ease);
 }
@@ -312,22 +314,19 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .goal-context { flex: 1; min-width: 0; overflow: hidden; color: var(--muted); font-size: var(--t-sm); text-overflow: ellipsis; white-space: nowrap; }
 
-/* The search chip is a 26px pill to the eye and a 44px target to the hand: the
- * header is 52px tall, so the hit area is the button, not its painted border. */
 .header-search { display: inline-flex; flex: none; min-width: var(--tap-target-min); min-height: var(--tap-target-min); align-items: center; justify-content: center; padding: 0; border: 0; background: transparent; color: var(--muted); font-size: var(--t-xs); }
 
-/* The painted chip is 28px; the button around it is the 44px target. */
-.header-search-box { display: inline-flex; min-height: 28px; align-items: center; gap: var(--space-2); padding: 0 var(--space-2); border: 1px solid var(--line); border-radius: var(--radius-ctl); background: var(--raised); }
+.header-search-box { display: inline-flex; min-height: var(--chip-h); align-items: center; gap: var(--space-2); padding: 0 var(--space-2); border: 1px solid var(--line); border-radius: var(--radius-ctl); background: var(--raised); }
 
 .header-search-hint { color: var(--faint); font: 400 11px/1.6 var(--mono); }
 
 .header-search:hover .header-search-box { border-color: var(--faint); color: var(--text); }
 
-.mode-switcher { display: flex; flex: none; gap: var(--space-1); min-width: 0; padding: 2px; border: 1px solid var(--line-soft); border-radius: var(--radius-pill); background: var(--raised); }
+.mode-switcher { display: flex; flex: none; gap: 2px; min-width: 0; padding: 2px; border: 1px solid var(--line-soft); border-radius: 8px; background: var(--bg); }
 
-.mode-option { display: flex; align-items: center; min-width: 64px; min-height: var(--tap-target-min); padding: var(--space-2) var(--space-3); border: 1px solid transparent; border-radius: var(--radius-pill); background: transparent; color: var(--muted); text-align: left; transition: border-color var(--fast) var(--ease), background-color var(--fast) var(--ease), color var(--fast) var(--ease); }
+.mode-option { display: flex; align-items: center; min-height: var(--chip-h); padding: 0 var(--space-3); border: 1px solid transparent; border-radius: var(--radius-ctl); background: transparent; color: var(--muted); text-align: left; transition: border-color var(--fast) var(--ease), background-color var(--fast) var(--ease), color var(--fast) var(--ease); }
 
-.mode-option strong { color: var(--text); font-size: var(--t-sm); font-weight: 600; }
+.mode-option strong { color: inherit; font-size: var(--t-xs); font-weight: 500; }
 
 /* 2026-09-23: this is the same defect test/t-theme.js already banned under
  * a "small" tag selector — the mode switcher visibly dominating the header
@@ -342,7 +341,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .mode-option:hover { background: var(--hover); }
 
-.mode-option.selected { border-color: var(--line); background: var(--active); color: var(--text); }
+.mode-option.selected { border-color: transparent; background: var(--active); color: var(--text); }
 
 .mode-option.selected strong { color: var(--text); }
 
@@ -409,8 +408,8 @@ body.sidebar-collapsed .app-identity { display: grid; }
   min-height: var(--tap-target-min);
   align-items: center;
   justify-content: center;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
+  gap: 6px;
+  padding: 0 var(--space-3);
   border: 1px solid var(--line);
   border-radius: var(--radius-ctl);
   background: var(--raised);
@@ -421,7 +420,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
   transition: border-color var(--fast) var(--ease), background-color var(--fast) var(--ease), color var(--fast) var(--ease), opacity var(--fast) var(--ease);
 }
 
-.button:hover, .icon-button:hover { border-color: var(--faint); background: var(--hover); }
+.button:hover, .icon-button:hover { border-color: var(--faint); color: var(--text); }
 
 /* The primary action is the white fill, as in the canvas ("Review diff",
  * "Share", send). Everything else is the bordered chip above. */
@@ -435,7 +434,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .button.link:hover { border-color: transparent; background: transparent; color: var(--text); }
 
-.button.chip { min-height: var(--tap-target-min); padding: var(--space-1) var(--space-2); font-size: var(--t-xs); }
+.button.chip { min-height: var(--chip-h); padding: 0 10px; font-size: var(--t-xs); }
 
 .button:disabled, .icon-button:disabled { cursor: not-allowed; opacity: .5; }
 
@@ -549,7 +548,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .sidebar-brand-repo { margin-left: auto; min-width: 0; overflow: hidden; color: var(--faint); font: 400 11px/1.4 var(--mono); text-overflow: ellipsis; }
 
-.sidebar-new { display: flex; width: 100%; min-width: 0; min-height: var(--tap-target-min); align-items: center; gap: var(--space-2); overflow: hidden; padding: 0 var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-ctl); background: var(--raised); color: var(--text); font-size: var(--t-sm); font-weight: 500; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar-new { display: flex; width: 100%; min-width: 0; min-height: var(--tap-target-min); align-items: center; gap: 10px; overflow: hidden; padding: 0 10px; border: 1px solid var(--line); border-radius: var(--radius-ctl); background: var(--raised); color: var(--text); font-size: var(--t-sm); font-weight: 500; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
 
 .sidebar-new-hint { margin-left: auto; color: var(--faint); font: 400 11px/1.4 var(--mono); }
 
@@ -595,7 +594,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .sidebar-nav { flex-shrink: 0; }
 
-.sidebar-nav-button { display: flex; width: 100%; min-height: var(--tap-target-min); align-items: center; gap: var(--space-2); font-size: var(--t-sm); padding: var(--space-2) var(--space-3); border: 1px solid transparent; border-radius: var(--radius-ctl); background: transparent; color: var(--muted); text-align: left; transition: border-color var(--fast) var(--ease), background-color var(--fast) var(--ease), color var(--fast) var(--ease); }
+.sidebar-nav-button { display: flex; width: 100%; min-height: var(--tap-target-min); align-items: center; gap: 10px; font-size: var(--t-sm); padding: 0 10px; border: 1px solid transparent; border-radius: var(--radius-ctl); background: transparent; color: var(--muted); text-align: left; transition: border-color var(--fast) var(--ease), background-color var(--fast) var(--ease), color var(--fast) var(--ease); }
 
 .sidebar-nav-button .icon { flex: none; opacity: .72; }
 
@@ -807,9 +806,9 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .view-description { max-width: 60ch; margin: 0; color: var(--muted); font-size: var(--t-sm); }
 
-.view-section { display: grid; align-content: start; gap: var(--space-3); padding: var(--space-4); border: 1px solid var(--line-soft); border-radius: var(--radius-card); background: var(--surface); box-shadow: var(--shadow-card); }
+.view-section { display: grid; align-content: start; gap: var(--space-3); padding: var(--space-3); border: 1px solid var(--line-soft); border-radius: 10px; background: var(--surface); box-shadow: var(--shadow-card); }
 
-.view-section h2 { margin: 0; font-family: var(--display); font-size: var(--t-sm); font-weight: 600; letter-spacing: -.01em; }
+.view-section h2 { margin: 0; font-family: var(--display); font-size: var(--t-sm); font-weight: 500; letter-spacing: -.01em; }
 
 .view-page h3, .view-page h4 { font-family: var(--display); font-weight: 600; letter-spacing: -.01em; }
 
@@ -946,7 +945,11 @@ body.sidebar-collapsed .app-identity { display: grid; }
  * The spacing scale this system brings widens faster than the one it
  * replaces, so holding cards at --space-4 would have pushed every card in the
  * app from 16px of padding to 24px at once. */
-.approval-card, .agent-card, .home-card, .workflow-row, .activity-row, .message-row { display: grid; align-content: start; gap: var(--space-2); padding: var(--space-3); border: 1px solid var(--line-soft); border-radius: var(--radius-card); background: var(--raised); box-shadow: var(--shadow-card); }
+.approval-card, .agent-card, .home-card { display: grid; align-content: start; gap: var(--space-2); padding: var(--space-3); border: 1px solid var(--line-soft); border-radius: var(--radius-card); background: var(--surface); box-shadow: var(--shadow-card); }
+
+/* Lists inside a section are rows divided by hairlines, as the canvas draws
+ * them, not a card per item. */
+.workflow-row, .activity-row, .message-row { display: grid; align-content: start; gap: var(--space-1); padding: 12px 0; border: 0; border-top: 1px solid var(--line-soft); border-radius: 0; background: transparent; }
 
 .approval-card.pending { border-color: rgb(var(--accent-rgb) / .55); }
 
@@ -1140,9 +1143,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .list-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
 
-.task-row, .doctor-row, .quota { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); padding: var(--space-3); border: 1px solid var(--line-soft); border-radius: var(--radius-ctl); background: var(--raised); box-shadow: var(--shadow-small); }
-
-.task-row + .task-row, .doctor-row + .doctor-row, .quota + .quota { margin-top: var(--space-2); }
+.task-row, .doctor-row, .quota { display: flex; min-height: 44px; align-items: center; justify-content: space-between; gap: 12px; padding: var(--space-2) 0; border: 0; border-top: 1px solid var(--line-soft); border-radius: 0; background: transparent; box-shadow: var(--shadow-small); }
 
 .doctor-row > span:not(.status-dot) { flex: 1; overflow-wrap: anywhere; }
 
@@ -1172,11 +1173,16 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .run-template-save { display: grid; gap: var(--space-2); margin-top: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--line); }
 
-.inbox-item { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-3); border: 1px solid var(--line-soft); border-radius: var(--radius-ctl); background: var(--raised); }
+.inbox-item { display: flex; min-width: 0; min-height: 48px; align-items: center; justify-content: space-between; gap: 12px; padding: var(--space-2) 0; border: 0; border-top: 1px solid var(--line-soft); background: transparent; }
 
-.inbox-item.attention { border-left: 3px solid var(--tone-attention); }
+/* Status is a dot plus a label, as everywhere else; no coloured left border. */
+.inbox-item::before { flex: none; align-self: center; width: 7px; height: 7px; border: 1.5px solid var(--faint); border-radius: 50%; content: ""; }
 
-.inbox-item.live { border-left: 3px solid var(--accent); }
+.inbox-item.attention::before { border-color: var(--tone-attention); background: var(--tone-attention); }
+
+.inbox-item.live::before { border-color: var(--accent); background: var(--accent); }
+
+.inbox-item > :not(.button) { flex: 1; min-width: 0; }
 
 .inbox-item .button { flex: none; }
 
@@ -1255,13 +1261,13 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .vault-link:hover { color: var(--accent); }
 
-.settings-tabs { display: flex; flex-wrap: nowrap; gap: var(--space-1); max-width: 100%; padding-bottom: var(--space-1); overflow-x: auto; scrollbar-width: thin; }
+.settings-tabs { display: inline-flex; flex-wrap: nowrap; justify-self: start; gap: 2px; max-width: 100%; padding: 2px; overflow-x: auto; border: 1px solid var(--line-soft); border-radius: 8px; background: var(--bg); scrollbar-width: thin; }
 
-.settings-tabs button { flex: 0 0 auto; min-height: var(--tap-target-min); padding: var(--space-2) var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-ctl); background: transparent; color: var(--muted); white-space: nowrap; }
+.settings-tabs button { flex: 0 0 auto; min-height: var(--chip-h); padding: 0 var(--space-3); border: 0; border-radius: var(--radius-ctl); background: transparent; color: var(--muted); font-size: var(--t-xs); white-space: nowrap; }
 
-.settings-tabs button.selected { border-color: var(--line); background: var(--active); color: var(--text); }
+.settings-tabs button.selected { background: var(--active); color: var(--text); }
 
-.settings-tabs button:hover { background: var(--hover); color: var(--text); }
+.settings-tabs button:hover { color: var(--text); }
 
 /* Tabbed pages (Inbox, Team, Knowledge) and the embedded Settings tabs mount a
  * view that was a page of its own; its heading would repeat the host's h1. */

@@ -96,8 +96,8 @@ async function main() {
       await mount(page, { ...BASE_STATE, prefs: { sidebarCollapsed: true } }, { modes: MODES }, 'sidebar-collapsed');
       const box = await page.locator('.sidebar.collapsed .sidebar-nav-button').first().boundingBox();
       a.ok(box, 'the collapsed rail must render at least one nav button');
-      a.ok(box.width >= 44, `collapsed rail nav button measured ${box.width}px wide, short of the 44px minimum`);
-      a.ok(box.height >= 44, `collapsed rail nav button measured ${box.height}px tall, short of the 44px minimum`);
+      a.ok(box.width >= 32, `collapsed rail nav button measured ${box.width}px wide, short of the 32px minimum`);
+      a.ok(box.height >= 32, `collapsed rail nav button measured ${box.height}px tall, short of the 32px minimum`);
       await page.close();
     }
 
