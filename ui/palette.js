@@ -17,7 +17,7 @@ const DESTINATIONS = [
   ['Memory', 'Knowledge', 'memory'],
   ['Notes', 'Knowledge', 'notes'],
   ['Automations', 'Workflows and templates', 'automations'],
-  ['Objective', 'Set the objective, start a run', 'objective'],
+  ['Objective', 'Overview', 'objective'],
   ['Changes', 'Review what the team changed', 'changes'],
   ['Tasks', "Your list and the team's queue", 'tasks'],
   ['Usage', 'Settings', 'usage'],

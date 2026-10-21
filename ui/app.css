@@ -644,7 +644,9 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 
 
-.sidebar-spend { color: var(--muted); font-size: var(--t-xs); }
+.sidebar-spend { padding: 0 var(--space-2); color: var(--faint); font-size: var(--t-xs); }
+
+.sidebar-spend:empty { display: none; }
 
 .thread-header { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); padding: var(--space-3); border: 1px solid var(--line-soft); border-radius: var(--radius-card); background: var(--surface); box-shadow: var(--shadow-card); }
 
@@ -947,7 +949,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
    1080px that left four 261px tracks with the Queue card rendering in one of
    them, four words wide, beside 800px of nothing. Two real columns here, one
    below ~860px. */
-.home-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: var(--space-3); }
+.home-grid { display: grid; align-items: start; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: var(--space-3); }
 
 .home-card h2, .home-card p { margin: 0; }
 
@@ -1030,7 +1032,38 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .review-step, .review-capture { padding: var(--space-2) 0; border-bottom: 1px solid var(--line); }
 
-.home-objective { grid-column: 1 / -1; min-width: 0; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; border: 0; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* Overview: the objective is the headline, four numbers sit under it, and the
+ * rest is lists, as in the canvas. */
+.home-page { gap: var(--space-4); }
+
+.home-objective-block { display: grid; min-width: 0; max-width: 720px; gap: var(--space-2); }
+
+.home-headline { margin: 0; font-size: 22px; font-weight: 600; letter-spacing: -.02em; line-height: 1.3; overflow-wrap: anywhere; }
+
+.home-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; overflow: hidden; border: 1px solid var(--line-soft); border-radius: var(--radius-card); background: var(--line-soft); }
+
+.home-stat { display: grid; min-width: 0; align-content: start; gap: var(--space-1); padding: var(--space-3); background: var(--surface); }
+
+.home-stat-label { color: var(--muted); font-size: var(--t-xs); }
+
+.home-stat-value { overflow-wrap: anywhere; font-size: 20px; font-weight: 600; }
+
+.home-stat-value.attention { color: var(--tone-attention); }
+
+.home-run-name { display: flex; min-width: 0; align-items: center; gap: var(--space-2); }
+
+.home-runs { grid-column: 1 / -1; }
+
+.home-runs .data-table { min-width: 520px; }
+
+.home-runs td:last-child { white-space: nowrap; }
+
+/* A list card is rows divided by hairlines, not boxes inside a box. */
+.home-card > .task-row { margin-top: 0; border: 0; border-top: 1px solid var(--line-soft); border-radius: 0; background: transparent; }
+
+.home-card > h2 + .task-row { border-top: 0; }
 
 .home-attention { border-color: rgb(var(--tone-attention-rgb) / .6); }
 
@@ -1414,6 +1447,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
   .agent-usage-details dd { padding-bottom: var(--space-2); text-align: left; }
   .home-efficiency-warning { grid-template-columns: 1fr; }
   .home-efficiency-warning .button { width: 100%; justify-self: stretch; }
+  .home-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (prefers-reduced-motion: reduce) {

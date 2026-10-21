@@ -8,7 +8,7 @@
 // failure `#tasks` hit on 2026-09-25, which t-pages guards).
 
 /** Pages the shell mounts. `thread` carries its own member and conversation. */
-export const PAGES = ['home', 'thread', 'inbox', 'team', 'knowledge', 'automations', 'settings', 'objective', 'changes', 'tasks'];
+export const PAGES = ['home', 'thread', 'inbox', 'team', 'knowledge', 'automations', 'settings', 'changes', 'tasks'];
 
 /** Pages that host several views as tabs, in strip order: [key, label]. */
 export const TABS = {
@@ -27,6 +27,8 @@ export const ALIASES = {
   notes: { page: 'knowledge', tab: 'notes' },
   usage: { page: 'settings', section: 'usage' },
   doctor: { page: 'settings', section: 'doctor' },
+  // The objective editor and Start a run live on Overview; #objective opens it.
+  objective: { page: 'home', open: 'objective' },
 };
 
 const decodePart = (value) => {

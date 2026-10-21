@@ -233,7 +233,11 @@ a.match(run, /h\('span', \{ class: 'run-item-label' \}, dot, h\('span'/, 'a run 
 a.match(css, /\.status-dot\.live\s*\{[^}]*box-shadow:\s*0 0 0 4px rgb\(var\(--tone-live-rgb\) \/ \.13\);[^}]*animation:\s*busy 1\.6s/, 'the live tone must pulse everywhere it appears, not only on a separately-flagged busy dot');
 a.doesNotMatch(css, /\.status-dot\.busy/, 'busy is a case of the live tone now, not a second animated class the dot needs');
 a.doesNotMatch(css, /\.home-mode-card|\.home-lead/, 'Overview must not carry its own mode display — mode has exactly one home, the header and drawer control');
-a.match(css, /\.home-objective\s*\{[^}]*grid-column:\s*1 \/ -1;/, 'the Home objective must lead the grid full width now that it stands alone');
+a.match(css, /\.home-objective-block\s*\{[^}]*max-width:\s*720px/, 'the objective is the Overview headline, a readable measure wide');
+a.match(css, /\.home-headline\s*\{[^}]*font-size:\s*22px;[^}]*font-weight:\s*600/, 'the canvas sets the objective at 22px/600');
+a.match(css, /\.home-stats\s*\{[^}]*grid-template-columns:\s*repeat\(4, minmax\(0, 1fr\)\)/, 'Overview leads with four numbers, side by side');
+a.match(css, /\.home-card > \.task-row\s*\{[^}]*border:\s*0;[^}]*border-top:\s*1px solid var\(--line-soft\)/, 'a list card is rows divided by hairlines, not boxes inside a box');
+a.match(css, /\.visually-hidden\s*\{[^}]*clip:\s*rect\(0 0 0 0\)/, 'the Overview h1 is named for assistive tech and focus, not drawn twice');
 // .run-summary spans 1 / -1, so auto-fit can never collapse an empty track:
 // at 1080px the grid held four 261px columns and the Queue card rendered in
 // one of them, four words wide, beside 800px of nothing.

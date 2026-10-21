@@ -1,17 +1,15 @@
-import { h, page, section, empty, button, membersOf, displayName, modeDef, setView, subscribe, tone, spendText } from './util.js';
+import { h, page, section, empty, button, membersOf, displayName, modeDef, setView, subscribe, tone, spendText, get, apiError, requestToken, date, money } from './util.js';
 import { statusLabel } from '../status.js';
 import { statusDot } from '../avatar.js';
-import { renderRunOverview } from '../run.js';
+import { renderRunOverview, runStatus, runStatusLabel } from '../run.js';
+import { objectiveSection } from './objective.js';
+import { startRunSection, loadRunTemplates } from './start-run.js';
+import { waitingCount } from './inbox.js';
 import { cancelMetrics, loadMetrics, warningFor } from './usage.js';
 
 const open = (view) => () => setView(view);
-const MODE_COPY = {
-  chat: { label: 'Chat', blurb: 'Start a direct conversation with Agentic OS.', action: 'Talk directly with the orchestrator.', cta: 'Start a direct chat' },
-  cowork: { label: 'Cowork', blurb: 'Delegate multi-step workspace work to your team.', action: 'Describe the outcome and let Agentic OS plan the work.', cta: 'Delegate workspace work' },
-  code: { label: 'Code', blurb: 'Change a repository with tests and review.', action: 'Work in isolation, then review what is ready to merge.', cta: 'Plan a repo change' },
-};
 
-const userMode = (state) => state.userMode ?? (state.mode === 'chat' ? 'chat' : state.mode === 'code' ? 'code' : 'cowork');
+const ACTIVE_RUNS = new Set(['planning', 'running', 'paused', 'blocked', 'verifying', 'ready_for_review']);
 const ATTENTION_STATES = new Set(['rate limited', 'failed', 'blocked']);
 const QUEUE_PREVIEW = 7;
 export const needsAttention = (status) => ATTENTION_STATES.has(statusLabel(status));
@@ -29,7 +27,7 @@ export const taskMeta = (task) => [
 
 const homeStateKey = (state) => JSON.stringify([
   state.ready, state.mode, state.goal, state.run, state.tasksLoading, state.tasksError, state.tasks,
-  state.approvals, state.changes, state.spend,
+  state.approvals, state.changes, state.spend, state.inbox, state.homeRuns, state.homeEdit, state.homeStartRun,
   membersOf(state).map(([name, member]) => [name, member.role, member.summoned, member.awake, member.status,
     state.status?.get?.(name) ?? state.status?.[name], state.log?.get?.(name)?.at?.(-1)?.type]),
 ]);
@@ -37,7 +35,7 @@ const homeStateKey = (state) => JSON.stringify([
 // With no active run, the single most urgent thing takes the lead position a
 // run would otherwise hold — the first item off the merged urgency ranking,
 // or changes waiting on review, or setting an objective at all.
-function nextStepFor({ urgent, changesVisible, changes, goal }) {
+function nextStepFor({ urgent, changesVisible, changes, goal, actions = {} }) {
   if (urgent.length) {
     const top = urgent[0];
     return h('section', { class: 'home-card home-next-step' },
@@ -58,18 +56,76 @@ function nextStepFor({ urgent, changesVisible, changes, goal }) {
     const card = h('section', { class: 'home-card home-next-step' },
       h('h2', { text: 'Next step' }),
       h('p', { text: 'Set the outcome first. Every agent receives it before it starts work.' }),
-      h('div', { class: 'button-row' }, button('Set objective', open('objective'), 'primary'), button('Start a conversation', open({ page: 'thread', member: 'orchestrator' }))));
+      h('div', { class: 'button-row' }, button('Set objective', actions.editObjective ?? open('objective'), 'primary'), button('Start a conversation', open({ page: 'thread', member: 'orchestrator' }))));
     card.dataset.lead = 'objective';
     return card;
   }
-  // An objective and no run: the next step is starting one (the form lives
-  // on the Objective view, beside the outcome it is started from).
+  // An objective and no run: the next step is starting one. The form is on
+  // this page now, under the objective it starts from.
   const card = h('section', { class: 'home-card home-next-step' },
     h('h2', { text: 'Next step' }),
     h('p', { text: 'Start a run to put the team on this objective, with acceptance criteria to verify against.' }),
-    h('div', { class: 'button-row' }, button('Start a run', open('objective'), 'primary')));
+    h('div', { class: 'button-row' }, button('Start a run', actions.startRun ?? open('objective'), 'primary')));
   card.dataset.lead = 'start-run';
   return card;
+}
+
+const runIsActive = (state) => Boolean(state.run) && ACTIVE_RUNS.has(runStatus(state.run));
+
+/** Every run, newest first, with what it spent — the Runs table's rows. */
+export function loadHomeRuns(state, render) {
+  const token = requestToken(state, 'homeRunsRequest');
+  return get('/api/runSpend').then((data) => {
+    if (state.homeRunsRequest !== token) return;
+    if (data?.ok !== false) { state.homeRuns = data.runs ?? []; state.homeRunsError = null; }
+    else state.homeRunsError = apiError(data, 'Could not load your runs.');
+    render?.();
+  }).catch(() => {});
+}
+
+/** The standing objective as the page's headline, with the two things to do about it. */
+function objectiveBlock(state, actions) {
+  const goal = state.goal;
+  const toggle = button(state.homeEdit ? 'Close editor' : goal?.text ? 'Edit objective' : 'Set objective', actions.editObjective ?? open('objective'));
+  const start = goal?.text && !runIsActive(state)
+    ? button(state.homeStartRun ? 'Hide run form' : 'Start a run', actions.startRun ?? open('objective'), 'primary') : null;
+  return h('section', { class: 'home-objective-block', 'aria-label': 'Objective' },
+    h('span', { class: 'home-stat-label', text: 'Objective' }),
+    h('p', { class: `home-headline${goal?.text ? '' : ' muted'}`, text: goal?.text ? goal.text : 'No objective set' }),
+    h('div', { class: 'button-row' }, toggle, start));
+}
+
+/** Four numbers: what is running, what waits on you, what is open, what it cost. */
+function counters(state, tasks, approvals) {
+  const runs = state.homeRuns;
+  const active = runs ? runs.filter((run) => ACTIVE_RUNS.has(String(run.state))).length : (runIsActive(state) ? 1 : 0);
+  const waiting = state.inbox ? waitingCount(state.inbox) : approvals.length;
+  const open = tasks.filter((task) => !['done', 'dropped'].includes(task.state)).length;
+  const spend = spendText(state.spend) || '—';
+  const stat = (label, value, cls = '') => h('div', { class: 'home-stat' }, h('span', { class: 'home-stat-label', text: label }), h('span', { class: `home-stat-value ${cls}`.trim(), text: String(value) }));
+  return h('div', { class: 'home-stats', role: 'group', 'aria-label': 'At a glance' },
+    stat('Active runs', active), stat('Waiting on you', waiting, waiting ? 'attention' : ''), stat('Open tasks', open), stat('Spend', spend, 'mono'));
+}
+
+/** Run, stage, spend, updated. The canvas also draws an agent column; a run does not record one. */
+function runsTable(state) {
+  const runs = state.homeRuns;
+  if (!runs?.length) return null;
+  const rows = runs.slice(0, 8).map((run) => {
+    const status = runStatus({ status: run.state });
+    const dot = statusDot();
+    const dotTone = tone(status);
+    if (dotTone) dot.classList.add(dotTone);
+    return h('tr', {},
+      h('td', {}, h('span', { class: 'home-run-name' }, dot, h('span', { text: run.objective || `Run ${run.id}` }))),
+      h('td', {}, h('b', { class: `run-badge ${dotTone}`.trim(), text: runStatusLabel(status) })),
+      h('td', { class: 'mono', text: money(run.usd ?? 0) }),
+      h('td', { text: date(run.endedTs ?? run.createdTs) }));
+  });
+  return h('section', { class: 'home-card home-runs' }, h('h2', { text: 'Runs' }),
+    h('div', { class: 'table-wrap' }, h('table', { class: 'data-table' },
+      h('thead', {}, h('tr', {}, h('th', { scope: 'col', text: 'Run' }), h('th', { scope: 'col', text: 'Stage' }), h('th', { scope: 'col', text: 'Spend' }), h('th', { scope: 'col', text: 'Updated' }))),
+      h('tbody', {}, ...rows))));
 }
 
 export function render(state, root, actions = {}, queueExpanded = false) {
@@ -88,7 +144,6 @@ export function render(state, root, actions = {}, queueExpanded = false) {
   const tasks = state.tasks?.tasks ?? state.tasks ?? [];
   const approvals = (state.approvals ?? []).filter((a) => !a.resolved);
   const changes = state.changes?.changed ?? state.changes ?? [];
-  const mode = MODE_COPY[userMode(state)] ?? MODE_COPY.cowork;
   const members = membersOf(state);
   const team = members.filter(([, member]) => member.role === 'peasant' && member.summoned);
   const currentStatus = (name, member) => state.status?.get?.(name) ?? state.status?.[name] ?? member.status ?? state.log?.get?.(name)?.at?.(-1)?.type ?? 'idle';
@@ -104,7 +159,13 @@ export function render(state, root, actions = {}, queueExpanded = false) {
   const queueVisible = m.tasks !== false && queueRows.length;
   const workingVisible = crewVisible && working.length;
   const changesVisible = m.merge !== false && changes.length;
-  const shell = page('Overview', mode.blurb);
+  // The h1 is the page's name for assistive tech and focus; the objective is
+  // the visible headline, as in the canvas.
+  const shell = h('div', { class: 'view-page home-page' }, h('h1', { class: 'visually-hidden', text: 'Overview' }));
+  shell.append(objectiveBlock(state, actions));
+  const editor = state.homeEdit ? objectiveSection(state, () => actions.rerender?.()) : null;
+  if (editor) shell.append(editor);
+  shell.append(counters(state, tasks, approvals));
   const grid = h('div', { class: 'home-grid' });
 
   // Urgency, computed at render time rather than fixed in source order:
@@ -128,7 +189,7 @@ export function render(state, root, actions = {}, queueExpanded = false) {
   ];
 
   const runSummary = renderRunOverview(state, { post: actions.post, toast: actions.toast });
-  const next = runSummary ? null : nextStepFor({ urgent, changesVisible, changes, goal });
+  const next = runSummary ? null : nextStepFor({ urgent, changesVisible, changes, goal, actions });
   if (runSummary) grid.append(runSummary);
   else if (next) grid.append(next);
   const leadAsksForObjective = next?.dataset?.lead === 'objective';
@@ -193,23 +254,17 @@ export function render(state, root, actions = {}, queueExpanded = false) {
   }
 
   if (changesVisible) {
-    const card = h('div', { class: 'home-card' }, h('h2', { text: `Changes ready · ${changes.length}` }));
+    const card = h('div', { class: 'home-card' }, h('h2', { text: `Worktree changes · ${changes.length}` }));
     changes.slice(0, 7).forEach((change) => card.append(button(`${displayName(change.peasant)} · review changes`, open('changes'), 'list-row')));
     grid.append(card);
   }
 
-  // Ambient: ever-present, always last — ground truth for what the court is
-  // doing and what it has spent, not a call to action.
-  const ambient = h('div', { class: 'home-card home-objective' }, h('h2', { text: goal?.text ? 'Current objective' : 'Start here' }));
-  if (goal?.text) ambient.append(h('p', { text: goal.text }), h('div', { class: 'button-row' }, button('Talk to the orchestrator', open({ page: 'thread', member: 'orchestrator' }), 'primary'), button('Edit objective', open('objective'))));
-  else if (!leadAsksForObjective) ambient.append(h('p', { class: 'muted', text: 'Set the outcome first. Every agent receives it before it starts work.' }), h('div', { class: 'button-row' }, button('Set objective', open('objective'), 'primary'), button('Start a conversation', open({ page: 'thread', member: 'orchestrator' }))));
-  if (goal?.milestones?.length) ambient.append(h('p', { class: 'muted', text: `${goal.milestones.filter((x) => x.done).length}/${goal.milestones.length} milestones complete` }));
-  const spend = spendText(state.spend);
-  if (spend) ambient.append(h('p', { class: 'muted', text: `Spend so far: ${spend}` }));
-  // A heading with nothing under it is not ambient context. When the lead card
-  // has already asked for the objective, this one only appears if it has
-  // something of its own to add.
-  if (ambient.children.length > 1) grid.append(ambient);
+  // Runs, then the objective's start-a-run form when asked for, then worktree
+  // changes: the rest of the page the canvas draws under "Needs you".
+  const runsCard = runsTable(state);
+  if (runsCard) grid.append(runsCard);
+  const startable = goal?.text && !runSummary;
+  if (state.homeStartRun && startable) grid.append(startRunSection(state, () => actions.rerender?.()));
 
   if (!runSummary && !next && !urgent.length && !taskLoading && !taskFailure && !queueVisible && !workingVisible && !changesVisible) {
     grid.append(h('p', { class: 'home-empty', text: 'Your workspace is ready. Set an objective or start a conversation to begin.' }));
@@ -223,18 +278,29 @@ export function mount(state, root, actions = {}) {
   let queueExpanded = false;
   let active = true;
   let snapshot = '';
-  const renderCurrent = () => render(state, root, { ...actions, setQueueExpanded: (value) => {
-    queueExpanded = Boolean(value);
-    renderCurrent();
-  } }, queueExpanded);
+  const repaint = () => { if (active && root.isConnected !== false) renderCurrent(); };
+  const flip = (key) => () => { state[key] = !state[key]; repaint(); };
+  const renderCurrent = () => render(state, root, {
+    ...actions,
+    rerender: repaint,
+    editObjective: flip('homeEdit'),
+    startRun: flip('homeStartRun'),
+    setQueueExpanded: (value) => { queueExpanded = Boolean(value); renderCurrent(); },
+  }, queueExpanded);
   renderCurrent();
   snapshot = homeStateKey(state);
+  // The Runs table follows the current run: a new run, or one changing stage.
+  let runKey = `${state.run?.id}|${state.run?.state ?? state.run?.status}`;
   const off = subscribe(() => {
+    const nowRun = `${state.run?.id}|${state.run?.state ?? state.run?.status}`;
+    if (nowRun !== runKey) { runKey = nowRun; void loadHomeRuns(state, repaint); }
     const next = homeStateKey(state);
     if (next === snapshot) return;
     snapshot = next;
     renderCurrent();
   });
+  void loadHomeRuns(state, repaint);
+  void loadRunTemplates(state, repaint);
   const ownsMetrics = !state.metrics && !state.metricsLoading && !state.metricsError;
   if (ownsMetrics) void loadMetrics(state, () => {
     if (!state.metricsLoading && active && root.isConnected !== false) renderCurrent();
@@ -242,6 +308,8 @@ export function mount(state, root, actions = {}) {
   return () => {
     active = false;
     off?.();
+    requestToken(state, 'homeRunsRequest');
+    requestToken(state, 'runTemplatesRequest');
     if (ownsMetrics && state.metricsLoading) cancelMetrics(state);
   };
 }

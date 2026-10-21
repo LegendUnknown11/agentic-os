@@ -17,17 +17,19 @@ const LANDINGS = {
   notes: { page: 'knowledge', tab: 'notes' },
   usage: { page: 'settings', section: 'usage' },
   doctor: { page: 'settings', section: 'doctor' },
+  objective: { page: 'home', open: 'objective' },
 };
 for (const [from, want] of Object.entries(LANDINGS)) {
   a.deepEqual(parseHash(`#${from}`), want, `#${from} must land on its new home, not Overview`);
 }
 a.deepEqual(Object.keys(ALIASES).sort(), Object.keys(LANDINGS).sort(), 'every alias is pinned here, so a new one is a decision');
-console.log('  8 retired destinations land on their new tab or settings section');
+console.log('  9 retired destinations land on their new tab, settings section or Overview');
 
 // nothing a view is registered under can fall back to Overview
 for (const name of Object.keys(VIEW_RENDERERS)) {
   const route = parseHash(`#${name}`);
-  a.notEqual(route.page === 'home' && name !== 'home', true, `#${name} is a registered view and must be routable or aliased`);
+  a.ok(PAGES.includes(name) || Object.hasOwn(ALIASES, name), `#${name} is a registered view and must be a page or an alias`);
+  a.ok(route.page !== 'home' || ALIASES[name]?.page === 'home', `#${name} must not fall back to Overview by accident`);
 }
 for (const name of Object.keys(renderers)) a.ok(PAGES.includes(name), `the registry mounts ${name}, so it must be a routed page`);
 for (const name of PAGES.filter((p) => p !== 'thread')) {

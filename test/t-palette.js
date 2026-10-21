@@ -15,7 +15,8 @@ const pages = items.filter((i) => i.kind === 'page');
 for (const label of ['Overview', 'Inbox', 'Approvals', 'Messages', 'My tasks', 'Team', 'Activity', 'Knowledge', 'Memory', 'Notes', 'Automations', 'Objective', 'Changes', 'Tasks', 'Usage', 'Doctor', 'Settings']) {
   const item = pages.find((p) => p.label === label);
   a.ok(item, `${label} must be reachable from search`);
-  a.notEqual(parseHash(`#${item.target}`).page === 'home' && label !== 'Overview', true, `${label} must not route to Overview`);
+  const route = parseHash(`#${item.target}`);
+  a.ok(route.page !== 'home' || label === 'Overview' || route.open === 'objective', `${label} must not route to Overview by accident (Objective opens its editor there on purpose)`);
 }
 console.log(`  ${pages.length} pages reachable, none of them routed to Overview by accident`);
 

@@ -408,6 +408,7 @@ export async function mount(name = viewName()) {
   syncStreamScope();
   if (route.tab) state.tabs = { ...state.tabs, [route.page]: route.tab };
   if (route.section) state.settingsSection = route.section;
+  if (route.open === 'objective') state.homeEdit = true;
   // A retired id (#usage, #approvals) is rewritten to the address of the page
   // that hosts it, so a reload or a copied link names where the view lives now.
   if (route.page !== 'thread' && location.hash.slice(1) !== hashFor(route)) history.replaceState(null, '', `#${hashFor(route)}`);

@@ -36,7 +36,7 @@ const knowledgePage = tabbedPage('knowledge', 'Knowledge', 'What the team rememb
 // (approvals, agents, usage, ...) is an alias in routes.js and lands on the
 // tab or settings section that hosts it; its own render/mount pair stays in
 // VIEW_RENDERERS / VIEW_MOUNTS for that host to use.
-const PAGE_VIEWS = ['objective', 'changes', 'tasks'];
+const PAGE_VIEWS = ['changes', 'tasks'];
 export const renderers = {
   home: renderHome,
   inbox: inboxPage.render,
