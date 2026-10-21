@@ -199,6 +199,31 @@ const turn = (ag) => new Promise((res) => ag.once('turn_end', res));
   console.log('  orchestrator and briefer keep separate .opencode.json identities, no clobbering');
 }
 
+/* ---------- 7. model steps complete one process turn; flush JSON tail ----- */
+{
+  const multi = join(dir, 'multi-opencode.js');
+  writeFileSync(multi, `
+const say = (o) => process.stdout.write(JSON.stringify(o) + '\\n');
+say({ type: 'text', sessionID: 'multi', part: { type: 'text', text: 'working' } });
+say({ type: 'step_finish', part: { tokens: { input: 3, output: 2 }, cost: 0.01 } });
+process.stdout.write(JSON.stringify({ type: 'step_finish', part: { tokens: { input: 4, output: 1 }, cost: 0.02 } }));
+`);
+  process.env.KINGDOM_OPENCODE_BIN = multi;
+  const { Agent: Multi } = await import('../src/agent.js?multi-oc');
+  const ag = new Multi({ name: 'coder', cli: 'opencode' }, { cwd: dir });
+  const ends = [];
+  ag.on('turn_end', (event) => ends.push(event));
+  ag.start();
+  const done = turn(ag);
+  ag.send('go');
+  await done;
+  a.equal(ends.length, 1, 'intermediate model steps must not end the agent turn');
+  a.equal(ends[0].usage.input_tokens, 7);
+  a.equal(ends[0].costUsd, 0.03);
+  a.equal(ag.busy, false);
+  console.log('  multiple steps yield one turn with aggregate usage and a flushed JSON tail');
+}
+
 try {
   rmSync(dir, { recursive: true, force: true });
 } catch {}
