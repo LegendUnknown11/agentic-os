@@ -21,6 +21,7 @@ import { tasks } from './mcp/tasks.js';
 import { approvals } from './mcp/approvals.js';
 import { control } from './mcp/control.js';
 import { workflows } from './mcp/workflows.js';
+import { closeVaultWatchers } from './vault.js';
 
 // The toolset, assembled from one module per domain.
 //
@@ -185,3 +186,10 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
 // the warm finishes does its own synchronous load and the two contend for the
 // same disk. The cache alone already turns a warm search into 15ms.
 await server.connect(new StdioServerTransport());
+
+// The client closing stdin is the end of this member's session. Nothing else
+// holds the event loop then, so the process exits — except the vault watcher:
+// on Linux, Node's recursive fs.watch ignores unref() and kept every process
+// that had run a vault_search alive after its CLI was gone (codex starts one
+// per turn). Releasing it here lets the exit happen.
+process.stdin?.on?.('end', () => closeVaultWatchers());
