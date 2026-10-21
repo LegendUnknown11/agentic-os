@@ -1,4 +1,4 @@
-import { h, page, section, empty, button, membersOf, displayName, modeDef, setView, subscribe, tone, spendText, get, apiError, requestToken, date, money } from './util.js';
+import { h, page, section, empty, button, membersOf, displayName, modeDef, setView, subscribe, tone, get, apiError, requestToken, date, money } from './util.js';
 import { statusLabel } from '../status.js';
 import { statusDot } from '../avatar.js';
 import { renderRunOverview, runStatus, runStatusLabel } from '../run.js';
@@ -101,19 +101,35 @@ function objectiveBlock(state, actions) {
     h('div', { class: 'button-row' }, toggle, start));
 }
 
-/** Four numbers: what is running, what waits on you, what is open, what it cost. */
+/**
+ * "Spend today": the daemon's ledger figure for the local day it names, from
+ * the snapshot and every 'spend' event. Pure, for the suite. Nothing streamed
+ * yet reads as a dash, never as $0.00.
+ */
+export function spendToday(spend) {
+  const today = spend?.today;
+  if (!today || !Number.isFinite(Number(today.usd))) return '—';
+  return money(Number(today.usd));
+}
+
+/** Who drove a run: its recorded lead, else whoever spent most on it. Pure. */
+export function runAgent(run) {
+  return run?.lead || (Array.isArray(run?.agents) ? run.agents[0] : null) || '—';
+}
+
+/** Four numbers: what is running, what waits on you, what is open, what it cost today. */
 function counters(state, tasks, approvals) {
   const runs = state.homeRuns;
   const active = runs ? runs.filter((run) => ACTIVE_RUNS.has(String(run.state))).length : (runIsActive(state) ? 1 : 0);
   const waiting = state.inbox ? waitingCount(state.inbox) : approvals.length;
   const open = tasks.filter((task) => !['done', 'dropped'].includes(task.state)).length;
-  const spend = spendText(state.spend) || '—';
+  const spend = spendToday(state.spend);
   const stat = (label, value, cls = '') => h('div', { class: 'home-stat' }, h('span', { class: 'home-stat-label', text: label }), h('span', { class: `home-stat-value ${cls}`.trim(), text: String(value) }));
   return h('div', { class: 'home-stats', role: 'group', 'aria-label': 'At a glance' },
-    stat('Active runs', active), stat('Waiting on you', waiting, waiting ? 'attention' : ''), stat('Open tasks', open), stat('Spend', spend, 'mono'));
+    stat('Active runs', active), stat('Waiting on you', waiting, waiting ? 'attention' : ''), stat('Open tasks', open), stat('Spend today', spend, 'mono'));
 }
 
-/** Run, stage, spend, updated. The canvas also draws an agent column; a run does not record one. */
+/** Run, agent, stage, updated — the canvas's columns. A run's spend is in Settings, Usage. */
 function runsTable(state) {
   const runs = state.homeRuns;
   if (!runs?.length) return null;
@@ -124,13 +140,13 @@ function runsTable(state) {
     if (dotTone) dot.classList.add(dotTone);
     return h('tr', {},
       h('td', {}, h('span', { class: 'home-run-name' }, dot, h('span', { text: run.objective || `Run ${run.id}` }))),
+      h('td', { text: runAgent(run) }),
       h('td', {}, h('b', { class: `run-badge ${dotTone}`.trim(), text: runStatusLabel(status) })),
-      h('td', { class: 'mono', text: money(run.usd ?? 0) }),
       h('td', { text: date(run.endedTs ?? run.createdTs) }));
   });
   return h('section', { class: 'home-card home-runs' }, h('h2', { text: 'Runs' }),
     h('div', { class: 'table-wrap' }, h('table', { class: 'data-table' },
-      h('thead', {}, h('tr', {}, h('th', { scope: 'col', text: 'Run' }), h('th', { scope: 'col', text: 'Stage' }), h('th', { scope: 'col', text: 'Spend' }), h('th', { scope: 'col', text: 'Updated' }))),
+      h('thead', {}, h('tr', {}, h('th', { scope: 'col', text: 'Run' }), h('th', { scope: 'col', text: 'Agent' }), h('th', { scope: 'col', text: 'Stage' }), h('th', { scope: 'col', text: 'Updated' }))),
       h('tbody', {}, ...rows))));
 }
 

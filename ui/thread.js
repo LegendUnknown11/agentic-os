@@ -2,7 +2,7 @@ import { state as storeState, subscribe, post as storePost, sameId } from './sto
 import { mdToHtml } from './markdown.js';
 import { pick as pickFiles, upload as uploadAsset } from './assets.js';
 import { displayName } from './names.js';
-import { date, modelLabel, tone } from './views/util.js';
+import { date, kb, modelLabel, tone } from './views/util.js';
 import { renderRunThreadContext, runStatus, runStatusLabel } from './run.js';
 import { renderInspector } from './inspector.js';
 import { mountChanges } from './views/changes.js';
@@ -462,6 +462,8 @@ export function mountThread(root, options = {}) {
   // Diff and Tasks mount a whole view into one host that outlives repaints, so
   // a stream event never rebuilds a form someone is typing in.
   const inspectorOpen = new Set(['environment', 'progress', 'outputs', 'session']);
+  // The member whose Compact session request is in flight, if any.
+  let compacting = null;
   let embedHost = null;
   let embedTab = null;
   let embedCleanup = null;
@@ -526,7 +528,7 @@ export function mountThread(root, options = {}) {
     pendingFiles = (drafts.get(key)?.files ?? []).map((file) => ({ ...file }));
     const tab = sovereign ? (currentState.runTab ?? 'session') : 'session';
     const header = threadHeader(currentState, { name, member, sovereign, ready, label, conversationId, tab });
-    const inspector = sovereign ? renderInspector(currentState, { open: inspectorOpen }) : null;
+    const inspector = sovereign ? renderInspector(currentState, { open: inspectorOpen, compacting, member: name }) : null;
     if (tab !== 'session' && embedTab === tab && embedHost?.isConnected && root.contains(embedHost)) {
       // Diff or Tasks is already mounted: only the header and inspector follow
       // the stream. Rebuilding the view would drop focus from whatever field
@@ -708,6 +710,28 @@ export function mountThread(root, options = {}) {
     return result;
   }
 
+  // Compact session: the daemon refuses (409, with a reason) when the member
+  // is mid-turn or asleep, and that refusal is what the toast says. A reply
+  // that lands after the thread has gone, or moved to another member, only
+  // clears the in-flight flag; it never repaints a view it no longer owns.
+  async function compactSession(member) {
+    if (!member || compacting) return;
+    compacting = member;
+    const key = currentThreadKey();
+    render(currentState);
+    let result;
+    try {
+      result = await post('compactSession', { name: member });
+    } catch (error) {
+      result = { ok: false, error: error?.message ?? 'The session could not be compacted.' };
+    }
+    if (compacting === member) compacting = null;
+    if (!mounted || root.isConnected === false) return;
+    if (result?.ok) options.toast?.(`Compacted ${member}: ${kb(result.before ?? 0)} to ${kb(result.after ?? 0)} tokens.`);
+    else options.toast?.(result?.error ?? 'The session could not be compacted.', true);
+    if (isCurrentThread(key)) render(currentState);
+  }
+
   async function approvalAction(action, id, target) {
     const card = target?.closest?.('[data-approval-id]');
     card?.querySelectorAll('button').forEach((button) => { button.disabled = true; });
@@ -772,6 +796,7 @@ export function mountThread(root, options = {}) {
       if (inspectorOpen.has(card)) inspectorOpen.delete(card); else inspectorOpen.add(card);
       return render(currentState);
     }
+    if (action === 'compact-session') return compactSession(target.dataset.member);
     if (action === 'attach') return attach();
     if (action === 'remove-attachment') {
       pendingFiles = pendingFiles.filter((file) => file.name !== target.dataset.attachment);

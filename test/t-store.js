@@ -180,4 +180,30 @@ a.deepEqual(state.myTasks, [{ id: 7, title: 'call the bank' }], "a broadcast of 
 a.equal(state.myTasksError, null, 'and clears a stale load error');
 apply({ type: 'inbox', items: [{ id: 'run:r1', tone: 'attention' }] });
 a.deepEqual(state.inbox, [{ id: 'run:r1', tone: 'attention' }], 'the inbox broadcast feeds the rail count');
-console.log('t-store.js OK — reducer keeps dismissal, roles, three states, and money semantics');
+
+// The context meter's state: seeded by the snapshot, moved by each 'spend'
+// event for that member, zeroed by a recycle or a compaction — which still
+// reach the notice list as they always did.
+resetForTest();
+apply({
+  type: 'snapshot',
+  roster: [{ name: 'orchestrator', role: 'orchestrator', summoned: true, awake: true }],
+  context: [{ name: 'orchestrator', tokens: 100_000, window: 400_000, pct: 25 }, { name: 'coder', tokens: 5, window: null, pct: null }],
+  spend: { today: { day: '2026-10-21', usd: 1.5, turns: 3, tokens: 9, timeZone: 'UTC' } },
+});
+a.equal(state.context.orchestrator.tokens, 100_000, 'the snapshot seeds the context meter');
+a.equal(state.spend.today.usd, 1.5, 'and today\'s spend rides in spend');
+apply({ type: 'spend', name: 'orchestrator', ctx: 200_000, window: 400_000, total: 2, today: { day: '2026-10-21', usd: 2, turns: 4, tokens: 10, timeZone: 'UTC' } });
+a.deepEqual([state.context.orchestrator.tokens, state.context.orchestrator.pct], [200_000, 50], 'a spend event moves its member\'s meter');
+a.equal(state.spend.today.usd, 2, 'and replaces today');
+apply({ type: 'spend', name: 'coder', ctx: 800 });
+a.equal(state.context.coder.window, null, 'an unknown window stays unknown');
+const noticesBefore = state.notices.length;
+apply({ type: 'compacted', name: 'orchestrator', before: 200_000, after: 0 });
+a.deepEqual([state.context.orchestrator.tokens, state.context.orchestrator.pct], [0, 0], 'a compaction empties the meter');
+a.equal(state.notices.length, noticesBefore + 1, 'and is still a notice');
+apply({ type: 'spend', name: 'orchestrator', ctx: 300 });
+apply({ type: 'recycled', name: 'orchestrator', note: 'n' });
+a.equal(state.context.orchestrator.tokens, 0, 'a threshold recycle empties it too');
+
+console.log('t-store.js OK — reducer keeps dismissal, roles, three states, money semantics, and the context meter');

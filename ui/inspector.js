@@ -1,12 +1,13 @@
-import { h, spendText, turnsText, tone } from './views/util.js';
+import { h, spendText, turnsText, tone, meter, kb } from './views/util.js';
 import { icon } from './icons.js';
 import { runStatus } from './run.js';
 
 // The session inspector: the cards the T3 canvas draws beside a run. Every row
 // is read from state the daemon already streams (workspace, branch, the run's
-// tasks and lifecycle, changed worktrees, the team, spend). The canvas also
-// draws a context-window meter, Compact session and a Remote control toggle;
-// nothing here measures or does those, so they are not drawn.
+// tasks and lifecycle, changed worktrees, the team, spend, and each member's
+// context against its model's window). Compact session posts the daemon's
+// compactSession action — the same recycle `recycleAtTokens` fires. The
+// canvas's Remote control toggle is not drawn: nothing does it yet.
 
 const LIFECYCLE = [['planning', 'Plan'], ['running', 'Run'], ['verifying', 'Verify'], ['ready_for_review', 'Review'], ['completed', 'Done']];
 const STAGE_OF = { planning: 0, running: 1, paused: 1, blocked: 1, verifying: 2, ready_for_review: 3, completed: 4, cancelled: 4 };
@@ -39,6 +40,28 @@ export function progressSteps(state) {
   return LIFECYCLE.map(([, label], index) => ({ label, state: index < at ? 'done' : index === at ? 'current' : 'todo' }));
 }
 
+/**
+ * The orchestrator's context-window reading, for the meter. Pure, for the
+ * suite. A window the daemon does not know stays unknown: no bar, no percent.
+ * @returns {{ tokens: number, window: number|null, pct: number|null, text: string }}
+ */
+export function contextReading(state, name = 'orchestrator') {
+  const entry = state.context?.[name] ?? null;
+  const tokens = Math.max(0, Number(entry?.tokens) || 0);
+  const window = Number(entry?.window) > 0 ? Number(entry.window) : null;
+  const pct = window ? Math.min(100, Math.round((tokens / window) * 1000) / 10) : null;
+  const text = !entry ? 'not measured yet'
+    : window ? `${kb(tokens)} of ${kb(window)} · ${Math.round(pct)}%`
+    : `${kb(tokens)} · window unknown`;
+  return { tokens, window, pct, text, measured: Boolean(entry) };
+}
+
+function contextBar(pct) {
+  const bar = meter(pct);
+  bar.querySelector?.('.meter')?.setAttribute('aria-label', 'Context window used');
+  return bar;
+}
+
 const kv = (iconName, ...children) => h('div', { class: 'inspector-kv' }, icon(iconName, 15), ...children);
 
 function card(id, title, open, body) {
@@ -55,7 +78,7 @@ function stepRow(step) {
 }
 
 /** The right-hand column of a run. `open` is a Set of card ids the reader has expanded. */
-export function renderInspector(state, { open }) {
+export function renderInspector(state, { open, compacting = null, member = 'orchestrator' }) {
   const run = state.run;
   const environment = [
     kv('folder', h('span', { text: repoName(state.repo ?? state.repository) || 'No repository' }),
@@ -80,6 +103,24 @@ export function renderInspector(state, { open }) {
     kv('advisor', h('span', { text: 'Skills' }), h('span', { class: 'inspector-sub', text: Array.isArray(state.skills) && state.skills.length ? `${state.skills.length} available` : 'none loaded' })),
     kv('metrics', h('span', { text: 'Spend' }), h('span', { class: 'inspector-sub mono', text: spend || 'nothing yet' })),
   ];
+  const ctx = contextReading(state, member);
+  const busy = compacting === member;
+  session.push(
+    h('div', { class: 'inspector-context' },
+      kv('summary', h('span', { text: 'Context' }), h('span', { class: 'inspector-sub mono', text: ctx.text })),
+      ctx.window ? contextBar(ctx.pct) : null),
+    h('button', {
+      class: 'button inspector-compact', type: 'button', 'data-action': 'compact-session', 'data-member': member,
+      disabled: busy || !ctx.tokens,
+      'aria-describedby': 'inspector-compact-why',
+      text: busy ? 'Compacting…' : 'Compact session',
+    }),
+    h('p', {
+      class: 'inspector-empty', id: 'inspector-compact-why',
+      text: busy ? 'Waiting for the handover note.'
+        : ctx.tokens ? 'Hands over to a fresh session, as the recycle threshold does.'
+        : 'Nothing in this session to compact.',
+    }));
 
   const aside = h('aside', { class: 'run-inspector', 'aria-label': 'Session inspector' },
     card('environment', 'Environment', open, environment),

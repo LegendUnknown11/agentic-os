@@ -49,6 +49,10 @@ const initialState = () => ({
   assetNotices: {},
   assetUploads: {},
   spend: {},
+  // name -> { tokens, window, pct, ... }: each member's session against its
+  // model's window. Seeded by the snapshot, moved by 'spend', zeroed by a
+  // recycle or a compaction.
+  context: {},
   conn: 'connecting',
   prefs: readPrefs(),
   view: { page: 'home' },
@@ -242,6 +246,7 @@ function snapshot(d) {
   // fresh tab shows an empty header even though the court has already taken
   // turns this session.
   if (d.spend) state.spend = { ...state.spend, ...d.spend };
+  if (Array.isArray(d.context)) state.context = Object.fromEntries(d.context.filter((c) => c?.name).map((c) => [c.name, c]));
   if (d.paused !== undefined) state.paused = d.paused;
   if (d.pausedWhy !== undefined) state.pausedWhy = d.pausedWhy;
   applyRoster(d.roster ?? []);
@@ -292,7 +297,16 @@ export function reduce(_state, d = {}) {
     case 'goal': state.goal = d.text ? d : null; break;
     case 'run': state.run = d.run ?? d; break;
     case 'mode': state.mode = d.mode ?? state.mode; break;
-    case 'spend': state.spend = { ...state.spend, ...d }; break;
+    case 'spend':
+      state.spend = { ...state.spend, ...d };
+      if (d.name && Number.isFinite(Number(d.ctx))) {
+        const prior = state.context[d.name] ?? { name: d.name };
+        const window = d.window === undefined ? prior.window ?? null : d.window;
+        const tokens = Number(d.ctx);
+        state.context = { ...state.context, [d.name]: { ...prior, tokens, window, pct: window ? Math.min(100, Math.round((tokens / window) * 1000) / 10) : null } };
+      }
+      break;
+
     case 'budget':
       state.spend = {
         ...state.spend,
@@ -337,6 +351,13 @@ export function reduce(_state, d = {}) {
       // linger and mislabel the next one.
       state.pausedWhy = state.paused ? (d.why ?? '') : '';
       break;
+    case 'recycled':
+    case 'compacted':
+      // A fresh session holds nothing yet. Then on to the notice, as before.
+      if (d.name && state.context[d.name]) {
+        state.context = { ...state.context, [d.name]: { ...state.context[d.name], tokens: 0, pct: state.context[d.name].window ? 0 : null } };
+      }
+      // falls through
     default:
       state.lastEvent = d;
       state.notices.push(d);
