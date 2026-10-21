@@ -312,15 +312,15 @@ a.match(sidebarSource, /active && root\.contains\(active\)/, 'live Sidebar updat
 a.match(sidebarSource, /options\.onConversation\?\.\(active\)/, 'a successful branch must open its new conversation');
 a.match(sidebarSource, /form\.querySelector\('input'\)\?\.blur\(\)/, 'saving a rename must close its editor immediately');
 a.match(sidebarSource, /event\.key === 'Escape'[\s\S]*?input\.blur\(\)[\s\S]*?render\(\)/, 'conversation rename must have a keyboard cancel path');
-a.match(sidebarSource, /let moreOpen = false/, 'More tools must retain its user-controlled disclosure state');
-a.match(sidebarSource, /more\.addEventListener\('toggle'/, 'More tools must record disclosure changes');
-a.match(sidebarSource, /moreOpen \|\| items\.some/, 'More tools must stay open for its active page without collapsing on live updates');
+a.doesNotMatch(sidebarSource, /moreOpen|sidebar-more|More tools/, 'the rail is four destinations; the More tools disclosure is gone (2026-10-21), its views are tabs or Settings sections');
+a.match(sidebarSource, /\['inbox', 'Inbox', waiting\],\s*\['team', 'Team'\],\s*\['knowledge', 'Knowledge'\],\s*\['automations', 'Automations'\],/, 'the rail is exactly Inbox, Team, Knowledge and Automations');
 a.match(sidebarSource, /from '\.\/icons\.js'/, 'navigation should reuse the shipped icon set');
 a.match(sidebarSource, /NAV_ICONS/, 'navigation icons must have one explicit view mapping');
 a.match(sidebarSource, /button\.dataset\.tip = label/, 'collapsed navigation icons must retain a visible custom hover label');
-a.match(sidebarSource, /moreTitle\.dataset\.tip = 'More tools'/, 'collapsed More tools must retain a visible custom hover label');
+a.match(sidebarSource, /brand\.dataset\.view = 'home'/, 'Overview is the brand: the way home is the logo, not a rail row');
+a.match(sidebarSource, /aria-keyshortcuts', 'Control\+N'/, 'New run advertises its shortcut to assistive tech');
 a.match(sidebarSource, /collapse\.dataset\.tip = collapsed \? 'Expand sidebar' : 'Collapse sidebar'/, 'the collapsed rail control must describe its current action');
-a.match(sidebarSource, /import \{ spendText, turnsText \} from '\.\/views\/util\.js'/,
+a.match(sidebarSource, /import \{ spendText, turnsText, tone \} from '\.\/views\/util\.js'/,
   'Sidebar spend must use the shared money formatter, and now the shared turn-count formatter beside it (#41)');
 a.doesNotMatch(sidebarSource, /data-member|memberOfView|attachHoverTips/, 'Team moved out of the rail — the sidebar must not keep member-click wiring for a list it no longer renders');
 a.match(pagesSource, /actionMessage\.textContent = error\?\.message/, 'failed Team actions must leave visible retryable feedback');
@@ -533,7 +533,7 @@ a.equal(waitingCount([{ tone: 'attention' }, { tone: 'live' }, { tone: 'attentio
 }
 a.match(viewSources.inbox, /clearTimeout\(timer\); requestToken\(state, 'inboxRequest'\); off\?\.\(\)/, 'leaving the Inbox stops its refetch and drops a pending load');
 a.match(mainSource, /get\('\/api\/inbox'\)[\s\S]*apply\(\{ type: 'inbox'/, 'the rail count is fed on navigation, not only from the Inbox view');
-a.match(sidebarSource, /\['inbox', /, 'Inbox is reachable from the rail');
+a.match(sidebarSource, /\['inbox', 'Inbox', waiting\]/, 'Inbox is reachable from the rail, with the count of what waits on you');
 a.match(mainSource, /!element\.hidden && element\.getClientRects\(\)\.length > 0\)/, 'the drawer focus trap counts only rendered elements, or Tab escapes past a display:none last button');
 a.deepEqual(parseDays('1-5'), [1, 2, 3, 4, 5]);
 a.deepEqual(parseDays(' 1, 3 ,5 '), [1, 3, 5]);
@@ -594,7 +594,12 @@ a.match(viewSources.inbox, /if \(timer \|\| now === seen\) return;/, 'the inbox 
   for (const name of Object.keys(renderers)) a.ok(PAGES.includes(name), `the shell must route #${name}, or it silently shows Overview`);
   a.match(mainSource, /import \{ canonicalHash, hashFor, parseHash \} from '\.\/routes\.js'/, 'the shell must route through the shared route table');
 }
-a.match(sidebarSource, /\['tasks', 'Tasks'\]/, 'Tasks is reachable from the rail');
+{
+  // Tasks left the rail on 2026-10-21. Until it is a run chip it is reached by
+  // search (Ctrl K) and by its route; both are pinned so it is never orphaned.
+  const paletteSource = readFileSync(new URL('../ui/palette.js', import.meta.url), 'utf8');
+  a.match(paletteSource, /\['Tasks', /, 'Tasks is reachable from search');
+}
 a.match(usageSource, /dashboard\.append\(runSpendSection\(state\)\)/, 'Usage must show the run spend section');
 a.match(usageSource, /cancelRunSpend\(state\); \}/, 'leaving Usage must cancel a pending run spend request');
 a.match(usageSource, /No run ceiling is set/, 'a missing maxRunUsd must be said, not drawn as an empty meter');

@@ -58,6 +58,10 @@ const P = {
   workflows: 'M2.4 3.2h4.2v3.4H2.4zM9.4 9.4h4.2v3.4H9.4zM6.6 4.9h2.4a2.2 2.2 0 0 1 2.2 2.2v2.3',
   // A page with a folded corner, and two lines of text.
   document: 'M4.5 2.6h4.8l2.2 2.2v8.2a.6.6 0 0 1-.6.6h-6.4a.6.6 0 0 1-.6-.6V3.2a.6.6 0 0 1 .6-.6ZM9.3 2.6v2.2h2.2M5.6 8.4h4.8M5.6 10.6h4.8',
+  // The product mark: a rounded square with a plus, as the T3 canvas draws it.
+  logo: 'M4.2 2.4h7.6a1.8 1.8 0 0 1 1.8 1.8v7.6a1.8 1.8 0 0 1-1.8 1.8H4.2a1.8 1.8 0 0 1-1.8-1.8V4.2a1.8 1.8 0 0 1 1.8-1.8ZM5.6 8h4.8M8 5.6v4.8',
+  search: 'M7.2 2.8a4.4 4.4 0 1 0 0 8.8 4.4 4.4 0 0 0 0-8.8zM10.5 10.5l2.9 2.9',
+  plus: 'M8 3.2v9.6M3.2 8h9.6',
   // A cross in a circle: the health check.
   doctor: 'M8 1.8a6.2 6.2 0 1 0 0 12.4 6.2 6.2 0 0 0 0-12.4ZM8 5.2v5.6M5.2 8h5.6',
 };

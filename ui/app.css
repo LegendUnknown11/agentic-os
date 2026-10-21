@@ -302,13 +302,19 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .brand-tag { color: var(--faint); font: 500 11px/1.4 var(--ui); letter-spacing: .06em; text-transform: uppercase; }
 
-.repo { flex: none; overflow: hidden; color: var(--text); text-overflow: ellipsis; white-space: nowrap; }
-
-.header-sep { flex: none; color: var(--faint); }
+.repo { display: inline-flex; flex: none; min-height: 26px; max-width: 28ch; align-items: center; overflow: hidden; padding: 0 var(--space-2); border: 1px solid var(--line); border-radius: var(--radius-ctl); background: var(--raised); color: var(--muted); font: 400 var(--t-xs) var(--mono); text-overflow: ellipsis; white-space: nowrap; }
 
 .goal-context { flex: 1; min-width: 0; overflow: hidden; color: var(--muted); font-size: var(--t-sm); text-overflow: ellipsis; white-space: nowrap; }
 
-.mode-switcher { display: flex; flex: none; gap: var(--space-1); min-width: 0; padding: var(--space-1); border: 1px solid var(--line); border-radius: var(--radius-pill); background: var(--surface); }
+/* The search chip is a 26px pill to the eye and a 44px target to the hand: the
+ * header is 52px tall, so the hit area is the button, not its painted border. */
+.header-search { display: inline-flex; flex: none; min-height: var(--tap-target-min); align-items: center; gap: var(--space-2); padding: 0 var(--space-2); border: 0; background: transparent; color: var(--muted); font-size: var(--t-xs); }
+
+.header-search-hint { padding: 0 var(--space-1); border: 1px solid var(--line); border-radius: var(--radius-ctl); background: var(--raised); color: var(--faint); font: 400 11px/1.6 var(--mono); }
+
+.header-search:hover { color: var(--text); }
+
+.mode-switcher { display: flex; flex: none; gap: var(--space-1); min-width: 0; padding: 2px; border: 1px solid var(--line-soft); border-radius: var(--radius-pill); background: var(--raised); }
 
 .mode-option { display: flex; align-items: center; min-width: 64px; min-height: var(--tap-target-min); padding: var(--space-2) var(--space-3); border: 1px solid transparent; border-radius: var(--radius-pill); background: transparent; color: var(--muted); text-align: left; transition: border-color var(--fast) var(--ease), background-color var(--fast) var(--ease), color var(--fast) var(--ease); }
 
@@ -325,13 +331,11 @@ body.sidebar-collapsed .app-identity { display: grid; }
  * (ui/main.js) already surfaces the same text on hover. */
 .mode-option span { display: none; }
 
-.mode-option:hover { border-color: rgb(var(--accent-rgb) / .45); background: rgb(var(--accent-rgb) / .12); }
+.mode-option:hover { background: var(--hover); }
 
-.mode-option.selected { border-color: transparent; background: var(--accent); color: var(--accent-ink); }
+.mode-option.selected { border-color: var(--line); background: var(--active); color: var(--text); }
 
-.mode-option.selected strong { color: var(--accent-ink); }
-
-.mode-option.selected span { color: rgb(var(--accent-ink-rgb) / .75); }
+.mode-option.selected strong { color: var(--text); }
 
 .mode-option:disabled { cursor: wait; opacity: .6; }
 
@@ -368,6 +372,8 @@ body.sidebar-collapsed .app-identity { display: grid; }
 .status-dot.settled { background: var(--ok); }
 
 .status-dot.idle { background: var(--tone-idle); }
+
+.sidebar-heading-branch { margin-left: auto; font: 400 11px/1.4 var(--mono); letter-spacing: 0; text-transform: none; }
 
 .sidebar-heading { display: flex; align-items: center; gap: var(--space-2); margin: 0; padding: 0 var(--space-2); color: var(--faint); font: 500 11px/1.5 var(--ui); letter-spacing: .06em; text-transform: uppercase; }
 
@@ -500,7 +506,9 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 /* Components shipped with the shell use these small structural classes. They
  * share the same flat tokens instead of recreating a second visual system. */
-.sidebar-header { display: flex; flex-shrink: 0; align-items: center; gap: var(--space-2); padding-bottom: var(--space-3); border-bottom: 1px solid var(--line-soft); }
+.sidebar-header { display: grid; flex-shrink: 0; gap: var(--space-2); padding-bottom: var(--space-2); }
+
+.sidebar-brand-row { display: flex; min-width: 0; align-items: center; gap: var(--space-2); }
 
 .mobile-menu, .sidebar-mobile-close { min-height: var(--tap-target-min); padding: var(--space-1) var(--space-2); border: 1px solid var(--line); border-radius: var(--radius-ctl); background: transparent; color: var(--muted); }
 
@@ -510,9 +518,17 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .mobile-menu:hover, .sidebar-mobile-close:hover { border-color: var(--accent); color: var(--text); }
 
-.sidebar-brand { min-width: 0; overflow: hidden; color: var(--text); font-family: var(--display); font-size: 13px; font-weight: 600; letter-spacing: -.01em; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar-brand { display: flex; min-width: 0; min-height: var(--tap-target-min); flex: 1; align-items: center; gap: var(--space-2); overflow: hidden; padding: 0 var(--space-2); border: 0; border-radius: var(--radius-ctl); background: transparent; color: var(--text); font-family: var(--display); font-size: var(--t-sm); font-weight: 600; letter-spacing: -.01em; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
 
-.sidebar-new { flex: 1; min-width: 0; min-height: var(--tap-target-min); overflow: hidden; padding: 0 var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-ctl); background: var(--raised); color: var(--text); font-size: var(--t-sm); font-weight: 500; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar-brand:hover { background: var(--hover); }
+
+.sidebar-brand-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+
+.sidebar-brand-repo { margin-left: auto; min-width: 0; overflow: hidden; color: var(--faint); font: 400 11px/1.4 var(--mono); text-overflow: ellipsis; }
+
+.sidebar-new { display: flex; width: 100%; min-width: 0; min-height: var(--tap-target-min); align-items: center; gap: var(--space-2); overflow: hidden; padding: 0 var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-ctl); background: var(--raised); color: var(--text); font-size: var(--t-sm); font-weight: 500; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+
+.sidebar-new-hint { margin-left: auto; color: var(--faint); font: 400 11px/1.4 var(--mono); }
 
 .sidebar-new:hover { border-color: var(--faint); background: var(--hover); }
 
@@ -548,29 +564,22 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .sidebar-mode-option span { overflow: hidden; color: var(--faint); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 
-.sidebar-mode-option:hover { border-color: rgb(var(--accent-rgb) / .45); background: rgb(var(--accent-rgb) / .12); }
+.sidebar-mode-option:hover { background: var(--hover); }
 
-.sidebar-mode-option.selected { border-color: transparent; background: var(--accent); color: var(--accent-ink); }
+.sidebar-mode-option.selected { border-color: var(--line); background: var(--active); color: var(--text); }
 
-.sidebar-mode-option.selected strong { color: var(--accent-ink); }
-
-.sidebar-mode-option.selected span { color: rgb(var(--accent-ink-rgb) / .75); }
+.sidebar-mode-option.selected strong { color: var(--text); }
 
 .sidebar-nav { flex-shrink: 0; }
-
-.sidebar-more { display: grid; flex-shrink: 0; gap: var(--space-2); }
-
-.sidebar-more > summary { cursor: pointer; list-style: none; }
-
-.sidebar-more > summary::-webkit-details-marker { display: none; }
-
-.sidebar-more > summary::after { margin-left: auto; content: "+"; }
-
-.sidebar-more[open] > summary::after { content: "−"; }
 
 .sidebar-nav-button { display: flex; width: 100%; min-height: var(--tap-target-min); align-items: center; gap: var(--space-2); font-size: var(--t-sm); padding: var(--space-2) var(--space-3); border: 1px solid transparent; border-radius: var(--radius-ctl); background: transparent; color: var(--muted); text-align: left; transition: border-color var(--fast) var(--ease), background-color var(--fast) var(--ease), color var(--fast) var(--ease); }
 
 .sidebar-nav-button .icon { flex: none; opacity: .72; }
+
+.sidebar-nav-button { position: relative; }
+
+/* A count of what is waiting on you, as in the canvas: a small accent chip. */
+.sidebar-badge { min-width: 18px; margin-left: auto; padding: 1px 6px; border-radius: var(--radius-ctl); background: var(--accent); color: var(--accent-ink); font-size: 11px; font-weight: 600; line-height: 1.5; text-align: center; }
 
 .sidebar-nav-button.selected .icon { opacity: 1; }
 
@@ -599,7 +608,15 @@ body.sidebar-collapsed .app-identity { display: grid; }
    button. Measured live 2026-09-21: it was 210x24, and the 44px minimum this
    system enforces is a real minimum, not a suggestion. The row loses its
    block padding in exchange, so the list gets taller by 3px, not by 20. */
-.conversation-open { display: flex; min-width: 0; min-height: var(--tap-target-min); flex: 1; align-items: center; overflow: hidden; border: 0; background: transparent; color: inherit; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+.conversation-open { display: flex; min-width: 0; min-height: var(--tap-target-min); flex: 1; align-items: center; gap: var(--space-2); overflow: hidden; border: 0; background: transparent; color: inherit; font-size: var(--t-sm); text-align: left; white-space: nowrap; }
+
+.conversation-title { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; }
+
+.conversation-age { flex: none; color: var(--faint); font-size: 11px; }
+
+/* A run that is not the open one is a ring, as in the canvas; the open run
+ * wears its own status tone through the shared .status-dot rules. */
+.conversation-dot:not(.live):not(.attention):not(.settled):not(.idle) { border: 1.5px solid var(--faint); background: transparent; }
 
 .conversation-actions { display: none; flex: none; gap: var(--space-1); }
 
@@ -617,9 +634,9 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .conversation-edit input { min-width: 0; flex: 1; border: 1px solid var(--line); border-radius: var(--radius-ctl); background: var(--raised); color: var(--text); }
 
-.sidebar-settings, .sidebar-collapse { min-height: var(--tap-target-min); padding: var(--space-1) var(--space-2); border: 1px solid var(--line); border-radius: var(--radius-ctl); background: transparent; color: var(--muted); }
+.sidebar-settings, .sidebar-collapse { display: flex; min-height: var(--tap-target-min); align-items: center; padding: var(--space-1) var(--space-3); border: 0; border-radius: var(--radius-ctl); background: transparent; color: var(--muted); font-size: var(--t-sm); text-align: left; }
 
-.sidebar-settings:hover, .sidebar-collapse:hover { border-color: var(--accent); color: var(--text); }
+.sidebar-settings:hover, .sidebar-collapse:hover { background: var(--hover); color: var(--text); }
 
 
 
@@ -1290,7 +1307,12 @@ body.sidebar-collapsed .app-identity { display: grid; }
 @media (min-width: 721px) {
   body.sidebar-collapsed { grid-template-columns: 64px minmax(0, 1fr); }
 
-  .sidebar.collapsed .sidebar-conversations, .sidebar.collapsed .sidebar-footer > :not(.sidebar-collapse), .sidebar.collapsed .sidebar-brand { display: none; }
+  .sidebar.collapsed .sidebar-conversations, .sidebar.collapsed .sidebar-footer > :not(.sidebar-collapse), .sidebar.collapsed .sidebar-brand-name, .sidebar.collapsed .sidebar-brand-repo, .sidebar.collapsed .sidebar-new-hint, .sidebar.collapsed .sidebar-new-label { display: none; }
+
+  .sidebar.collapsed .sidebar-brand { flex: none; justify-content: center; width: var(--tap-target-min); padding: 0; }
+
+  /* The count survives as a dot: waiting work must not vanish with the label. */
+  .sidebar.collapsed .sidebar-badge { position: absolute; top: 10px; right: 8px; min-width: 0; width: 8px; height: 8px; padding: 0; border-radius: 50%; font-size: 0; }
 
   /* The rail's own 16px inset left a 64px column with 32px of content, so
      every collapsed nav button measured 34x44 live at 1440x900 — short of the
@@ -1304,20 +1326,20 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
   .sidebar.collapsed .sidebar-nav > .sidebar-heading { display: none; }
 
-  .sidebar.collapsed .sidebar-more > summary { justify-content: center; padding-inline: var(--space-2); font-size: 0; }
+  .sidebar.collapsed .sidebar-header { justify-items: center; }
 
-  .sidebar.collapsed .sidebar-more > summary::after { margin-left: 0; font-size: 16px; }
-
-  .sidebar.collapsed .sidebar-header { justify-content: center; border-bottom: 0; }
+  .sidebar.collapsed .sidebar-brand-row { justify-content: center; }
 
   /* NOT `flex: 0` — that expands to `flex: 0 1 0%`, and a 0% basis beats the
      width beside it in the main axis. Measured in a live browser 2026-09-03:
      getBoundingClientRect().width was 1.6, so the collapsed "+ New" could not
      be clicked. .sidebar-collapse below is the working sibling: no flex
      shorthand at all, just the width. */
-  .sidebar.collapsed .sidebar-new { width: var(--tap-target-min); overflow: hidden; padding: 0; font-size: 0; text-indent: 0; }
+  .sidebar.collapsed .sidebar-new { width: var(--tap-target-min); justify-content: center; overflow: hidden; padding: 0; font-size: 0; text-indent: 0; }
 
   .sidebar.collapsed .sidebar-new::before { color: var(--text); content: "+"; font-size: 18px; line-height: 1; }
+
+  .sidebar.collapsed .sidebar-new .icon { display: none; }
 
   .sidebar.collapsed .sidebar-collapse { width: var(--tap-target-min); overflow: hidden; padding: 0; font-size: 0; }
 
@@ -1326,7 +1348,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 @media (max-width: 900px) {
   #header { flex-wrap: wrap; gap: var(--space-2); padding-inline: var(--space-3); }
-  .brand-tag, .repo, .header-sep, .goal-context { display: none; }
+  .brand-tag, .repo, .goal-context, .header-search-label, .header-search-hint { display: none; }
   .mode-switcher { flex: 1; }
   .mode-option { min-width: 0; flex: 1; }
 }
@@ -1368,6 +1390,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
   .mobile-menu, .sidebar-mobile-close { display: inline-flex; align-items: center; justify-content: center; }
   .sidebar-mobile-close { flex: none; }
   .conversation-actions { display: flex; }
+  .sidebar-new-hint, .header-search-hint { display: none; }
   .wfn-x { opacity: 1; }
   .app-identity { display: grid; flex: 1; }
   .mode-switcher { display: none; }
@@ -1402,3 +1425,27 @@ body.sidebar-collapsed .app-identity { display: grid; }
   .meter i { background: Highlight; }
   .usage-recommendation, .home-efficiency-warning { border-left-width: 3px; }
 }
+
+/* Ctrl K: one box that reaches every page and every run. */
+.palette-scrim { position: fixed; z-index: 40; inset: 0; display: grid; align-items: start; justify-items: center; padding-top: 12vh; background: rgb(var(--bg-rgb) / .72); }
+
+.palette { display: grid; width: min(560px, calc(100vw - var(--space-4))); max-height: 60vh; grid-template-rows: auto minmax(0, 1fr); overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--raised); box-shadow: var(--shadow-panel); }
+
+.palette-field { display: flex; align-items: center; gap: var(--space-2); padding: 0 var(--space-3); border-bottom: 1px solid var(--line-soft); color: var(--faint); }
+
+.palette-input { min-width: 0; min-height: var(--tap-target-min); flex: 1; border: 0; background: transparent; color: var(--text); font-size: var(--t-md); }
+
+/* The field's own rule marks focus; a second ring around the bare input would sit inside the dialog's border. */
+.palette-input:focus-visible { outline: none; }
+
+.palette-field:focus-within { border-bottom-color: var(--accent); }
+
+.palette-list { display: grid; align-content: start; margin: 0; padding: var(--space-1); overflow-y: auto; list-style: none; }
+
+.palette-row { display: flex; min-height: var(--tap-target-min); align-items: center; justify-content: space-between; gap: var(--space-3); padding: 0 var(--space-3); border-radius: var(--radius-ctl); color: var(--muted); font-size: var(--t-sm); cursor: pointer; }
+
+.palette-row.selected { background: var(--active); color: var(--text); }
+
+.palette-hint { color: var(--faint); font-size: var(--t-xs); }
+
+.palette-empty { padding: var(--space-3); color: var(--muted); font-size: var(--t-sm); }

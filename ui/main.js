@@ -4,6 +4,7 @@ import { attachHoverTips, modePermissionText } from './views/util.js';
 import * as Assets from './assets.js';
 import * as Notify from './notify.js';
 import { canonicalHash, hashFor, parseHash } from './routes.js';
+import { icon } from './icons.js';
 
 // The public and backend vocabulary are the same three choices.
 export const USER_MODES = Object.freeze([
@@ -232,7 +233,10 @@ function renderShell() {
   const header = $('header');
   if (header && !header.dataset.foundation) {
     header.dataset.foundation = '1';
-    header.innerHTML = '<div class="app-identity"><span class="brand">Agentic OS</span><span class="brand-tag">your team, in one place</span></div><span class="repo"></span><span class="header-sep" aria-hidden="true">·</span><span class="goal-context"></span><nav class="mode-switcher" aria-label="Work mode"></nav><button class="mobile-menu" type="button" aria-controls="sidebar" aria-expanded="false">Menu</button><span class="connection" aria-label="Connection"></span>';
+    header.innerHTML = '<div class="app-identity"><span class="brand">Agentic OS</span><span class="brand-tag">your team, in one place</span></div><span class="repo"></span><span class="connection" aria-label="Connection"></span><span class="goal-context"></span><nav class="mode-switcher" aria-label="Work mode"></nav><button class="header-search" type="button" aria-keyshortcuts="Control+K" aria-label="Search"><span class="header-search-label">Search</span><span class="header-search-hint">Ctrl K</span></button><button class="mobile-menu" type="button" aria-controls="sidebar" aria-expanded="false">Menu</button>';
+    const search = header.querySelector('.header-search');
+    search.prepend(icon('search', 13));
+    search.addEventListener('click', openSearch);
     const switcher = header.querySelector('.mode-switcher');
     for (const choice of USER_MODES) {
       const button = document.createElement('button');
@@ -280,6 +284,10 @@ function renderShell() {
 }
 
 function renderCurrent() { renderShell(); }
+
+function openSearch() {
+  import('./palette.js').then((palette) => palette.openPalette({ state, navigate }));
+}
 
 function openMobileNav() {
   document.body.classList.add('sidebar-open');
@@ -491,6 +499,17 @@ function onKeydown(event) {
       focusable[event.shiftKey ? last : 0].focus();
     }
     return;
+  }
+  // Ctrl/Cmd K searches; Ctrl/Cmd N starts a run. A modified key types nothing,
+  // so both work from inside a text field too.
+  if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey) {
+    const key = event.key.toLowerCase();
+    if (key === 'k') { event.preventDefault(); openSearch(); return; }
+    if (key === 'n' && !document.body.classList.contains('sidebar-open')) {
+      event.preventDefault();
+      $('sidebar')?.querySelector('[data-action="new"]')?.click();
+      return;
+    }
   }
   if (!event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
   const view = KEYS[event.key.toLowerCase()];

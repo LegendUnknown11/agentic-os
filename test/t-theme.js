@@ -119,7 +119,7 @@ a.match(css, /\.run-spend-line\s*\{[^}]*stroke:\s*var\(--accent\)/, 'the run spe
 a.match(css, /\.run-spend-cap\s*\{[^}]*stroke:\s*var\(--tone-attention\)[^}]*stroke-dasharray/, 'the run ceiling is a dashed attention line');
 a.match(css, /\.run-spend-line\s*\{[^}]*vector-effect:\s*non-scaling-stroke/, 'a stretched chart must not stretch its 2px line');
 a.match(css, /\.mode-switcher\s*\{[^}]*border-radius:\s*var\(--radius-pill\)/, 'work modes must read as one segmented control');
-a.match(css, /\.mode-option\.selected\s*\{[^}]*background:\s*var\(--accent\)/, 'the active work mode needs one clear accent state');
+a.match(css, /\.mode-option\.selected\s*\{[^}]*background:\s*var\(--active\)/, 'the active work mode is the current-item fill, as in the canvas rail; the accent is reserved for live work');
 // 2026-09-23: reverses the line above. Read against a populated demo court,
 // "AGENTIC OS / WORKSPACE" repeated identically on all 14 views carried no
 // information and cost real space above the fold of a dense tool. A prior
@@ -250,7 +250,8 @@ a.match(css, /@media \(min-width: 721px\)[\s\S]*?\.sidebar\.collapsed \.sidebar-
 a.match(css, /\.sidebar\.collapsed \.sidebar-conversations[\s\S]*?\.sidebar\.collapsed \.sidebar-footer/, 'collapsed rail must hide dense details without hiding navigation');
 a.match(css, /\.sidebar\.collapsed \.sidebar-nav-button\s*\{[^}]*font-size:\s*0;/, 'collapsed rail navigation must retain icon-only controls');
 a.match(css, /\.sidebar\.collapsed \.sidebar-nav > \.sidebar-heading\s*\{[^}]*display:\s*none;/, 'collapsed rail must not clip its workspace heading');
-a.match(css, /\.sidebar\.collapsed \.sidebar-more > summary::after\s*\{[^}]*font-size:\s*16px;/, 'collapsed rail must keep the More tools disclosure glyph visible');
+a.match(css, /\.sidebar\.collapsed \.sidebar-badge\s*\{[^}]*width:\s*8px;[^}]*height:\s*8px;/, 'a collapsed rail keeps the waiting count as a dot, so waiting work does not vanish with the label');
+a.doesNotMatch(css, /sidebar-more/, 'the More tools disclosure is gone from the rail');
 a.match(css, /\.task-row\.attention b\s*\{[^}]*color:\s*var\(--tone-attention\)/, 'blocked queue work must have a danger cue');
 a.match(css, /\.task-row\.live b\s*\{[^}]*color:\s*var\(--accent\)/, 'active queue work must have an accent cue');
 a.match(util, /TONE_ATTENTION = new Set\(\[[^\]]*'blocked'/, 'the shared status vocabulary must classify blocked work as attention');

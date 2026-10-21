@@ -183,6 +183,7 @@ const suites = [
   ['the inbox ranks what waits on you', join(HERE, 't-inbox.js')],
   ['flat palette', join(HERE, 't-theme.js')],
   ['route table', join(HERE, 't-routes.js')],
+  ['search palette', join(HERE, 't-palette.js')],
   ['flat palette — computed geometry', join(HERE, 't-theme-geometry.js')],
   ['a claude that dies mid-turn', join(HERE, 't-claude-death.js')],
   ['send() guards a claude that never spawned', join(HERE, 't-agent-guard.js')],

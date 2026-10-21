@@ -1,5 +1,5 @@
 import { state as storeState, subscribe, post as storePost, sameId } from './store.js';
-import { spendText, turnsText } from './views/util.js';
+import { spendText, turnsText, tone } from './views/util.js';
 import { icon } from './icons.js';
 import { statusLabel } from './status.js';
 
@@ -10,19 +10,34 @@ const node = (tag, className, text) => {
   return el;
 };
 
-const NAV_ICONS = Object.freeze({
-  home: 'target', objective: 'goal', approvals: 'approve', changes: 'diff', tasks: 'checklist', inbox: 'bell', agents: 'who', activity: 'log',
-  messages: 'bus', usage: 'metrics', memory: 'vault', notes: 'document', automations: 'workflows', doctor: 'doctor',
-});
+// The rail is four destinations. Everything else the app can show is a tab of
+// one of them, a chip on a run, or a Settings tab (see ui/routes.js).
+const NAV_ICONS = Object.freeze({ home: 'target', inbox: 'bell', team: 'who', knowledge: 'vault', automations: 'workflows' });
 
-function navButton(view, label, page) {
+function navButton(view, label, page, badge = 0) {
   const button = node('button', `sidebar-nav-button${page === view ? ' selected' : ''}`, label);
   button.type = 'button';
   button.dataset.view = view;
   button.dataset.tip = label;
   if (page === view) button.setAttribute('aria-current', 'page');
   button.prepend(icon(NAV_ICONS[view] ?? 'more'));
+  if (badge) {
+    button.append(node('span', 'sidebar-badge', String(badge)));
+    button.setAttribute('aria-label', `${label}, ${badge} waiting`);
+  }
   return button;
+}
+
+/** A short age for a run row: now, 12m, 2h, 3d. */
+export function ago(ts, now = Date.now()) {
+  const ms = now - Number(ts);
+  if (!Number.isFinite(ms) || ms < 0) return '';
+  const minutes = Math.floor(ms / 60_000);
+  if (minutes < 1) return 'now';
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h`;
+  return `${Math.floor(hours / 24)}d`;
 }
 
 function conversationsOf(state) {
@@ -83,21 +98,33 @@ export function mountSidebar(root, options = {}) {
   let unsubscribe = () => {};
   let editing = null;
   let armedArchive = null;
-  let moreOpen = false;
 
   root.className = 'sidebar';
   root.textContent = '';
 
   const header = node('div', 'sidebar-header');
-  const brand = node('div', 'sidebar-brand', 'Agentic OS');
-  const add = node('button', 'sidebar-new', '+ New');
-  add.type = 'button';
-  add.dataset.action = 'new';
-  add.dataset.tip = 'Start a new conversation';
+  const brandRow = node('div', 'sidebar-brand-row');
+  // The brand is the way home: Overview is no longer a rail destination.
+  const brand = node('button', 'sidebar-brand');
+  brand.type = 'button';
+  brand.dataset.view = 'home';
+  brand.dataset.tip = 'Overview';
+  const brandName = node('span', 'sidebar-brand-name', 'Agentic OS');
+  const brandRepo = node('span', 'sidebar-brand-repo');
+  brand.append(icon('logo', 18), brandName, brandRepo);
   const mobileClose = node('button', 'sidebar-mobile-close', 'Close');
   mobileClose.type = 'button';
   mobileClose.dataset.action = 'mobile-close';
-  header.append(brand, add, mobileClose);
+  brandRow.append(brand, mobileClose);
+  // A run is a conversation with the orchestrator, so "New run" opens a fresh
+  // one; the runs list below is the conversations list.
+  const add = node('button', 'sidebar-new');
+  add.type = 'button';
+  add.dataset.action = 'new';
+  add.dataset.tip = 'Start a new run';
+  add.setAttribute('aria-keyshortcuts', 'Control+N');
+  add.append(icon('plus', 15), node('span', 'sidebar-new-label', 'New run'), node('span', 'sidebar-new-hint', 'Ctrl N'));
+  header.append(brandRow, add);
 
   const mode = node('section', 'sidebar-section sidebar-mode');
   const modeTitle = node('h2', 'sidebar-heading', 'Mode');
@@ -110,15 +137,11 @@ export function mountSidebar(root, options = {}) {
   const workspaceList = node('div', 'sidebar-nav-list');
   workspace.append(workspaceTitle, workspaceList);
 
-  const more = node('details', 'sidebar-more');
-  const moreTitle = node('summary', 'sidebar-heading', 'More tools');
-  moreTitle.dataset.tip = 'More tools';
-  const moreList = node('div', 'sidebar-nav-list');
-  more.append(moreTitle, moreList);
-  more.addEventListener('toggle', () => { moreOpen = more.open; });
-
   const conversations = node('section', 'sidebar-section sidebar-conversations');
-  const conversationsTitle = node('h2', 'sidebar-heading', 'Conversations');
+  const conversationsTitle = node('h2', 'sidebar-heading');
+  const conversationsRepo = node('span', 'sidebar-heading-repo');
+  const conversationsBranch = node('span', 'sidebar-heading-branch');
+  conversationsTitle.append(conversationsRepo, conversationsBranch);
   const conversationList = node('div', 'conversation-list');
   conversations.append(conversationsTitle, conversationList);
 
@@ -157,7 +180,7 @@ export function mountSidebar(root, options = {}) {
   // one region, so the header and footer are never the thing the browser
   // clips when they do not fit. See .sidebar-scroll in app.css.
   const scroll = node('div', 'sidebar-scroll');
-  scroll.append(mode, workspace, more, conversations);
+  scroll.append(mode, workspace, conversations);
   root.append(header, scroll, footer);
 
   const updatePreference = (value) => {
@@ -167,6 +190,8 @@ export function mountSidebar(root, options = {}) {
 
   function renderConversations() {
     conversationList.textContent = '';
+    conversationsRepo.textContent = repoName(currentState.repo ?? currentState.repository);
+    conversationsBranch.textContent = currentState.base ?? '';
     const active = activeConversationOf(currentState);
     const rows = conversationsOf(currentState);
     if (!rows.length) {
@@ -199,8 +224,14 @@ export function mountSidebar(root, options = {}) {
         form.append(input, save);
         row.append(form);
       } else {
-        const open = node('button', 'conversation-open', conversationTitle(conversation));
+        const open = node('button', 'conversation-open');
         open.type = 'button';
+        // The open run wears the run's own tone; every other row is a ring.
+        const runState = String(currentState.run?.status ?? currentState.run?.state ?? '').toLowerCase().replace(/[- ]/g, '_');
+        const live = sameId(id, active) && runState && !['completed', 'cancelled'].includes(runState);
+        open.append(node('span', `status-dot conversation-dot ${live ? tone(runState) : ''}`.trim()),
+          node('span', 'conversation-title', conversationTitle(conversation)),
+          node('span', 'conversation-age', ago(conversation.created_ts ?? conversation.createdTs)));
         open.dataset.conversation = id;
         const actions = node('span', 'conversation-actions');
         const rename = node('button', 'conversation-action', 'Rename');
@@ -225,23 +256,15 @@ export function mountSidebar(root, options = {}) {
   function renderWorkspace() {
     workspaceList.textContent = '';
     const page = currentState.view?.page ?? 'home';
-    const pending = (currentState.approvals ?? []).filter((item) => !item.resolved).length;
-    const changed = currentState.changes?.changed ?? currentState.changes ?? [];
+    // The badge counts only what needs a decision; news and due-soon items do not.
+    const waiting = (currentState.inbox ?? []).filter?.((item) => item.tone === 'attention').length ?? 0;
     const items = [
-      ['home', 'Overview'],
-      // Counts only what needs a decision; news and due-soon items do not badge.
-      ['inbox', currentState.inbox?.some?.((item) => item.tone === 'attention')
-        ? `Inbox · ${currentState.inbox.filter((item) => item.tone === 'attention').length}` : 'Inbox'],
-      ['objective', 'Objective'],
-      ['approvals', pending ? `Decisions · ${pending}` : 'Decisions'],
-      ['changes', changed.length ? `Work · ${changed.length}` : 'Work'],
-      ['tasks', 'Tasks'],
-      ['agents', 'Team'],
-      ['activity', 'Activity'],
+      ['inbox', 'Inbox', waiting],
+      ['team', 'Team'],
+      ['knowledge', 'Knowledge'],
+      ['automations', 'Automations'],
     ];
-    for (const [view, label] of items) {
-      workspaceList.append(navButton(view, label, page));
-    }
+    for (const [view, label, badge] of items) workspaceList.append(navButton(view, label, page, badge));
   }
 
   function renderMode() {
@@ -261,21 +284,10 @@ export function mountSidebar(root, options = {}) {
     }
   }
 
-  function renderMore(page) {
-    const items = [
-      ['messages', 'Messages'], ['usage', 'Usage'], ['memory', 'Memory'],
-      ['notes', 'Notes'], ['automations', 'Automations'], ['doctor', 'Doctor'],
-    ];
-    moreList.textContent = '';
-    more.open = moreOpen || items.some(([view]) => page === view);
-    for (const [view, label] of items) {
-      moreList.append(navButton(view, label, page));
-    }
-  }
-
   function renderFooter() {
     const path = currentState.repo ?? currentState.repository;
     repo.textContent = repoName(path);
+    brandRepo.textContent = repoName(path);
     repo.dataset.tip = path || 'Attach a repository';
     const money = spendText(currentState.spend);
     const turns = turnsText(currentState.spend);
@@ -310,7 +322,6 @@ export function mountSidebar(root, options = {}) {
     if (active && root.contains(active) && ['INPUT', 'TEXTAREA'].includes(active.tagName)) return;
     renderMode();
     renderWorkspace();
-    renderMore(currentState.view?.page ?? 'home');
     renderConversations();
     renderFooter();
   }
