@@ -298,6 +298,12 @@ a.match(mainSource, /data\?\.ok !== false\) apply\(\{ type: 'conversations'/, 'a
 a.match(mainSource, /onRepository: \(\) => \{ state\.settingsSection = 'repo'; navigate\('settings'\); \}/, 'the sidebar repository control must open the repository settings');
 a.match(mainSource, /function toast\(message, danger = false\)/, 'shell errors need a visible toast callback');
 a.match(mainSource, /toast, refreshLists,\n\s+sovereign/, 'Thread must receive the shell toast callback');
+a.match(threadSource, /const RUN_TABS = \[\['session', 'Session'\], \['diff', 'Diff'\], \['tasks', 'Tasks'\]\]/, 'a run has exactly Session, Diff and Tasks chips: Changes and Tasks left the rail for the run');
+a.match(threadSource, /\(tab === 'diff' \? mountChanges : mountTasks\)\(currentState, embedHost, options\)/, 'Diff mounts the Changes view and Tasks the queue, each into the thread');
+a.match(threadSource, /root\.querySelector\('\.thread-header'\)\?\.replaceWith\(header\)/, 'a streamed event must repaint the header and inspector only, never the mounted Diff or Tasks view (it would drop focus from a field being typed in)');
+a.match(threadSource, /mounted = false;\s*stopEmbed\(\);/, 'leaving a thread must run the mounted Diff or Tasks view\'s cleanup');
+a.match(threadSource, /sovereign \? \(currentState\.runTab \?\? 'session'\) : 'session'/, 'only the orchestrator thread has run chips; a member thread stays a transcript');
+a.match(threadSource, /action === 'inspector-toggle'/, 'inspector cards must collapse');
 a.match(threadSource, /const body = node\('div', 'message-body markdown'\)/, 'thread Markdown must use the shared message typography');
 a.match(threadSource, /const markdown = !entry\.mine && \(entry\.kind === 'text'/, 'untyped assistant messages must remain Markdown instead of being overwritten as plain text');
 a.match(mainSource, /encodeURIComponent\(value\.member/, 'thread routes must preserve the selected member');

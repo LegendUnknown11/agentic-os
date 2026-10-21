@@ -11,6 +11,8 @@ class FakeElement {
     this.selectionStart = 0;
     this.selectionEnd = 0;
     this.listeners = {};
+    this.nodeType = 1;
+    this.classList = { add: (name) => { this.className = [this.className, name].filter(Boolean).join(' '); } };
   }
 
   set textContent(value) { this._text = String(value ?? ''); this.children = []; }
@@ -73,7 +75,14 @@ class FakeAudio {
 }
 
 globalThis.Audio = FakeAudio;
-globalThis.document = { activeElement: null, createElement: (tag) => new FakeElement(tag) };
+// createElementNS and createTextNode exist because the session inspector (ui/inspector.js) draws
+// SVG icons and composes with views/util's h(); both are DOM calls the fake must answer.
+globalThis.document = {
+  activeElement: null,
+  createElement: (tag) => new FakeElement(tag),
+  createElementNS: (_ns, tag) => new FakeElement(tag),
+  createTextNode: (text) => ({ nodeType: 3, textContent: String(text) }),
+};
 globalThis.FormData = class {
   constructor(form) { this.form = form; }
   get(name) { return name === 'text' ? this.form.querySelector('.thread-input')?.value ?? null : null; }

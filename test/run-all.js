@@ -184,6 +184,7 @@ const suites = [
   ['flat palette', join(HERE, 't-theme.js')],
   ['route table', join(HERE, 't-routes.js')],
   ['search palette', join(HERE, 't-palette.js')],
+  ['session inspector', join(HERE, 't-inspector.js')],
   ['flat palette — computed geometry', join(HERE, 't-theme-geometry.js')],
   ['a claude that dies mid-turn', join(HERE, 't-claude-death.js')],
   ['send() guards a claude that never spawned', join(HERE, 't-agent-guard.js')],

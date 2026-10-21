@@ -2,10 +2,16 @@ import { state as storeState, subscribe, post as storePost, sameId } from './sto
 import { mdToHtml } from './markdown.js';
 import { pick as pickFiles, upload as uploadAsset } from './assets.js';
 import { displayName } from './names.js';
-import { date, modelLabel } from './views/util.js';
-import { renderRunThreadContext } from './run.js';
+import { date, modelLabel, tone } from './views/util.js';
+import { renderRunThreadContext, runStatus, runStatusLabel } from './run.js';
+import { renderInspector } from './inspector.js';
+import { mountChanges } from './views/changes.js';
+import { mountTasks } from './views/tasks.js';
 
 const AUTO = '__auto__';
+// A run's own pages. Diff is the Changes view with the final-review gate and
+// Tasks is the queue; each is mounted into the thread, not navigated to.
+const RUN_TABS = [['session', 'Session'], ['diff', 'Diff'], ['tasks', 'Tasks']];
 const LOCAL_COMMANDS = [
   { name: 'autocompact', description: 'set the context window' },
   { name: 'argue', description: 'have models compare a question' },
@@ -291,10 +297,16 @@ function renderApprovalCard(card, approval, questionPicks, questionOthers) {
  * render() keeps what genuinely belongs to the closure: draft capture, scroll
  * restoration, and the key bookkeeping around them.
  */
-function threadHeader(state, { name, member, sovereign, ready, label, conversationId }) {
+function threadHeader(state, { name, member, sovereign, ready, label, conversationId, tab = 'session' }) {
   const header = node('header', 'thread-header');
   const heading = node('div', `thread-heading${sovereign ? ' sovereign' : ''}`);
-  heading.append(node('h1', '', `Chat with ${label}`));
+  const titleRow = node('div', 'thread-title-row');
+  titleRow.append(node('h1', '', `Chat with ${label}`));
+  if (sovereign && state.run) {
+    const status = runStatus(state.run);
+    titleRow.append(node('b', `run-badge ${tone(status)}`.trim(), runStatusLabel(status)));
+  }
+  heading.append(titleRow);
   const subtitle = [!sovereign && (member.title || member.description), workContext(state, conversationId)]
     .filter(Boolean).join(' · ');
   heading.append(node('p', 'thread-subtitle', subtitle));
@@ -328,7 +340,22 @@ function threadHeader(state, { name, member, sovereign, ready, label, conversati
     power.disabled = !ready;
     controls.append(power);
   }
-  header.append(heading, controls);
+  header.append(heading);
+  if (sovereign) {
+    const tabs = node('div', 'run-tabs');
+    tabs.setAttribute('role', 'group');
+    tabs.setAttribute('aria-label', 'Run views');
+    for (const [id, text] of RUN_TABS) {
+      const chip = node('button', 'run-tab', text);
+      chip.type = 'button';
+      chip.dataset.action = 'run-tab';
+      chip.dataset.tab = id;
+      chip.setAttribute('aria-pressed', String(id === tab));
+      tabs.append(chip);
+    }
+    header.append(tabs);
+  }
+  header.append(controls);
   return header;
 }
 
@@ -432,9 +459,27 @@ export function mountThread(root, options = {}) {
   let skillIndex = 0;
   const composerHost = options.composer ?? root;
   const listenerHosts = composerHost === root ? [root] : [root, composerHost];
+  // Diff and Tasks mount a whole view into one host that outlives repaints, so
+  // a stream event never rebuilds a form someone is typing in.
+  const inspectorOpen = new Set(['environment', 'progress', 'outputs', 'session']);
+  let embedHost = null;
+  let embedTab = null;
+  let embedCleanup = null;
+  function stopEmbed() { embedCleanup?.(); embedCleanup = null; embedTab = null; embedHost?.replaceChildren(); }
+  function embedFor(tab) {
+    embedHost ??= node('div', 'run-embed');
+    if (embedTab !== tab) {
+      stopEmbed();
+      embedTab = tab;
+      embedCleanup = (tab === 'diff' ? mountChanges : mountTasks)(currentState, embedHost, options) ?? null;
+    }
+    return embedHost;
+  }
 
   root.className = 'thread';
   root.textContent = '';
+  // A thread opens on its transcript; Diff and Tasks are chosen from there.
+  currentState.runTab = 'session';
 
   function currentName() { return viewMember(currentState, options) ?? 'orchestrator'; }
   function currentThreadKey() { return draftKey(currentName(), activeConversation(currentState, options)); }
@@ -479,20 +524,43 @@ export function mountThread(root, options = {}) {
       questionOthers.set(other.dataset.questionKey, other.value);
     }
     pendingFiles = (drafts.get(key)?.files ?? []).map((file) => ({ ...file }));
+    const tab = sovereign ? (currentState.runTab ?? 'session') : 'session';
+    const header = threadHeader(currentState, { name, member, sovereign, ready, label, conversationId, tab });
+    const inspector = sovereign ? renderInspector(currentState, { open: inspectorOpen }) : null;
+    if (tab !== 'session' && embedTab === tab && embedHost?.isConnected && root.contains(embedHost)) {
+      // Diff or Tasks is already mounted: only the header and inspector follow
+      // the stream. Rebuilding the view would drop focus from whatever field
+      // someone is typing in.
+      root.querySelector('.thread-header')?.replaceWith(header);
+      const old = root.querySelector('.run-inspector');
+      if (old && inspector) old.replaceWith(inspector);
+      return;
+    }
     root.textContent = '';
     composerHost.textContent = '';
     root.dataset.member = name;
     root.dataset.conversation = conversationId;
     root.setAttribute('aria-busy', String(sending || uploading));
 
-    const header = threadHeader(currentState, { name, member, sovereign, ready, label, conversationId });
+    const main = node('div', 'run-main');
+    const layout = node('div', `run-layout${sovereign ? '' : ' solo'}`);
+    layout.append(main);
+    if (inspector) layout.append(inspector);
+    root.append(layout);
+    if (tab !== 'session') {
+      // Header and inspector follow the stream; the mounted view is left alone.
+      main.append(header, embedFor(tab));
+      composerHost.textContent = '';
+      return;
+    }
+    stopEmbed();
     const messages = threadMessages(currentState, {
       name, sovereign, conversationId, questionPicks, questionOthers, submittedApprovals,
     });
     const composer = threadComposer({
       name, label, conversationId, pendingFiles, sending, uploading, ready,
     });
-    root.append(header, messages);
+    main.append(header, messages);
     composerHost.append(composer);
     restoreDraft(composer.querySelector('.thread-input'), key);
     renderedDraftKey = key;
@@ -695,6 +763,15 @@ export function mountThread(root, options = {}) {
     const target = event.target.closest('[data-action]');
     if (!target || (!root.contains(target) && !composerHost.contains(target))) return;
     const action = target.dataset.action;
+    if (action === 'run-tab') {
+      currentState.runTab = target.dataset.tab;
+      return render(currentState);
+    }
+    if (action === 'inspector-toggle') {
+      const card = target.dataset.card;
+      if (inspectorOpen.has(card)) inspectorOpen.delete(card); else inspectorOpen.add(card);
+      return render(currentState);
+    }
     if (action === 'attach') return attach();
     if (action === 'remove-attachment') {
       pendingFiles = pendingFiles.filter((file) => file.name !== target.dataset.attachment);
@@ -815,6 +892,7 @@ export function mountThread(root, options = {}) {
 
   return () => {
     mounted = false;
+    stopEmbed();
     unsubscribe?.();
     for (const host of listenerHosts) {
       host.removeEventListener('click', onClick);

@@ -460,7 +460,21 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .field input[type="range"] { width: 100%; height: 24px; padding: 0; border: 0; border-radius: 0; background: transparent; accent-color: var(--accent); cursor: pointer; }
 
-.thread { display: grid; gap: var(--space-4); max-width: 820px; margin: 0 auto; }
+.thread { display: block; max-width: none; margin: 0; }
+
+/* A run is the transcript with the session inspector beside it. Below 1100px
+ * the inspector stacks under the transcript instead of disappearing. */
+.run-layout { display: grid; align-items: start; grid-template-columns: minmax(0, 1fr) minmax(280px, 340px); gap: var(--space-4); }
+
+.run-layout.solo { grid-template-columns: minmax(0, 1fr); }
+
+.run-main { display: grid; align-content: start; gap: var(--space-4); min-width: 0; max-width: 820px; margin: 0 auto; width: 100%; }
+
+.run-embed { min-width: 0; }
+
+.run-embed .view-heading { display: none; }
+
+.run-embed > .view-page { max-width: none; margin: 0; }
 
 .question { display: grid; gap: var(--space-3); padding: var(--space-3); border: 1px solid var(--line-soft); border-radius: var(--radius-card); background: var(--raised); }
 
@@ -650,7 +664,18 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .thread-header { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); padding: var(--space-3); border: 1px solid var(--line-soft); border-radius: var(--radius-card); background: var(--surface); box-shadow: var(--shadow-card); }
 
-.thread-heading { min-width: 0; flex: 1 1 320px; }
+.thread-heading { min-width: 0; flex: 1 1 240px; }
+
+.thread-title-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+
+/* Session / Diff / Tasks: the run's own pages, as chips beside its title. */
+.run-tabs { display: flex; flex: none; gap: var(--space-1); }
+
+.run-tab { min-height: var(--tap-target-min); padding: 0 var(--space-3); border-color: transparent; background: transparent; color: var(--muted); }
+
+.run-tab[aria-pressed="true"] { border-color: var(--line); background: var(--active); color: var(--text); }
+
+.run-tab:hover { background: var(--hover); color: var(--text); }
 
 .thread-heading h1 { margin: 0; font-family: var(--display); font-size: 14px; font-weight: 500; letter-spacing: -.01em; }
 
@@ -1483,3 +1508,43 @@ body.sidebar-collapsed .app-identity { display: grid; }
 .palette-hint { color: var(--faint); font-size: var(--t-xs); }
 
 .palette-empty { padding: var(--space-3); color: var(--muted); font-size: var(--t-sm); }
+
+/* The session inspector: cards of what the daemon already knows about the run. */
+.run-inspector { position: sticky; top: 0; display: grid; align-content: start; gap: var(--space-2); min-width: 0; }
+
+.inspector-card { display: grid; gap: var(--space-2); padding: var(--space-2) var(--space-3); border: 1px solid var(--line-soft); border-radius: var(--radius-card); background: var(--raised); }
+
+.inspector-head { display: flex; width: 100%; min-height: var(--tap-target-min); align-items: center; justify-content: space-between; gap: var(--space-2); padding: 0; border: 0; background: transparent; color: var(--text); font-size: var(--t-sm); font-weight: 600; text-align: left; }
+
+.inspector-head .icon { color: var(--faint); }
+
+.inspector-body { display: grid; gap: var(--space-1); padding-bottom: var(--space-2); }
+
+.inspector-kv { display: flex; min-width: 0; align-items: center; gap: var(--space-2); min-height: 28px; color: var(--text); font-size: var(--t-sm); }
+
+.inspector-kv .icon { flex: none; color: var(--muted); }
+
+.inspector-sub { min-width: 0; margin-left: auto; overflow: hidden; color: var(--faint); font-size: var(--t-xs); text-overflow: ellipsis; white-space: nowrap; }
+
+.inspector-kv .inspector-sub:only-of-type:not(:first-child) { margin-left: auto; }
+
+.inspector-step { display: flex; min-width: 0; align-items: flex-start; gap: var(--space-2); padding: 3px 0; color: var(--muted); font-size: var(--t-sm); }
+
+.inspector-step.done .icon { color: var(--tone-settled); }
+
+.inspector-step.current { color: var(--text); }
+
+.inspector-ring { flex: none; width: 10px; height: 10px; margin: 3px; border: 1.5px solid var(--faint); border-radius: 50%; }
+
+.inspector-ring.current { border: 2px solid var(--accent); }
+
+.inspector-out { display: flex; width: 100%; min-height: var(--tap-target-min); align-items: center; justify-content: space-between; gap: var(--space-2); padding: 0 var(--space-2); border: 0; border-radius: var(--radius-ctl); background: transparent; color: var(--text); font-size: var(--t-sm); text-align: left; }
+
+.inspector-out:hover { background: var(--hover); }
+
+.inspector-empty { margin: 0; color: var(--faint); font-size: var(--t-xs); }
+
+@media (max-width: 1100px) {
+  .run-layout { grid-template-columns: minmax(0, 1fr); }
+  .run-inspector { position: static; }
+}
