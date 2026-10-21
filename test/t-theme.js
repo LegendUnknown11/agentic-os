@@ -15,81 +15,83 @@ const root = /:root\s*\{([\s\S]*?)\n\}/.exec(css)?.[1] ?? '';
 const rules = css.replace(/\/\*[\s\S]*?\*\//g, '').slice(css.indexOf('* { box-sizing'));
 
 const token = (name) => new RegExp(`${name}\\s*:\\s*([^;]+);`).exec(root)?.[1].trim();
-// The Cold-Call Workflow system (E:\Prototype.zip), adopted in full at the
-// sovereign's direction 2026-09-21, reversing PLAN.md section 1's retirement
-// of it. Paper, not a dark shell, and the product half of the kit rather than
-// the marketing half. Every value below is read from the kit's tokens/*.css.
-// This app's own token discipline (:root, -rgb twins, no literal colour
-// outside :root, gold identifies the orchestrator alone) is unaffected by
-// which system supplies the values.
-a.equal(token('color-scheme'), 'light');
-a.equal(token('--bg'), '#f7f1e7', 'Smart Tuitions --paper is the page ground');
-a.equal(token('--bg-rgb'), '247 241 231');
-a.equal(token('--surface'), '#ebe1d2', '--paper-deep is the recessed ground');
-a.equal(token('--surface-rgb'), '235 225 210');
-a.equal(token('--raised'), '#fffdf9', '--white is the panel a card is drawn on');
-a.equal(token('--raised-rgb'), '255 253 249');
-a.equal(token('--text'), '#17332f');
-a.equal(token('--text-rgb'), '23 51 47');
-// The one departure from the kit's literal hexes, and the reason is pinned
-// with it: the kit measures every ratio against --paper and never against
-// --paper-deep, which is the ground under the rail and under every section
-// here. Its --ink-soft is 4.28:1 there, under AA. Do not "restore" #5c6c66.
-a.equal(token('--muted'), '#55635e');
-a.equal(token('--muted-rgb'), '85 99 94');
-// The system ships two text values, not three. Metadata separates by type
-// treatment, not by a third grey — one light enough to read as faint on paper
-// would not clear the 4.5:1 AA minimum.
-a.equal(token('--faint'), '#55635e');
-a.equal(token('--faint-rgb'), '85 99 94');
-a.equal(token('--line'), '#cec7ba');
-a.equal(token('--line-rgb'), '206 199 186');
-// Three grounds, one hairline, one accent slot. Tokens the retired palette
-// needed and this one has no counterpart for are deleted, not left declared
-// and unread.
-for (const dead of ['--bg-alt', '--line-soft', '--accent-border', '--radius-icon', '--raised-alpha']) {
+// The T3 Code system (the "Agentic OS - T3 Code style" Claude design canvas),
+// adopted in full at the sovereign's direction 2026-10-21 on the T3-code
+// branch. It reverses the Cold-Call Workflow paper theme of 2026-09-21 (PLAN.md
+// section 1), exactly as that one reversed Hiveory. Dark, neutral and flat.
+// This app's own token discipline (:root, -rgb twins, no literal colour outside
+// :root, gold identifies the orchestrator alone, 44px enforced) is unaffected
+// by which system supplies the values.
+a.equal(token('color-scheme'), 'dark');
+a.equal(token('--bg'), '#0a0a0a', 'the canvas page ground');
+a.equal(token('--bg-rgb'), '10 10 10');
+a.equal(token('--surface'), '#0d0d0d', 'the canvas rail and section ground');
+a.equal(token('--surface-rgb'), '13 13 13');
+a.equal(token('--raised'), '#111111', 'the panel a card or the composer is drawn on');
+a.equal(token('--raised-rgb'), '17 17 17');
+a.equal(token('--hover'), '#171717');
+a.equal(token('--hover-rgb'), '23 23 23');
+a.equal(token('--active'), '#1a1a1a');
+a.equal(token('--active-rgb'), '26 26 26');
+a.equal(token('--text'), '#fafafa');
+a.equal(token('--text-rgb'), '250 250 250');
+a.equal(token('--muted'), '#a1a1a1');
+a.equal(token('--muted-rgb'), '161 161 161');
+// The one departure from the canvas's literal hexes, and the reason is pinned
+// with it: the canvas sets metadata in #737373, which is 4.10:1 on --surface,
+// under the 4.5:1 AA minimum. #8a8a8a is 5.63:1 there and 5.04:1 on --active,
+// the brightest ground any text sits on. Do not "restore" #737373.
+a.equal(token('--faint'), '#8a8a8a');
+a.equal(token('--faint-rgb'), '138 138 138');
+a.equal(token('--line-soft'), '#1c1c1c', 'shell dividers and card outlines at rest');
+a.equal(token('--line-soft-rgb'), '28 28 28');
+a.equal(token('--line'), '#262626', 'control outlines, a step brighter');
+a.equal(token('--line-rgb'), '38 38 38');
+// Tokens the retired palettes needed and this one has no counterpart for are
+// deleted, not left declared and unread.
+for (const dead of ['--bg-alt', '--accent-border', '--radius-icon', '--raised-alpha', '--grain', '--wash', '--glass-blur', '--glass-saturate', '--glass-chrome-alpha', '--glass-panel-alpha']) {
   a.equal(token(dead), undefined, `${dead} has no counterpart in this system and must not survive as a dead declaration`);
 }
-a.equal(token('--accent'), '#0d6663', 'teal is the one accent slot, brand and primary interactive together');
-a.equal(token('--accent-rgb'), '13 102 99');
-a.equal(token('--accent-hover'), '#084a4a');
-a.equal(token('--accent-ink'), '#fffdf9');
-// Four genuinely distinct status hues, not one hue split by chroma.
-// Two hue families, four tones. Live and settled share teal and separate by
-// depth plus the pulse; that is the cost of this system and it is pinned here
-// so nobody later "fixes" it by importing a hue the kit does not have.
-a.equal(token('--tone-live'), '#0d6663');
-a.equal(token('--tone-live-rgb'), '13 102 99');
-a.equal(token('--tone-settled'), '#084a4a');
-a.equal(token('--tone-settled-rgb'), '8 74 74');
-// ViniYoga's --due is its own hex and deliberately not marketing's --red;
-// this is that hue taken down until it clears AA on --paper-deep too (4.19:1
-// there as published, 4.93:1 here).
-a.equal(token('--tone-attention'), '#9e4239');
-a.equal(token('--tone-attention-rgb'), '158 66 57');
-a.equal(token('--tone-idle'), '#55635e', 'in this system waiting is not a colour');
-a.equal(token('--tone-idle-rgb'), '85 99 94');
-a.equal(token('--danger'), 'var(--tone-attention)', 'general-purpose danger must agree with the attention status hue');
-a.equal(token('--danger-rgb'), 'var(--tone-attention-rgb)');
+a.equal(token('--accent'), '#7aa2ff', 'periwinkle is the one accent: live work, links, focus and the current item');
+a.equal(token('--accent-rgb'), '122 162 255');
+a.equal(token('--accent-hover'), '#9bb9ff');
+a.equal(token('--accent-ink'), '#0a0a0a', '7.96:1 on the accent');
+// The single primary action is the white fill, not the accent.
+a.equal(token('--fill'), '#fafafa');
+a.equal(token('--fill-rgb'), '250 250 250');
+a.equal(token('--fill-hover'), '#e5e5e5');
+a.equal(token('--fill-ink'), '#0a0a0a');
+// Four tones on four hues, plus a separate red. A blocked run is waiting on
+// you, not broken, so attention is amber and --danger (failure, destructive
+// actions, removed diff lines) is red; the canvas draws both.
+a.equal(token('--tone-live'), '#7aa2ff');
+a.equal(token('--tone-live-rgb'), '122 162 255');
+a.equal(token('--tone-settled'), '#4ade80');
+a.equal(token('--tone-settled-rgb'), '74 222 128');
+a.equal(token('--tone-attention'), '#e5a54b');
+a.equal(token('--tone-attention-rgb'), '229 165 75');
+a.equal(token('--tone-idle'), '#8a8a8a');
+a.equal(token('--tone-idle-rgb'), '138 138 138');
+a.equal(token('--danger'), '#f87171');
+a.equal(token('--danger-rgb'), '248 113 113');
 a.equal(token('--ok'), 'var(--tone-settled)', 'general-purpose ok must agree with the settled status hue');
 a.equal(token('--ok-rgb'), 'var(--tone-settled-rgb)');
-// Gold is this app's own rule, not the kit's, so it is reintroduced against
-// paper rather than carried over: #d9b25c measures 1.9:1 here and would be a
-// decoration nobody could read.
-a.equal(token('--gold'), '#7f6019');
-a.equal(token('--gold-rgb'), '127 96 25');
-// Shape: the product scale, kept apart from the marketing one. 16px card,
-// 12px control, no pill buttons — pills survive only where the kit pills.
-a.equal(token('--radius-ctl'), '12px');
-a.equal(token('--radius-card'), '16px');
+// Gold is this app's own rule, not the canvas's: it names the orchestrator.
+a.equal(token('--gold'), '#d9b25c');
+a.equal(token('--gold-rgb'), '217 178 92');
+// Shape: 12px card, 6px control, pill only for the status badge and the
+// segmented control.
+a.equal(token('--radius-ctl'), '6px');
+a.equal(token('--radius-card'), '12px');
 a.equal(token('--radius-pill'), '999px');
-// Smart Tuitions' real scale, which widens faster than linear on purpose. The
-// kit records that a generic 4px ladder here was a bug it corrected, so a
-// return to 4/8/12/16 is a regression, not a tidy-up.
+// The spacing scale is unchanged from the paper theme and still widens faster
+// than linear on purpose; a return to 4/8/12/16 is a regression.
 a.deepEqual([1, 2, 3, 4, 5, 6, 7, 8].map((n) => token(`--space-${n}`)), ['4px', '8px', '16px', '24px', '32px', '48px', '64px', '88px']);
 a.equal(token('--tap-target-min'), '44px');
-a.equal(token('--ease'), 'cubic-bezier(.2, 0, 0, 1)', "the product easing (Tailwind ease-ui), because this is a product screen");
-a.equal(token('--fast'), '150ms', 'hover/press transitions run at 0.15s per the product source');
+a.equal(token('--t-md'), '14px', 'the canvas body size');
+a.equal(token('--ease'), 'ease', 'plain ease, as in the canvas');
+a.equal(token('--fast'), '150ms', 'hover/press transitions run at 0.15s');
+a.equal(token('--shadow-card'), 'none', 'cards at rest are hairline-bordered and flat');
 // 2026-10-21 (T3-code redesign): type is bundled, not local-stack. Inter and
 // JetBrains Mono ship in ui/fonts and load same-origin, so the offline-Electron
 // reason for system stacks (a webfont fetch fails silently) no longer applies.
@@ -103,27 +105,15 @@ for (const f of ['inter-latin-wght-normal.woff2', 'jetbrains-mono-latin-wght-nor
   a.ok(existsSync(join(import.meta.dirname, '..', 'ui', 'fonts', f)), `ui/fonts/${f} must ship with the app (the OFL requires the licence beside the font)`);
 }
 a.doesNotMatch(css, /@import|fonts\.googleapis|https?:\/\//, 'the shell must not fetch type or anything else over the network');
-a.match(index, /<meta name="color-scheme" content="light">/, 'the document chrome must advertise the single paper surface, not a toggle');
+a.match(index, /<meta name="color-scheme" content="dark">/, 'the document chrome must advertise the single dark surface, not a toggle');
 a.doesNotMatch(index, /theme-bootstrap/, 'the light/dark bootstrap script is gone along with the toggle');
 a.doesNotMatch(index, /<script>(?!\s*<\/script>)/, 'the shell must obey the daemon script CSP');
-// The kit ships a light system and an opt-in energetic/editorial theme scope.
-// Only the default paper/teal one is adopted; a second scope here would be the
-// second styling vocabulary this file exists to prevent.
-a.doesNotMatch(css, /:root\[data-theme=|data-palette=|prefers-color-scheme/, 'one ground only — the kit\'s alternate theme scopes are opt-in and are not adopted');
-a.doesNotMatch(css, /--dark-|--ed-/, 'neither the retired --dark- convention nor the kit\'s editorial --ed- namespace belongs in this palette');
-// Paper needs grain or it reads as flat beige. The kit gives two techniques;
-// this shell takes the CSS-generated one, so the gradient is expected — but
-// only as the tokenised grain, and nowhere else.
-a.match(css, /--grain:\s*radial-gradient\(rgb\(var\(--text-rgb\) \/ \.05\)/, 'the paper grain must be a token, so its colour stays inside :root');
-// 2026-09-23: added alongside the glass tokens, for the same defect a live
-// session found — with no wallpaper set (the default state), the header and
-// rail read as fully opaque even with backdrop-filter correctly applied,
-// because blurring a flat colour is indistinguishable from not blurring it.
-// --wash gives the paper itself real tonal variation, tokenised so its
-// colours stay inside :root like every other value here.
-a.match(css, /--wash:\s*radial-gradient\(.*rgb\(var\(--accent-rgb\) \/ \.09\).*radial-gradient\(.*rgb\(var\(--surface-rgb\) \/ \.95\)/, 'the depth wash must be a token built from channel colours, not a literal');
-a.match(css, /body \{[^}]*background:\s*var\(--wash\), var\(--bg\) var\(--grain\);/, 'the page ground must carry both the depth wash and the grain');
-a.doesNotMatch(rules, /linear-gradient/, 'no rule may invent a gradient of its own');
+// One ground only. A second theme scope here would be the second styling
+// vocabulary this file exists to prevent.
+a.doesNotMatch(css, /:root\[data-theme=|data-palette=|prefers-color-scheme/, 'one ground only: no alternate theme scopes');
+a.doesNotMatch(css, /--dark-|--ed-/, 'neither the retired --dark- convention nor the editorial --ed- namespace belongs in this palette');
+a.match(css, /body \{[^}]*background:\s*var\(--bg\);/, 'the page is the flat canvas ground: no grain, no wash');
+a.doesNotMatch(rules, /linear-gradient|radial-gradient/, 'no rule may invent a gradient of its own');
 a.match(css, /\.task-manage-controls select \{ height: var\(--tap-target-min\)/, 'task row controls must meet the 44px tap target, not browser-default selects');
 a.match(css, /\.run-spend-line\s*\{[^}]*stroke:\s*var\(--accent\)/, 'the run spend line wears the accent, the one series colour');
 a.match(css, /\.run-spend-cap\s*\{[^}]*stroke:\s*var\(--tone-attention\)[^}]*stroke-dasharray/, 'the run ceiling is a dashed attention line');
@@ -142,27 +132,29 @@ a.doesNotMatch(css, /content:\s*"AGENTIC OS \/ WORKSPACE"/, 'the page eyebrow ca
 // throughout — a 48px page title over 16px cards was that rule skipped for
 // the one heading every view shares. Pinned at the smaller scale so it does
 // not drift back up either.
-a.match(css, /\.view-heading h1\s*\{[^}]*font-size:\s*clamp\(20px, 2\.4vw, 26px\);/, 'the page heading must stay on the product scale, not the marketing one');
+a.match(css, /\.view-heading h1\s*\{[^}]*font-size:\s*clamp\(18px, 2vw, 22px\);/, 'the page heading must stay on the product scale, not the marketing one');
 a.match(css, /\.thread-header\s*\{[^}]*background:\s*var\(--surface\)/, 'threads need the same paper panel primitive as dashboard pages');
 a.doesNotMatch(css, /--mono:\s*['"]?(IBM Plex Mono|Playfair Display)/, 'the retired kit faces must not return to the mono stack');
 
-// This inverts the rule the retired system imposed. The kit is explicit that
-// mono-uppercase-tracked labels carrying metadata is "the one convention every
-// client source shares exactly" — eyebrows, timestamps, board names, form
-// labels. So metadata takes mono here, and the sweep runs the other way.
+// Metadata (eyebrows, board names, form labels, table heads) is 11px, tracked,
+// uppercase, in the UI face: that is how the canvas draws "WORK", "TEAM" and
+// "SYSTEM". It is not mono; mono is for code, terminal, diff and log content,
+// the rule the Hiveory spec stated and the paper theme briefly inverted.
 for (const sel of ['\\.card-meta', '\\.message-meta', '\\.metric-label', '\\.mode-kicker', '\\.sidebar-heading', '\\.brand-tag', '\\.thread-control-label', '\\.field-label', '\\.data-table th']) {
-  a.match(css, new RegExp(`${sel}\\s*\\{[^}]*var\\(--mono\\)`),
-    `${sel.replace(/\\\\/g, '')} carries metadata — in this system that means mono`);
+  a.match(css, new RegExp(`${sel}\\s*\\{[^}]*font:\\s*500 11px/[\\d.]+ var\\(--ui\\)`),
+    `${sel.replace(/\\\\/g, '')} carries metadata: 11px in the UI face`);
   a.match(css, new RegExp(`${sel}\\s*\\{[^}]*text-transform:\\s*uppercase`),
-    `${sel.replace(/\\\\/g, '')} carries metadata — in this system that means uppercase and tracked`);
+    `${sel.replace(/\\\\/g, '')} carries metadata: uppercase and tracked`);
+  a.doesNotMatch(css, new RegExp(`${sel}\\s*\\{[^}]*var\\(--mono\\)`),
+    `${sel.replace(/\\\\/g, '')} is not code, so it is not mono`);
 }
-// What is NOT metadata stays in the product sans: a status badge states a
-// status, and a control is a control. The kit sets both in its own sans.
+// What is NOT metadata stays in sentence case: a status badge states a status,
+// and a control is a control.
 for (const sel of ['\\.button\\.chip', '\\.field-value', '\\.run-badge', '\\.task-row b']) {
-  a.doesNotMatch(css, new RegExp(`${sel}\\s*\\{[^}]*font-family:\\s*var\\(--mono\\)|${sel}\\s*\\{[^}]*\\bvar\\(--mono\\)`),
-    `${sel.replace(/\\\\/g, '')} states a status or is a control — not metadata, so not mono`);
+  a.doesNotMatch(css, new RegExp(`${sel}\\s*\\{[^}]*\\bvar\\(--mono\\)`),
+    `${sel.replace(/\\\\/g, '')} states a status or is a control, so it is not mono`);
   a.doesNotMatch(css, new RegExp(`${sel}\\s*\\{[^}]*text-transform:\\s*uppercase`),
-    `${sel.replace(/\\\\/g, '')} states a status or is a control — not metadata, so not uppercase-tracked`);
+    `${sel.replace(/\\\\/g, '')} states a status or is a control, so it is not uppercase-tracked`);
 }
 // The kit's StatusBadge: a pill filled with its own hue at 12%, no border.
 a.match(css, /\.run-badge\s*\{[^}]*border:\s*0;[^}]*border-radius:\s*var\(--radius-pill\);[^}]*background:\s*rgb\(var\(--muted-rgb\) \/ \.12\)/, 'the run badge is the kit\'s StatusBadge — a tinted pill, not a bordered one');
@@ -171,31 +163,16 @@ a.match(css, /grid-template:\s*"sidebar main" 1fr \/ 260px/);
 a.match(css, /#bg\s*\{[\s\S]*?z-index:\s*0;/, 'wallpaper must sit between the body and shell');
 a.match(css, /body\.has-bg\s*\{[\s\S]*?--shell-alpha:\s*\.82;/, 'wallpaper selection must open the shell surfaces');
 a.match(css, /--surface-alpha\s*:\s*1;/, 'shell opacity must be tokenised with an opaque default');
-// 2026-09-23: reverses the 2026-09-21 "flat surfaces must not reintroduce
-// glass" guard this line used to hold. The sovereign asked for a Hiveory-
-// inspired translucent/glass feel adopted *within* the paper system (#48 is
-// superseded by the paper kit; the glass feel is the part that survives).
-// Glass is scoped to chrome and floating surfaces only — never the flat,
-// hairline-bordered cards (`.view-section`) this system already keeps
-// shadowless at rest, so that rule is pinned as a negative here rather than
-// dropped.
-for (const sel of ['#header', '#sidebar', '#composer', '\\.hover-tip']) {
-  a.match(css, new RegExp(`${sel}\\s*\\{[^}]*backdrop-filter:\\s*blur\\(var\\(--glass-blur\\)\\)\\s*saturate\\(var\\(--glass-saturate\\)\\)`),
-    `${sel.replace(/\\\\/g, '')} is chrome or floating and must carry the glass blur`);
+// 2026-10-21: the 2026-09-23 glass layer (backdrop-filter on the header, rail,
+// composer, tooltip and drawer scrim, plus --glass-* alphas and their
+// @supports and reduced-transparency fallbacks) is removed, deliberately, not
+// weakened: the T3 canvas is flat, and blurring a flat colour shows nothing.
+// The old positive guards are replaced by this negative one.
+a.doesNotMatch(css, /backdrop-filter/, 'the T3 canvas is flat: no rule may blur what is behind it');
+a.doesNotMatch(css, /--glass-|prefers-reduced-transparency|@supports not \(backdrop-filter/, 'the glass tokens and their fallbacks are gone with the glass');
+for (const sel of ['#header', '#sidebar', '#composer']) {
+  a.match(css, new RegExp(`${sel}\\s*\\{[^}]*var\\(--line-soft\\)`), `${sel} divides from its neighbour with the soft hairline`);
 }
-a.match(css, /body\.sidebar-open #sidebar-scrim\s*\{[^}]*backdrop-filter:\s*blur\(6px\)/, 'the drawer scrim blurs the content it covers');
-a.doesNotMatch(css, /\.view-section\s*\{[^}]*backdrop-filter/, 'cards at rest stay flat — glass is for chrome, not content');
-// Every glass alpha is measured against the worst ground this app can ever
-// put behind it (a fully black wallpaper image), not the paper default —
-// see the :root comment for the blend arithmetic. Pin the two numbers so a
-// future edit cannot "round them up" without redoing that measurement.
-a.equal(token('--glass-chrome-alpha'), '.90', '.90 keeps --muted at 4.72:1 blended over black — the raised-based glass budget');
-a.equal(token('--glass-panel-alpha'), '.97', '.97 is the highest alpha that still clears 4.5:1 for --muted on --surface blended over black');
-// A browser without backdrop-filter, or a person who has asked for less
-// transparency, gets the pre-glass opaque paint back — never the thinner
-// alpha uncomposited against whatever sits behind it.
-a.match(css, /@supports not \(backdrop-filter:\s*blur\(1px\)\)\s*\{[\s\S]*?#header,\s*\.hover-tip\s*\{\s*background:\s*var\(--raised\);/, 'a browser without backdrop-filter must fall back to the opaque paint');
-a.match(css, /@media \(prefers-reduced-transparency:\s*reduce\)\s*\{[\s\S]*?backdrop-filter:\s*none;/, 'reduced transparency must turn glass back into the opaque paint');
 a.match(css, /#composer:empty\s*\{\s*display:\s*none;/, 'non-chat pages must not leave an empty composer bar');
 a.match(css, /#view\.view-changing\s*\{[^}]*opacity:\s*0;[^}]*transform:/, 'view changes need a bounded visual entry state');
 a.match(css, /\.sidebar-nav-button/, 'the primary workspace navigation needs an explicit, testable treatment');
@@ -235,9 +212,9 @@ const run = readFileSync(join(import.meta.dirname, '..', 'ui', 'run.js'), 'utf8'
 a.match(run, /run-item \$\{statusClass\(status\)\} \$\{tone\(status\)\}/, 'run deliverables must carry the shared tone class');
 a.match(run, /run-badge \$\{tone\(status\)\}/, 'the run badge must carry the shared tone class');
 a.match(css, /\.doctor-row\.settled\s*\{[^}]*color:\s*var\(--ok\)/, 'passing checks need a positive cue');
-a.match(css, /\.doctor-row\.attention\s*\{[^}]*color:\s*var\(--danger\)/, 'warnings and failures share one attention cue, not two different colours');
+a.match(css, /\.doctor-row\.attention\s*\{[^}]*color:\s*var\(--tone-attention\)/, 'warnings and failures share one attention cue, not two different colours');
 a.match(css, /\.approval-status\.settled\s*\{[^}]*color:\s*var\(--ok\)/, 'a settled decision must use the shared positive cue');
-a.match(css, /\.approval-status\.attention\s*\{[^}]*color:\s*var\(--danger\)/, 'a rejected decision must use the shared attention cue, not a colour of its own');
+a.match(css, /\.approval-status\.attention\s*\{[^}]*color:\s*var\(--tone-attention\)/, 'a rejected decision must use the shared attention cue, not a colour of its own');
 
 // Issue #39/#48: "status reads through a dot, not a left rule" — applied to
 // the genuinely row-shaped families (task/doctor/quota, run deliverables).
@@ -264,7 +241,7 @@ a.match(css, /\.home-grid\s*\{[^}]*minmax\(min\(100%, 420px\), 1fr\)/, 'the Home
 a.match(css, /\.approval-card, \.agent-card, \.home-card,[^}]*align-content:\s*start;/, 'a card must hug its content rather than spread it down the height of its tallest neighbour');
 a.match(css, /\.view-section\s*\{[^}]*align-content:\s*start;/, 'a view section must hug its content');
 a.match(css, /\.run-grid\s*\{[^}]*align-items:\s*start;/, 'run panels must be as tall as what they hold, not as tall as their tallest neighbour');
-a.match(css, /\.home-attention\s*\{[^}]*border-color:\s*rgb\(var\(--danger-rgb\)/, 'Home attention states need a local danger treatment');
+a.match(css, /\.home-attention\s*\{[^}]*border-color:\s*rgb\(var\(--tone-attention-rgb\)/, 'Home attention states need a local attention treatment');
 a.match(css, /\.home-empty\s*\{[^}]*grid-column:\s*1 \/ -1;[^}]*color:\s*var\(--faint\);/, 'an empty Home must use one quiet full-width cue');
 a.match(css, /\.sidebar-mode\s*\{\s*display:\s*none;/, 'desktop must not duplicate the header mode switcher in the sidebar');
 a.match(css, /@media \(max-width: 720px\)[\s\S]*?body\.sidebar-open #sidebar \.sidebar-mode\s*\{\s*display:\s*grid;/, 'the mobile navigation drawer must retain the mode switcher');
@@ -274,7 +251,7 @@ a.match(css, /\.sidebar\.collapsed \.sidebar-conversations[\s\S]*?\.sidebar\.col
 a.match(css, /\.sidebar\.collapsed \.sidebar-nav-button\s*\{[^}]*font-size:\s*0;/, 'collapsed rail navigation must retain icon-only controls');
 a.match(css, /\.sidebar\.collapsed \.sidebar-nav > \.sidebar-heading\s*\{[^}]*display:\s*none;/, 'collapsed rail must not clip its workspace heading');
 a.match(css, /\.sidebar\.collapsed \.sidebar-more > summary::after\s*\{[^}]*font-size:\s*16px;/, 'collapsed rail must keep the More tools disclosure glyph visible');
-a.match(css, /\.task-row\.attention b\s*\{[^}]*color:\s*var\(--danger\)/, 'blocked queue work must have a danger cue');
+a.match(css, /\.task-row\.attention b\s*\{[^}]*color:\s*var\(--tone-attention\)/, 'blocked queue work must have a danger cue');
 a.match(css, /\.task-row\.live b\s*\{[^}]*color:\s*var\(--accent\)/, 'active queue work must have an accent cue');
 a.match(util, /TONE_ATTENTION = new Set\(\[[^\]]*'blocked'/, 'the shared status vocabulary must classify blocked work as attention');
 a.match(util, /TONE_IDLE = new Set\(\[[^\]]*'planning'/, 'the shared status vocabulary must classify planning work as idle, not live');
@@ -288,7 +265,7 @@ a.match(css, /\.button-row > \.note\s*\{[^}]*min-width:\s*0;[^}]*flex:\s*1 1 240
 // tone treatment (not a per-domain merged/failed/requested or error/done
 // selector) now covers both.
 a.match(css, /\.activity-row\.settled\s*\{[^}]*border-left-color:\s*var\(--ok\)/, 'merged work and completed timeline entries need a positive result cue');
-a.match(css, /\.activity-row\.attention\s*\{[^}]*border-left-color:\s*var\(--danger\)/, 'failed merges and timeline errors need a danger result cue');
+a.match(css, /\.activity-row\.attention\s*\{[^}]*border-left-color:\s*var\(--tone-attention\)/, 'failed merges and timeline errors need a danger result cue');
 a.match(css, /\.activity-row\.live\s*\{[^}]*border-left-color:\s*var\(--accent\)/, 'pending merges need an accent result cue');
 a.match(util, /TONE_SETTLED = new Set\(\[[^\]]*'merged'/, 'the shared status vocabulary must classify merged results as settled');
 a.match(css, /\.settings-tabs\s*\{[^}]*flex-wrap:\s*nowrap;[^}]*overflow-x:\s*auto;/, 'Settings tabs must stay compact and scroll inside their strip');
@@ -306,8 +283,8 @@ a.match(css, /\.agent-usage-grid\s*\{[^}]*repeat\(auto-fit, minmax\(min\(100%, 2
 a.match(css, /\.usage-breakdown\.compact\s*\{[^}]*gap:\s*var\(--space-1\)/, 'the auxiliary breakdown\'s denser row count needs a tighter rhythm than the other breakdown lists, not the unstyled modifier it had before');
 a.match(css, /\.agent-usage-details\s*\{[^}]*grid-template-columns:/, 'per-agent definition lists need a readable desktop relationship');
 a.match(css, /\.agent-usage-card h3, \.agent-usage-card p\s*\{[^}]*overflow-wrap:\s*anywhere;/, 'long agent and model names must wrap instead of clipping');
-a.match(css, /\.usage-recommendation\s*\{[^}]*border:\s*1px solid var\(--line\);[^}]*border-left:\s*3px solid var\(--danger\)/, 'Usage advice must use the shared attention-row geometry');
-a.match(css, /\.settings-group\s*\{[^}]*border:\s*1px solid var\(--line\)/, 'consolidated Settings jobs must retain one semantic boundary');
+a.match(css, /\.usage-recommendation\s*\{[^}]*border:\s*1px solid var\(--line-soft\);[^}]*border-left:\s*3px solid var\(--tone-attention\)/, 'Usage advice must use the shared attention-row geometry');
+a.match(css, /\.settings-group\s*\{[^}]*border:\s*1px solid var\(--line-soft\)/, 'consolidated Settings jobs must retain one semantic boundary');
 // 2026-09-23: read directly on Models & efficiency and Notifications — a
 // bordered .view-section wrapping bordered .settings-group fieldsets with
 // nothing of its own between the two borders, a card nested in a panel.
@@ -328,7 +305,7 @@ a.match(css, /@media \(max-width: 720px\)[\s\S]*?\.search-row input\s*\{[^}]*fle
 a.match(css, /@media \(max-width: 720px\)[\s\S]*?\.thread-controls\s*\{[^}]*width:\s*100%;[^}]*justify-content:\s*stretch;/, 'phone thread controls must use the available row width');
 a.match(css, /@media \(max-width: 720px\)[\s\S]*?\.thread-control\s*\{[^}]*flex:\s*1 1 120px;/, 'phone thread controls must share one compact row before wrapping');
 a.match(css, /\.agent-heading/, 'agent cards need a horizontal identity row');
-a.match(css, /\.status-dot\.attention\s*\{[^}]*background:\s*var\(--danger\)/, 'failed members need a distinct status state');
+a.match(css, /\.status-dot\.attention\s*\{[^}]*background:\s*var\(--tone-attention\)/, 'failed members need a distinct status state');
 a.match(css, /\.empty\s*\{[^}]*padding:\s*var\(--space-4\)/, 'empty cards must stay compact in the flat dashboard');
 a.match(css, /\.view-page h1, \.view-page h2, \.view-page h3, \.view-page h4,\s*\.view-page p \{ margin: 0; \}/, 'page copy must use the shell spacing rhythm instead of browser defaults');
 a.match(css, /\.view-section\s*\{[^}]*background:\s*var\(--surface\);/, 'sections must sit below raised cards in the material hierarchy');
@@ -443,4 +420,4 @@ a.deepEqual(rgb.filter((v) => {
   return !(n[0] === n[1] && n[1] === n[2]);
 }), [], 'coloured rgb literals must come from channel tokens');
 
-console.log('t-theme.js OK — the Cold-Call Workflow palette is tokenised, paper-only, and has one fixed layout');
+console.log('t-theme.js OK — the T3 Code palette is tokenised, dark-only, flat, and has one fixed layout');

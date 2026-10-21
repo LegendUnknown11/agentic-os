@@ -200,7 +200,7 @@ function openWindow(port = PORT) {
   const win = new BrowserWindow({
     width: 1500,
     height: 950,
-    backgroundColor: '#0a0c0f',
+    backgroundColor: '#0a0a0a',
     title: 'Agentic OS',
     webPreferences: {
       nodeIntegration: false,
