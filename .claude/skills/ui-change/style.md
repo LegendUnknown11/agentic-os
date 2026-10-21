@@ -32,8 +32,9 @@ palette is exactly what went stale each time the system reversed.
 
 One trap, from HANDOFF.md: **the canvas fails this app's own rules in places,
 and the rule wins.** Its metadata grey is under 4.5:1 on the ground the rail and
-every section sit on, so `--faint` is lighter than the canvas ships; its small
-chips keep their look inside 44px hit areas. The suite fails if `--faint` is
+every section sit on, so `--faint` is lighter than the canvas ships. Sizes, by
+the user's call on 2026-10-21, are the canvas's own: 32px rows and controls
+(`--tap-target-min`), 28px chips (`--chip-h`). The suite fails if `--faint` is
 "restored" to the canvas value. Compute contrast, do not quote it (HANDOFF.md
 operating rule 2), and measure it on the ground the text actually sits on.
 

@@ -38,7 +38,8 @@ background poll must clear a stale error rather than leave it on screen.
 
 ## Accessibility
 
-- 44px is the enforced minimum tap target (`--tap-target-min`).
+- 32px is the minimum tap target (`--tap-target-min`), the canvas's row height;
+  chips are 28px (`--chip-h`). The user chose the canvas's sizes on 2026-10-21.
 - Navigation regions carry a spoken name; the active item exposes
   `aria-current="page"`.
 - The rerendered view container does not carry `aria-live` — announcing a whole

@@ -347,7 +347,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .mode-option:disabled { cursor: wait; opacity: .6; }
 
-.muted, .header-meta, .note { color: var(--muted); }
+.muted, .note { color: var(--muted); }
 
 .note { margin: 0; }
 
@@ -409,7 +409,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 .sidebar-pause-resume:hover, .sidebar-pause-raise:hover { background: rgb(var(--tone-attention-rgb) / .16); }
 .sidebar-pause-resume:disabled, .sidebar-pause-raise:disabled { cursor: not-allowed; opacity: .5; }
 
-.button, .icon-button {
+.button {
   display: inline-flex;
   min-height: var(--tap-target-min);
   align-items: center;
@@ -426,7 +426,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
   transition: border-color var(--fast) var(--ease), background-color var(--fast) var(--ease), color var(--fast) var(--ease), opacity var(--fast) var(--ease);
 }
 
-.button:hover, .icon-button:hover { border-color: var(--faint); color: var(--text); }
+.button:hover { border-color: var(--faint); color: var(--text); }
 
 /* The primary action is the white fill, as in the canvas ("Review diff",
  * "Share", send). Everything else is the bordered chip above. */
@@ -442,9 +442,7 @@ body.sidebar-collapsed .app-identity { display: grid; }
 
 .button.chip { min-height: var(--chip-h); padding: 0 10px; font-size: var(--t-xs); }
 
-.button:disabled, .icon-button:disabled { cursor: not-allowed; opacity: .5; }
-
-.icon-button { width: var(--tap-target-min); padding: var(--space-2); }
+.button:disabled { cursor: not-allowed; opacity: .5; }
 
 .field { display: grid; gap: var(--space-1); color: var(--muted); font-size: var(--t-sm); }
 
@@ -1227,8 +1225,6 @@ body.sidebar-collapsed .app-identity { display: grid; }
 .home-efficiency-warning .button { justify-self: end; }
 
 .mode-kicker { margin: 0; color: var(--accent); font: 500 11px/1.4 var(--ui); letter-spacing: .06em; text-transform: uppercase; }
-
-.home-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 
 .home-empty { grid-column: 1 / -1; margin: 0; padding: var(--space-3) 0; color: var(--faint); }
 

@@ -204,7 +204,7 @@ a.doesNotMatch(icons, /M2 12h12M2\.5 12 2 5l3\.2 2\.6L8 3/, 'the system icon mus
 a.match(icons, /system: 'M4\.6 4\.6h6\.8v6\.8H4\.6z/, 'the system icon is the neutral processor chip');
 a.match(util, /class: `button \$\{cls\}`/, 'page controls inherit the shared button treatment');
 a.match(util, /role: 'progressbar'[\s\S]*?'aria-valuenow'/, 'visual meters must expose their value without relying on geometry or colour');
-a.match(css, /\.button, \.icon-button \{[^}]*transition:/, 'primary controls need a restrained interaction transition');
+a.match(css, /\.button \{[^}]*transition:/, 'primary controls need a restrained interaction transition');
 a.match(css, /a:focus-visible, summary:focus-visible, button:focus-visible, input:focus-visible/, 'links and native disclosures must retain a visible keyboard focus ring');
 a.match(css, /\.button\.link\s*\{[^}]*min-height:\s*var\(--tap-target-min\);[^}]*padding:\s*var\(--space-1\) 0;/, 'quiet link buttons must retain the enforced tap target');
 a.match(thread, /tag === 'button'.*`button \$\{className/, 'thread controls inherit the shared button treatment');

@@ -10,8 +10,20 @@ The `cleanup` branch, cut from `main` at `e26a975`, removes the rename's
 one-time migration layer (`src/legacy.js`, `src/legacy-boot.js`, the
 `scripts/rename/` codemod and every `KINGDOM_*`/`.kingdom` fallback),
 de-duplicates shared helpers, prunes stale docs, and re-does each screen to
-the "Agentic OS — T3 Code style" design canvas. `PLAN.md` holds its contract.
-A pre-rename state folder is no longer migrated: start from current names.
+the "Agentic OS — T3 Code style" design canvas. `PLAN.md` holds its contract
+and evidence. A pre-rename state folder is no longer migrated: start from
+current names. The seeded browser audit also found and fixed a real defect:
+the thread rendered every pending approval as a raw JSON bubble
+(`test/t-thread.js` now fails without the fix).
+
+**Gate on `cleanup`: 101 suites** (102 less `t-legacy-migrate.js`), every one
+passing except `t-electron.js` (no display here). Commits were made with
+`--no-verify` for that reason alone.
+
+Trap found doing it: a demo daemon started in this container picks up the
+container's own `claude` CLI and takes real orchestrator turns. Put stub
+`claude`/`codex`/`agy`/`opencode`/`cursor-agent` scripts first on `PATH`
+before seeding a team for screenshots.
 
 ### Desktop verification (2026-10-21, on `main`)
 

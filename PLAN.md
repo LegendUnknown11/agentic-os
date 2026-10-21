@@ -23,6 +23,25 @@ Chromium.
 5. **Not built, still.** The canvas's Browser preview, Design canvas and Remote
    control boards are specced, not built: [docs/specs.md](docs/specs.md).
 
+**Decisions made without asking.**
+
+- Model and effort stay in the run header, drawn as caption-less chips, not
+  moved into the composer as the canvas draws them: the composer mounts
+  outside the thread root that wires their events.
+- Overview keeps the open run's detail panel (Pause/Stop live there), placed
+  after Needs you and Runs instead of first.
+- Each automation template's "Switch on" is a chip, not a white primary: the
+  canvas allows one primary action per screen.
+
+**Evidence.** Source: `npm test` printed 101 suites, all passing but
+`t-electron.js` (no display in the Linux container); `t-theme-geometry` ran in
+real Chromium. Browser: a seeded team (a running and a completed run, five
+tasks, three approvals including a question, two of your tasks, messages,
+spend) was screenshotted route by route in real Chromium at 1440x900, 1024x768
+and 390x844 against the canvas boards, with no horizontal overflow and no
+console errors beyond one 404. **Not held:** Electron and Windows
+(`t-electron.js` was re-pinned to 32px but has not run), and your own look.
+
 ## Carried forward from the previous contract
 
 The run system described in the previous `PLAN.md` is implemented and merged; its
