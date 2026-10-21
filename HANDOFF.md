@@ -1,5 +1,39 @@
 # Agentic OS handoff
 
+## Current state (functionality, 2026-10-21)
+
+The `functionality` branch is cut from `T3-code` at `e730bb6`, so it carries
+the T3 redesign below as well. It merges four parallel threads, each pushed as
+its own branch and merged with `--no-ff`. It is **not merged to `main`**, and
+no PR has been opened. Each thread's report owns its detail: what changed, the
+decisions and deviations it made, and the evidence it holds and lacks.
+
+| Thread | Branch | Report | In short |
+|---|---|---|---|
+| f1 performance | `f1-performance` | [f1-performance.md](plans/functionality/f1-performance.md) | Codex MCP listing and compact-JSON commits brought in. `campaigns()` survives `clearSpend()` (`spentUsdCleared`). `test/cleanup.js` stops the `<tmp>/.kingdom` leak. The vault watcher is released on stdin close, which fixed an MCP-process leak on Linux and took the vault suite from about 36s to 7s. |
+| f2 design | `f2-design` | [f2-design.md](plans/functionality/f2-design.md) | The court goes from 107 to 18 tiered roles (`src/roster.js`). The 90 retired roles are in `roles-library.json`. Existing courts migrate on launch (`Kingdom#migrateRoster`, `test/t-roster-migrate.js`), and members with work in flight are kept until idle. The orchestrator prompt drops by about 3.4KB. |
+| f3 session | `f3-session` | [f3-session.md](plans/functionality/f3-session.md) | Context-window meter (`contextWindows` in config, claude models only). Compact session (`POST /api/compactSession`, through `recycleAgent`). `runs.lead` (`schema:runs:lead:v1`). A `spend_ledger` table and `spendByDay`. The T3 inspector and Overview show all of them. |
+| f4 CLI | `f4-cli` | [f4-cli.md](plans/functionality/f4-cli.md) | `codex/cli-integrations` integrated with 19 review defects fixed. Cursor added. Freebuff dropped (it was a stub). Doctor no longer spends quota on a live model call. |
+
+Specs that are not built yet are in
+[plans/functionality/specs.md](plans/functionality/specs.md): Remote
+control, Browser preview and Design canvas. The Design canvas decisions are
+recorded there; the other two still have open questions. The full rename
+away from Kingdom-era words is decided in [docs/RENAME.md](docs/RENAME.md)
+(its 2026-10-21 revision wins) and is the next step, on a `rename` branch.
+
+**Gate after the last merge (`56b64be`): 101 suites, 4-wide, 41.7s.** Every
+suite passed except `t-electron.js`, which cannot open a window in this
+display-less Linux container (xvfb was tried and hung). Each thread commit
+went in with `--no-verify` for that reason alone, and its message says so.
+The container runs Node 22.22.0, but `package.json` asks for `>=24`.
+
+**Not held:** Electron or Windows CI on this branch. Any real Cursor,
+opencode or agy CLI. A real court run on the 18-role roster. A migration of
+a real user's config. Context-window figures for non-claude models; f2 put
+every specialist on codex, so their meters read "window unknown". The user's
+own acceptance.
+
 ## Current state (T3-code, 2026-10-21)
 
 The `T3-code` branch (nine commits on `main` at `62561d3`, the last being these docs) carries the redesign
@@ -17,7 +51,9 @@ commit table and the evidence. In short:
 - A run is the orchestrator's thread: Session, Diff and Tasks chips, and a
   session inspector (`ui/inspector.js`) read only from state the daemon streams.
 - **Not built, by decision:** the canvas's Browser preview, Design canvas,
-  context-window meter, Compact session and Remote control.
+  context-window meter, Compact session and Remote control. *(The meter and
+  Compact session were later built on `functionality` by f3. The other three
+  are specced in `plans/functionality/specs.md`.)*
 - **Held:** 95 suites in the Linux container, all passing but `t-electron.js`
   (no display); a seeded-court audit of every route at three viewports in real
   Chromium. **Not held:** Electron and Windows (push the branch and read the
@@ -287,7 +323,8 @@ section.
   `spentUsd` drove that negative, so the ceiling could never fire again. A run
   already in flight when this lands counts spend from the upgrade on.
   `campaigns()` still measures from `spentUsd` deltas and has the same
-  exposure to `clearSpend()`. That is noted, not changed.
+  exposure to `clearSpend()`. That is noted, not changed. *(Fixed on
+  `functionality` by f1, `b34effb`.)*
 - **Usage > Run spend** (`ui/views/usage.js`): a meter against `maxRunUsd`, a
   cumulative spend line with the ceiling dashed, the member split and a
   recent-runs table.
@@ -348,7 +385,8 @@ and a demo court twice. It now deletes only its own `kingdomDir(repo)`. That
 wide delete had been hiding a second problem: other suites leave their own
 `<tmp>/.kingdom/<name>` folders behind, and those now accumulate in the temp
 dir. They are harmless, but they are not cleaned up. That is a follow-up, not
-fixed here.
+fixed here. *(Fixed on `functionality` by f1 with `test/cleanup.js`. Temp
+folders outside `.kingdom` are still left behind.)*
 
 ## Evidence
 
