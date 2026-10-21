@@ -233,14 +233,26 @@ async function maybeOpenDoctor(firstSnapshot) {
   if (openAtBoot && report?.ready === false && !location.hash.slice(1) && eventsApplied === bootEventCount) navigate('doctor');
 }
 
+// What the header names: the page, or for a run its conversation's title. The
+// view's own h1 stays for assistive tech but is not drawn twice.
+const PAGE_TITLES = { home: 'Overview', inbox: 'Inbox', team: 'Team', knowledge: 'Knowledge', automations: 'Automations', settings: 'Settings', changes: 'Changes', tasks: 'Tasks' };
+function headerTitle() {
+  const view = state.view ?? {};
+  if (view.page !== 'thread') return PAGE_TITLES[view.page] ?? 'Overview';
+  const list = Array.isArray(state.conversations) ? state.conversations : state.conversations?.conversations ?? state.conversations?.items ?? [];
+  const id = view.conversation ?? state.conversations?.active;
+  const row = list.find((item) => String(item?.id ?? item?.conversationId) === String(id));
+  return view.member && view.member !== 'orchestrator' ? view.member : (row?.title || 'New chat');
+}
+
 function renderShell() {
   const header = $('header');
   if (header && !header.dataset.foundation) {
     header.dataset.foundation = '1';
-    header.innerHTML = '<div class="app-identity"><span class="brand">Agentic OS</span><span class="brand-tag">your team, in one place</span></div><span class="repo"></span><span class="connection" aria-label="Connection"></span><span class="goal-context"></span><nav class="mode-switcher" aria-label="Work mode"></nav><button class="header-search" type="button" aria-keyshortcuts="Control+K" aria-label="Search"><span class="header-search-label">Search</span><span class="header-search-hint">Ctrl K</span></button><button class="mobile-menu" type="button" aria-controls="sidebar" aria-expanded="false">Menu</button>';
-    const search = header.querySelector('.header-search');
+    header.innerHTML = '<div class="app-identity"><span class="brand">Agentic OS</span><span class="brand-tag">your team, in one place</span></div><span class="header-title"></span><span class="repo"></span><span class="connection" aria-label="Connection"></span><span class="goal-context"></span><nav class="mode-switcher" aria-label="Work mode"></nav><button class="header-search" type="button" aria-keyshortcuts="Control+K" aria-label="Search"><span class="header-search-box"><span class="header-search-label">Search</span><span class="header-search-hint">Ctrl K</span></span></button><button class="mobile-menu" type="button" aria-controls="sidebar" aria-expanded="false">Menu</button>';
+    const search = header.querySelector('.header-search-box');
     search.prepend(icon('search', 13));
-    search.addEventListener('click', openSearch);
+    header.querySelector('.header-search').addEventListener('click', openSearch);
     const switcher = header.querySelector('.mode-switcher');
     for (const choice of USER_MODES) {
       const button = document.createElement('button');
@@ -273,6 +285,8 @@ function renderShell() {
     button.setAttribute('aria-pressed', String(selected));
     button.disabled = modeRequest > 0 || !ready;
   }
+  const title = header?.querySelector('.header-title');
+  if (title) title.textContent = headerTitle();
   const repo = header?.querySelector('.repo');
   if (repo) repo.textContent = ready ? (state.repo ? `${String(state.repo).split(/[\\/]/).pop()}${state.base ? ` · ${state.base}` : ''}` : 'no repository') : 'Connecting…';
   const goal = header?.querySelector('.goal-context');

@@ -83,6 +83,12 @@ export function loadHomeRuns(state, render) {
   }).catch(() => {});
 }
 
+/** "PUSH · builder" reads as a bold title and a muted detail, as in the canvas's rows. */
+function rowText(text) {
+  const [title, ...rest] = String(text).split(' · ');
+  return h('span', { class: 'row-text' }, h('b', { class: 'row-title', text: title }), rest.length ? h('span', { class: 'row-detail', text: rest.join(' · ') }) : null);
+}
+
 /** The standing objective as the page's headline, with the two things to do about it. */
 function objectiveBlock(state, actions) {
   const goal = state.goal;
@@ -209,8 +215,8 @@ export function render(state, root, actions = {}, queueExpanded = false) {
       // interactive control in the app with no hover affordance and no
       // enforced tap target — .task-row alone declares neither.
       needs.append(item.open
-        ? h('button', { class: `button ${cls}`, type: 'button', on: { click: item.open } }, dot, h('span', { text: item.text }))
-        : h('div', { class: cls }, dot, h('span', { text: item.text })));
+        ? h('button', { class: `button ${cls}`, type: 'button', on: { click: item.open } }, dot, rowText(item.text))
+        : h('div', { class: cls }, dot, rowText(item.text)));
     }
     grid.append(needs);
   }

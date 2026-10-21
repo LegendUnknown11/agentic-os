@@ -133,7 +133,10 @@ a.doesNotMatch(css, /content:\s*"AGENTIC OS \/ WORKSPACE"/, 'the page eyebrow ca
 // the one heading every view shares. Pinned at the smaller scale so it does
 // not drift back up either.
 a.match(css, /\.view-heading h1\s*\{[^}]*font-size:\s*clamp\(18px, 2vw, 22px\);/, 'the page heading must stay on the product scale, not the marketing one');
-a.match(css, /\.thread-header\s*\{[^}]*background:\s*var\(--surface\)/, 'threads need the same paper panel primitive as dashboard pages');
+a.match(css, /\.thread-header\s*\{[^}]*border-bottom:\s*1px solid var\(--line-soft\);[^}]*background:\s*transparent/, 'the run header sits flat over its transcript, divided by a hairline, as the canvas draws it');
+a.match(css, /\.thread-composer\s*\{[^}]*border-radius:\s*14px;[^}]*background:\s*var\(--raised\)/, 'the composer is one rounded card: the field on its first line, the buttons on its second');
+a.match(css, /\.view-heading\s*\{[^}]*clip:\s*rect\(0 0 0 0\)/, 'a page names itself for assistive tech; the header draws the title once');
+a.match(css, /\.header-search-box\s*\{[^}]*min-height:\s*28px/, 'the search chip paints at 28px inside a 44px button');
 a.doesNotMatch(css, /--mono:\s*['"]?(IBM Plex Mono|Playfair Display)/, 'the retired kit faces must not return to the mono stack');
 
 // Metadata (eyebrows, board names, form labels, table heads) is 11px, tracked,
