@@ -278,13 +278,15 @@ additions. Each member picks its own CLI and model:
 Configuring a role does not put it on the team — it makes it **available**.
 The rail on the left holds the members actually serving; everyone else lives
 behind **Summon** (Alt+E), which searches names, titles and descriptions, so
-you can find the person who does Kubernetes without knowing they are filed
-under `cloud-architect`. Summoning is `wake`, dismissing is `sleep`; both are
+you can find the person who does CI or packaging without knowing they are filed
+under `devops-engineer`. Summoning is `wake`, dismissing is `sleep`; both are
 reversible and a dismissed member keeps its transcript.
 
-This split is the point: the shipped roster is 105 roles, and a rail that
-listed them all was 4,179px of scroll in a 580px viewport with 105 rows reading
-"not summoned".
+This split is the point: the shipped roster was once 105 roles, and a rail
+that listed them all was 4,179px of scroll in a 580px viewport with 105 rows
+reading "not summoned". Roster v2 ships 18 (15 standing roles in five lifecycle
+tiers, plus the three Cowork argument roles; `roles.json`, `src/roster.js`);
+the retired ones are kept, unseeded, in `roles-library.json`.
 
 ## One behavioural difference between the CLIs
 

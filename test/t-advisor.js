@@ -46,7 +46,7 @@ const efforts = {
   'gpt-5.6-luna': ['low', 'medium', 'high', 'xhigh', 'max'],
   'gpt-5.6-terra': ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'],
 };
-const members = [{ name: 'coder', description: 'writes code' }, { name: 'scribe', description: 'docs' }];
+const members = [{ name: 'coder', description: 'writes code' }, { name: 'writer', description: 'docs' }];
 
 async function pick(reply, allowed) {
   says(reply);
@@ -57,11 +57,11 @@ async function pick(reply, allowed) {
 {
   const ok = await pick(JSON.stringify({
     coder: { model: 'codex/gpt-5.6-terra', effort: 'high' },
-    scribe: { model: 'codex/gpt-5.6-luna', effort: 'low' },
+    writer: { model: 'codex/gpt-5.6-luna', effort: 'low' },
   }), ['codex/gpt-5.6-luna', 'codex/gpt-5.6-terra']);
   a.deepEqual(ok, {
     coder: { cli: 'codex', model: 'gpt-5.6-terra', effort: 'high' },
-    scribe: { cli: 'codex', model: 'gpt-5.6-luna', effort: 'low' },
+    writer: { cli: 'codex', model: 'gpt-5.6-luna', effort: 'low' },
   });
   console.log('  allowed picks come through intact');
 }
@@ -70,9 +70,9 @@ async function pick(reply, allowed) {
   // The sovereign excluded terra. The model reaches for it anyway.
   const out = await pick(JSON.stringify({
     coder: { model: 'codex/gpt-5.5', effort: 'ultra' },
-    scribe: { model: 'codex/gpt-5.6-luna', effort: 'low' },
+    writer: { model: 'codex/gpt-5.6-luna', effort: 'low' },
   }), ['codex/gpt-5.6-luna', 'codex/gpt-5.6-terra']);
-  a.deepEqual(out, { scribe: { cli: 'codex', model: 'gpt-5.6-luna', effort: 'low' } },
+  a.deepEqual(out, { writer: { cli: 'codex', model: 'gpt-5.6-luna', effort: 'low' } },
     'a model outside the allowlist must be dropped, not applied');
   console.log('  excluded model refused even though the advisor chose it');
 }
@@ -110,7 +110,7 @@ async function pick(reply, allowed) {
     // Courts created before this feature have no configuration snapshot. They
     // remain an honest absence of evidence, rather than being guessed from a
     // member's current settings.
-    { agent: 'scribe', payload: { usage: { input_tokens: 999, output_tokens: 999 } } },
+    { agent: 'writer', payload: { usage: { input_tokens: 999, output_tokens: 999 } } },
   ]);
   a.match(evidence, /coder .*gpt-5\.6-luna.*max.*2 turns.*50 output tokens/i,
     'the advisor sees the measured cumulative delta, grouped by the actual effort used');

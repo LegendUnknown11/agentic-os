@@ -120,7 +120,7 @@ const db = join(dir, 'mcp.sqlite');
 const state = new Bus(db);
 state.set('roster', JSON.stringify([
   { name: 'coder', role: 'peasant', title: 'Code specialist', description: 'writes code', awake: true, summoned: true, cli: 'codex', model: 'gpt-5.6-luna', effort: 'high', auto: false },
-  { name: 'scribe', role: 'peasant', title: 'Documentation specialist', description: 'writes docs', awake: false, summoned: false, cli: 'codex', model: 'gpt-5.6-luna', effort: 'low', auto: true },
+  { name: 'writer', role: 'peasant', title: 'Documentation specialist', description: 'writes docs', awake: false, summoned: false, cli: 'codex', model: 'gpt-5.6-luna', effort: 'low', auto: true },
   { name: 'orchestrator', role: 'orchestrator', title: 'Court lead', description: 'assigns work', awake: false, summoned: false },
 ]));
 state.set('mode', 'code');
@@ -147,7 +147,7 @@ const roster = (args) => {
   });
   return JSON.parse(out.result.content[0].text);
 };
-a.deepEqual(roster({ query: 'documentation', detail: true }).map((m) => m.name), ['scribe']);
+a.deepEqual(roster({ query: 'documentation', detail: true }).map((m) => m.name), ['writer']);
 a.deepEqual(roster({ activeOnly: true }).map((m) => m.name), ['coder']);
 a.equal(roster({ query: 'specialist', limit: 1 }).length, 1);
 console.log('  MCP surfaces are under budget and roster supports query, activeOnly, detail and limit');

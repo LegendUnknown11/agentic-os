@@ -432,9 +432,12 @@ export class Kingdom extends EventEmitter {
    * backend") instead of setting six dropdowns by hand.
    *
    * Overridable per kingdom with `"domains"` in the config. Cross-cutting roles
-   * — tester, reviewer, refactoring-engineer, debugger, researcher, writer — are in NEITHER by
-   * default: they follow the work rather than a layer, and sweeping them with a
-   * layer choice is how a reviewer ends up on a model nobody chose for it.
+   * are in NEITHER by default: every v2 role outside these two lists (src/roster.js),
+   * i.e. researcher, strategist, refactoring-engineer, tester, reviewer, debugger,
+   * auditor, writer and the Cowork trio. They follow the work rather than a layer,
+   * and sweeping them with a layer choice is how a reviewer ends up on a model
+   * nobody chose for it. Note a backend sweep DOES move architect off its Tier 1
+   * model (docs/PLAN-court.md Q3): that is the pre-v2 default, left as it was.
    * A member listed in both domains simply takes whichever was applied last.
    */
   domains() {
