@@ -18,6 +18,8 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, '..');
 
 const cfg = JSON.parse(readFileSync(join(ROOT, 'kingdom.config.json'), 'utf8'));
+a.deepEqual(cfg.models.cursor, [], 'Cursor model ids are account-specific; populate from cursor-agent models');
+a.deepEqual(cfg.efforts.agy, ['low', 'medium', 'high'], 'agy keeps its measured ladder; it rejects xhigh/max');
 
 /* ---------- the template carries no personal path or live session state */
 {
