@@ -23,7 +23,11 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 // pet.json and daemon.log move with it once. Top level, before anything
 // (requestSingleInstanceLock, the ready event) makes Electron create the new
 // folder: an existing new folder wins and the old one is left alone.
-try { migrateUserData(app.getPath('appData'), app.getPath('userData')); } catch (e) { console.warn(`[agenticos] app data migration skipped: ${e.message}`); }
+try {
+  const appData = app.getPath('appData');
+  const userData = app.commandLine.getSwitchValue('user-data-dir') || join(appData, app.getName());
+  migrateUserData(appData, resolve(userData));
+} catch (e) { console.warn(`[agenticos] app data migration skipped: ${e.message}`); }
 const PORT = Number(process.env.AGENTICOS_PORT ?? 7777);
 const ORIGIN = `http://127.0.0.1:${PORT}`;
 

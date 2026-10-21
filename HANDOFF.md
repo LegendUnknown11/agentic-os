@@ -35,9 +35,30 @@ the backup. The home database retains 107 messages and eight conversations;
 its two additional events record config and roster migration. Both migrated
 workspace configurations now have the 18-role roster and verified backends.
 
-The full real-team lifecycle, final installer upgrade and installed-app
-profile/visual checks are still in progress; do not infer them from the
-passing automated gate or individual CLI checks.
+The real 18-role acceptance run completed with controller assistance. Cursor
+implemented the finite greeting fixture; Codex independently tested the exact
+submitted revision, including a red/green sensitivity check; OpenCode reviewed
+that revision and returned `REVIEW_ACCEPT`. Fresh controller tests passed,
+the verified revision was integrated into a follow-up run and applied, and
+tests passed in the resulting source checkout. Earlier autonomous attempts
+blocked on short watchdogs and on testing an unchanged worker baseline; their
+history is preserved. This is not evidence of unattended end-to-end completion.
+
+The Windows installer was exercised from the preserved legacy installer to
+the renamed app: exit 0, the same uninstall GUID and installation directory,
+one installed app, and the legacy executable replaced. The installed app was
+opened and inspected with the actual eight-conversation workspace.
+
+The real profile check found another source-only-test gap: Electron's
+`getPath('userData')` eagerly creates that directory, so the old startup call
+made the migration see both copies and leave the old profile behind. An
+isolated Electron probe reproduced it. Startup now computes the destination
+without reading `userData`, preserving an explicit command-line override.
+The migration regression test fails without the fix. The final installer was
+updated and first-launch migration then moved the actual legacy profile;
+the original pet settings match the backup, the legacy folder is gone, and
+installed runtime files hash-match the tested source. Test-created profiles
+and the pre-migration backups were preserved separately.
 
 ## Current state (rename, 2026-10-21)
 

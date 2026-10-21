@@ -292,6 +292,9 @@ try {
     a.equal(readFileSync(join(appData, 'agenticos', 'pet.json'), 'utf8'), '{"x":1}', 'the pet keeps its place');
     a.equal(migrateUserData(appData, join(appData, 'agenticos'), { warn }), 'none');
     console.log('  electron: userData kingdom -> agenticos');
+    const startup = readFileSync(join(ROOT, 'electron', 'main.js'), 'utf8').split('const PORT')[0];
+    a.doesNotMatch(startup, /getPath\(['"]userData['"]\)/,
+      'reading Electron userData eagerly creates the destination before migration');
   }
 
   /* ---------- 8. entry points: the boot module and the lazy per-repo move ---------- */
