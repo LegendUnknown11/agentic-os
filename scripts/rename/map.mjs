@@ -14,6 +14,7 @@ export const EXCLUDE = [
   /^node_modules\//,
   /^scripts\/rename\//,            // the codemod and this map: they must name the old words
   /^docs\/RENAME\.md$/,            // the old -> new map itself, maintained by hand
+  /^plans\/functionality\/rename\.md$/, // the thread report, which has to quote the map
   /^test\/fixtures\/roster-v1\.json$/, // a byte-exact v1 roster: src/roster.js fingerprints it
   /^test\/fixtures\/config-pre-rename\.json$/, // the shipped config as it was the day before: src/legacy.js fingerprints it
   /^src\/legacy\.js$/,             // the one-time migration: reads the legacy names on purpose

@@ -1,8 +1,34 @@
 # De-theming: the decided map
 
-Not started. **Revised 2026-10-21 by the user** (see "2026-10-21 revision"
-below, which wins over the original tables where they differ). Scheduled to
-run on a `rename` branch after the `functionality` threads f1-f4 merge.
+**Done, 2026-10-21, on the `rename` branch: commits `dad0712`..`59944d6`**
+(codemod `dad0712`, file renames `5e8bbdc`, code pass `31b85ee`, migration
+`719dd08`, docs `59944d6`), cut from `functionality` at `fe9c67e`; the report
+is [plans/functionality/rename.md](../plans/functionality/rename.md). This
+file keeps the old -> new map because it has to name the old words; it is
+excluded from the codemod (`scripts/rename/map.mjs`).
+
+**Revised 2026-10-21 by the user** (see "2026-10-21 revision" below, which
+wins over the original tables where they differ).
+
+### As applied (where it differs from the tables below)
+
+- `peasant` -> **`agent`** per the revision (not `member`). `class Agent` ->
+  `AgentProcess`, `this.agents` -> `this.processes`, its locals -> `proc`.
+- `this.summoned` -> **`this.added`**, not `this.roster`: `roster` is already
+  a bus state key and an event name, so the table's choice would collide.
+  The `summoned` state key and event type became `added`.
+- `king` -> **`orchestrator`**, not `user`: every use in this codebase meant
+  the orchestrator ("THE KING FIRST, then the briefer"), so `user` would have
+  changed the meaning.
+- The MCP tool `summon` -> **`add_agent`**; `wake_member` -> `wake_agent`;
+  `pause_court`/`resume_court` -> `pause_team`/`resume_team`. The approval
+  kind `summon` -> `add`.
+- On disk the revision's names win: `.agenticos/`, `agenticos.db`,
+  `agenticos.config.json`, `AGENTICOS_*`, `stateDir()`, branch prefix
+  `agenticos/<name>`, commits `agenticos:` / `agenticos(<name>):`. **Migrated,
+  not orphaned** (`src/legacy.js`): the "On-disk — rename, NO migration"
+  section below is superseded.
+- `briefer` stays `briefer` (the revision), not `planner`.
 
 ## 2026-10-21 revision (wins)
 
