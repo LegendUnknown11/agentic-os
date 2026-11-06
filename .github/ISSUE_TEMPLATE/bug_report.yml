@@ -1,0 +1,45 @@
+name: Bug report
+description: Something is broken or not working as expected
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Run `npm start` on ...
+        2. Ask the orchestrator to ...
+        3. See error
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Output of `npm run doctor`
+      description: Doctor never prints tokens, but double check before pasting.
+      render: text
+  - type: input
+    id: os
+    attributes:
+      label: OS and Node version
+      placeholder: Windows 11, Node 24.2
+    validations:
+      required: true
+  - type: dropdown
+    id: cli
+    attributes:
+      label: Which coding CLI(s)?
+      multiple: true
+      options: [claude, codex, agy, opencode, cursor-agent]
+  - type: dropdown
+    id: ui
+    attributes:
+      label: How are you running it?
+      options: [Electron app (npm start), Browser (src/daemon.js), Terminal (src/cli.js)]
