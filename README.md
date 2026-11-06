@@ -1,5 +1,8 @@
 # Agentic OS
 
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Node 24+](https://img.shields.io/badge/node-%3E%3D24-brightgreen.svg)](https://nodejs.org)
+
 [![test](https://github.com/legendunknown11/agentic-os/actions/workflows/test.yml/badge.svg)](https://github.com/legendunknown11/agentic-os/actions/workflows/test.yml)
 
 A team of AI agents that work a git repository together. The difference from
@@ -76,6 +79,13 @@ $env:CLAUDE_CODE_OAUTH_TOKEN = "sk-ant-oat01-..."   # this shell only
 npm start
 ```
 
+On macOS / Linux:
+
+```bash
+export CLAUDE_CODE_OAUTH_TOKEN="sk-ant-oat01-..."   # this shell only
+npm start
+```
+
 `CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_API_KEY` and `ANTHROPIC_AUTH_TOKEN` are
 all honoured, and take precedence over the stored login (`claude auth status`
 will still say `loggedIn: false` — that's expected, and `npm run doctor` knows
@@ -116,6 +126,12 @@ Or pass them in the environment instead, which takes precedence:
 
 ```powershell
 $env:AGENTICOS_CLAUDE_TOKENS = "token1,token2"
+```
+
+On macOS / Linux:
+
+```bash
+export AGENTICOS_CLAUDE_TOKENS="token1,token2"
 ```
 
 Token values are never logged, never sent to the UI, and never written to
@@ -362,3 +378,11 @@ re-run alone before it is reported, because several of them use real resources �
 the live tick loop, git, ports, a Whisper model — and lose races for them under
 load; a failure that passes on the retry is printed as `flaky`, not as a pass.
 Set `AGENTICOS_TEST_WIDTH=1` for the old one-at-a-time run.
+
+## Contributing
+
+Issues and pull requests are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md). For security problems, see [SECURITY.md](SECURITY.md).
+
+## License
+
+[MIT](LICENSE)
